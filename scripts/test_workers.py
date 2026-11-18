@@ -39,7 +39,7 @@ def environment(index, *, env, output, runtime, fixture, fixture_snapshot, runti
         # The wide runner seals its verified runtime inside a private mount namespace.
         # Sharing those read-only inodes also shares executable/library pages between workers.
         # Ordinary runs retain private copies, including their mutation guards.
-        shared_runtime = env.get('DOMAINS_TEST_OVERLAY') == '1' and bool(os.statvfs(runtime).f_flag & os.ST_RDONLY)
+        shared_runtime = bool(os.statvfs(runtime).f_flag & os.ST_RDONLY)
         copy = runtime if shared_runtime else directory/'runtime'
         if not shared_runtime:
             shutil.copytree(runtime, copy, symlinks=True)
@@ -52,10 +52,28 @@ def environment(index, *, env, output, runtime, fixture, fixture_snapshot, runti
     return child
 
 
+def prepared_hashes(fixture, vendor_hashes):
+    snapshot = dict(vendor_hashes)
+    for entry in fixture.iterdir():
+        if entry.name == 'vendor':
+            continue
+        if entry.is_symlink():
+            raise ValueError('Fixture dependency path is linked.')
+        if entry.is_dir():
+            snapshot.update({entry.name+'/'+name: digest for name, digest in native.hashes(entry).items()})
+        elif entry.is_file():
+            snapshot[entry.name] = hashlib.sha256(entry.read_bytes()).hexdigest()
+    return snapshot
+
+
 def environments(env, output, jobs, runtime=None):
     output = output.resolve()
     fixture = Path(env['PAYMENTER_TEST_FIXTURE']) if env.get('PAYMENTER_TEST_FIXTURE') else None
-    fixture_snapshot = native.hashes(fixture) if fixture else None
+    fixture_snapshot = None
+    if fixture:
+        vendor = (fixture/'vendor').resolve(strict=True)
+        fixture_snapshot = prepared_hashes(fixture, {'vendor/'+name: value for name, value
+                                                     in native.admitted_vendor_hashes(vendor).items()})
     runtime_snapshot = runtime_hashes(runtime) if runtime else None
     create = partial(environment, env=env, output=output, runtime=runtime, fixture=fixture,
                      fixture_snapshot=fixture_snapshot, runtime_snapshot=runtime_snapshot)
@@ -97,14 +115,8 @@ def command_environment(env, *, fixture_snapshot=None):
         cached = _COMMAND_SNAPSHOTS.get(key)
         if cached is None:
             original = fixture_snapshot
-            fixture_snapshot = {name: digest for name, digest in original.items() if name.startswith('vendor/')}
-            for entry in fixture.iterdir():
-                if entry.name == 'vendor':
-                    continue
-                if entry.is_dir():
-                    fixture_snapshot.update({entry.name+'/'+name: digest for name, digest in native.hashes(entry).items()})
-                elif entry.is_file():
-                    fixture_snapshot[entry.name] = hashlib.sha256(entry.read_bytes()).hexdigest()
+            fixture_snapshot = prepared_hashes(fixture, {name: digest for name, digest in original.items()
+                                                         if name.startswith('vendor/')})
             cached = _COMMAND_SNAPSHOTS[key] = (original, fixture_snapshot)
         fixture_snapshot = cached[1]
     with installed_fixture.application(fixture, 'case', verify_vendor=fixture_snapshot is None) as (root, app):

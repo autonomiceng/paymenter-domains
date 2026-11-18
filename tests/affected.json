@@ -6,6 +6,11 @@
   "core": [
     "scripts/test.py",
     "scripts/test_workers.py",
+    "scripts/php_suite.py",
+    "scripts/case_budget.py",
+    "scripts/php-suite.Dockerfile",
+    "scripts/php-runtime-packages.json",
+    "scripts/bootstrap.py",
     "tests/native-database.php",
     "scripts/php-test",
     "tests/suites.json",

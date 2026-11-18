@@ -16,7 +16,7 @@ CACHE = ROOT / '.cache/php-runtime'
 LOCK = ROOT / 'scripts/php-runtime-packages.json'
 
 
-def prepare(download=False, native=False):
+def archives(download=False, native=False):
     if platform.system() != 'Linux' or platform.machine() != 'x86_64':
         raise RuntimeError('The pinned runner requires Linux x86_64.')
     CACHE.mkdir(parents=True, exist_ok=True)
@@ -27,7 +27,10 @@ def prepare(download=False, native=False):
             continue
         archive = CACHE / package['url'].rsplit('/', 1)[1]
         if not archive.exists() and source and (Path(source) / archive.name).is_file():
-            shutil.copyfile(Path(source) / archive.name, archive)
+            with tempfile.NamedTemporaryFile(dir=CACHE, delete=False) as pending:
+                with (Path(source) / archive.name).open('rb') as incoming:
+                    shutil.copyfileobj(incoming, pending)
+            Path(pending.name).replace(archive)
         if not archive.exists():
             if not download:
                 raise RuntimeError('PHP archive missing. Run scripts/bootstrap.py --download or set PHP_RUNTIME_ARCHIVE_CACHE.')
@@ -37,14 +40,21 @@ def prepare(download=False, native=False):
                 raise RuntimeError('Runtime archive exceeds limit.')
             if hashlib.sha256(payload).hexdigest() != package['sha256']:
                 raise RuntimeError('Downloaded PHP archive checksum mismatch.')
-            archive.write_bytes(payload)
+            with tempfile.NamedTemporaryFile(dir=CACHE, delete=False) as pending:
+                pending.write(payload)
+            Path(pending.name).replace(archive)
         if hashlib.sha256(archive.read_bytes()).hexdigest() != package['sha256']:
             raise RuntimeError('Cached PHP archive checksum mismatch; remove the archive and bootstrap again.')
         archives.append(archive)
+    return archives
+
+
+def prepare(download=False, native=False):
+    packages = archives(download, native)
     # Re-extract verified archives rather than trusting an existing executable or wrapper.
     runtime = Path(tempfile.mkdtemp(prefix='runtime-', dir=CACHE))
     try:
-        for archive in archives:
+        for archive in packages:
             subprocess.run(['dpkg-deb', '-x', str(archive), str(runtime)], check=True,
                            stdout=subprocess.DEVNULL)
         binary = runtime / 'usr/bin/php8.4'
@@ -70,6 +80,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--download', action='store_true')
     parser.add_argument('--native', action='store_true')
-    runtime, _, _ = prepare(**vars(parser.parse_args()))
-    shutil.rmtree(runtime)
-    print('PHP 8.4.27 archives verified and cached; offline runner ready.')
+    args = parser.parse_args()
+    import php_suite
+    php_suite.build(archives(args.download, native=True))
+    print('PHP 8.4.27 suite image ready.')

@@ -41,17 +41,20 @@ Blade fixture with populated history. Screenshots beside the approved mock cover
 Set `DOMAINS_PANEL_SETUP` to a PHP file that configures `$panel` and returns its
 built theme to render with a host skin. The UI suite needs installed Playwright (`NODE_PATH`) and Chromium (`CHROME_BIN`).
 
-Run `python3 scripts/bootstrap.py --download` once, then `scripts/test.py` fully offline.
-PHP **8.4.27** (Debian `8.4.27-1~deb13u1`, Linux x86_64) is pinned by archive SHA-256;
-hashes came from Debian security downloads on 2026-10-22. ICU `76.1-4` was re-downloaded
-and verified against its unchanged pin/hash. libzip `1.11.3-2` (Debian trixie, `libzip.so.5` for the zip
-extension) is bundled for hosts without it; its hash matches the trixie package index (2026-11-09).
-Native runs load gd and bcmath; GD needs host
-`libgd3` (`libgd.so.3`) and dependencies, which are not bundled. Native bootstrap verifies
-GD loads and retains loader errors; provider-only bootstrap neither loads nor requires GD.
-Every run verifies/re-extracts archives; missing/corrupt caches fail without downloading.
-`PHP_RUNTIME_ARCHIVE_CACHE` copies verified archives without changing the source cache.
-Python 3, dpkg-deb and compatible system libraries are required; system PHP/Composer never run.
+Run `python3 scripts/bootstrap.py --download` to build the PHP suite image, then run
+`scripts/test.py` offline. Local runs and native CI shards use the same entry point and
+selectors. The amd64 base image digest and dated Debian package repository are in
+`scripts/php-suite.Dockerfile`. PHP 8.4.27 and its extensions come from the SHA-256
+archives in `scripts/php-runtime-packages.json`. Set `PHP_RUNTIME_ARCHIVE_CACHE` to
+reuse local archives. Setup requires Docker. Execution requires Linux cgroup v2,
+rootless runc, user namespaces, GNU tar and a delegated memory scope. A direct
+invocation can request its own 2 GiB, zero-swap systemd user scope.
+
+Each invocation exports the image by immutable ID into a temporary directory and starts one
+OCI container under the admitted controller. Tests share read-only PHP and vendor files.
+Each native case receives its own application and database. The runner reaps each process
+tree and records file limits, peak memory and exit status. The receipt binds the image ID
+and the checkout tree. The separate MariaDB boundary keeps its existing service and driver.
 
 ## Suites and receipts
 
