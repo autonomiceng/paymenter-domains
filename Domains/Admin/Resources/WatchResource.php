@@ -19,7 +19,7 @@ class WatchResource extends WatchReadResource
     protected static ?string $breadcrumb='Monitored domains';
     protected static ?string $slug='monitored-domains';
     protected static ?SubNavigationPosition $subNavigationPosition=SubNavigationPosition::Top;
-    public static function getEloquentQuery(): Builder{return parent::getEloquentQuery()->with(['delegation','registry','work']);}
+    public static function getEloquentQuery(): Builder{return parent::getEloquentQuery()->with(['delegation','points','registry','work']);}
     /** Active domains needing attention, first 1,000: the count on the Monitored domains tab. Null at zero, so the tab shows none. */
     public static function attentionCount(): ?string
     {
