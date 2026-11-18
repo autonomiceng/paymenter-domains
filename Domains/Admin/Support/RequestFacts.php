@@ -537,8 +537,8 @@ final class RequestFacts
         }
         $reason = match ($schedule['stop_reason']) {
             null => null,
-            'transfer_followup_expired' => 'The 14-day check window ended.',
-            'transfer_followup_window_complete' => 'The next daily check would fall after the 14-day window.',
+            'transfer_followup_expired', 'transfer_followup_window_complete', 'transfer_followup_unproven'
+                => RequestRows::sentence(Labels::reason($schedule['stop_reason'])),
             'transfer_status_unavailable' => 'The last check could not confirm the transfer status.',
             'transfer_needs_action' => 'The old registrar needs an update.',
             'transfer_authority_changed' => 'The saved transfer details changed.',
