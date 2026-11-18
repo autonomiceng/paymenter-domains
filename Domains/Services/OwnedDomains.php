@@ -151,14 +151,24 @@ final readonly class OwnedDomains
     /** Who gets the auth code email. */
     public static function authCodeRecipient(Domain $d): string
     { return $d->registrar_key==='namesilo'?'admin contact email':'registrant email'; }
-    /** Registries block transfers out for 60 days after a registration or a transfer in. The line under Transfer lock, or
-     * Auth code without it, until then; null once the window passed or when we did not register or transfer the domain ourselves. */
+    /** The line under Transfer lock or Auth code while a completed acquisition is in the 60-day window. */
     public static function transferOutFrom(?Operation $op, \DateTimeImmutable $now): ?string
+    {
+        return self::transferOutWindow($op, $now)['transferFrom'] ?? null;
+    }
+
+    /** @return array{transferFrom: string, transferOutDate: string}|null */
+    private static function transferOutWindow(?Operation $op, \DateTimeImmutable $now): ?array
     {
         if (!$op || $op->state!=='succeeded' || !in_array($op->action,['register','transfer'],true) || !$op->completed_at) { return null; }
         $at=$op->completed_at; $from=(new \DateTimeImmutable($at instanceof \DateTimeInterface ? $at->format(DATE_ATOM) : (string) $at))->setTimezone(new \DateTimeZone('UTC'))->modify('+60 days');
         if ($from<=$now) { return null; }
-        return 'Transfers to another registrar open on '.$from->format('M j, Y').($op->action==='register'?', 60 days after registration.':', 60 days after the transfer.');
+
+        $date = $from->format('M j, Y');
+        return [
+            'transferFrom' => 'Transfers to another registrar open on '.$date.($op->action==='register'?', 60 days after registration.':', 60 days after the transfer.'),
+            'transferOutDate' => $date,
+        ];
     }
     /** Who sends it: the registrar mails the code itself, so no mail from us follows. */
     public static function authCodeSender(Domain $d): string
@@ -280,7 +290,15 @@ final readonly class OwnedDomains
                     $management['nameservers']['current']=self::storedNameservers($d); }
                 if (isset($management['contacts'])) { $management['contacts']+=self::contactForm($d,$contacts)+['digest'=>self::contactsFormDigest($d,$contactOperations)]; }
                 if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=self::authCodeRecipient($d); $management['auth_code_email']['sender']=self::authCodeSender($d); }
-                if ($from=self::transferOutFrom($op,$this->clock->now())) { foreach (['lock','auth_code_email'] as $k) { if (isset($management[$k])) { $management[$k]['transferFrom']=$from; break; } } } // Said once, on the first of the two rows.
+                if ($window = self::transferOutWindow($op, $this->clock->now())) {
+                    // Show the notice in the first available row.
+                    foreach (['lock', 'auth_code_email'] as $cap) {
+                        if (isset($management[$cap])) {
+                            $management[$cap] += $window;
+                            break;
+                        }
+                    }
+                }
                 // Lock and privacy as last read from the registrar (a confirmed change first, then the sync); null until read.
                 foreach (['lock'=>'locked','privacy'=>'privacy'] as $cap=>$fact) { if (isset($management[$cap])) { $management[$cap]['state']=self::storedFlag($d,$cap,$fact); } }
             }

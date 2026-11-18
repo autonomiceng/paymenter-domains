@@ -107,6 +107,7 @@
 @if ($checking && $section['actions'])
 <span class="domains-row__a"><button class="domains-a domains-linkbtn" type="button" aria-disabled="true" disabled>Change</button></span>
 @elseif ($section['actions'])
+@php($lockRisk = \Paymenter\Extensions\Servers\Domains\Services\ManagementForms::lockRisk($domain->name, $section['transferOutDate'] ?? null))
 @if ($state === null)
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">Change</a></span>
 @php($lockOff = $confirmStep === 'lock' || ($failed === $section['url'] && old('locked') === '0'))
@@ -116,7 +117,7 @@
 <label for="domains-lock" class="domains-label">Transfer lock</label><select id="domains-lock" name="locked" class="domains-input"><option value="1">On</option><option value="0" @selected($lockOff)>Off</option></select>
 @include('domains::partials.edit-buttons', ['open' => $editOpen, 'cancel' => $show, 'label' => 'Save'])
 @include('domains::partials.owner-confirm', ['id' => 'lock', 'open' => $confirmStep === 'lock', 'cancel' => $show, 'title' => 'Turn off transfer lock?', 'button' => 'Turn off',
-    'risk' => \Paymenter\Extensions\Servers\Domains\Services\ManagementForms::lockRisk($domain->name)])
+    'risk' => $lockRisk])
 </form>
 @endcomponent
 @else
@@ -125,7 +126,7 @@
 @include('domains::partials.form-key', ['action' => 'lock'])
 <input type="hidden" name="locked" value="{{ $state ? '0' : '1' }}">
 @if ($state)@include('domains::partials.owner-confirm', ['id' => 'lock', 'open' => $confirmStep === 'lock', 'cancel' => $show, 'title' => 'Turn off transfer lock?', 'button' => 'Turn off',
-    'risk' => \Paymenter\Extensions\Servers\Domains\Services\ManagementForms::lockRisk($domain->name)])@endif
+    'risk' => $lockRisk])@endif
 </form>
 @endif
 @endif

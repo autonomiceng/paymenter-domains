@@ -15,7 +15,15 @@ final readonly class ManagementForms
     public const CONTACTS_RISK='Changing the owner’s name, organization or email can block transfers for 60 days.';
     public const RECORDS_RISK='Anything that uses these records, like your website or email, can stop working.';
     public function __construct(private DomainManagement $management, private OwnerPorts $ports) {}
-    public static function lockRisk(string $domain): string { return 'Anyone with the auth code can then move '.$domain.' to another registrar.'; }
+    public static function lockRisk(string $domain, ?string $transferOutDate = null): string
+    {
+        if ($transferOutDate === null) {
+            return 'Anyone with the auth code can then move '.$domain.' to another registrar.';
+        }
+
+        return 'Transfers to another registrar open on '.$transferOutDate.". Turning off the lock doesn't change that date. "
+            .'From then on, anyone with the auth code can move '.$domain.' to another registrar.';
+    }
     /** Whether this exact form save is already a request. */
     public static function accepted(User $actor, Domain $d, string $action, string $nonce): bool
     { return $d->operations()->where('operation_key','manage:'.$d->id.':'.$nonce)->where('action',$action)->where('authorized_by',$actor->id)->exists(); }
