@@ -52,9 +52,17 @@
     "Domains/Services/HoldingDeparture.php": ["tests/complimentary-departed-receipt-test.php", "tests/complimentary-departed-owner-credit-test.php"],
     "Domains/Services/DisputeRecoveries.php": ["tests/walk3-invoice-state-test.php"],
     "tests/Support/operation-fixture.php": ["tests/walk3-invoice-state-test.php"],
+    "tests/Support/ready-registration.php": [
+      "tests/operation-claim-lifecycle-test.php",
+      "tests/operation-clock-test.php",
+      "tests/operation-contacts-test.php",
+      "tests/runtime-wire-registration-test.php",
+      "tests/staff-operation-actions-test.php",
+      "tests/staff-operation-lease-test.php"
+    ],
     "tests/Support/staff-operation-fixture.php": ["tests/walk3-invoice-state-test.php"],
     "tests/staff-request-invoice-test.php": ["tests/walk3-invoice-state-test.php"],
-    "tests/Support/observation-records-ready.php": ["tests/transfer-out-not-found-test.php"],
+    "tests/Support/observation-records-ready.php": ["tests/departure-watch-test.php", "tests/transfer-out-not-found-test.php"],
     "tests/Support/departure-fixture.php": [
       "tests/departure-customer-test.php",
       "tests/departure-departed-test.php",
