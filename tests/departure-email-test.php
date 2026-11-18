@@ -1,7 +1,8 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Registrar and payment transports are synthetic.
 declare(strict_types=1);
-require __DIR__.'/transfer-out-not-found-test.php';
+require __DIR__.'/Support/departure-fixture.php';
+$invoice=$issueDepartureRenewal();
 require_once __DIR__.'/Support/staff-panel.php';
 require __DIR__.'/Support/reminder-mail.php';
 use Illuminate\Support\Facades\{DB,Mail};
