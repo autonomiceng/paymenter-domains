@@ -8,11 +8,11 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Trace;
 use Paymenter\Extensions\Servers\Domains\Models\WatchAudit;
 use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{WatchActions,WatchFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,WatchActions,WatchFacts};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head,Row,Value};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{RecordDetailPage,Section};
 use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Plain,Reader,State};
-use Paymenter\Extensions\Servers\Domains\Services\{DnsTemplateUsage,SiteDnsDefault};
+use Paymenter\Extensions\Servers\Domains\Services\{DnsTemplateUsage,SiteDnsDefault,StaffWatchWrites};
 /** A DNS template: its records and where it is used, with the monitoring switch on its own row. Edit and Delete are
  * the page's native header actions. */
 class ViewConfiguration extends RecordDetailPage
@@ -64,7 +64,7 @@ class ViewConfiguration extends RecordDetailPage
             $reason ?? (!$profile ? WatchFacts::TEMPLATE_UNAVAILABLE : ($r->enabled ? 'Checks compare domains against this template.' : 'Checks wait while this template is off.'))))
             ->actions($this->enableAction(), $this->disableAction());
         $controls = [$monitor];
-        if ($refusal && $this->deleteAction()->isVisible()) {
+        if ($refusal && Staff::can(StaffWatchWrites::MANAGE)) {
             $controls[] = Row::make('Can delete', Value::plain(Plain::No, $refusal));
         }
         return [Section::make('Records', $records), Section::make('Monitoring', $controls)];

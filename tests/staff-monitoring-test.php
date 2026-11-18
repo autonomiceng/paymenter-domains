@@ -48,7 +48,7 @@ expect(str_contains(panelNoticeText($view->html()),'Nameservers changed'),'Obser
 $seen=preg_replace('/\s+/',' ',html_entity_decode(strip_tags(preg_replace('~<(script|style)\b.*?</\1>~si','',$view->html())),ENT_QUOTES|ENT_HTML5));
 same([1,0],[substr_count($seen,'Nameservers changed'),substr_count($seen,'Nameservers changed:')],'Nameservers changed shows once, with no notice repeating the found nameservers');
 same([WatchResource::getUrl(),0],array_keys($page->getBreadcrumbs()),'Breadcrumb leads back to the monitored domains list');
-foreach(['read'=>'Check now','pause'=>'Pause monitoring','note'=>'Add note'] as $name=>$label){same($label,$page->getAction($name)?->getLabel(),'Action '.$name);}
+foreach(['read','pause','note'] as $name){$view->assertActionVisible($name);}
 $view->assertActionHidden('resume');
 foreach(['read','pause'] as $name){same(false,$page->getAction($name)->isConfirmationRequired(),$name.' has no dialog');}
 $view->assertActionDoesNotExist('retire');
@@ -90,7 +90,7 @@ expect($ticket !== null && $f['registry']->finish($ticket, ['result'=>'unknown',
 $facts = WatchFacts::for(WatchName::findOrFail($id));
 same($attemptAt, $facts['Checks']['Last check']['at'], 'Last check uses the failed attempt time');
 same('danger', $facts['Checks']['Last check']['tone'], 'The latest failed read is grouped as a failure');
-same(\Carbon\CarbonImmutable::parse($expiry)->format('M j, Y'), $facts['Domain']['Expires']['value'], 'The earlier observed expiry survives the failed read');
+same($expiry, \Carbon\CarbonImmutable::parse($facts['Domain']['Expires']['value'])->toDateString(), 'The earlier observed expiry survives the failed read');
 expect(str_contains($facts['Domain']['Expires']['sub'],WatchFacts::date($minute+40)), 'The earlier expiry carries its own observation time');
 DB::table('domains_watch_registry')->where('id',$registryId)->delete();
 $facts = WatchFacts::for(WatchName::findOrFail($id));

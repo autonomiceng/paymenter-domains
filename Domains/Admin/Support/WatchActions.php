@@ -10,7 +10,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\{Get, Set};
 use Filament\Infolists\Components\TextEntry;
 use Paymenter\Extensions\Servers\Domains\Services\{ManagedDnsSetup, WatchTemplateAssignment};
-use Filament\Support\Enums\Width;
+use Filament\Support\Enums\{Alignment, FontFamily, Width};
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{RoutingProfileResource,WatchResource};
 use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchProfile};
@@ -87,7 +87,7 @@ final class WatchActions
     {
         return self::action('watch',(int)$w->id,$revision,'profile','Change')
             ->modalHeading('Change DNS template')->modalWidth(Width::Medium)
-            ->modalFooterActionsAlignment(\Filament\Support\Enums\Alignment::End)
+            ->modalFooterActionsAlignment(Alignment::End)
             ->modalDescription('Checks compare '.$w->canonical_name.' with this template. Saving leaves live nameservers and DNS records unchanged.')
             ->modalSubmitActionLabel('Save')->schema(fn () => self::assignmentFields($w))
             ->visible(fn()=>in_array($w->state,['active','paused'],true) && Staff::can(Writes::VIEW) && Staff::can(Writes::MANAGE));
@@ -113,15 +113,17 @@ final class WatchActions
             if ((int) $watch->ns_profile_id === (int) $profile->id) { $selected = $key; }
         }
         $replacement = $selected === null && $watch->ns_profile_id !== null;
+        $savedName = $replacement ? SiteDnsDefault::watchProfile($watch)?->name : null;
         if ($replacement && $profiles->count() === 1) { $selected = array_key_last($choices); }
         $suggest = fn ($key) => isset($choices[$key]) ? WatchTemplateAssignment::suggested($watch, $choices[$key], str_starts_with($key, 'site:'), str_starts_with($key, 'deployment:')) : null;
         $intents = ['platform' => "Use this template's nameservers", 'external' => 'Uses different nameservers',
             'inherit' => 'Follow site expectation', 'unset' => 'Keep expectation unset'];
         return [
             Select::make('assignment')->label('DNS template')->options($labels)->default($selected)->required()->live()
-                ->helperText($replacement ? 'The saved template cannot be used. Choose a replacement.' : null)
+                ->helperText($replacement ? ($savedName ? $savedName.' cannot be used. Choose a replacement.' : 'The saved template cannot be used. Choose a replacement.') : null)
                 ->afterStateUpdated(fn ($state, Set $set) => $set('expected_dns', $suggest($state))),
-            TextEntry::make('preview')->label('Nameservers')->listWithLineBreaks()
+            TextEntry::make('preview')->label(fn (Get $get) => isset($choices[$get('assignment')]) ? 'Nameservers in '.$choices[$get('assignment')]->name : 'Nameservers')
+                ->fontFamily(FontFamily::Mono)->listWithLineBreaks()
                 ->state(fn (Get $get) => ($choices[$get('assignment')] ?? null)?->readProfile()?->nameservers ?? []),
             TextEntry::make('expectation')->label('Expected nameservers')
                 ->state(fn (Get $get) => $intents[$get('expected_dns')] ?? 'Open Advanced and choose what checks should expect.'),

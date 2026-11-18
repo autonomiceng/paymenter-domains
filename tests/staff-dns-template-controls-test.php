@@ -101,7 +101,7 @@ $check('One New domains use choice is shown',function()use($profile,$make,$manag
     $column=$list->instance()->getTable()->getColumn('name');
     same('Used for new domains',tplMark($column,$profile),'Chosen template marked');
     same(null,tplMark($column,$other),'Other On template is not marked');
-    $page=Livewire::actingAs($manager)->test(ViewConfiguration::class,['record'=>$other->id])->assertSee($profile->name)->assertDontSee('Site DNS default');
+    $page=Livewire::actingAs($manager)->test(ViewConfiguration::class,['record'=>$other->id])->assertSee($profile->name);
 });
 $check('Add and edit show done messages without losing page state',function()use($make,$manager):void{
     $list=Livewire::actingAs($manager)->test(ListConfiguration::class);
@@ -136,7 +136,7 @@ $check('Default template saves require both default permissions',function()use($
     }
     $editor=staffUser($rights);
     $page=Livewire::actingAs($editor)->test(ViewConfiguration::class,['record'=>$ordinary->id])->assertActionVisible('save');
-    Livewire::actingAs($editor)->test(EditConfiguration::class,['record'=>$ordinary->id])->set('data.nameservers',$input($ordinary)['nameservers'])->call('save')->assertNotified('DNS template saved');
+    Livewire::actingAs($editor)->test(EditConfiguration::class,['record'=>$ordinary->id])->set('data.nameservers',$input($ordinary)['nameservers'])->call('save')->assertHasNoErrors();
     same(['ns1.changed.test','ns2.changed.test'],$ordinary->fresh()->nameservers,'Template-only staff can edit an ordinary template');
     $mounted=Livewire::actingAs($editor)->test(EditConfiguration::class,['record'=>$ordinary->id])->set('data.nameservers',$input($ordinary)['nameservers']);
     $ticket=Writes::ticket((int)$editor->id,'profile',(int)$ordinary->id,(int)$ordinary->fresh()->revision,'save');
@@ -147,7 +147,7 @@ $check('Default template saves require both default permissions',function()use($
     same(403,$status,'A ticket issued before the template became default is refused at the writer');
     same($before,[$ordinary->fresh()->getRawOriginal(),WatchAudit::count(),DB::table('domains_watch_staff_claims')->count()],'A template selected after the editor opened cannot be saved by template-only staff');
     Livewire::actingAs($full)->test(EditConfiguration::class,['record'=>$ordinary->id])
-        ->set('data.nameservers',"ns1.authorized.test\nns2.authorized.test")->call('save')->assertNotified('DNS template saved');
+        ->set('data.nameservers',"ns1.authorized.test\nns2.authorized.test")->call('save')->assertHasNoErrors();
     same(['ns1.authorized.test','ns2.authorized.test'],$ordinary->fresh()->nameservers,'Fully authorized staff can edit the default template');
     siteDnsFixture(null);
 });

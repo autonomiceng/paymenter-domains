@@ -37,7 +37,7 @@ class EditConfiguration extends RecordDetailPage
         abort_unless($this->getRecord()->readProfile(), 409, WatchFacts::TEMPLATE_UNAVAILABLE);
     }
 
-    protected function head(): Head { return Head::make('Edit '.$this->getRecord()->name, Reader::Staff); }
+    protected function head(): Head { return Head::make('Edit '.$this->getRecord()->name, Reader::Staff)->note($this->getRecord()->enabled ? 'Monitoring is on.' : 'Monitoring is off.'); }
     private function detailUrl(): string { return RoutingProfileResource::getUrl('view', ['record' => $this->getRecord()]); }
     public function getBreadcrumbs(): array
     {
@@ -57,9 +57,11 @@ class EditConfiguration extends RecordDetailPage
     {
         $profile = $this->getRecord();
         $count = WatchFacts::usedBy($profile->id);
+        $default = SiteDnsDefault::profile();
+        $registration = $this->defaultId ? 'New registrations using the default get the saved nameservers. Transfers keep their own.'
+            : ($default ? 'New registrations use '.$default->name.'.' : 'No template is selected for new registrations.');
         return [Section::make('What saving changes', [
-            Row::make('New registrations', Value::plain($this->defaultId ? Plain::Yes : Plain::No,
-                $this->defaultId ? 'New registrations using the default get the saved nameservers. Transfers keep their own.' : 'New registrations use another DNS setting.')),
+            Row::make('New registrations', Value::plain($this->defaultId ? Plain::Yes : Plain::No, $registration)),
             Row::make('Monitored domains', Value::fact(Fact::count($count), $profile->enabled
                 ? 'Future checks use the saved records when monitoring runs.' : 'Checks wait while this template is off.')),
             Row::make('Live DNS', Value::plain(Plain::No, 'Existing domains keep their live nameservers and records.')),
@@ -73,6 +75,9 @@ class EditConfiguration extends RecordDetailPage
         try {
             (new Writes())->run(Auth::user(), 'profile', $id, 'save', Writes::ticket((int) Auth::id(), 'profile', $id,
                 $this->revision, 'save', $this->defaultId), 'DNS template saved', $data);
+        } catch (\Illuminate\Database\QueryException|\Illuminate\Database\Eloquent\ModelNotFoundException) {
+            Notification::make()->warning()->title('Reload the template and try again.')->send();
+            return;
         } catch (\DomainException|\InvalidArgumentException $e) {
             Notification::make()->warning()->title($e->getMessage())->send();
             return;

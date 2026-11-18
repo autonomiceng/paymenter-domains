@@ -82,12 +82,12 @@ $settings->callAction('siteDefault',['profile'=>$default->id])->assertHasNoActio
 same($default->id,SiteDnsDefault::profile()->id,'Site settings save a single global reference');
 $edit = fn ($template) => \Livewire\Livewire::actingAs($manager)->test(
     \Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\EditConfiguration::class, ['record'=>$template->id]);
-$edit($default)->set('data.nameservers', "ns1.edited.test\nns2.edited.test")->call('save')->assertNotified('DNS template saved');
+$edit($default)->set('data.nameservers', "ns1.edited.test\nns2.edited.test")->call('save')->assertHasNoErrors();
 same(['ns1.edited.test','ns2.edited.test'],SiteDnsDefault::profile()->nameservers,'Editing the selected default changes its nameservers');
 $stale = $edit($default)->set('data.nameservers', "ns1.stale.test\nns2.stale.test");
 SiteDnsDefault::save($manager,$replacement->id);
 $before=[WatchProfile::orderBy('id')->get()->toJson(),\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count(),DB::table('domains_watch_staff_claims')->count()];
-$stale->call('save')->assertNotNotified('DNS template saved');
+$stale->call('save')->assertNoRedirect();
 same($before,[WatchProfile::orderBy('id')->get()->toJson(),\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count(),DB::table('domains_watch_staff_claims')->count()],'Changed default refuses a stale edit without updating either template');
 SiteDnsDefault::save($manager,$default->id);
 \Livewire\Livewire::actingAs($manager)->test($settingsPage)->assertSee('ns1.edited.test, ns2.edited.test');

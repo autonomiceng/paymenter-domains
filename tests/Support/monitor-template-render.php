@@ -9,7 +9,7 @@ require_once __DIR__.'/render-artifacts.php';
 use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\{EditConfiguration, ListConfiguration, ViewConfiguration};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\{AssignedDomains, EditConfiguration, ListConfiguration, ViewConfiguration};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\ViewWatch;
 use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
 $off = DB::transaction(fn () => WatchProfile::create(['name'=>'Previous hosting template','nameservers'=>['ns1.old.test','ns2.old.test'],
@@ -26,7 +26,7 @@ $manager->role->update(['permissions'=>[...$manager->role->permissions,\Paymente
 \Paymenter\Extensions\Servers\Domains\Admin\Support\DialogFooter::boot();
 panelTheme(getenv('PAYMENTER_TEST_FIXTURE'));
 foreach (['watch'=>[ViewWatch::class,$id], 'assignment'=>[ViewWatch::class,$id], 'templates'=>[ListConfiguration::class,null], 'template'=>[ViewConfiguration::class,$off->id],
-    'edit'=>[EditConfiguration::class,$off->id]] as $name=>[$class,$record]) {
+    'assigned'=>[AssignedDomains::class,$off->id], 'edit'=>[EditConfiguration::class,$off->id]] as $name=>[$class,$record]) {
     $page = Livewire::actingAs($manager)->test($class, $record ? ['record'=>$record] : []);
     if ($name === 'assignment') {
         $page->mountAction(TestAction::make('profile')->schemaComponent('sheet','content'));
