@@ -62,6 +62,9 @@ $expected = static fn($last, $result, $next, $reason) => [
     'last_read_at' => $last, 'last_result' => $result, 'next_read_at' => $next, 'stop_reason' => $reason,
 ];
 same($expected($now-86400, 'pending', $now, null), $view($op, $now), 'Legacy schedule comes from a real checked result');
+$notice = Paymenter\Extensions\Servers\Domains\Presentation\TransferNotice::class;
+same(false, $notice::for($op, $now)['contact'] ?? true, 'A pending transfer with a scheduled check needs no support request');
+same(true, $notice::for($op, TransferPolling::cutoff($op))['contact'] ?? true, 'When automatic checks expire, support is available');
 $budget = new AccountReadBudget($clock);
 for ($i=0; $i<25; $i++) {
     $token = $budget->acquire($binding, RequestOrigin::Background);
