@@ -27,7 +27,7 @@ spec.loader.exec_module(runner)
 
 
 class ReceiptTests(unittest.TestCase):
-    def test_offline_bootstrap_only_inspects_the_prepared_image(self):
+    def test_bootstrap_inspects_offline_and_builds_from_verified_archives_on_request(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             scripts = root/'scripts'
@@ -41,28 +41,54 @@ class ReceiptTests(unittest.TestCase):
             cache = root/'.cache/php-runtime'
             cache.mkdir(parents=True)
             (cache/'php-native.deb').write_bytes(archive)
+            (cache/'unlisted.deb').write_bytes(b'outside the package lock')
             digest = hashlib.sha256((scripts/'php-suite.Dockerfile').read_bytes() + b'\0' + lock.read_bytes()).hexdigest()
             docker = root/'docker'
-            docker.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$CALLS"\n'
-                              '[ "$1 $2 $3" = "image inspect --format" ] || exit 99\n'
-                              '[ "$IMAGE_READY" = 1 ] || exit 1\n'
-                              'printf "%s\\n" "sha256:prepared"\n')
+            docker.write_text("""#!/bin/sh
+printf '%s\\n' "$*" >> "$CALLS"
+if [ "$1 $2 $3" = 'image inspect --format' ]; then
+    [ "$IMAGE_READY" = 1 ] || exit 1
+    printf '%s\\n' sha256:prepared
+elif [ "$1 $2 $3 $4" = 'build --platform linux/amd64 -t' ]; then
+    [ "$(ls -A "$6/archives")" = php-native.deb ] || exit 99
+    cmp "$PHP_RUNTIME_ARCHIVE_CACHE/php-native.deb" "$6/archives/php-native.deb" || exit 99
+    cmp "$PACKAGE_LOCK" "$6/php-runtime-packages.json" || exit 99
+    exit "$BUILD_STATUS"
+else
+    exit 99
+fi
+""")
             docker.chmod(0o700)
             calls = root/'calls'
+            env = dict(os.environ, PATH=str(root)+os.pathsep+os.environ['PATH'], CALLS=str(calls),
+                       PHP_RUNTIME_ARCHIVE_CACHE=str(cache), PACKAGE_LOCK=str(lock))
+            tag = 'domains-php-suite:'+digest
             for flags in ([], ['--native']):
                 for ready in (False, True):
                     with self.subTest(flags=flags, ready=ready):
                         calls.write_text('')
-                        env = dict(os.environ, PATH=str(root)+os.pathsep+os.environ['PATH'], CALLS=str(calls),
-                                   IMAGE_READY=str(int(ready)))
-                        result = subprocess.run([sys.executable, str(scripts/'bootstrap.py'), *flags], env=env,
-                                                capture_output=True, text=True, timeout=3)
-                        self.assertEqual(calls.read_text().splitlines(),
-                                         ['image inspect --format {{.Id}} domains-php-suite:'+digest])
+                        result = subprocess.run([sys.executable, str(scripts/'bootstrap.py'), *flags],
+                                                env=dict(env, IMAGE_READY=str(int(ready))), capture_output=True,
+                                                text=True, timeout=3)
+                        self.assertEqual(calls.read_text().splitlines(), ['image inspect --format {{.Id}} '+tag])
                         self.assertEqual(result.returncode == 0, ready)
                         if not ready:
                             self.assertIn('--download', result.stderr)
                             self.assertFalse(result.stdout)
+            for status in (0, 23):
+                with self.subTest(build=status):
+                    calls.write_text('')
+                    result = subprocess.run([sys.executable, str(scripts/'bootstrap.py'), '--download'],
+                                            env=dict(env, BUILD_STATUS=str(status), IMAGE_READY='1'), capture_output=True,
+                                            text=True, timeout=3)
+                    call, *after = calls.read_text().splitlines()
+                    self.assertEqual(call.split()[:5], ['build', '--platform', 'linux/amd64', '-t', tag])
+                    self.assertIn('php-build-', call.split()[5])
+                    self.assertEqual(after, ['image inspect --format {{.Id}} '+tag] if not status else [])
+                    self.assertEqual(result.returncode == 0, status == 0)
+                    self.assertEqual('suite image ready' in result.stdout, status == 0)
+                    if status:
+                        self.assertIn('exit status 23', result.stderr)
 
     def test_hosted_bundle_uses_the_selected_runtime_even_with_a_different_runc_on_path(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -107,6 +133,37 @@ fi
                     suite.domains(root, [])
             receipt, = root.glob('domains-tests-*/receipt.json')
             self.assertFalse(json.loads(receipt.read_text())['complete'])
+
+    def test_container_setup_failure_leaves_an_incomplete_receipt(self):
+        suite = runner.php_suite
+        for reason in ('cgroup', 'dependency', 'alternates'):
+            with self.subTest(reason=reason), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                group = root/'cgroup'/'fixture.scope'
+                group.mkdir(parents=True)
+                (group/'cgroup.procs').write_text(str(os.getpid()))
+                (group/'cgroup.subtree_control').write_text('memory')
+                app = root/'paymenter'
+                app.mkdir()
+                if reason == 'dependency':
+                    (app/'.env').touch()
+                expected = RuntimeError if reason == 'cgroup' else ValueError
+                admitted = (contextlib.nullcontext() if reason == 'cgroup' else
+                            mock.patch.object(suite, 'grant_scope', return_value=group))
+                with admitted, mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': str(app)}, clear=True), \
+                     mock.patch.object(suite, 'CGROUP', group.parent), \
+                     mock.patch.object(suite, 'membership', return_value=Path('/fixture.scope')), \
+                     mock.patch.object(tempfile, 'tempdir', directory), \
+                     mock.patch.object(suite, 'git_inputs', side_effect=ValueError('Invalid Git alternate object directory.')), \
+                     mock.patch.object(suite, 'image_root') as image, contextlib.redirect_stderr(io.StringIO()):
+                    with self.assertRaises(expected) as failure:
+                        suite.domains(root, [])
+                if reason == 'cgroup':
+                    self.assertIn('delegated memory controller', str(failure.exception))
+                image.assert_not_called()
+                receipt, = root.glob('domains-tests-*/receipt.json')
+                self.assertEqual(json.loads(receipt.read_text()),
+                                 dict(complete=False, phase='setup', runtime_unchanged=False))
 
     def test_fail_fast_cancelled_sibling_is_not_a_failure(self):
         with tempfile.TemporaryDirectory() as temp:

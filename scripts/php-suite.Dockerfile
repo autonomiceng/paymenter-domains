@@ -30,3 +30,7 @@ RUN for pkg in playwright playwright-core; do \
     PLAYWRIGHT_BROWSERS_PATH=/opt/php-suite/browsers node /opt/php-suite/node_modules/playwright/cli.js \
         install --with-deps --only-shell chromium && \
     rm -rf /var/lib/apt/lists/*
+RUN /opt/php-suite/runtime/usr/bin/php8.4 -n \
+    -d extension=/opt/php-suite/runtime/usr/lib/php/20240924/curl.so \
+    -d extension=/opt/php-suite/runtime/usr/lib/php/20240924/gd.so \
+    -r 'exit(extension_loaded("curl") && extension_loaded("gd") ? 0 : 1);'

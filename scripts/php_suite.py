@@ -165,6 +165,8 @@ def grant_scope():
     current = CGROUP/membership().relative_to('/')
     dedicated = (current.name.endswith(('.scope', '.service')) and
                  set((current/'cgroup.procs').read_text().split()) == {str(os.getpid())})
+    if dedicated and not all((current/file).is_file() for file in ('memory.max', 'memory.swap.max')):
+        raise RuntimeError('The requested systemd scope needs a delegated memory controller with swap limits.')
     if dedicated and (current/'memory.max').read_text().strip() != 'max' and (current/'memory.swap.max').read_text().strip() == '0':
         controller = current/'php-controller'
         controller.mkdir()
@@ -188,40 +190,43 @@ def grant_scope():
 
 
 def domains(root, arguments, *, history=None):
-    root = root.resolve()
-    existing = os.environ.get('DOMAINS_TEST_CGROUP')
-    group = Path(existing) if existing else grant_scope()
-    group = group.resolve(strict=True)
-    if (group == CGROUP or not group.is_relative_to(CGROUP)
-            or not (CGROUP/membership().relative_to('/')).is_relative_to(group)
-            or 'memory' not in (group/'cgroup.subtree_control').read_text().split()):
-        raise RuntimeError('The test cgroup must contain the suite controller.')
-    output = Path(tempfile.mkdtemp(prefix='domains-tests-')).resolve()
-    receipts = Path(os.environ.get('DOMAINS_TEST_RECEIPTS', output/'resources')).resolve()
-    receipts.mkdir(exist_ok=True)
-    budget = Path(os.environ['DOMAINS_TEST_BUDGET']) if existing else SCRIPTS/'case_budget.py'
-    env = dict(PATH='/usr/local/bin:/usr/bin:/bin', LANG='C.UTF-8', HOME='/tmp', TMPDIR=str(output),
-               GIT_OPTIONAL_LOCKS='0', GIT_NO_REPLACE_OBJECTS='1', PYTHONDONTWRITEBYTECODE='1',
-               PHP_RUNTIME_ARCHIVE_CACHE=str(IMAGE_ARCHIVES), DOMAINS_TEST_CGROUP=str(group),
-               DOMAINS_TEST_BUDGET=str(budget), DOMAINS_TEST_RECEIPTS=str(receipts))
-    mounts = {path: path for path in [root, output, group, receipts, budget]}
-    if (root/'.git').exists():
-        mounts.update({path: path for path in git_inputs(root)})
-    if source := os.environ.get('PAYMENTER_TEST_APP'):
-        app = Path(source)
-        if not app.is_absolute() or app.resolve(strict=True) != app or (app/'.env').exists():
-            raise ValueError('Use a canonical pristine development dependency.')
-        mounts.update({p: p for p in [app, *git_inputs(app)]})
-        env['PAYMENTER_TEST_APP'] = source
-    for key in ('DOMAINS_TEST_JOBS', 'DOMAINS_UPGRADE_FROM'):
-        if key in os.environ:
-            env[key] = os.environ[key]
-    if history:
-        history = Path(history).resolve(strict=True)
-        mounts[history] = history
-    env.update(NODE_PATH='/opt/php-suite/node_modules', PLAYWRIGHT_BROWSERS_PATH='/opt/php-suite/browsers')
-    (root/'.cache').mkdir(exist_ok=True)
+    output = None
+    phase = 'setup'
     try:
+        root = root.resolve()
+        existing = os.environ.get('DOMAINS_TEST_CGROUP')
+        group = Path(existing) if existing else grant_scope()
+        group = group.resolve(strict=True)
+        if (group == CGROUP or not group.is_relative_to(CGROUP)
+                or not (CGROUP/membership().relative_to('/')).is_relative_to(group)
+                or 'memory' not in (group/'cgroup.subtree_control').read_text().split()):
+            raise RuntimeError('The test cgroup must contain the suite controller.')
+        output = Path(tempfile.mkdtemp(prefix='domains-tests-')).resolve()
+        receipts = Path(os.environ.get('DOMAINS_TEST_RECEIPTS', output/'resources')).resolve()
+        receipts.mkdir(exist_ok=True)
+        budget = Path(os.environ['DOMAINS_TEST_BUDGET']) if existing else SCRIPTS/'case_budget.py'
+        env = dict(PATH='/usr/local/bin:/usr/bin:/bin', LANG='C.UTF-8', HOME='/tmp', TMPDIR=str(output),
+                   GIT_OPTIONAL_LOCKS='0', GIT_NO_REPLACE_OBJECTS='1', PYTHONDONTWRITEBYTECODE='1',
+                   PHP_RUNTIME_ARCHIVE_CACHE=str(IMAGE_ARCHIVES), DOMAINS_TEST_CGROUP=str(group),
+                   DOMAINS_TEST_BUDGET=str(budget), DOMAINS_TEST_RECEIPTS=str(receipts))
+        mounts = {path: path for path in [root, output, group, receipts, budget]}
+        if (root/'.git').exists():
+            mounts.update({path: path for path in git_inputs(root)})
+        if source := os.environ.get('PAYMENTER_TEST_APP'):
+            app = Path(source)
+            if not app.is_absolute() or app.resolve(strict=True) != app or (app/'.env').exists():
+                raise ValueError('Use a canonical pristine development dependency.')
+            mounts.update({p: p for p in [app, *git_inputs(app)]})
+            env['PAYMENTER_TEST_APP'] = source
+        for key in ('DOMAINS_TEST_JOBS', 'DOMAINS_UPGRADE_FROM'):
+            if key in os.environ:
+                env[key] = os.environ[key]
+        if history:
+            history = Path(history).resolve(strict=True)
+            mounts[history] = history
+        env.update(NODE_PATH='/opt/php-suite/node_modules', PLAYWRIGHT_BROWSERS_PATH='/opt/php-suite/browsers')
+        (root/'.cache').mkdir(exist_ok=True)
+        phase = 'container'
         with tempfile.TemporaryDirectory(prefix='php-bundle-') as name:
             bundle = Path(name)
             with image_root(bundle) as (rootfs, image):
@@ -234,9 +239,12 @@ def domains(root, arguments, *, history=None):
             raise RuntimeError('Container exited successfully without a complete suite receipt: '+str(receipt))
         return code
     finally:
+        # Scope creation can re-exec. Allocate here only for failures before setup had an output.
+        if output is None:
+            output = Path(tempfile.mkdtemp(prefix='domains-tests-')).resolve()
         receipt = output/'receipt.json'
         if not receipt.exists():
-            receipt.write_text(json.dumps(dict(complete=False, phase='container', runtime_unchanged=False))+'\n')
+            receipt.write_text(json.dumps(dict(complete=False, phase=phase, runtime_unchanged=False))+'\n')
             print('Suite startup or execution failed; receipt: '+str(receipt), file=sys.stderr)
 
 
