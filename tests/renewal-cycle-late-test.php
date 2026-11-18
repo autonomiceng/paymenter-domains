@@ -47,7 +47,9 @@ same([$words('$1.00')],$notes($lateDomain),'Readable coverage restores the credi
 [$twice,$twiceDomain,,$twiceInvoice]=$closed('renew-late-twice-placeholder.com');$amount=PricingRule::minor($twice->amount);
 foreach([1,2] as $n){$pay::addPayment($twiceInvoice->id,null,$twice->amount);$refunds->retryPending();same($n*$amount,$cash(),'Full payment '.$n.' on a closed invoice becomes credit');}
 same([$words(\Paymenter\Extensions\Servers\Domains\Services\RenewalReminders::money(PricingRule::decimal(2*$amount)))],$notes($twiceDomain),'The note adds up what was credited');
-[$frozen,,,$frozenInvoice]=$closed('renew-late-frozen-placeholder.com');$first=$pay::addPayment($frozenInvoice->id,null,$frozen->amount);
+// A retained refund record already covers the first payment; its after-commit credit never ran.
+[$frozen,,,$frozenInvoice]=$closed('renew-late-frozen-placeholder.com');app()->bind(\Paymenter\Extensions\Servers\Domains\Services\Refunds::class,static fn()=>throw new RuntimeException('Synthetic lost worker'));
+$first=$pay::addPayment($frozenInvoice->id,null,$frozen->amount);app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Refunds::class);
 $refund=['amount'=>$frozen->amount,'payments'=>[['id'=>(int)$first->id,'amount_minor'=>PricingRule::minor($frozen->amount)]],'to'=>'account_credit'];$frozen=$frozen->fresh();$frozen->update(['funding'=>[...($frozen->funding??[]),'refund'=>$refund]]);
 $pay::addPayment($frozenInvoice->id,null,'2.00');$refunds->retryPending();
 same([200,$refund],[$cash(),$frozen->fresh()->funding['refund']],'A later payment is credited and the frozen credit stays as it was');

@@ -65,7 +65,7 @@ final class DomainManagement
         if (!preg_match('/^[a-f0-9]{64}$/D', $nonce) || !in_array($reason,['owner_request','staff_correction'],true)) { throw new \DomainException('Invalid management request identity.'); }
         $seed = Domain::findOrFail($id); $paid = in_array($action, ['privacy_purchase', 'privacy_renew'], true); $terms = null; $initial = null;
         if ($paid) {
-            [$request, $initial, $existing] = DB::transaction(function () use ($seed, $actor, $action, $nonce, $driver) {
+            [$request, $initial, $existing] = FreshTransaction::run(function () use ($seed, $actor, $action, $nonce, $driver) {
                 $l = HoldingLocks::take($seed, (int) $actor->id); $this->authority($l, (int) $actor->id, $action, $driver);
                 if($driver->capabilities()->privacy!==PrivacyMode::Paid){throw new \DomainException('Paid privacy unsupported.');}
                 $old = $l['operations']->firstWhere('operation_key', 'manage:'.$seed->id.':'.$nonce) ?? ManagementPrivacy::pending($l,$action);
@@ -77,7 +77,7 @@ final class DomainManagement
         $plan=null;$sequenceStamp=null;
         if ($driver->sequences($action)) {
             if ($paid || $correction!==null) { throw new \DomainException('Sequenced billing or correction unsupported.'); }
-            [$input,$sequenceStamp,$binding,$configuration,$existing,$confirmed]=DB::transaction(function()use($seed,$actor,$action,$payload,$nonce,$driver):array {
+            [$input,$sequenceStamp,$binding,$configuration,$existing,$confirmed]=FreshTransaction::run(function()use($seed,$actor,$action,$payload,$nonce,$driver):array {
                 $l=HoldingLocks::take($seed,(int)$actor->id);$this->authority($l,(int)$actor->id,$action,$driver);
                 $input=$driver->validate($action,$payload,$l['domain']->domain);$key='manage:'.$seed->id.':'.$nonce;
                 $input=$driver->freeze($key,$l['domain']->domain,$action,$input,(int)$seed->id);
@@ -92,7 +92,7 @@ final class DomainManagement
             $plan=$driver->plan($r,new RequestContext($binding,RequestOrigin::Interactive,$deadline,new RequestBudget(10),$this->clock,Runtime::limiter()));
             $plan['configuration']=$configuration;
         }
-        return DB::transaction(function () use ($seed, $actor, $action, $payload, $nonce, $driver, $reason, $terms, $initial, $correction, $recordIdentity, $plan, $sequenceStamp, $contactsDigest): Operation {
+        return FreshTransaction::run(function () use ($seed, $actor, $action, $payload, $nonce, $driver, $reason, $terms, $initial, $correction, $recordIdentity, $plan, $sequenceStamp, $contactsDigest): Operation {
             $l = HoldingLocks::take($seed, (int) $actor->id); $d = $l['domain']; $this->authority($l, (int) $actor->id, $action, $driver, correction: $correction);
             if ($action === 'contacts' && $contactsDigest !== null && !hash_equals(OwnedDomains::contactsFormDigest($d, $l['operations']), $contactsDigest)) {
                 throw new OwnerFormStale;
@@ -143,7 +143,7 @@ final class DomainManagement
     public function retire(User $actor,int $id): Operation
     {
         OperationClaims::outside();$seed=Operation::findOrFail($id)->domain()->firstOrFail();
-        return DB::transaction(function()use($actor,$id,$seed):Operation{
+        return FreshTransaction::run(function()use($actor,$id,$seed):Operation{
             $l=HoldingLocks::take($seed,(int)$actor->id);$op=$l['operations']->firstWhere('id',$id);
             if((int)$actor->id!==(int)$l['domain']->user_id&&(!$l['staff']||!$l['staff']->hasPermission('admin.domains.manage'))){throw new \DomainException('Management permission required.');}
             if(!$op||ManagementSequence::started($op,$l['operations'])||!ManagementEvidence::resolved($op,$l['domain'])||!ManagementEvidence::idle($op)){throw new \DomainException('Management retirement unavailable.');}
@@ -175,7 +175,7 @@ final class DomainManagement
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         $op = Operation::findOrFail($id);
         if(ManagementEvidence::recoverable($op)){
-            $op=DB::transaction(function()use($seed,$id){
+            $op=FreshTransaction::run(function()use($seed,$id){
                 $l=HoldingLocks::take($seed);$op=$l['operations']->firstWhere('id',$id);
                 $history=$op->attempt['management_deferrals']??[];
                 $last=$history?new \DateTimeImmutable(end($history)):$op->started_at;
@@ -187,7 +187,7 @@ final class DomainManagement
         }
         if(!isset($op->policy['management'])){throw new \DomainException('Not a management operation.');}
         if ($op->state === 'running' && (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now())) {
-            return DB::transaction(function () use ($seed,$id) { $l=HoldingLocks::take($seed); $op=$l['operations']->firstWhere('id',$id); if($op->state==='running'&&(!$op->lease_expires_at||$op->lease_expires_at<=$this->clock->now())){$op->update(['state'=>($op->attempt['seal']??null)==='sealed'?'uncertain':'held','safe_code'=>'management_unconfirmed','lease_expires_at'=>null]);} return $op; });
+            return FreshTransaction::run(function () use ($seed,$id) { $l=HoldingLocks::take($seed); $op=$l['operations']->firstWhere('id',$id); if($op->state==='running'&&(!$op->lease_expires_at||$op->lease_expires_at<=$this->clock->now())){$op->update(['state'=>($op->attempt['seal']??null)==='sealed'?'uncertain':'held','safe_code'=>'management_unconfirmed','lease_expires_at'=>null]);} return $op; });
         }
         if (!in_array($op->state, ['queued', 'awaiting_payment'], true) || (($op->attempt ?? []) !== []&&!ManagementEvidence::retryable($op))) { return $op; }
         if ($op->funding_basis === 'paid_invoice' && \App\Models\Invoice::find($op->invoice_id)?->status !== 'paid') { return $op; }
@@ -225,7 +225,7 @@ final class DomainManagement
             finally { $this->grant = null; $this->receiptGrant = null; }
             return $this->finish($seed, $id, $driver, $result, evidence: $evidence);
         } catch (\Throwable $error) {
-            return DB::transaction(function () use ($seed, $id, $claimed, $claim, $error, $refusals, $driver): Operation {
+            return FreshTransaction::run(function () use ($seed, $id, $claimed, $claim, $error, $refusals, $driver): Operation {
                 $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
                 if ($claimed && $op && ($op->attempt['management_claim']??null)===$claim && $op->state === 'running') {
                     $b=AccountBindings::binding($l['account']);
@@ -386,7 +386,7 @@ final class DomainManagement
     { return new ManagementRequest(AccountBindings::binding($l['account']), $op->operation_key, $l['domain']->domain, $op->action, $op->payload ?? [], $l['domain']->provider_domain_id,$op->attempt['management_ack']['order_id']??null,$op->attempt['management_ack']['profile_id']??null, (int) $l['domain']->id, ManagementSequence::context($op,$l)); }
     private function locked(Domain $seed, int $id, ManagementProtocol $driver, \Closure $use, bool $processing = true, bool $authorize = true): mixed
     {
-        return DB::transaction(function () use ($seed, $id, $driver, $use, $processing, $authorize): mixed {
+        return FreshTransaction::run(function () use ($seed, $id, $driver, $use, $processing, $authorize): mixed {
             $actor = Operation::findOrFail($id)->authorized_by; $l = HoldingLocks::take($seed, $actor);
             $op = $l['operations']->firstWhere('id', $id);
             if (!$op || !isset($op->policy['management']) || $op->authority_generation !== $l['domain']->authority_generation

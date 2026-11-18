@@ -25,8 +25,13 @@ same('account-renew-placeholder.com renewal, 1 year',$invoice->items->first()->d
 $completion->run($op->id);same(2,$invoice->items()->count(),'Repeated confirmation cannot duplicate receipt lines');
 commerceReject(fn()=>$invoice->items()->orderByDesc('id')->first()->update(['price'=>'-7.99']));
 commerceReject(fn()=>$invoice->fresh()->update(['status'=>'pending']));
-commerceReject(fn()=>App\Helpers\ExtensionHelper::addPayment($invoice->fresh(),null,'0.00'));
-same(0,$invoice->transactions()->count(),'Zero receipts cannot accept a second funding or payment path');
+// A payment on a zero receipt is recorded, the receipt stays paid, and the money returns once as account credit.
+app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
+$cash=static fn()=>\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)(App\Models\Credit::where('user_id',$user->id)->where('currency_code','USD')->value('amount')??'0.00'));$before=$cash();
+App\Helpers\ExtensionHelper::addPayment($invoice->fresh(),null,'1.00','0.00','complimentary-late');
+same([1,'paid',$before+100],[$invoice->transactions()->count(),$invoice->fresh()->status,$cash()],'A zero receipt records a payment and returns it as account credit after commit');
+(new \Paymenter\Extensions\Servers\Domains\Services\Refunds($clock))->creditRenewalReceipts((int)$invoice->id);
+same($before+100,$cash(),'Recovery after the commit credit returns nothing more');
 $clock->instant=new DateTimeImmutable('2028-09-27T12:00:00Z');activeCommerceFacts($clock->now(),$clock->now()->modify('+30 days'),$ports);$observeRenewalCost($b);
 $next=$billing->invoice($d->id,$user);same('pending',$next->status,'After switch off the next term asks for payment');expect((float)$next->total>0,'Next term charges standard pricing');
 [$over,$heldDomain,$binding]=$makeRenewal(placeholderComFixtureName('account-cost-cap-placeholder.com'),false,1,false,$enable);

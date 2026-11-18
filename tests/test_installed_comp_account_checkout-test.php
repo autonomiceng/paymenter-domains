@@ -77,6 +77,18 @@ $ready=$preflight->inspect($claimed,$held,$context);$sealed=$claims->seal($claim
 expect($sealed!==null,'Complimentary registration seals through existing registrar safeguards');same('complimentary',$sealed->funding['seal']['basis'],'The invoice did not supply a second payment basis');
 $history=DB::table('domains_complimentary_accounts')->where('user_id',$user->id)->orderBy('id')->get();
 same([1,0],$history->pluck('enabled')->map(fn($v)=>(int)$v)->all(),'Every change retains on/off history');same($staff->id,(int)$history->last()->actor_id,'Audit records the staff actor');
+// A payment on the gift registration's zero receipt is recorded, the receipt stays paid, and the money returns once as
+// account credit: after commit, or through the sweep when that handler was missed.
+$refundsClass=\Paymenter\Extensions\Servers\Domains\Services\Refunds::class;
+$cash=static fn()=>\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)(App\Models\Credit::where('user_id',$user->id)->where('currency_code','USD')->value('amount')??'0.00'));$before=$cash();
+App\Helpers\ExtensionHelper::addPayment($gift->fresh(),null,'1.00','0.00','gift-late');
+same([1,'paid',$before+100],[$gift->transactions()->count(),$gift->fresh()->status,$cash()],'A gift registration receipt records a payment and returns it after commit');
+app()->bind($refundsClass,static fn()=>throw new RuntimeException('Synthetic lost worker'));
+App\Helpers\ExtensionHelper::addPayment($gift->fresh(),null,'2.00','0.00','gift-late-missed');app()->offsetUnset($refundsClass);
+same([2,$before+100],[$gift->transactions()->count(),$cash()],'A missed handler leaves the second payment recorded and uncredited');
+$returns=new $refundsClass($clock);$account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->sole();
+$returns->creditRetired($account);$returns->creditRetired($account);
+same([$before+300,'paid'],[$cash(),$gift->fresh()->status],'The sweep returns the missed payment exactly once');
 $cart=commerceCart($other);commerceAdd($cart,$product,placeholderComFixtureName('ordinary-account-placeholder.com'));commerceCheckout($other,$cart);
 $ordinary=Domain::where('domain','ordinary-account-placeholder.com')->sole()->operations()->sole();same('paid_invoice',$ordinary->funding_basis,'Other accounts retain paid invoice funding');expect((float)$ordinary->amount>0,'Other accounts still pay');
 $coupon=App\Models\Coupon::create(['code'=>'FREE-DOMAIN-REFUSED','type'=>'percentage','value'=>100,'applies_to'=>'price','recurring'=>0]);

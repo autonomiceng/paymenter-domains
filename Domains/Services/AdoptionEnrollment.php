@@ -17,7 +17,7 @@ final readonly class AdoptionEnrollment
         if (($prior['adoption_id'] ?? null) === $seed->adoption_id && ($prior['generation'] ?? null) === $seed->authority_generation) { return; }
         $discovery = WatchSource::where('user_id', $seed->user_id)->where('registrable_name', $seed->domain)->where('state', 'watch')->orderBy('id')->limit(101)->get();
         if ($discovery->count() > 100) { throw new \DomainException('Adoption source enrollment requires staff review.'); }
-        DB::transaction(function () use ($seed, $discovery): void {
+        FreshTransaction::run(function () use ($seed, $discovery): void {
             $l = HoldingLocks::take($seed, additionalServices: $discovery->pluck('service_id')->all()); $d = $l['domain'];
             HoldingAnchor::resolve($l);
             $prior = $d->observation['adoption_enrollment'] ?? [];

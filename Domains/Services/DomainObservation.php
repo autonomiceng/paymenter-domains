@@ -16,7 +16,7 @@ final class DomainObservation
     {
         OperationClaims::outside(); if($current){$current();} $seed=Domain::findOrFail($id);
         if (($generation!==null&&$seed->authority_generation!==$generation)||($fingerprint!==null&&$seed->account_fingerprint!==$fingerprint)) { throw new ReadDeferred('Stale observation work.'); }
-        [$binding,$stamp,$attempt,$seed,$knownGlue,$recordOverflow,$recordEnabled,$recordProtected]=DB::transaction(function () use ($seed,$readRecords,$current): array {
+        [$binding,$stamp,$attempt,$seed,$knownGlue,$recordOverflow,$recordEnabled,$recordProtected]=FreshTransaction::run(function () use ($seed,$readRecords,$current): array {
             $l=HoldingLocks::take($seed,beforeCatalogue:$current); $this->available($l); $this->bindings->requireReadableLocked($l['server'],$l['account']);
             if (ObservationRecords::identity($seed)!==ObservationRecords::identity($l['domain'])) { throw new ReadDeferred('Stale observation work.'); }
             $binding=AccountBindings::binding($l['account']); $attempt=null;
@@ -79,7 +79,7 @@ final class DomainObservation
                 catch (\Throwable $error) { $records=['glue'=>['state'=>'partial','records'=>$knownGlue]]; $recordFailed=true; $failureCode=ReadFailure::code($error); }
             }
         }
-        $code=DB::transaction(function () use ($seed,$binding,$stamp,$snapshot,$transfer,$records,$failed,$recordFailed,$deferred,$recordOverflow,$recordHeld,$recordEnabled,$readRecords,$failureCode,$current,$credential,$capabilities,$failedFamily): string {
+        $code=FreshTransaction::run(function () use ($seed,$binding,$stamp,$snapshot,$transfer,$records,$failed,$recordFailed,$deferred,$recordOverflow,$recordHeld,$recordEnabled,$readRecords,$failureCode,$current,$credential,$capabilities,$failedFamily): string {
             $l=HoldingLocks::take($seed,beforeCatalogue:$current); $this->available($l); $this->bindings->requireReadableLocked($l['server'],$l['account']);
             $binding->requireMatch(AccountBindings::binding($l['account']));
             if($current&&!hash_equals($credential,$this->bindings->holdingCredentialRevision($binding))){throw new ReadDeferred('Observation credentials changed.');}
@@ -112,7 +112,7 @@ final class DomainObservation
             if ($baseCode==='refreshed' && $readRecords && ($this->records!==null || $this->observationReader!==null) && !$recordEnabled) { return 'records_disabled'; }
             return $baseCode;
         });
-        DB::transaction(function()use($seed,$code):void { $d=HoldingLocks::take($seed)['domain'];
+        FreshTransaction::run(function()use($seed,$code):void { $d=HoldingLocks::take($seed)['domain'];
             if(ObservationRecords::identity($d)===ObservationRecords::identity($seed)){DepartureChecks::capture($d,$this->clock->now()->getTimestamp(),$code==='domain_not_in_account');} });
         return $completion ? $completion($code,$wireGuard) : $code;
     }

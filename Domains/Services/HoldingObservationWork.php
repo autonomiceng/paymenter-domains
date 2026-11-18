@@ -144,7 +144,7 @@ final class HoldingObservationWork
     {
         OperationClaims::outside(); if (!preg_match('/^[a-z][a-z0-9_]{4,63}$/D',$reason)) { throw new \InvalidArgumentException('Safe reason required.'); }
         $seed=Domain::findOrFail(DB::table('domains_observation_work')->where('id',$id)->value('domain_id'));
-        DB::transaction(function () use ($id,$reason,$seed,$review,$current): void {
+        FreshTransaction::run(function () use ($id,$reason,$seed,$review,$current): void {
             $l=HoldingLocks::take($seed,$review?->actorId); $current((int)$seed->server_id); $review?->check($l); $d=$l['domain']; $q=DB::table('domains_observation_work')->where('id',$id); $job=(clone $q)->lockForUpdate()->firstOrFail();
             if ($job->domain_id!=$d->id||$job->server_id!=$d->server_id||$job->phase!==self::phase($d)||(int)$job->generation!==$d->authority_generation||$job->account_fingerprint!==$d->account_fingerprint||self::reading($job,$this->clock->now()->getTimestamp())||$job->resumes>=20) { throw new \DomainException('Read resume unavailable.'); }
             if ($blocked=ObservationWork::resumeBlocked($d)) { throw new StaffReviewRefused($blocked); }

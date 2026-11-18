@@ -36,7 +36,7 @@ final class StaffHoldingReview
     public function run(User $actor,int $domain,string $action,string $ticket,string $reason): void
     {
         OperationClaims::outside();self::permission($action);$seed=Domain::findOrFail($domain);
-        DB::transaction(function()use($actor,$seed,$action,$ticket,$reason):void {
+        FreshTransaction::run(function()use($actor,$seed,$action,$ticket,$reason):void {
             $l=HoldingLocks::take($seed,(int)$actor->id);$d=$l['domain'];$s=$l['service'];$staff=$l['staff'];
             if(!$staff||!$staff->hasPermission('admin.domains.view')||!$staff->hasPermission('admin.domains.manage')
                 ||!$staff->hasPermission(self::permission($action))){throw new \DomainException('Current staff permissions required. Reload this page.');}

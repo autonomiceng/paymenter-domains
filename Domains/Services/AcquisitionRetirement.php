@@ -15,7 +15,7 @@ final readonly class AcquisitionRetirement
     public function retire(int $id,?User $actor=null,?string $ticket=null,?string $reason=null): void
     {
         OperationClaims::outside();$seed=Domain::findOrFail($id);
-        DB::transaction(function()use($seed,$actor,$ticket,$reason):void {
+        FreshTransaction::run(function()use($seed,$actor,$ticket,$reason):void {
             $l=HoldingLocks::take($seed,$actor?(int)$actor->id:null,foreignInvoices:true);$d=$l['domain'];$s=$l['service'];
             if($actor){$this->review($l,$actor,$ticket,$reason);}
             $op=UnpaidAcquisitionProof::require($l);$invoice=$l['invoices']->firstWhere('id',$op->invoice_id);
@@ -36,7 +36,7 @@ final readonly class AcquisitionRetirement
         foreach(Operation::where('invoice_id',$invoiceId)->whereIn('action',['register','transfer'])->orderBy('id')->pluck('domain_id') as $id){
             $seed=Domain::findOrFail($id);
             try{
-                $moved=DB::transaction(function()use($seed,$notice,$reissued,$catalogueGuard):?int {
+                $moved=FreshTransaction::run(function()use($seed,$notice,$reissued,$catalogueGuard):?int {
                     $l=HoldingLocks::take($seed,null,foreignInvoices:true,beforeCatalogue:$catalogueGuard);$op=UnpaidAcquisitionProof::require($l);
                     $invoice=$l['invoices']->firstWhere('id',$op->invoice_id);
                     $new=$invoice->status==='pending'?self::reissue($invoice,$l)?->id:$reissued;
@@ -106,7 +106,7 @@ final readonly class AcquisitionRetirement
     private function askStaff(Domain $d,bool $raise=true): void
     {
         try{
-            DB::transaction(function()use($d,$raise):void {
+            FreshTransaction::run(function()use($d,$raise):void {
                 $l=HoldingLocks::take($d,foreignInvoices:true,completeInvoices:true);$locked=$l['domain'];
                 if($this->retirementObsolete($l)){
                     DB::table('domains_obligation_alerts')->where('domain_id',$locked->id)->where('code','acquisition_retirement_review')
@@ -230,9 +230,10 @@ final readonly class AcquisitionRetirement
             return !DB::table('domains_obligation_alerts')->where('alert_key',$key)->whereNull('resolved_at')->exists();
         });
         if(!$hit){return;}
-        DB::transaction(function()use($seed):void {
+        FreshTransaction::run(function()use($seed):void {
             $l=HoldingNativeLocks::take((int)$seed->user_id,(int)$seed->service_id,seed:$seed);
             $d=Domain::whereKey($seed->id)->lockForUpdate()->firstOrFail();$ops=$d->operations()->orderBy('id')->lockForUpdate()->get();
+            $l['transactions']=HoldingNativeLocks::transactions($l['invoices']->pluck('id'));
             $service=$l['service']->status;$cancelled=$l['cancel']->where('service_id',$d->service_id)->isNotEmpty();
             foreach($ops->whereIn('action',['register','transfer'])as$op){
                 $transactions=$l['transactions']->where('invoice_id',$op->invoice_id);$status=$l['invoices']->firstWhere('id',$op->invoice_id)?->status;

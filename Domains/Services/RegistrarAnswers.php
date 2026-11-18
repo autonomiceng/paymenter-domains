@@ -61,7 +61,7 @@ class RegistrarAnswers
         OperationClaims::outside();
         if($review->action!=='enom_answer'||$review->tldId!==null){throw new \DomainException('Registrar answer review required.');}
         $seed=Operation::findOrFail((int)($input['operation_id']??0))->domain()->firstOrFail();
-        $id=DB::transaction(function()use($review,$input,$now,$seed):int{
+        $id=FreshTransaction::run(function()use($review,$input,$now,$seed):int{
             $l=HoldingLocks::take($seed,$review->actorId);$review->lockActor();$review->check();
             $op=$l['operations']->firstWhere('id',(int)($input['operation_id']??0));$d=$l['domain'];
             if(!$op||$op->server_id!==$review->serverId||!self::eligible($op,$now)||($input['attempt_hash']??null)!==self::identity($op)

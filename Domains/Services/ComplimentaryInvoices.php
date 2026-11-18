@@ -32,14 +32,37 @@ final class ComplimentaryInvoices
             ||!self::receipt($op,$invoice,$item,$items,$l['transactions']->where('invoice_id',$op->invoice_id))) {throw new \DomainException('Complimentary receipt authority changed.');}
         return ['basis'=>'complimentary','authorization'=>$a,'invoice_id'=>$invoice->id,'invoice_item_id'=>$item->id];
     }
-    /** Exact informational receipt, including its confirmed charge/offset pair. Never accepts a payment. */
+    /** Payments on the receipt not yet returned as account credit (Refunds::creditCancelledRenewal). A failed row is not money.
+     * @return list<array{id:int,amount_minor:int}> */
+    public static function uncredited(Operation $op,$transactions):array
+    {
+        $done=[];
+        foreach($op->funding['late_credits']??[] as $credit){foreach($credit['payments']??[] as $p){$done[(int)$p['id']]=($done[(int)$p['id']]??0)+(int)$p['amount_minor'];}}
+        $new=[];
+        foreach($transactions as $row){
+            if($row->status!==\App\Enums\InvoiceTransactionStatus::Succeeded){continue;}
+            $left=PricingRule::minor((string)$row->amount)-($done[(int)$row->id]??0);
+            if($left>0){$new[]=['id'=>(int)$row->id,'amount_minor'=>$left];}
+        }
+        return $new;
+    }
+    /** Every payment on the receipt already returned, as credit or by a settled gateway refund or lost dispute; none processing. */
+    private static function returned(Operation $op,Invoice $invoice,$transactions):bool
+    {
+        if($transactions->contains(fn($row)=>$row->status===\App\Enums\InvoiceTransactionStatus::Processing)){return false;}
+        if(self::uncredited($op,$transactions)===[]){return true;}
+        // Only a payment the credit did not cover reads the gateway ledger.
+        $money=InvoiceMoney::project($invoice,$transactions);
+        return !$money['pending']&&!$money['overdrawn']&&!array_filter($money['receipts'],fn($r)=>$r['hold']||$r['net']!==0);
+    }
+    /** Exact informational receipt, including its confirmed charge/offset pair. A payment on it counts once returned as credit. */
     public static function receipt(Operation $op,Invoice $invoice,InvoiceItem $item,$items,$transactions):bool
     {
         try{
             $auth=$op->policy['account_complimentary']??[];ComplimentaryAccounts::require($auth,(int)$invoice->user_id);
             if($op->funding_basis!=='complimentary'||PricingRule::minor($op->amount)!==0||$op->currency!=='USD'
                 ||$invoice->id!==$op->invoice_id||$invoice->currency_code!=='USD'||$invoice->status!=='paid'
-                ||$item->id!==$op->invoice_item_id||(int)$item->invoice_id!==$invoice->id||$transactions->isNotEmpty()
+                ||$item->id!==$op->invoice_item_id||(int)$item->invoice_id!==$invoice->id||!self::returned($op,$invoice,$transactions)
                 ||$items->contains(fn($i)=>(string)$i->quantity!=='1')||$items->sum(fn($i)=>PricingRule::minor($i->price))!==0){return false;}
             if($items->count()===1){return PricingRule::minor($item->price)===0;}
             if($items->count()!==2||$op->state!=='succeeded'){return false;}
@@ -67,7 +90,7 @@ final class ComplimentaryInvoices
         // Native invoices store cents; retain the exact provider amount in the operation.
         $amount=self::nativeCharge($cost['amount']);
         if($invoice->items()->count()===2){return;}
-        if($invoice->status!=='paid'||(float)$invoice->total!==0.0||$invoice->items()->count()!==1||$invoice->transactions()->exists()){throw new \DomainException('Complimentary receipt changed.');}
+        if($invoice->status!=='paid'||(float)$invoice->total!==0.0||$invoice->items()->count()!==1||!self::returned($op,$invoice,$invoice->transactions()->get())){throw new \DomainException('Complimentary receipt changed.');}
         // Exact owned receipt only. Suppressing observers prevents Paid/InvoiceItem hooks from launching a second path.
         $item->forceFill(['price'=>$amount,'description'=>$description])->saveQuietly();
         $discount=new InvoiceItem(['invoice_id'=>$invoice->id,'price'=>'-'.$amount,'quantity'=>1,'description'=>'Complimentary','reference_type'=>null,'reference_id'=>null]);

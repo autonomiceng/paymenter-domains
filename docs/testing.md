@@ -641,28 +641,29 @@ this explicit suite. Each harness owns one `dom-schema-` container labelled with
 owner, with no network, published ports or persistent volumes, and stops it after success or
 failure. `tests/test_schema_mariadb_guards.py` checks the harness refusals without Docker.
 
-`tests/test_receipt_lock_order_mariadb.py` pairs a native cancelled-renewal receipt
-with an invoice-scoped money decision, including its full-scope retry. Both finish
-without a deadlock retry and retain the receipt and closed renewal. For paired
-red/green evidence in one run, `DOMAINS_TEST_RECEIPT_BASE` may name an exported
-buggy source tree. The paired full-scope writer and two-receipt cases must lose
-the non-lowest invoice receipt there and retain both receipts on the candidate.
-Both table prefixes are exercised. Native receipt contexts cover only their one
-invoice and keep the same owner, identity and renewal closure guards.
+Lock order, as native checkout (Cart locks the customer before inserting its invoice):
+every Domains writer locks the customer, then invoices, then what hangs off them, and reads
+payment rows last (`HoldingNativeLocks::transactions`). Inside core's payment transaction
+Domains takes no row locks. A paid cancelled invoice with a still-sendable renewal stays cancelled
+(`NativeDomainGuard`); after commit that renewal closes and its payment, or a complimentary receipt's,
+returns as account credit (`Refunds::creditRenewalReceipts`, swept by `Refunds::creditRetired`).
+`tests/test_receipt_lock_order_mariadb.py` pauses a receipt inside core's transaction beside
+another customer's full decision and beside the same customer's checkout: both finish and
+the payment is recorded and credited once. `tests/test_checkout_lock_order_mariadb.py`
+holds a checkout on its customer row while Record answer and contact recovery wait on it.
+`tests/test_user_deletion_mariadb.py` holds a receipt's invoice: deletion waits, then
+refuses the retained customer. Both table prefixes are exercised.
 
 This package has no converter. The one-time conversion and its MariaDB rehearsal run from a
 checkout of Domains bridge 0.1.0 at `891124421645`; see the
 [release runbook](release-runbook.md#one-time-conversion-checkpoint-order).
 
-`registration-nameservers-test.php` exercises both registrars through the real registration
-preflight and native claim/finish path with a synthetic writer, independently of the bridge's
-earlier owner-setup guard. Empty hosts, excessive counts and invalid hostname labels hold
-unsealed as `nameservers_required`, with zero reads/writes and a specific staff label. Enom
-privacy refusal keeps precedence; valid inputs still seal and reach the synthetic writer.
-The existing registration protocol suites cover valid purchases and follow-up readback.
-Claimed nameserver holds also retain definitely-unsent rejection and exact once-only account credit;
-unknown execution evidence still blocks both recovery proofs. Both registrars exercise staff
-refund and terminal-rejection recovery paths.
+`registration-nameservers-test.php` runs both registrars through the real registration preflight
+and native claim/finish path with a synthetic writer. Empty hosts, excessive counts and invalid
+labels hold unsealed as `nameservers_required`, with zero reads/writes and a specific staff label;
+Enom privacy refusal keeps precedence and valid inputs still seal. Claimed nameserver holds keep
+definitely-unsent rejection and once-only account credit; unknown execution evidence blocks both
+recovery proofs. Both registrars exercise staff refund and terminal-rejection recovery.
 
 Registration reconciliation covers captured execution with a null order reference: a saved,
 covering history acceptance permits Enom history reads and unique completion without replay.

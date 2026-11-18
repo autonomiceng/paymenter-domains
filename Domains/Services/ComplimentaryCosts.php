@@ -66,7 +66,7 @@ final class ComplimentaryCosts
     public static function approve(int $id,User $actor,string $amount,string $reason,Clock $clock):void
     {
         OperationClaims::outside();$seed=Operation::findOrFail($id)->domain;$reason=trim($reason);
-        DB::transaction(static function()use($seed,$id,$actor,$amount,$reason,$clock):void {
+        FreshTransaction::run(static function()use($seed,$id,$actor,$amount,$reason,$clock):void {
             $l=HoldingLocks::take($seed,(int)$actor->id);$op=$l['operations']->firstWhere('id',$id);
             $staff=$l['staff'];$review=$op?->policy['complimentary_cost_review']??null;
             if(!$staff?->hasPermission('admin.domains.fund')||!$staff->hasPermission('admin.domains.manage')||!$staff->hasPermission('admin.domains.costs')||$reason===''||strlen($reason)>500

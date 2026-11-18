@@ -12,7 +12,7 @@ final class ManagedPublicEnrollment
         $seed=Domain::whereKey($id)->where('user_id',$owner)->first();if (!$seed) { return null; }
         $peek=WatchSource::where('user_id',$owner)->where('registrable_name',$seed->domain)->whereIn('state',['watch','managed_link'])->orderBy('id')->limit(100)->get();
         if ($transferOnly && $peek->isEmpty() && !WatchName::where('user_id',$owner)->where('canonical_name',$seed->domain)->whereIn('state',['active','paused'])->exists()) { return false; }
-        return DB::transaction(function()use($seed,$peek,$id,$owner,$now,$defaultProfile,$transferOnly):?bool {
+        return FreshTransaction::run(function()use($seed,$peek,$id,$owner,$now,$defaultProfile,$transferOnly):?bool {
             $changed=false;
             try { $l=HoldingLocks::take($seed,additionalServices:$peek->pluck('service_id')->all());HoldingAnchor::resolve($l);
                 if ($transferOnly && (!in_array($l['domain']->provenance,[null,'purchased','converted_purchase'],true) || $l['account']->environment!=='live' || !$l['operations']->contains(fn($op)=>$op->action==='transfer' && $op->state==='succeeded' && $op->authority_generation===$l['domain']->authority_generation))) { return null; } }

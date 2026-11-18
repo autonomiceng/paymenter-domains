@@ -1,114 +1,107 @@
 <?php
-// Native payment before any retirement sweep; MIT, Copyright (c) 2026 Autonomic Engineering.
+// Native payment on a cancelled renewal is recorded, then returned as account credit; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/renewal-execution.php';
-use App\Models\InvoiceTransaction;
+use App\Models\{Credit,InvoiceTransaction};
+use App\Helpers\ExtensionHelper;
 use Illuminate\Support\Facades\{DB,Event};
-use Paymenter\Extensions\Servers\Domains\Services\{NativePresenter,OwnedDomains,OwnerPorts,HolderPricing};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
+use Paymenter\Extensions\Servers\Domains\Services\{PricingRule,Refunds};
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
-[$op,$d,$b,$bill]=$makeRenewal(placeholderComFixtureName('cancelled-renewal-payment-placeholder.com'),false);
-$clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');
-$bill->update(['status'=>'cancelled']);
-$presenter=new NativePresenter(new OwnedDomains($clock,new OwnerPorts),$native,new HolderPricing($prices));
-$paidOutcome=null;
-Event::listen(\App\Events\Invoice\Paid::class,static function($event)use($bill,$presenter,$user,&$paidOutcome):void {
-    if($event->invoice->id===$bill->id){DB::afterCommit(static function()use($bill,$presenter,$user,&$paidOutcome):void {$paidOutcome=$presenter->invoiceOutcome($user,(int)$bill->id);});}
+$cash=static fn()=>PricingRule::minor((string)(Credit::where('user_id',$user->id)->where('currency_code','USD')->value('amount')??'0.00'));
+$paid=[];Event::listen(\App\Events\Invoice\Paid::class,static function($event)use(&$paid):void {$paid[]=(int)$event->invoice->id;});
+$send=static function($op,$binding)use($compose,$state):int {$before=$state->writes;[$engine,$writer]=$compose($binding);$engine->run($op->id,$writer);return $state->writes-$before;};
+// Inside core's payment transaction Domains reads no customer row, so it cannot lock one.
+$userReads=0;DB::listen(static function($q)use(&$userReads):void {
+    if(!str_contains($q->sql,'from "users"')){return;}
+    $calls=array_map(static fn($f)=>($f['class']??'').'::'.$f['function'],debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS));
+    // Core's addPayment transaction, before its after-commit callbacks run.
+    if(in_array('App\\Helpers\\ExtensionHelper::addPayment',$calls,true)&&!in_array('Illuminate\\Database\\DatabaseTransactionsManager::commit',$calls,true)&&DB::transactionLevel()>0){$userReads++;}
 });
-// A real native receipt triggers Paid and afterCommit; no renewal closure or daily sweep has run.
-DB::transaction(fn()=>InvoiceTransaction::create(['invoice_id'=>$bill->id,'amount'=>$op->amount,'fee'=>'0.00','status'=>'succeeded']));
-same('renewal_cancelled_unpaid',$paidOutcome?->kind,'Paid mail must see the cancelled renewal before any sweep');
-same('rejected',$op->fresh()->state,'Native late payment cannot revive cancelled renewal authority');
-$before=$state->writes;[$engine,$writer]=$compose($b);$engine->run($op->id,$writer);
-same($before,$state->writes,'Cancelled renewal payment sends nothing');
-same('2027-10-18',$d->fresh()->provider_expires_at->format('Y-m-d'),'Cancelled renewal retains expiry');
-same(1,InvoiceTransaction::where('invoice_id',$bill->id)->count(),'Keep the actual late receipt');
-// Even a partial/processing receipt must close authority before native settlement erases Cancelled.
+
+// A full receipt on a cancelled renewal: recorded, the invoice stays cancelled, credited once after commit.
+[$op,$d,$b,$bill]=$makeRenewal(placeholderComFixtureName('cancelled-renewal-payment-placeholder.com'),false);
+$clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');$bill->update(['status'=>'cancelled']);
+$before=$cash();$reads=$userReads;
+ExtensionHelper::addPayment($bill,null,$op->amount,'0.00','cancelled-full');
+same($reads,$userReads,'The payment transaction takes no customer lock for a cancelled renewal');
+same('succeeded',$bill->transactions()->sole()->status->value,'The payment is recorded');
+same('cancelled',$bill->fresh()->status,'The cancelled renewal invoice stays cancelled');
+same([],$paid,'Paid never fires for a cancelled renewal invoice');
+same('rejected',$op->fresh()->state,'The renewal closes unsent after commit');
+same($before+PricingRule::minor($op->amount),$cash(),'The payment returns once as account credit');
+ExtensionHelper::addPayment($bill->fresh(),null,$op->amount,'0.00','cancelled-full');
+(new Refunds($clock))->creditRenewalReceipts((int)$bill->id);
+same(1,$bill->transactions()->count(),'A gateway replay keeps one receipt');
+same($before+PricingRule::minor($op->amount),$cash(),'A replay and a second pass credit nothing more');
+same(0,$send($op,$b),'A cancelled renewal sends nothing');
+same('2027-10-18',$d->fresh()->provider_expires_at->format('Y-m-d'),'A cancelled renewal keeps its expiry');
+
+// Processing then settled parts: the processing receipt closes the renewal, so later parts take the native late path (the
+// invoice turns paid) and the refund sweep returns each settled part once; none revives the renewal.
 [$partial,$pd,$pb,$pi]=$makeRenewal(placeholderComFixtureName('cancelled-partial-payment-placeholder.com'),false);
-$pi->update(['status'=>'cancelled']);
-App\Helpers\ExtensionHelper::addProcessingPayment($pi,null,'1.00','0.00','cancelled-partial');
-same('rejected',$partial->fresh()->state,'Processing late receipt closes the cancelled renewal');
-App\Helpers\ExtensionHelper::addPayment($pi,null,'1.00','0.00','cancelled-partial');
-App\Helpers\ExtensionHelper::addPayment($pi,null,\Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($partial->amount)-100),'0.00','cancelled-rest');
-$closed=$partial->fresh()->getRawOriginal();
-App\Helpers\ExtensionHelper::addPayment($pi,null,'1.00','0.00','cancelled-partial');
-same($closed,$partial->fresh()->getRawOriginal(),'Repeated payment cannot replace closed authority');
-same(2,$pi->transactions()->count(),'Gateway replay keeps the two actual late receipts');
-same('renewal_cancelled_unpaid',$presenter->invoiceOutcome($user,(int)$pi->id)?->kind,'Partials retain the same closed mail outcome');
-[$engine,$writer]=$compose($pb);$engine->run($partial->id,$writer);
-same($before,$state->writes,'Partial settlement and replay never send a cancelled renewal');
+$pi->update(['status'=>'cancelled']);$before=$cash();
+ExtensionHelper::addProcessingPayment($pi,null,'1.00','0.00','cancelled-partial');
+same('rejected',$partial->fresh()->state,'A processing receipt closes the cancelled renewal');
+same($before,$cash(),'Processing money is not credited yet');
+ExtensionHelper::addPayment($pi,null,'1.00','0.00','cancelled-partial');
+ExtensionHelper::addPayment($pi,null,PricingRule::decimal(PricingRule::minor($partial->amount)-100),'0.00','cancelled-rest');
+ExtensionHelper::addPayment($pi,null,'1.00','0.00','cancelled-partial');
+same(2,$pi->transactions()->count(),'A gateway replay keeps the two actual receipts');
+$returns=new Refunds($clock);$returns->retryPending();$returns->retryPending();
+same(['paid','rejected',$before+PricingRule::minor($partial->amount)],[$pi->fresh()->status,$partial->fresh()->state,$cash()],'Settled parts on the closed renewal return once');
+same(0,$send($partial,$pb),'Partial settlement never sends a cancelled renewal');
+
 // A still-pending invoice remains payable through the same native path.
 [$normal,$nd,$nb,$ni]=$makeRenewal(placeholderComFixtureName('pending-normal-payment-placeholder.com'),false);
-// Observe the receipt hook alone: other native payment listeners are outside its lock contract.
-$ordinaryUserReads=[];$observeOrdinary=true;
-DB::listen(static function($q)use(&$ordinaryUserReads,&$observeOrdinary):void{if($observeOrdinary&&str_contains($q->sql,'from "users"')){$ordinaryUserReads[]=$q->sql;}});
-DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::beforePayment((int)$ni->id,$clock));
-$observeOrdinary=false;same([],$ordinaryUserReads,'An ordinary renewal receipt takes no owner lock from the payment hook');
-App\Helpers\ExtensionHelper::addPayment($ni,null,$normal->amount,'0.00','normal-renewal');
-same(null,$presenter->invoiceOutcome($user,(int)$ni->id),'Ordinary payment retains ordinary paid mail');
-[$engine,$writer]=$compose($nb);$engine->run($normal->id,$writer);
-same($before+1,$state->writes,'Pending invoice payment still sends one renewal');
-// An in-flight callback must record its real result without reviving cancelled authority.
+$paid=[];$reads=$userReads;ExtensionHelper::addPayment($ni,null,$normal->amount,'0.00','normal-renewal');
+same($reads,$userReads,'An ordinary renewal receipt takes no customer lock in the payment transaction');
+same(['paid',[(int)$ni->id]],[$ni->fresh()->status,$paid],'An ordinary renewal invoice still becomes Paid');
+same(1,$send($normal,$nb),'A pending invoice payment still sends one renewal');
+
+// A processing callback that settles after cancellation keeps the real gateway result and returns only settled money.
 require __DIR__.'/Support/reminder-mail.php';
-$cash=static fn()=>\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)(\App\Models\Credit::where('user_id',$user->id)->where('currency_code','USD')->value('amount')??'0.00'));
 foreach(['succeeded','failed'] as $settles){
     [$processing,$xd,$xb,$xi]=$makeRenewal(placeholderComFixtureName('cancelled-processing-'.$settles.'-placeholder.com'),false);
-    App\Helpers\ExtensionHelper::addProcessingPayment($xi,null,$processing->amount,'0.00','processing-before-cancel-'.$settles);
-    $xi->refresh()->update(['status'=>'cancelled']);$callbackOutcome=null;
-    Event::listen(\App\Events\Invoice\Paid::class,static function($event)use($xi,$presenter,$user,&$callbackOutcome):void {
-        if($event->invoice->id===$xi->id){DB::afterCommit(static function()use($xi,$presenter,$user,&$callbackOutcome):void {$callbackOutcome=$presenter->invoiceOutcome($user,(int)$xi->id);});}
-    });
-    if($settles==='succeeded'){App\Helpers\ExtensionHelper::addPayment($xi,null,$processing->amount,'0.00','processing-before-cancel-'.$settles);}
+    ExtensionHelper::addProcessingPayment($xi,null,$processing->amount,'0.00','processing-before-cancel-'.$settles);
+    $xi->refresh()->update(['status'=>'cancelled']);$beforeCredit=$cash();
+    if($settles==='succeeded'){ExtensionHelper::addPayment($xi,null,$processing->amount,'0.00','processing-before-cancel-'.$settles);}
     else{$xi->transactions()->sole()->update(['status'=>'failed']);}
-    same($settles,$xi->transactions()->sole()->status->value,'Cancelled callback retains the real gateway result');
-    same('rejected',$processing->fresh()->state,'In-flight settlement keeps cancelled renewal execution closed');
-    if($settles==='succeeded'){same('renewal_funds_expired',$callbackOutcome?->kind,'Paid callback sees closed-renewal mail before any sweep');}
-    $sent=$state->writes;[$engine,$writer]=$compose($xb);$engine->run($processing->id,$writer);
-    same($sent,$state->writes,'Existing processing callback cannot send the cancelled renewal');
-    $beforeCredit=$cash();$refunds=new \Paymenter\Extensions\Servers\Domains\Services\Refunds($clock);
-    $refunds->creditRejected($processing->id);$refunds->creditRejected($processing->id);
-    same($beforeCredit+($settles==='succeeded'?\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($processing->amount):0),$cash(),'Only settled money returns once');
+    // A failed callback moved no money: the renewal stays unpaid on its cancelled invoice for the normal unpaid retirement.
+    same([$settles,'cancelled',$settles==='succeeded'?'rejected':'awaiting_payment'],[$xi->transactions()->sole()->status->value,$xi->fresh()->status,$processing->fresh()->state],'The callback keeps its real result and the renewal stays closed');
+    same(0,$send($processing,$xb),'A processing callback cannot send the cancelled renewal');
+    (new Refunds($clock))->creditRejected($processing->id);
+    same($beforeCredit+($settles==='succeeded'?PricingRule::minor($processing->amount):0),$cash(),'Only settled money returns, once');
     if($settles==='succeeded'){
         \Paymenter\Extensions\Servers\Domains\Services\ReminderSchedules::enroll($processing->server_id);
         $notices=new \Paymenter\Extensions\Servers\Domains\Services\Reminders($clock,$renewBindings);
-        expect($notices->remind($xd->id),'Settled cancelled receipt sends the existing return notice');
-        same(false,$notices->remind($xd->id),'Return notice sends once');
-        same('domains_domain_order_refunded',\Illuminate\Support\Facades\Mail::queued(\Paymenter\Extensions\Servers\Domains\Mail\DomainNotice::class)->last()->emailTemplate->key,'Closed renewal uses the return notice');
+        expect($notices->remind($xd->id),'A settled cancelled receipt sends the return notice');
+        same(false,$notices->remind($xd->id),'The return notice sends once');
+        same('domains_domain_order_refunded',\Illuminate\Support\Facades\Mail::queued(\Paymenter\Extensions\Servers\Domains\Mail\DomainNotice::class)->last()->emailTemplate->key,'A closed renewal uses the return notice');
     }
 }
-// Deterministic stale-read/current-read seam: change real stored rows after the seed SELECT has returned.
-// SQLite cannot prove MariaDB repeatable-read or deadlocks; this covers the unsafe state-filter decision and same-invoice retry.
-\Paymenter\Extensions\Servers\Domains\Services\RenewalRetrySchema::install();
-$staleFailures=[];
-foreach(['held','retry'] as $transition){
-    [$prior,$sd,$sb,$si]=$makeRenewal(placeholderComFixtureName('cancelled-stale-'.$transition.'-placeholder.com'),false);
-    $key='stale-processing-'.$transition;App\Helpers\ExtensionHelper::addProcessingPayment($si,null,$prior->amount,'0.00',$key);
-    $si->refresh()->update(['status'=>'cancelled']);DB::table('domains_operations')->where('id',$prior->id)->update(['state'=>'running']);
-    $armed=true;$currentId=$prior->id;
-    DB::listen(static function($q)use(&$armed,&$currentId,$prior,$si,$transition):void{
-        if($armed&&str_starts_with($q->sql,'select * from "domains_operations"')&&str_contains($q->sql,'"invoice_id" = ?')&&in_array($si->id,$q->bindings)){
-            $armed=false;DB::table('domains_operations')->where('id',$prior->id)->update(['state'=>$transition==='held'?'held':'rejected']);
-            if($transition==='retry'){$row=$prior->getRawOriginal();unset($row['id']);$row['state']='queued';$row['operation_key'].=':replacement:1';$row['retry_number']=1;$currentId=(int)DB::table('domains_operations')->insertGetId($row);}
-        }
-    });
-    App\Helpers\ExtensionHelper::addPayment($si,null,$prior->amount,'0.00',$key);
-    $current=\Paymenter\Extensions\Servers\Domains\Models\Operation::findOrFail($currentId);
-    if($current->state!=='rejected'){$staleFailures[]=$transition.': cancelled authority remains '.$current->state;}
-    same('succeeded',$si->transactions()->sole()->status->value,'Stale seed preserves the actual callback settlement');
-}
-same([],$staleFailures,'Retained renewal membership reaches current locks and closes current authority');
 
-// Native addPayment already owns the invoice. An aborted lock attempt must roll back and accept a replay once.
-[$victim,$vd,$vb,$vi]=$makeRenewal(placeholderComFixtureName('cancelled-lock-victim-placeholder.com'),false);$vi->update(['status'=>'cancelled']);
-$abortOnce=true;DB::listen(static function($q)use(&$abortOnce):void {if($abortOnce&&str_contains($q->sql,'from "users"')){$abortOnce=false;throw new \Illuminate\Database\DeadlockException('Deadlock found when trying to get lock; try restarting transaction');}});
-try{App\Helpers\ExtensionHelper::addPayment($vi,null,$victim->amount,'0.00','lock-victim');throw new RuntimeException('Expected payment abort');}catch(\Illuminate\Database\DeadlockException){}
-same(0,$vi->transactions()->count(),'Lock victim rolls back its receipt');same('cancelled',$vi->fresh()->status,'Aborted payment does not mark invoice Paid');
-App\Helpers\ExtensionHelper::addPayment($vi,null,$victim->amount,'0.00','lock-victim');
-same('succeeded',$vi->transactions()->sole()->status->value,'Same gateway event settles after retry');same('rejected',$victim->fresh()->state,'Replayed payment still closes cancelled renewal');
+// A missed or failed after-commit handler: the payment is recorded, the invoice stays cancelled, nothing is sent, and
+// the scheduled sweep returns the money exactly once.
+foreach(['failed','missed'] as $case){
+    [$late,$ld,$lb,$li]=$makeRenewal(placeholderComFixtureName('cancelled-handler-'.$case.'-placeholder.com'),false);
+    $li->update(['status'=>'cancelled']);$before=$cash();
+    if($case==='failed'){$abort=true;DB::listen(static function($q)use(&$abort):void {if($abort&&str_contains($q->sql,'from "users"')&&in_array('creditRenewalReceipts',array_column(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS),'function'),true)){$abort=false;throw new \Illuminate\Database\DeadlockException('Deadlock found when trying to get lock; try restarting transaction');}});}
+    else{app()->bind(Refunds::class,static fn()=>throw new RuntimeException('Synthetic lost worker'));}
+    ExtensionHelper::addPayment($li,null,$late->amount,'0.00','handler-'.$case);
+    app()->offsetUnset(Refunds::class);$abort=false;
+    same(['succeeded','cancelled','awaiting_payment',$before],[$li->transactions()->sole()->status->value,$li->fresh()->status,$late->fresh()->state,$cash()],'The receipt is recorded and the invoice stays cancelled: '.$case);
+    same(0,$send($late,$lb),'A missed handler sends nothing: '.$case);
+    $refunds=new Refunds($clock);$account=Account::where('server_id',$late->server_id)->sole();
+    $refunds->creditRetired($account);$refunds->creditRetired($account);
+    same(['rejected',$before+PricingRule::minor($late->amount)],[$late->fresh()->state,$cash()],'The sweep credits the payment exactly once: '.$case);
+    same(0,$send($late,$lb),'The swept renewal sends nothing: '.$case);
+}
 
 // Rejected receipt rerouting must not close the target invoice as a side effect.
 [$target,$td,$tb,$ti]=$makeRenewal(placeholderComFixtureName('cancelled-payment-rerouting-placeholder.com'),false);
 $ti->update(['status'=>'cancelled']);$routed=$ni->transactions()->sole();$routed->invoice_id=$ti->id;
 commerceReject(fn()=>$routed->save());
-same('awaiting_payment',$target->fresh()->state,'Immutable routing refuses before the payment closure hook');
+same('awaiting_payment',$target->fresh()->state,'Immutable routing refuses the move');
 same(0,$ti->transactions()->count(),'Receipt rerouting adds no payment to the target invoice');
-echo "Cancelled renewal payment closes authority and exposes closed mail before any sweep.\n";$nativeSuccessful=true;
+echo "A cancelled renewal payment is recorded and returned once as account credit.\n";$nativeSuccessful=true;

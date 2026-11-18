@@ -101,7 +101,7 @@ final class DomainBilling
             });
             return $invoice->fresh();
         };
-        if ($actor !== null) { return DB::transaction(fn () => $issue(HoldingLocks::take($seed, catalogue: $this->catalogue))); }
+        if ($actor !== null) { return FreshTransaction::run(fn () => $issue(HoldingLocks::take($seed, catalogue: $this->catalogue))); }
         $decision = MoneyDecisions::run(new MoneyRequest($seed, self::KIND, $domainId), function (array $l) use ($issue): ?Invoice {
             // An explicit composition reads the same already locked catalogue rows as the native entry point.
             if ($this->catalogue !== null) { $l['offer'] = $this->catalogue->holding(AccountBindings::binding($l['account']), $l['tld'], $l['prices']); }
@@ -139,7 +139,7 @@ final class DomainBilling
             $this->requireRequest($l,$manual,1,true);
             return [$b,$l['stamp'],new \Paymenter\Extensions\Servers\Domains\Data\RenewalRequest($d->id,$d->authority_generation,$d->confirmed_revision,$d->provider_expires_at->format('Y-m-d'),$d->provider_domain_id,manual:$manual)];
         };
-        if($manual){$captured=DB::transaction(fn()=>$capture(HoldingLocks::take($d,catalogue:$this->catalogue)));}
+        if($manual){$captured=FreshTransaction::run(fn()=>$capture(HoldingLocks::take($d,catalogue:$this->catalogue)));}
         else{
             $decision=MoneyDecisions::run(new MoneyRequest($d,self::KIND,(int)$d->id),function(array $l)use($capture):?array{
                 if($this->catalogue!==null){$l['offer']=$this->catalogue->holding(AccountBindings::binding($l['account']),$l['tld'],$l['prices']);}

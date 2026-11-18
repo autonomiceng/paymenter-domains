@@ -21,9 +21,15 @@ final class NativeDomainGuard
         Domain::updating(static function (Domain $d): void {
             if ($d->isDirty('price_mode') || (!$d->attachingAdoption() && $d->isDirty('billing_managed'))) { throw new \DomainException('Managed pricing authority requires a dedicated audited transition.'); }
         });
-        InvoiceTransaction::creating(function(InvoiceTransaction $payment):void {
-            if(Operation::where('invoice_id',$payment->invoice_id)->where('funding_basis','complimentary')->exists()){throw new \DomainException('Complimentary receipts cannot accept payments.');}
-            RenewalCycles::beforePayment((int)$payment->invoice_id,$this->clock);
+        // Core records every receipt. Domains takes no locks inside its payment transaction: a cancelled renewal invoice stays
+        // cancelled (Invoice::updating below), and the money returns as account credit after commit (Refunds::creditRenewalReceipts).
+        InvoiceTransaction::saved(static function(InvoiceTransaction $payment):void {
+            $invoice=(int)$payment->invoice_id;
+            if(!Operation::where('invoice_id',$invoice)->where(static fn($q)=>$q->where('action','renew')->orWhere('funding_basis','complimentary'))->exists()){return;}
+            DB::afterCommit(static function()use($invoice):void {
+                try{app(Refunds::class)->creditRenewalReceipts($invoice);}
+                catch(\Throwable $e){\Illuminate\Support\Facades\Log::warning('Domains renewal receipt credit deferred to scheduler.',['invoice_id'=>$invoice,'exception_class'=>$e::class]);}
+            });
         });
         foreach (['updating', 'deleting'] as $event) {
             InvoiceTransaction::$event(static function (InvoiceTransaction $payment) use ($event): void {
@@ -39,8 +45,6 @@ final class NativeDomainGuard
                 }
             });
         }
-        // Immutable receipt routing is checked first; settlement must not close a different invoice.
-        InvoiceTransaction::updating(fn (InvoiceTransaction $payment) => RenewalCycles::beforePayment((int) $payment->invoice_id, $this->clock, (int) $payment->id));
         Service::updating(fn (Service $s) => $this->saving($s));
         Service::deleting(static function (Service $s): void {
             if (Domain::whereIn('service_id', self::ids($s))->exists()) { NativeServiceRefusal::notify($s,'delete'); throw new \DomainException('Managed holding services are retained.'); }
@@ -96,6 +100,11 @@ final class NativeDomainGuard
             });
         }
         Invoice::updating(static function (Invoice $invoice): void {
+            // Marked Paid, core would run Paid and RenewalFunding would send this still-open renewal. Its money becomes account
+            // credit instead. A renewal closed before the payment keeps the native late path: the invoice turns paid, then returns.
+            if($invoice->status==='paid'&&$invoice->getRawOriginal('status')==='cancelled'&&Operation::whereIn('invoice_id',self::ids($invoice))->where('action','renew')->whereIn('state',Refunds::OPEN)->exists()){
+                $invoice->status='cancelled';NativeServiceRefusal::notifyClosedInvoice($invoice);
+            }
             if($invoice->isDirty('status')&&Operation::whereIn('invoice_id',self::ids($invoice))->where('funding_basis','complimentary')->exists()){throw new \DomainException('Complimentary receipts stay paid.');}
             if ($invoice->isDirty(['id', 'user_id', 'currency_code', 'due_at']) && Operation::whereIn('invoice_id', self::ids($invoice))->exists()) {
                 throw new \DomainException('Issued domain invoice routing and calendar are immutable.');

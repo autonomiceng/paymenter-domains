@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use App\Models\{Invoice,InvoiceItem,InvoiceTransaction,Service,ServiceCancellation};
+use App\Models\{Invoice,InvoiceItem,Service,ServiceCancellation};
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Adoption,Domain,Operation};
@@ -101,13 +101,14 @@ final class NativeCancellation
                 ->merge(Operation::where('service_id',$seed->id)->whereNotNull('invoice_id')->pluck('invoice_id'))->unique()->sort()->values();
             $invoices=Invoice::whereKey($invoiceIds)->orderBy('id')->lockForUpdate()->get();
             $items=InvoiceItem::whereIn('invoice_id',$invoiceIds)->orderBy('id')->lockForUpdate()->get();
-            $money=InvoiceTransaction::whereIn('invoice_id',$invoiceIds)->orderBy('id')->lockForUpdate()->get();
             [$orders, $services]=HoldingNativeLocks::lockServices($items->where('reference_type',$seed->getMorphClass())->pluck('reference_id')->push($seed->id)->unique()->all());
             $service=$services->firstWhere('id',$seed->id);
             if(!$service){self::refuse('This domain changed while you were saving. Reload the page and try again.',(int)$seed->id,$kind);}
             DB::table('domains_native_intents')->where('service_id',$seed->id)->lockForUpdate()->get();
             $domains=Domain::where('service_id',$seed->id)->orderBy('id')->lockForUpdate()->get();
             $ops=Operation::where('service_id',$seed->id)->orderBy('id')->lockForUpdate()->get();
+            // Payment rows of the locked invoices, last (HoldingNativeLocks::transactions).
+            $money=HoldingNativeLocks::transactions($invoiceIds);
             if($ops->whereNotNull('invoice_id')->pluck('invoice_id')->diff($invoiceIds)->isNotEmpty()){
                 self::refuse('This domain changed while you were saving. Reload the page and try again.',(int)$seed->id,$kind);
             }
@@ -169,7 +170,7 @@ final class NativeCancellation
                 DB::table('domains_native_intents')->insertOrIgnore(['service_id'=>$seed->id,'kind'=>$kind,'created_at'=>now()]);
             }
         };
-        if(DB::transactionLevel()===0){DB::transaction($write);}else{$write();}
+        if(DB::transactionLevel()===0){FreshTransaction::run($write);}else{$write();}
     }
     private static function retained(ServiceCancellation $c): void
     {

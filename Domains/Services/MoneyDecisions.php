@@ -20,7 +20,7 @@ final class MoneyDecisions
             for ($attempt = 0; $attempt < 2; $attempt++) {
                 $scope = $scoped ? new InvoiceScope($request->invoiceId) : null;
                 try {
-                    $value = DB::transaction(static function () use ($request, $decide, $scope) {
+                    $value = FreshTransaction::run(static function () use ($request, $decide, $scope) {
                         // End the guard after commit, before the decision's dispatch callbacks run.
                         DB::afterCommit(static function (): void { self::$running = false; });
                         return $decide(HoldingLocks::take($request->seed, $request->staffId, released: $request->released, scope: $scope));
