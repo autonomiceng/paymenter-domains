@@ -1,5 +1,5 @@
 <?php
-// Static render of the Enom answer form, with and without no-order evidence; MIT, Copyright (c) 2026 Autonomic Engineering.
+// Static render of the Enom answer form; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/staff-operation-fixture.php';
@@ -42,12 +42,11 @@ $render = static function ($test, string $name) use ($out, $css): void {
     $html = str_replace('</head>', '<style>'.$css.'</style>'.\Livewire\Mechanisms\FrontendAssets\FrontendAssets::styles().'</head>', $html);
     expect(!str_contains($html, 'account-enom'), 'No synthetic credential'); writeRenderArtifact($out.'/'.$name.'.html', $html);
 };
-foreach (['absence' => 'absent', 'present' => ''] as $name => $domainFault) {
+foreach (['present' => ''] as $name => $domainFault) {
     [$op, $binding] = $prepare(placeholderComFixtureName('answer-'.$name.'-placeholder.com'), 'null');
     HistoryAcceptances::save(new HistoryAcceptance($binding, 'America/Los_Angeles', 60, 2592000, 'enom_registration_v1'));
     $history->domain = $wire; $history->sent = new DateTimeImmutable($op->attempt['dispatch_attempted_at']); $observation->fault = $domainFault;
     $clock->instant = $history->sent->modify('+25 hours'); Cache::flush(); $scheduled->run($op->id);
-    same($name === 'absence', isset($op->fresh()->policy['enom_absence']), 'Scheduled read evidence: '.$name);
     $page = Livewire::actingAs($staff)->test(ViewOperation::class, ['record' => $op->id])->mountAction('enom_answer')->set('mountedActions.0.data.outcome', 'not_processed');
     $render($page, 'enom-answer-'.$name);
 }

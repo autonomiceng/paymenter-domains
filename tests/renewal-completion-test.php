@@ -45,8 +45,9 @@ config(['domains.hidden_endings'=>[]]);
 [$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-transient-placeholder.com')); [$engine,$writer,$completion]=$compose($b);
 same('pending',$engine->run($op->id,$writer)->state,'Original transient cycle sent');
 $state->fail=ReadCommand::Info;
-for($i=0;$i<6;$i++){ $completion->run($op->id); }
-same(0,$op->fresh()->policy['renewal_polls']??0,'Six failed reads do not exhaust covered observations');
+for($i=0;$i<6;$i++){ $completion->run($op->id); $clock->instant=$clock->now()->modify('+10 minutes'); }
+same(\Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT,$op->fresh()->policy['renewal_polls']??0,'Failed reads count toward the limit and checks stop there');
+$op->fresh()->update(['policy'=>[...$op->fresh()->policy,'renewal_polls'=>0]]); \Illuminate\Support\Facades\Cache::flush();
 $state->fail=null; $state->expiry='2028-10-18'; $state->charge='8.00';
 same('succeeded',$completion->run($op->id)->state,'Valid original evidence completes after transient outage');
 [$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-lower-actual-placeholder.com')); [$engine,$writer,$completion]=$compose($b);

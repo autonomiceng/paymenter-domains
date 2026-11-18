@@ -78,11 +78,9 @@ require_once __DIR__.'/staff-panel.php';
         $auth->setProcessing($binding->serverId,false);
     }
     // Staff can restart exhausted read polling with read permissions alone.
-    // The covering history contract resumes exhausted reads once per contract revision; that read finds no order here.
-    $op->refresh();$op->update(['policy'=>[...array_diff_key($op->policy,['history_scan'=>true]),'reconciliation'=>[...$op->policy['reconciliation'],'polls'=>5]]]);
-    $s->fault='none';$s->calls=[];Cache::flush();$rebuild()->run($op->id);
-    same(5,$op->fresh()->policy['history_resumption']['prior_polls']??null,'Exhausted reads resume once for the covering contract');
-    expect(in_array('GetOrderList',$s->calls,true),'The resumed read reads the order history');$unresolved($op,'Resumed read');
+    // Every check counts, so the fault checks above exhausted reads; the covering history contract resumed them once
+    // for its revision, and those resumed reads read the order history (asserted per fault).
+    same(5,$op->fresh()->policy['history_resumption']['prior_polls']??null,'Exhausted reads resume once for the covering contract');$unresolved($op,'Resumed read');
     // The next minute: the resumed read used this minute's account read budget.
     $clock->at=$clock->at->modify('+61 seconds');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
     $op->refresh();$op->update(['policy'=>[...$op->policy,'reconciliation'=>[...$op->policy['reconciliation'],'polls'=>5]]]);

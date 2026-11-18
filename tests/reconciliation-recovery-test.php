@@ -182,7 +182,7 @@ $clock->instant = $clock->now()->modify('+3 days'); config(['domains.enom_identi
 same(2592000, HistoryAcceptances::load($binding)->retentionSeconds, 'The saved TEST registration contract is raised to 30 days');
 $turns = [];
 foreach ([1, 2, 3] as $n) { $day->forms = []; \Illuminate\Support\Facades\Cache::flush(); $state = $denseReconcile->run($dense->id)->state; $turns[] = [$state, count($day->forms), $dense->fresh()->policy['reconciliation']['polls']]; }
-same([['uncertain', 19, 0], ['uncertain', 19, 0], ['uncertain', 17, 1]], $turns, 'The new contract resumes the exhausted reads once; after six domain reads, two turns of 17 orders continue uncounted, and the full no-match scan counts once');
+same([['uncertain', 19, 1], ['uncertain', 19, 2], ['uncertain', 17, 3]], $turns, 'The new contract resumes the exhausted reads once; every completed turn counts, the two progressing turns of 17 orders and the full no-match scan');
 $scan = $dense->fresh()->policy['history_scan']['state'];
 same([49, 49, true, 2, 0], [$scan['in_window'], $scan['resolved'], $scan['complete'], $scan['refusal_totals']['read_budget'], count(array_filter($scan['orders'], fn ($o) => str_starts_with($o, 'c:')))], 'The saved scan holds the counts and the sanitized refusal totals');
 same(5, $dense->fresh()->policy['history_resumption']['prior_polls'], 'The resumption records the exhausted read count');

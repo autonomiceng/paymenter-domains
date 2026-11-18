@@ -28,6 +28,21 @@ final class RequestContext
     private int $exchanges = 0;
     /** Physical exchanges entered, failed ones included. Reader construction, limiter and send refusals never count. */
     public function exchanges(): int { return $this->exchanges; }
+    private ?DomainSnapshot $seenDomain = null;
+    private ?\Closure $observer = null;
+    /** Called with each owned expiry and charge candidate as its read returns (RenewalProof saves renewal evidence). */
+    public function observe(\Closure $observer): void { $this->observer = $observer; }
+    /** Renewal proof sink: every registrar read reports here what it saw, before any later read in the check can fail. */
+    public function sawDomain(DomainSnapshot $domain): void
+    {
+        if ($domain->owned !== true || $domain->expiry === null) { return; }
+        if ($this->observer) { ($this->observer)($domain); }
+        if ($this->seenDomain === null || substr($domain->expiry->value, 0, 10) > substr($this->seenDomain->expiry->value, 0, 10)) { $this->seenDomain = $domain; }
+    }
+    public function sawCandidate(OrderEvidence $candidate): void
+    { if ($this->observer) { ($this->observer)($candidate); } }
+
+    public function highestExpiry(): ?DomainSnapshot { return $this->seenDomain; }
     private int $failedExchanges = 0;
     /** Exchanges that got no registrar reply (transport failure or timeout). A registrar error reply is not one. */
     public function failedExchanges(): int { return $this->failedExchanges; }

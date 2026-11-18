@@ -114,7 +114,8 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     {
         Query::requireName($name); $reply = $this->read(Request::domainInfo($name), $context);
         if ($reply->outcome !== Outcome::Success) { return $this->neutral($reply); }
-        return $this->neutral($reply, new Evidence(domain: $this->snapshot($name, $reply, $context->now())));
+        $domain = $this->snapshot($name, $reply, $context->now()); $context->sawDomain($domain);
+        return $this->neutral($reply, new Evidence(domain: $domain));
     }
     private function snapshot(string $name, RegistrarResult $reply, \DateTimeImmutable $observedAt): DomainSnapshot
     {

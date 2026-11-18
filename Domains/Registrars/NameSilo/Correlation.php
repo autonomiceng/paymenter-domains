@@ -68,7 +68,7 @@ final class Correlation
                     if (($row['status'] ?? null) === 'Processed' && !array_key_exists('credited_amount', $row) && !array_key_exists('credited_date', $row)) {
                         try { $charge = new Money($row['subtotal'] ?? '', 'USD'); } catch (\InvalidArgumentException|\TypeError) {}
                     }
-                    $candidates[] = new OrderEvidence($attempt->binding, $attempt->query, $charge, $id, $date);
+                    $candidates[] = new OrderEvidence($attempt->binding, $attempt->query, $charge, $id, $date); $context->sawCandidate(end($candidates));
                     if (count($candidates) === 200) { return new Evidence(candidates: $candidates); }
                 }
             }
