@@ -50,7 +50,7 @@
     $unreadRows = ($recordFamilies ?? null) && collect($recordFamilies['rows'] ?? [])->contains('state', 'unknown');
     $readAt = isset($recordFamilies) ? ($recordFamilies['at'] ?? null) : null;
     // If every record is waiting on its first read, the section note gives that state once.
-    $allUnread = ($recordFamilies ?? null) && collect($settings)->every(function ($cap) use ($domain) {
+    $allUnread = !$readHeld && ($recordFamilies ?? null) && collect($settings)->every(function ($cap) use ($domain) {
         $section = $domain->management[$cap] ?? [];
         return ($section['family']['state'] ?? null) === 'unknown'
             && empty($section['family']['read_failed']) && empty($section['actions']) && empty($section['current'])

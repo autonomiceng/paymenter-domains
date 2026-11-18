@@ -65,11 +65,14 @@ $filter('server_id',[$active->server_id])->assertCanSeeTableRecords([$doneOp])->
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>'configuration_unavailable','attempt'=>null]);
 $manager=staffUser([Staff::VIEW,'admin.domains.manage',...array_map(StaffOperationReview::permission(...),array_keys(StaffOperationReview::ACTIONS))]); Auth::setUser($manager);
 $page=Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSuccessful();
-$customer = $heldOp->domain->user;
-$page->assertSee('Customer #'.$customer->id)->assertDontSee($customer->email)->assertDontSee('Open customer');
+$customer = staffUser([]);
+$held->newQuery()->whereKey($held->id)->update(['user_id'=>$customer->id]);
+Livewire::actingAs($manager)->test(ViewOperation::class, ['record'=>$heldOp->id])->assertSuccessful()
+    ->assertSee('Customer #'.$customer->id)->assertDontSee($customer->email)->assertDontSee('Open customer');
 $customerReader = staffUser([Staff::VIEW, 'admin.users.view']);
-Livewire::actingAs($customerReader)->test(ViewOperation::class, ['record'=>$heldOp->id])
+Livewire::actingAs($customerReader)->test(ViewOperation::class, ['record'=>$heldOp->id])->assertSuccessful()
     ->assertSee($customer->email)->assertDontSee('Open customer');
+$held->newQuery()->whereKey($held->id)->update(['user_id'=>$held->user_id]);
 Auth::setUser($manager);
 expect(str_contains((string)$page->instance()->getHeading(),'Request #'.$heldOp->id)&&str_contains($page->instance()->getSubheading()->toHtml(),'Under review'),'The line under the heading carries the request state');
 same([Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl()=>'Registrar requests','Request #'.$heldOp->id],$page->instance()->getBreadcrumbs(),'Breadcrumbs');
