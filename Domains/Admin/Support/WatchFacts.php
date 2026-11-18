@@ -210,7 +210,7 @@ final class WatchFacts
         $found=[];foreach($o->facts['queries']??[] as $q){if(($q['name']??null)===$w->canonical_name && ($q['type']??null)==='NS' && ($q['state']??null)==='rrset'){$found=array_values(array_filter(array_column($q['records']??[],'value'),'is_string'));}}
         $observed = $found ? implode(', ', $found) : ($o->dns === 'platform' ? 'Matched the template' : 'Different nameservers');
         $configured = ManagedDnsSetup::usable($profile);
-        if ($o->id !== $w->delegation?->id || self::dnsFailed($w, 'delegation') || ($s && ($s->lastKnown['dns']['stale'] ?? true))) {
+        if ($o->id !== $w->delegation?->id || self::dnsFailed($w, 'delegation') || ($s?->lastKnown['dns']['stale'] ?? true)) {
             return self::fact($observed, 'Previously observed '.self::date($o->started_at).'.'.($configured ? '' : ' Choose an enabled DNS template to compare nameservers.'));
         }
         $expected=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchExpected($w);

@@ -55,6 +55,9 @@ same('external',$form->get('mountedActions.0.data.expected_dns'), 'Changing to a
 $form->call('unmountAction');
 same($before,$stored(),'Closing the assignment form does not replace the saved template');
 $watchQuery->update(['expected_dns'=>null]);
+$before = $stored();
+$mount()->callMountedAction()->assertHasNoActionErrors();
+same($before,$stored(),'A saved template with an unset expectation is not a new deployment assignment');
 $form = $mount()->set('mountedActions.0.data.assignment', $otherKey);
 same(null, $form->get('mountedActions.0.data.expected_dns'), 'A non-default template needs explicit intent even when it lists the deployment hosts');
 $form->callMountedAction()->assertHasActionErrors(['expected_dns']);
@@ -81,9 +84,15 @@ $alerts = fn () => DB::table('domains_watch_notices')->whereIn('kind',['ns_chang
 same(0,$alerts(),'Confirmed different nameservers respect the saved external expectation');
 $mount()->set('mountedActions.0.data.assignment','deployment:'.$other->id.':'.$other->fresh()->revision)
     ->set('mountedActions.0.data.expected_dns','platform')->callMountedAction()->assertHasNoActionErrors();
+// The worker reads the current template revision even when the watch still records an earlier assignment.
+DB::table('domains_watch_profiles')->where('id',$other->id)->increment('revision');
 noticeDns($f, $now+1800, 'external');
 $planner->plan('watch',$id,$uid,$now+1802);
 same(0,$alerts(),'A new matching assignment starts a fresh comparison');
+$before = $stored();
+$form = $mount();
+$form->callMountedAction()->assertHasNoActionErrors();
+same($before,$stored(),'Reconfirming the same assignment after a template edit keeps the watch and its confirmation history');
 noticeDns($f, $now+2700, 'external');
 $planner->plan('watch',$id,$uid,$now+2702);
 same(1,$alerts(),'Two confirmed differences on the new assignment create one ordinary mismatch alert');

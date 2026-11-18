@@ -53,6 +53,9 @@ final class WatchTemplateAssignment
             default => throw new \DomainException('Choose what checks should expect.'),
         };
         $watch->ns_profile_id = $inherit ? null : $profile->id;
-        $watch->profile_revision = $inherit ? 0 : $profile->revision;
+        // Checks already follow the live template revision. Reconfirming the same assignment must keep their history.
+        if ($watch->isDirty(['ns_profile_id', 'expected_dns'])) {
+            $watch->profile_revision = $inherit ? 0 : $profile->revision;
+        }
     }
 }
