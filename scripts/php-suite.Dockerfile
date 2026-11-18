@@ -17,7 +17,7 @@ for package in json.loads(Path('lock.json').read_text()):
         raise SystemExit('Incorrect archive: '+path.name)
 PY
 RUN mkdir /opt/php-suite/runtime && for archive in /opt/php-suite/archives/*.deb; do \
-        dpkg-deb -x "$archive" /opt/php-suite/runtime; done && \
+        dpkg-deb -x "$archive" /opt/php-suite/runtime || exit 1; done && \
     /opt/php-suite/runtime/usr/bin/php8.4 -n -r 'exit(PHP_VERSION === "8.4.27" ? 0 : 1);'
 
 # Install the JS driver and its matching Chromium revision at build time.

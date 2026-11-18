@@ -627,7 +627,10 @@ def lint_files(base=None):
                    and os.fsdecode(p).endswith('.php') and (ROOT/os.fsdecode(p)).is_file()})
 
 def main(*, launch=False):
-    parser = argparse.ArgumentParser(description=__doc__)
+    # The timing receipt is the only argument the host must mount and rewrite.
+    timing_option = argparse.ArgumentParser(add_help=False)
+    timing_option.add_argument('--timings-from', metavar='RECEIPT', help='Prioritize previously failing and faster commands within each category.')
+    parser = argparse.ArgumentParser(description=__doc__, parents=[timing_option])
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument('--suite', choices=CATEGORIES, action='append')
     selection.add_argument('--only', nargs='+', action='extend', metavar='TEST_PATH',
@@ -638,7 +641,6 @@ def main(*, launch=False):
     parser.add_argument('--memory-mib', type=positive_integer, default=2048,
                         help='Worker memory reservation budget; one GiB per parallel worker.')
     parser.add_argument('--fail-fast', action='store_true', help='Kill in-flight process trees on the first failure.')
-    parser.add_argument('--timings-from', metavar='RECEIPT', help='Prioritize previously failing and faster commands within each category.')
     args = parser.parse_args()
     if args.lint_base is not None and args.suite != ['lint']:
         parser.error('--lint-base requires --suite lint alone.')
@@ -662,14 +664,20 @@ def main(*, launch=False):
 
     try:
         suites = manifest()
+        requested = set(args.only or [])
+        unknown = requested - {path for paths in suites.values() for path in paths}
+        if unknown:
+            raise ValueError('Unregistered test path: '+', '.join(sorted(unknown)))
+        selected = ([kind for kind, paths in suites.items() if requested.intersection(paths)] if args.only
+                    else list(dict.fromkeys(args.suite or default_suites())))
+        if 'mariadb' in selected and len(selected) > 1:
+            raise ValueError('Run MariaDB separately from the pinned PHP suites.')
     except BaseException as error:
         setup_failure(setup_output(), error)
         raise
-    if launch and not php_suite.IMAGE_ARCHIVES.is_dir():
-        # MariaDB has its own pinned driver, service and receipt.
-        maria_only = args.suite == ['mariadb'] or (args.only and set(args.only) <= set(suites['mariadb']))
-        if not maria_only:
-            return php_suite.domains(ROOT, sys.argv[1:], history=args.timings_from)
+    if launch and selected != ['mariadb'] and not php_suite.IMAGE_ARCHIVES.is_dir():
+        _, arguments = timing_option.parse_known_args()
+        return php_suite.domains(ROOT, arguments, history=args.timings_from)
     jobs_explicit = args.jobs is not None or 'DOMAINS_TEST_JOBS' in os.environ
     if args.jobs is None:
         try:
@@ -684,12 +692,6 @@ def main(*, launch=False):
         Path(f'/proc/{os.getpid()}/task/{os.getpid()}/children').read_text()
         if not Path('/usr/bin/time').is_file():
             raise ValueError('GNU time (/usr/bin/time) is required for per-command peak RSS.')
-        requested = set(args.only or [])
-        unknown = requested - {path for paths in suites.values() for path in paths}
-        if unknown:
-            raise ValueError('Unregistered test path: '+', '.join(sorted(unknown)))
-        selected = ([kind for kind, paths in suites.items() if requested.intersection(paths)] if args.only
-                    else list(dict.fromkeys(args.suite or default_suites())))
         for name in selected:
             if name != 'lint' and not suites[name]:
                 if args.suite:

@@ -631,8 +631,8 @@ Operation clock regressions cover elapsed fall-back boundaries and native dateti
 
 ## Opt-in MariaDB suite
 
-The required suites always omit `mariadb`. Run it explicitly through the local suite limiter:
-set `TMPDIR` to a private scratch root, `PAYMENTER_TEST_APP` to the pristine pinned 1.5.9
+Run MariaDB separately through the local suite limiter, by suite name or exact MariaDB test paths.
+Set `TMPDIR` to a private scratch root, `PAYMENTER_TEST_APP` to the pristine pinned 1.5.9
 checkout and `CONVERSION_MARIADB_PHP` to a supported host PHP with `pdo_mysql`; then run
 `python3 scripts/test.py --suite mariadb`. No installed application or provider is used.
 Docker or the existing `mariadb:11.4.5` image being absent produces a clear skip receipt;
@@ -692,7 +692,7 @@ With it set, at most two installed lifecycles run concurrently (one with two wor
 Command `started_seconds` and `finished_seconds` are monotonic offsets from run start;
 the finish includes the integrity check, so receipts can verify that commands did not overlap.
 The first failure stops new work; running commands finish by default. `--fail-fast`
-cancels those peers. Runs that include MariaDB run serially.
+cancels those peers. The standalone MariaDB suite runs serially.
 In parallel runs, writes to `Domains/`, even when restored, fail.
 
 Public registry expiry tests use synthetic bootstrap/HTTP bodies, endpoint DNS and clocks.

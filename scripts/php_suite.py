@@ -223,7 +223,10 @@ def domains(root, arguments, *, history=None):
                 env[key] = os.environ[key]
         if history:
             history = Path(history).resolve(strict=True)
+            if not history.is_file():
+                raise ValueError('Timing receipt must be a regular file.')
             mounts[history] = history
+            arguments = [*arguments, '--timings-from', str(history)]
         env.update(NODE_PATH='/opt/php-suite/node_modules', PLAYWRIGHT_BROWSERS_PATH='/opt/php-suite/browsers')
         (root/'.cache').mkdir(exist_ok=True)
         phase = 'container'

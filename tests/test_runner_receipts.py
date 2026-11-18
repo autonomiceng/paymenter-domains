@@ -1,5 +1,6 @@
 """Receipts separate cancelled tests from failures and record the tested Git tree."""
 # MIT, Copyright (c) 2026 Autonomic Engineering.
+import argparse
 import contextlib
 import hashlib
 import importlib.util
@@ -89,6 +90,63 @@ fi
                     if status:
                         self.assertFalse(result.stdout)
                         self.assertIn('exit status 23', result.stderr)
+
+    def test_archive_extraction_stops_on_an_earlier_failure(self):
+        recipe = runner.php_suite.RECIPE.read_text().replace('\\\n', ' ')
+        layer, = [line.removeprefix('RUN ') for line in recipe.splitlines()
+                  if line.startswith('RUN ') and 'dpkg-deb -x' in line]
+        for fail_first in (False, True):
+            with self.subTest(fail_first=fail_first), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                archives = root/'archives'
+                archives.mkdir()
+                if fail_first:
+                    (archives/'a-broken.deb').touch()
+                (archives/'z-working.deb').touch()
+                extract = root/'dpkg-deb'
+                extract.write_text("""#!/bin/sh
+case "$2" in *broken.deb) exit 23 ;; esac
+mkdir -p "$3/usr/bin" && ln -s /bin/true "$3/usr/bin/php8.4"
+""")
+                extract.chmod(0o700)
+                result = subprocess.run(['/bin/sh', '-c', layer.replace('/opt/php-suite', '.')],
+                                        cwd=root, env=dict(PATH=str(root)+':/usr/bin:/bin'), timeout=3)
+                self.assertEqual(result.returncode == 0, not fail_first)
+                self.assertEqual((root/'runtime/usr/bin/php8.4').exists(), not fail_first)
+
+    def test_mariadb_selection_uses_its_host_driver_and_rejects_mixed_runs(self):
+        maria = 'tests/test_schema_mariadb.py'
+        provider = 'tests/provider-test.php'
+        suites = {'mariadb': [maria], 'provider': [provider]}
+        for flags, mixed in ((['--suite', 'mariadb', '--suite', 'mariadb'], False),
+                             (['--only', maria], False),
+                             (['--suite', 'provider', '--suite', 'mariadb'], True),
+                             (['--only', maria, provider], True)):
+            with self.subTest(flags=flags), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                with mock.patch.object(runner, 'manifest', return_value=suites), \
+                     mock.patch.object(runner, 'git_tree', return_value=(None, None)), \
+                     mock.patch.object(sys, 'argv', ['test.py', *flags]), \
+                     mock.patch.dict(os.environ, {'CONVERSION_MARIADB_PHP': '/fixture/php'}, clear=True), \
+                     mock.patch.object(tempfile, 'tempdir', directory), \
+                     mock.patch.object(runner.php_suite, 'IMAGE_ARCHIVES', root/'absent'), \
+                     mock.patch.object(runner.php_suite, 'domains', return_value=91) as container, \
+                     mock.patch.object(runner, 'run', return_value=0) as run, contextlib.redirect_stderr(io.StringIO()):
+                    if mixed:
+                        with self.assertRaises(ValueError):
+                            runner.main(launch=True)
+                        receipt, = root.glob('domains-tests-*/receipt.json')
+                        record = json.loads(receipt.read_text())
+                        self.assertFalse(record['complete'])
+                        self.assertCountEqual(record['selected_suites'], ['mariadb', 'provider'])
+                        run.assert_not_called()
+                    else:
+                        self.assertEqual(runner.main(launch=True), 0)
+                        commands, env = run.call_args.args[:2]
+                        self.assertEqual(commands, [('mariadb', [sys.executable, maria])])
+                        self.assertEqual(env['CONVERSION_MARIADB_PHP'], '/fixture/php')
+                        self.assertEqual(run.call_args.kwargs['jobs'], 1)
+                    container.assert_not_called()
 
     def test_hosted_bundle_uses_the_selected_runtime_even_with_a_different_runc_on_path(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -190,23 +248,43 @@ sudo() {
             self.assertEqual(missing.returncode, 1, missing.stderr)
             self.assertFalse(missing.stdout)
 
-    def test_container_success_requires_a_complete_receipt_on_host(self):
+    def test_container_forwards_mounted_timing_receipt_and_requires_complete_output(self):
         suite = runner.php_suite
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             group = root/'cgroup'/'scope'
             group.mkdir(parents=True)
             (group/'cgroup.subtree_control').write_text('memory')
+            repo = root/'repo'
+            repo.mkdir()
+            timing = root/'prior run.json'
+            timing.write_text('{"results": []}')
+            flags = ['--jobs', '1', '--suite', 'provider']
             def no_receipt(bundle, rootfs, argv, cwd, env, mounts, **options):
+                parser = argparse.ArgumentParser()
+                parser.add_argument('--timings-from', action='append')
+                parsed, other = parser.parse_known_args(argv[2:])
+                self.assertEqual(other, flags)
+                path = parsed.timings_from[-1]
+                self.assertEqual(cwd, repo)
+                self.assertEqual(mounts[cwd/path], timing)
+                self.assertNotIn(cwd/path, options['writable'])
+                self.assertEqual(runner.history(cwd/path), {})
+                self.assertEqual(parsed.timings_from, [str(timing)])
                 return 0
             with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(suite, 'CGROUP', group.parent), \
                  mock.patch.object(suite, 'grant_scope', return_value=group), \
                  mock.patch.object(suite, 'membership', return_value=Path('/scope')), \
                  mock.patch.object(tempfile, 'tempdir', directory), \
                  mock.patch.object(suite, 'image_root', return_value=contextlib.nullcontext((root, 'image'))), \
-                 mock.patch.object(suite, 'run_bundle', no_receipt), contextlib.redirect_stderr(io.StringIO()):
+                 mock.patch.object(suite, 'run_bundle', side_effect=no_receipt) as launch, contextlib.redirect_stderr(io.StringIO()), \
+                 contextlib.chdir(root), mock.patch.object(runner, 'ROOT', repo), \
+                 mock.patch.object(runner, 'manifest', return_value={'provider': [], 'mariadb': []}), \
+                 mock.patch.object(suite, 'IMAGE_ARCHIVES', root/'absent'), \
+                 mock.patch.object(sys, 'argv', ['test.py', '--timings-from', 'old', *flags, '--timings-from='+timing.name]):
                 with self.assertRaises(RuntimeError):
-                    suite.domains(root, [])
+                    runner.main(launch=True)
+                launch.assert_called_once()
             receipt, = root.glob('domains-tests-*/receipt.json')
             self.assertFalse(json.loads(receipt.read_text())['complete'])
 
