@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages;
 use Filament\Actions\{Action, ActionGroup};
+use Illuminate\Contracts\Encryption\DecryptException;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource, OperationResource};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, EnomAnswerAction, Facts, HistoryRecovery, Labels, OperationActions, RegistrarFacts, RequestFacts, RequestRows, Sheet, Staff, StaffReviewHistory, SupportDetails};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head, Row, Value};
@@ -123,9 +124,13 @@ class ViewOperation extends RecordDetailPage
         $invoiceUrl=$op->invoice_id?Facts::invoiceUrl((int)$op->invoice_id):null;
         $domainValue = RequestRows::text($domain?->domain, cause: 'Domain not found.');
         if ($domain !== null) {
-            $tag = DemoData::label(DemoData::is($domain), DomainFacts::test($domain), inline: true);
-            if ($tag->toHtml() !== '') {
-                $domainValue = $domainValue->tagged($tag);
+            try {
+                $tag = DemoData::label(DemoData::is($domain), DomainFacts::test($domain), inline: true);
+                if ($tag->toHtml() !== '') {
+                    $domainValue = $domainValue->tagged($tag);
+                }
+            } catch (DecryptException) {
+                // An unreadable snapshot cannot establish whether this is an offline fixture.
             }
         }
         $rows[]=self::linked(Row::make('Domain', $domainValue),'Open domain',$domainUrl);
