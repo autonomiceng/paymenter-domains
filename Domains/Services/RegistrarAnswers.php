@@ -2,13 +2,16 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence,DateEvidence,ExpiryPrecision,RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 /** An account-specific support answer is evidence, never permission to resend a purchase. */
 class RegistrarAnswers
 {
     private static ?array $writing=null;
+    private const LATER_EXPIRY = 'The registrar now shows a later expiry for this domain, so this renewal can’t be recorded as not processed.';
+    private const POSITIVE_PROOF = 'A check saw a charge or a new expiry for this renewal, so it can’t be recorded as not processed.';
+    private const READ_UNRESOLVED = 'A status check for this renewal is running or did not finish, so it can’t be recorded as not processed. Record Processed if the registrar confirms it, or ask the registrar to check it.';
     public static function guard(Operation $op): void
     {
         $old=$op->getOriginal('policy')['enom_answer']??null;$new=$op->policy['enom_answer']??null;
@@ -69,86 +72,133 @@ class RegistrarAnswers
             ||RenewalProof::held($op)
             ||($d->provider_expires_at!==null&&$d->provider_expires_at->format('Y-m-d')>$before);
     }
-    /** One fresh read, the higher of the domain info and expiry replies, never inside a lock. Not processed returns money, so
-     * it needs a current answer: every read must succeed in time, Enom's Expiry included. A later expiry refuses, and that
-     * proof is saved on the attempt as its read returns (RenewalProof), even when a later read in the same check failed. */
-    private static function requireUnrenewed(Operation $op,Domain $d): void
+    /** The fresh domain and expiry replies must agree on the account and complete in time. */
+    private static function requireUnrenewed(AttemptEvidence $attempt, Clock $clock, \DateTimeImmutable $deadline, RenewalProof $proof): void
     {
-        $before=$op->base_expires_at?->format('Y-m-d');$ctx=null;$binding=null;$confirmed=false;$saved=null;
-        try{
-            $binding=AccountBindings::binding(Account::where('server_id',$op->server_id)->sole());$clock=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class);
-            $deadline=$clock->now()->modify('+30 seconds');
-            // Strict: a failed read throws instead of returning an unknown result.
-            $ctx=new RequestContext($binding,RequestOrigin::Interactive,$deadline,new RequestBudget(4),$clock,Runtime::limiter(),true);
-            $saved=new RenewalProof((int)$op->id,self::identity($op),$binding,$d->domain,$before,$clock);$ctx->observe($saved->saw(...));
-            $reader=app(AccountBindings::class)->reader((int)$op->server_id);$reader->readRenewalDomain($d->domain,$ctx);$info=$ctx->seen()?->domain;
-            // Enom's expiry read can lag or lead its info read (961c40e8): it must answer too, and the higher counts.
-            $expiry=method_exists($reader,'expiry')?$reader->expiry($d->domain,$ctx):null;
-            $confirmed=$info!==null&&($expiry===null||$expiry->status==='success'&&isset($expiry->facts()['expiry']))&&$clock->now()<$deadline;
-        }catch(\PDOException $e){throw $e;}catch(\Throwable){$confirmed=false;}
-        $seen=$ctx?->seen()?->domain;
-        $matches=$seen!==null&&$binding!==null&&$seen->binding->matches($binding)&&$seen->name===$d->domain;
-        if($before!==null&&$matches&&substr($seen->expiry->value,0,10)>$before){
-            try{$saved?->requireSaved();}catch(\RuntimeException){}
-            throw new \DomainException('The registrar now shows a later expiry for this domain, so this renewal can’t be recorded as not processed.');
+        $name = $attempt->query->name; $binding = $attempt->binding;
+        $ctx = null; $confirmed = false;
+        try {
+            $ctx = new RequestContext($binding, RequestOrigin::Interactive, $deadline, new RequestBudget(4), $clock, Runtime::limiter(), true);
+            $ctx->observe($proof->saw(...));
+            $reader = app(AccountBindings::class)->reader($binding->serverId);
+            $reader->readRenewalDomain($name, $ctx);
+            $info = $ctx->highestExpiry();
+            // Enom's dedicated expiry can lag or lead its info reply. Both must answer.
+            $expiry = method_exists($reader, 'expiry') ? $reader->expiry($name, $ctx) : null;
+            $confirmed = $info !== null && $info->binding->matches($binding) && $info->name === $name
+                && ($binding->registrarKey !== 'enom' || $expiry?->status === 'success' && isset($expiry->facts()['expiry']))
+                && $clock->now() < $deadline;
+        } catch (\PDOException $error) { throw $error; }
+        catch (\Throwable) { $confirmed = false; }
+        $seen = $ctx?->highestExpiry();
+        $matches = $seen !== null && $seen->binding->matches($binding) && $seen->name === $name;
+        $before = $attempt->beforeExpiry?->value;
+        if ($before !== null && $matches && substr($seen->expiry->value, 0, 10) > substr($before, 0, 10)) {
+            throw new \DomainException(self::LATER_EXPIRY);
         }
-        if($before===null||!$confirmed||!$matches){
+        if ($before === null || !$confirmed || !$matches) {
             throw new \DomainException('The registrar could not confirm the domain’s expiry just now, so this can’t be recorded as not processed yet. Try again later.');
         }
     }
+
     public static function record(StaffSettingsReview $review,array $input,\DateTimeImmutable $now): void
     {
-        // Actor, account and invoice locks follow the same order as all other financial writers.
         OperationClaims::outside();
         if($review->action!=='enom_answer'||$review->tldId!==null){throw new \DomainException('Registrar answer review required.');}
         $chosen=Operation::findOrFail((int)($input['operation_id']??0));$seed=$chosen->domain()->firstOrFail();
-        // Not processed reads the registrar once more, before any lock: a renewal that went through shows a later expiry.
-        if(($input['outcome']??null)==='not_processed'&&$chosen->action==='renew'){self::requireUnrenewed($chosen,$seed);}
-        $id=FreshTransaction::run(function()use($review,$input,$now,$seed):int{
-            $l=HoldingLocks::take($seed,$review->actorId);$review->lockActor();$review->check();
-            $op=$l['operations']->firstWhere('id',(int)($input['operation_id']??0));$d=$l['domain'];
-            if(!$op||$op->server_id!==$review->serverId||!self::eligible($op,$now)||($input['attempt_hash']??null)!==self::identity($op)
-                ||$op->account_fingerprint!==$l['account']->account_fingerprint||$op->account_fingerprint!==$d->account_fingerprint
-                ||$op->authority_generation!==$d->authority_generation){throw new \DomainException('This request changed. Reload the page and select it again.');}
-            app(AccountBindings::class)->requireReadableLocked($l['server'],$l['account']);
-            $attempt=ReconciliationEvidence::attempt($op,$d,AccountBindings::binding($l['account']));
-            // A renewal with Enom's order number, once its checks stopped: staff record whether Enom processed it.
-            $unproven=self::stoppedOrder($op);
-            if(!$unproven&&$op->action!=='transfer'&&($attempt->providerReference!==null||$attempt->executionFacts!==null)&&!$attempt->executionFacts?->capturedUnknown()
-                &&!($op->registrar_key==='namesilo'&&$attempt->providerReference===null)){throw new \DomainException('This request already has a registrar order. Check that order instead.');}
-            if(!self::readFirst($op,$attempt,$now)){throw new \DomainException('Use Check status to read this attempt first, then record the registrar’s answer.');}
-            $outcome=$input['outcome']??null;$reference=trim((string)($input['order_reference']??''));
-            if ($attempt->executionFacts?->capturedUnknown() && ($outcome !== 'accepted' || $reference !== $attempt->providerReference)) { throw new \DomainException('Use the exact saved registrar order number and its accepted outcome.'); }
-            $transfer=$op->action==='transfer';$credit=$unproven&&$outcome==='not_processed';
-            // The case number is optional.
-            $case=trim((string)($input['case_reference']??''))===''?null:ManagementPayload::text($input['case_reference'],128);
-            $evidence=ManagementPayload::text($input['evidence']??null,2000);
-            if(($input['confirmed']??false)!==true||!in_array($outcome,$transfer?['transfer_rejected']:['accepted','not_processed'],true)
-                ||($outcome!=='not_processed'?!preg_match('/^[1-9][0-9]{0,19}$/D',$reference):$reference!=='')){
-                throw new \DomainException('Record the registrar’s final answer for this account and attempt.');}
-            // The one guard on Not processed: no check saw a charge or a renewal.
-            if($outcome==='not_processed'&&$op->action==='renew'&&self::renewalProof($op,$d)){throw new \DomainException('A check saw a charge or a new expiry for this renewal, so it can’t be recorded as not processed.');}
-            // A check that is still running, or one that stopped before saving what it saw, may hold proof that is not saved.
-            if($outcome==='not_processed'&&$op->action==='renew'&&RenewalCompletion::checkClaimed($op)){throw new \DomainException('A status check for this renewal is running or did not finish, so it can’t be recorded as not processed. Record Processed if the registrar confirms it, or ask the registrar to check it.');}
-            if(!$unproven&&$outcome==='not_processed'&&($op->provider_order_id!==null||(isset($op->attempt['registration'])||isset($op->attempt['renewal']))
-                ||isset($op->cost['actual'])||($op->attempt['execution']['send_state']??null)==='sent')){throw new \DomainException('This answer conflicts with the saved registrar result. Ask the registrar to check it.');}
-            if($op->provider_order_id!==null&&!$credit&&$reference!==$op->provider_order_id){throw new \DomainException('Registrar order number differs from the saved result.');}
-            $answer=['identity'=>self::identity($op),'operation_key'=>$op->operation_key,'fingerprint'=>$op->account_fingerprint,
-                'generation'=>$op->authority_generation,'actor_id'=>$review->actorId,'at'=>$now->format(DATE_ATOM),
-                'outcome'=>$outcome,'order_reference'=>$reference?:null,'case_reference'=>$case,'evidence'=>$evidence,...($credit?['unproven_order'=>$op->provider_order_id]:[])];
-            if($op->registrar_key==='namesilo'){
-                $answer['account']=['registrar'=>$op->registrar_key,'server_id'=>$op->server_id,'domain_id'=>$op->domain_id,'service_id'=>$op->service_id];
-                if($outcome==='accepted'){
-                    try{$date=new DateEvidence((string)($input['processed_at']??''),ExpiryPrecision::Instant,'namesilo_support_order',(new \DateTimeImmutable((string)($input['processed_at']??'')))->getTimezone()->getName());}
-                    catch(\Exception){throw new \DomainException('Record the exact order processing time with its UTC offset, confirmed by the registrar.');}
-                    if(new \DateTimeImmutable($date->value)<$attempt->windowStart||new \DateTimeImmutable($date->value)>$attempt->windowEnd){throw new \DomainException('The order processing time differs from this attempt.');}
-                    $answer['processed_at']=$date->value;
-                }
+        $id = ($input['outcome'] ?? null) === 'not_processed' && $chosen->action === 'renew'
+            ? self::recordRenewalRefund($seed, $review, $input, $now)
+            : self::saveAnswer($seed, $review, $input, $now);
+        if(in_array($input['outcome']??null,['not_processed','transfer_rejected'],true)){app(Refunds::class)->creditRejected($id);}
+    }
+
+    private static function recordRenewalRefund(Domain $seed, StaffSettingsReview $review, array $input, \DateTimeImmutable $now): int
+    {
+        $clock = app(Clock::class);
+        $capture = FreshTransaction::run(static function () use ($seed, $review, $input, $now, $clock): ?array {
+            [$op, $d, $attempt] = self::reviewedAnswer($seed, $review, $input, $now, admitting: true);
+            $instant = $clock->now();
+            RenewalProof::promote($op, $instant);
+            // Commit retained evidence before refusing the answer.
+            if (self::renewalProof($op, $d)) { return null; }
+            if (RenewalProof::claimed($op)) { throw new \DomainException(self::READ_UNRESOLVED); }
+            $deadline = $instant->modify('+30 seconds');
+            return [$attempt, $deadline, RenewalProof::open($op, $attempt, $deadline, $clock)];
+        });
+        if ($capture === null) { throw new \DomainException(self::POSITIVE_PROOF); }
+        [$attempt, $deadline, $proof] = $capture;
+        try { self::requireUnrenewed($attempt, $clock, $deadline, $proof); }
+        catch (\Throwable $error) { $failure = $error; }
+
+        try { $proof->requireSaved(); }
+        catch (\RuntimeException) { throw new \DomainException(self::LATER_EXPIRY); }
+
+        try {
+            if (isset($failure)) { throw $failure; }
+            return $id = self::saveAnswer($seed, $review, $input, $now, $proof);
+        } finally {
+            if (!isset($id)) { $proof->release(); }
+        }
+    }
+
+    /** Validate the staff request under the holding locks both before the read and at the final decision. */
+    private static function reviewedAnswer(Domain $seed, StaffSettingsReview $review, array $input, \DateTimeImmutable $now, bool $admitting = false): array
+    {
+        $l=HoldingLocks::take($seed,$review->actorId);$review->lockActor();$review->check(consume: !$admitting);
+        $op=$l['operations']->firstWhere('id',(int)($input['operation_id']??0));$d=$l['domain'];
+        if(!$op||$op->server_id!==$review->serverId||!self::eligible($op,$now)||($input['attempt_hash']??null)!==self::identity($op)
+            ||$op->account_fingerprint!==$l['account']->account_fingerprint||$op->account_fingerprint!==$d->account_fingerprint
+            ||$op->authority_generation!==$d->authority_generation){throw new \DomainException('This request changed. Reload the page and select it again.');}
+        app(AccountBindings::class)->requireReadableLocked($l['server'],$l['account']);
+        $attempt=ReconciliationEvidence::attempt($op,$d,AccountBindings::binding($l['account']));
+        // A renewal with Enom's order number, once its checks stopped: staff record whether Enom processed it.
+        $unproven=self::stoppedOrder($op);
+        if(!$unproven&&$op->action!=='transfer'&&($attempt->providerReference!==null||$attempt->executionFacts!==null)&&!$attempt->executionFacts?->capturedUnknown()
+            &&!($op->registrar_key==='namesilo'&&$attempt->providerReference===null)){throw new \DomainException('This request already has a registrar order. Check that order instead.');}
+        if(!self::readFirst($op,$attempt,$now)){throw new \DomainException('Use Check status to read this attempt first, then record the registrar’s answer.');}
+        $outcome=$input['outcome']??null;$reference=trim((string)($input['order_reference']??''));
+        if ($attempt->executionFacts?->capturedUnknown() && ($outcome !== 'accepted' || $reference !== $attempt->providerReference)) { throw new \DomainException('Use the exact saved registrar order number and its accepted outcome.'); }
+        $transfer=$op->action==='transfer';$credit=$unproven&&$outcome==='not_processed';
+        // The case number is optional.
+        $case=trim((string)($input['case_reference']??''))===''?null:ManagementPayload::text($input['case_reference'],128);
+        $evidence=ManagementPayload::text($input['evidence']??null,2000);
+        if(($input['confirmed']??false)!==true||!in_array($outcome,$transfer?['transfer_rejected']:['accepted','not_processed'],true)
+            ||($outcome!=='not_processed'?!preg_match('/^[1-9][0-9]{0,19}$/D',$reference):$reference!=='')){
+            throw new \DomainException('Record the registrar’s final answer for this account and attempt.');}
+        if(!$unproven&&$outcome==='not_processed'&&($op->provider_order_id!==null||(isset($op->attempt['registration'])||isset($op->attempt['renewal']))
+            ||isset($op->cost['actual'])||($op->attempt['execution']['send_state']??null)==='sent')){throw new \DomainException('This answer conflicts with the saved registrar result. Ask the registrar to check it.');}
+        if($op->provider_order_id!==null&&!$credit&&$reference!==$op->provider_order_id){throw new \DomainException('Registrar order number differs from the saved result.');}
+        $answer=['identity'=>self::identity($op),'operation_key'=>$op->operation_key,'fingerprint'=>$op->account_fingerprint,
+            'generation'=>$op->authority_generation,'actor_id'=>$review->actorId,'at'=>$now->format(DATE_ATOM),
+            'outcome'=>$outcome,'order_reference'=>$reference?:null,'case_reference'=>$case,'evidence'=>$evidence,...($credit?['unproven_order'=>$op->provider_order_id]:[])];
+        if($op->registrar_key==='namesilo'){
+            $answer['account']=['registrar'=>$op->registrar_key,'server_id'=>$op->server_id,'domain_id'=>$op->domain_id,'service_id'=>$op->service_id];
+            if($outcome==='accepted'){
+                try{$date=new DateEvidence((string)($input['processed_at']??''),ExpiryPrecision::Instant,'namesilo_support_order',(new \DateTimeImmutable((string)($input['processed_at']??'')))->getTimezone()->getName());}
+                catch(\Exception){throw new \DomainException('Record the exact order processing time with its UTC offset, confirmed by the registrar.');}
+                if(new \DateTimeImmutable($date->value)<$attempt->windowStart||new \DateTimeImmutable($date->value)>$attempt->windowEnd){throw new \DomainException('The order processing time differs from this attempt.');}
+                $answer['processed_at']=$date->value;
             }
-            if($transfer){$answer=[...$answer,...TransferRejections::evidence($op,$l,$input)];}
-            if($outcome==='not_processed'){
-                if(!$l['staff']->hasPermission('admin.domains.manage')||!$l['staff']->hasPermission('admin.invoices.update')){throw new \DomainException('Refund permission required.');}
-                if($op->funding_basis==='complimentary'){ComplimentaryInvoices::require($op,$l);}else{RefundPayment::requireCurrent($op,$l);}
+        }
+        if($transfer){$answer=[...$answer,...TransferRejections::evidence($op,$l,$input)];}
+        if($outcome==='not_processed'){
+            if(!$l['staff']->hasPermission('admin.domains.manage')||!$l['staff']->hasPermission('admin.invoices.update')){throw new \DomainException('Refund permission required.');}
+            if($op->funding_basis==='complimentary'){ComplimentaryInvoices::require($op,$l);}else{RefundPayment::requireCurrent($op,$l);}
+        }
+        return [$op, $d, $attempt, $answer];
+    }
+
+    private static function saveAnswer(Domain $seed, StaffSettingsReview $review, array $input, \DateTimeImmutable $now,
+        ?RenewalProof $read = null): int
+    {
+        return FreshTransaction::run(function () use ($seed, $review, $input, $now, $read): int {
+            [$op, $d, $attempt, $answer] = self::reviewedAnswer($seed, $review, $input, $now);
+            $outcome = $answer['outcome']; $case = $answer['case_reference'];
+            $transfer = $op->action === 'transfer'; $credit = isset($answer['unproven_order']);
+            if ($outcome === 'not_processed' && $op->action === 'renew') {
+                if (self::renewalProof($op, $d)) { throw new \DomainException(self::POSITIVE_PROOF); }
+                if (!$read?->allowsAnswer($op, $attempt->binding)) { throw new \DomainException(self::READ_UNRESOLVED); }
+                $read->releaseLocked($op);
             }
             $policy=[...$op->policy,'enom_answer'=>$answer];
             if($transfer){$policy['reconciliation']['staff_alert']=false;$policy['reconciliation']['reason']=TransferRejections::CODE;}
@@ -167,7 +217,6 @@ class RegistrarAnswers
             $review->input(['operation_id'=>$op->id,'attempt_hash'=>$answer['identity'],'outcome'=>$outcome,'case_reference'=>$case]);
             $review->record();return (int)$op->id;
         });
-        if(in_array($input['outcome']??null,['not_processed','transfer_rejected'],true)){app(Refunds::class)->creditRejected($id);}
     }
     public static function answer(Operation $op,Domain $d): ?array
     {

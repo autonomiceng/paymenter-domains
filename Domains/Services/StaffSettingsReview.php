@@ -67,7 +67,7 @@ final class StaffSettingsReview
         Server::whereIn('id',$ids)->orderBy('id')->lockForUpdate()->get();
         Account::whereIn('server_id',$ids)->orderBy('server_id')->lockForUpdate()->get();
     }
-    public function check(bool $inFlight=false,?\Closure $catalogueStamp=null): void
+    public function check(bool $inFlight=false,?\Closure $catalogueStamp=null,bool $consume=true): void
     {
         if(DB::transactionLevel()!==1){throw new \LogicException('Outer staff transaction required.');}
         if($catalogueStamp===null){if($this->current!==null){($this->current)();}else{
@@ -101,6 +101,7 @@ final class StaffSettingsReview
         $used=(clone $keys)->lockForUpdate()->exists();
         if($inFlight&&(!$used||$this->verified!==$t)){throw new \DomainException('Verified in-flight review required.');}
         if($used&&!$inFlight){throw new \DomainException('Review key used.');}
+        if(!$consume){return;}
         if(!$used){DB::table(self::KEYS)->insert(['server_id'=>$this->serverId,'review_key'=>$t['key'],'expires_at'=>$t['until']]);}
         $this->verified=$t;$this->before=$catalogueStamp!==null&&$this->action!=='default_pricing'?['snapshot'=>$catalogueStamp()]:$this->state($this->serverId,$this->tldId);
     }

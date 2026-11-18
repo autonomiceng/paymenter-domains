@@ -2,10 +2,11 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/renewal-execution.php';
-use Illuminate\Support\Facades\Cache;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, OperationReconciliation, PricingRule, RegistrarAnswers, StaffOperationReview, StaffOperations, StaffReviewRefused, StaffSettingsReview as Review, StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, MoneyWorkSchema, OperationReconciliation, PricingRule, RegistrarAnswers, StaffOperationReview, StaffOperations, StaffReviewRefused, StaffSettingsReview as Review, StaffSettingsWrites};
 app()->instance(Clock::class, $clock);
 $staff = commerceUser();
 $staff->update(['role_id' => App\Models\Role::create(['name' => 'Renewal check claim', 'permissions' => [
@@ -86,4 +87,30 @@ $calls = count($state->calls); $check($op, $completion); $fresh = $op->fresh();
 same([true, OperationReconciliation::POLL_LIMIT, true, false, true], [count($state->calls) > $calls, $polls($op), $fresh->policy['renewal_check']['unresolved'] ?? null,
     isset($fresh->policy['renewal_check']['token']), $record($op)],
     'The next check takes over the expired claim and counts its poll; the lost check stays unresolved and Not processed refused');
+// Only the locked projection fails. The clean read must release its claim even though Check status reports a refusal.
+MoneyWorkSchema::install();
+[$op, $d, $b] = $makeRenewal(placeholderComFixtureName('check-claim-busy-placeholder.com'));
+[$engine, $writer, $completion] = $compose($b);
+same('pending', $engine->run($op->id, $writer)->state, 'The renewal was sent once');
+$state->after = '2027-10-18'; $state->fail = ReadCommand::Order;
+$clock->instant = $clock->now()->modify('+25 hours');
+for ($i = 1; $i < OperationReconciliation::POLL_LIMIT; $i++) { $check($op, $completion); }
+$remaining = 0; $conflicts = 0;
+App\Models\User::retrieved(static function ($owner) use ($user, &$remaining, &$conflicts): void {
+    if ($owner->id !== $user->id || DB::transactionLevel() !== 1 || $remaining === 0) { return; }
+    $remaining--; $conflicts++;
+    $error = new PDOException('Synthetic owner lock wait'); $error->errorInfo = ['HY000', 1205, 'Synthetic'];
+    throw new QueryException('sqlite', 'synthetic owner lock', [], $error);
+});
+$state->duringCommand = ReadCommand::Expiry;
+$state->during = static function () use (&$remaining): void { $remaining = 2; };
+Cache::flush();
+$busy = $staffCheck($op, $completion); $afterBusy = $op->fresh();
+$state->duringCommand = null; $clock->instant = $clock->now()->modify('+10 minutes');
+$before = $credit(); $writes = $state->writes; $check($op, $completion);
+$refused = $record($op); $replay = $record($op);
+$actual = [$busy, $conflicts, !isset($afterBusy->policy['renewal_check']), $afterBusy->policy['renewal_polls'],
+    $refused, $replay, $credit() - $before, $state->writes - $writes];
+same([true, 2, true, OperationReconciliation::POLL_LIMIT - 1, false, true, PricingRule::minor($op->amount), 0], $actual,
+    'A clean read followed by contention leaves the last poll available and permits a later credit once: '.json_encode($actual));
 echo "One registrar check runs at a time per renewal attempt.\n"; $nativeSuccessful = true;

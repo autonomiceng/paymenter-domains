@@ -137,8 +137,10 @@ $lateWire = new class($wire, $raceClock, $deadline) implements Transport {
     }
 };
 $lateContext = new RequestContext($binding, RequestOrigin::Background, $deadline, new RequestBudget(40), $raceClock);
+$references = [];
+$lateContext->observe(static function ($candidate) use (&$references): void { $references[] = $candidate->providerReference; });
 $late = (new History(new Client($binding, 'offline', 'token', $lateWire)))->inspect($attempt(null), $lateContext);
-same([false, ['9020']], [$late->historyComplete, array_map(static fn ($c) => $c->providerReference, $lateContext->seen()?->candidates ?? [])],
+same([false, ['9020']], [$late->historyComplete, $references],
     'A matching charge read as the deadline expires still reaches the proof sink');
 same(null, $complete($late), 'A deadline-late charge cannot authorize completion');
 echo "Dense Enom history scans continue across reads and complete only after every order is resolved\n";

@@ -15,11 +15,14 @@
     "composer.lock"
   ],
   "explicit": {
+    "Domains/Data/RequestContext.php": ["tests/enom-history-scan-test.php", "tests/renewal-history-deadline-proof-test.php"],
+    "Domains/Services/StaffSettingsReview.php": ["tests/renewal-answer-retained-proof-test.php"],
     "Domains/Services/HoldingLocks.php": ["tests/cli-renewal-resume-proof-test.php", "tests/renewal-proof-observed-test.php"],
-    "Domains/Services/RenewalProof.php": ["tests/renewal-proof-observed-test.php", "tests/renewal-check-claim-test.php", "tests/cli-renewal-concurrent-proof-test.php", "tests/renewal-answer-retained-proof-test.php", "tests/renewal-proof-unresolved-test.php", "tests/cli-renewal-unresolved-check-refund-test.php"],
-    "Domains/Services/RegistrarCheck.php": ["tests/cli-renewal-resume-proof-test.php", "tests/cli-renewal-concurrent-proof-test.php", "tests/renewal-proof-unresolved-test.php", "tests/renewal-check-claim-test.php", "tests/cli-renewal-unresolved-check-refund-test.php"],
+    "Domains/Services/RenewalProof.php": ["tests/renewal-order-unproven-test.php", "tests/renewal-proof-observed-test.php", "tests/renewal-check-claim-test.php", "tests/cli-renewal-concurrent-proof-test.php", "tests/renewal-answer-retained-proof-test.php", "tests/renewal-proof-unresolved-test.php", "tests/cli-renewal-unresolved-check-refund-test.php"],
+    "Domains/Services/RegistrarCheck.php": ["tests/renewal-order-unproven-test.php", "tests/cli-renewal-resume-proof-test.php", "tests/cli-renewal-concurrent-proof-test.php", "tests/renewal-proof-unresolved-test.php", "tests/renewal-check-claim-test.php", "tests/cli-renewal-unresolved-check-refund-test.php"],
     "Domains/Services/InvoiceMoney.php": ["tests/cli-complimentary-external-refund-test.php"],
     "Domains/Services/RegistrarAnswers.php": [
+      "tests/renewal-order-unproven-test.php",
       "tests/renewal-answer-fresh-expiry-test.php",
       "tests/renewal-answer-retained-proof-test.php",
       "tests/renewal-history-deadline-proof-test.php",
