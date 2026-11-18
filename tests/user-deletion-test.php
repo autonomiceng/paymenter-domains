@@ -138,6 +138,20 @@ $page=Livewire\Livewire::actingAs($staff)->test(App\Admin\Resources\UserResource
 $page->callAction('delete')->assertSuccessful()->assertActionNotMounted('delete')
     ->assertNotified(Filament\Notifications\Notification::make()->danger()->title('Customer could not be deleted')->body(NativeUserDeletion::RETAINED));
 same($before,$rows(),'Handled staff refusal changes nothing');
+// A database timeout during the invoice read keeps the native staff action retryable.
+$timeout=true;
+DB::beforeExecuting(static function(string $sql,array $bindings,$connection)use($user,&$timeout):void {
+    if(!$timeout||!str_contains($sql,'from "invoices"')||!str_contains($sql,'"user_id" in')||!in_array($user->id,$bindings)){return;}
+    $timeout=false;
+    $error=new PDOException('Synthetic invoice lock wait timeout');
+    $error->errorInfo=['HY000',1205,$error->getMessage()];
+    throw new Illuminate\Database\QueryException($connection->getName(),$sql,$bindings,$error);
+});
+$page->callAction('delete')->assertSuccessful()->assertActionNotMounted('delete')
+    ->assertNotified(Filament\Notifications\Notification::make()->danger()->title('Customer could not be deleted')
+        ->body('This customer cannot be deleted while their billing is being updated. Try again in a moment.'));
+expect(!$timeout,'Staff deletion reached the invoice lock');
+same($before,$rows(),'Timed-out deletion changes nothing');
 // An invoice committed after deletion's first owner or invoice read still refuses deletion.
 $late=commerceUser();$armed=false;$fired=false;
 DB::beforeExecuting(static function(string $sql,array $bindings)use($late,&$armed,&$fired):void {
