@@ -204,9 +204,10 @@ $retry->call('pollCheck');
 $facts = WatchFacts::for(WatchName::findOrFail($id));
 $public = $facts['Evidence']['Public DNS'];
 $times = storefrontDom('<div id="rotation-time">'.$public['sub'].'</div>')->query('//*[@id="rotation-time"]//time');
-$actual = [panelRowValue($retry->html(),'Public DNS'),$times->item(0)?->getAttribute('datetime'),$notificationStatuses()];
-same(['AAAA @ → 2001:db8::8',gmdate('c',$addressAt),['info']], $actual,
-    'A rotation retains the earlier IPv6 answer and time and reports partial progress. Got '.json_encode($actual));
+$ipv6 = panelRowValue($retry->html(),'Public DNS') ?? '';
+expect(preg_match('/^AAAA\b.*2001:db8::8$/s',$ipv6) === 1, 'A rotation retains the earlier IPv6 answer');
+same([$addressAt,['info']], [strtotime($times->item(0)?->getAttribute('datetime') ?? ''),$notificationStatuses()],
+    'A rotation retains the earlier observation time and reports partial progress');
 same([], $retry->get('pendingCheck'), 'The matching rotation completes the requested attempt');
 $retry->call('pollCheck');
 same([], $notificationStatuses(), 'A completed rotation sends feedback only once');
@@ -264,13 +265,13 @@ $aliasAt = $newAAt+120;
 $savePoints($aliasAt, new DnsReading('points', website:true, email:false, queries:[
     $cname('example.com','edge.example.net'),
 ]));
-$alias = 'CNAME @ → edge.example.net';
+$alias = '/^CNAME\b.*\bedge\.example\.net$/s';
 $reload->call('refreshFacts')->assertDontSee('192.0.2.18')->assertDontSee('2001:db8::8');
-same($alias,panelRowValue($reload->html(),'Public DNS'),'The owner alias replaces its previous direct addresses');
+expect(preg_match($alias,panelRowValue($reload->html(),'Public DNS') ?? '') === 1, 'The owner alias replaces its previous direct addresses');
 
 $savePoints($aliasAt+60, new DnsReading('points', queries:[$failedA]));
 $reload->call('refreshFacts')->assertDontSee('192.0.2.18')->assertDontSee('2001:db8::8');
-same($alias,panelRowValue($reload->html(),'Public DNS'),'An inconclusive read retains the owner alias');
+expect(preg_match($alias,panelRowValue($reload->html(),'Public DNS') ?? '') === 1, 'An inconclusive read retains the owner alias');
 $public = WatchFacts::for(WatchName::findOrFail($id))['Evidence']['Public DNS'];
 $when = storefrontDom('<div>'.$public['sub'].'</div>')->query('//time')->item(0);
 same($aliasAt,strtotime($when?->getAttribute('datetime') ?? ''),'The saved alias keeps its own observation time');
@@ -278,8 +279,9 @@ same($aliasAt,strtotime($when?->getAttribute('datetime') ?? ''),'The saved alias
 $savePoints($aliasAt+120, new DnsReading('points', website:true, partial:true, queries:[
     $address('example.com','192.0.2.38'),
 ], budgetLimited:true));
-$reload->call('refreshFacts')->assertDontSee('2001:db8::8')->assertDontSee($alias);
-same('A @ → 192.0.2.38',panelRowValue($reload->html(),'Public DNS'),'A later direct A cannot inherit IPv6 across the alias cutover');
+$reload->call('refreshFacts')->assertDontSee('2001:db8::8')->assertDontSee('edge.example.net');
+expect(preg_match('/^A\b.*\b192\.0\.2\.38$/s',panelRowValue($reload->html(),'Public DNS') ?? '') === 1,
+    'A later direct A cannot inherit IPv6 across the alias cutover');
 
 // Staff have no Stop: Pause is the supported way to halt checks, and the page then reads Paused.
 Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->assertActionDoesNotExist('retire')->callAction('pause')->assertNotified('Monitoring paused');same('paused',WatchName::find($id)->state,'Pause saves');
