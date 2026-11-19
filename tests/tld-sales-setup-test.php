@@ -30,7 +30,7 @@ foreach (DB::table('domains_prices')->where('server_id', $id)->where('tld', 'com
     unset($copy['id']);
     DB::table('domains_prices')->insert([...$copy, 'tld' => 'net']);
 }
-$missing = array_map(static fn ($letter) => 'test.'.$letter.$letter, range('a','v'));
+$missing = array_map(static fn ($letter) => $letter.$letter.'.test', range('a','v'));
 $names = ['com','net','co.test', ...$missing];
 $state = static fn () => array_map(static fn ($table) => DB::table($table)->orderBy('id')->get()->toJson(),
     ['domains_tlds','domains_prices','domains_sales_policies','products','plans','prices']);
@@ -268,9 +268,9 @@ $clock->instant = $now->modify('+2 days');
 $stale = $setup->preview($id, ['com'], $custom)['rows']['com'];
 same('35.00', $stale['prices']['renew:1']['after'], 'Expired renewal cost uses the retained annual under the publication rule');
 $clock->instant = $now;
-$names25 = array_map(static fn ($letter) => 'test.'.$letter.$letter, range('a','y'));
+$names25 = array_map(static fn ($letter) => $letter.$letter.'.test', range('a','y'));
 same(25,count($setup->preview($id,$names25,$keep)['rows']),'All 25 requested dispositions returned');
-foreach ([[],['com','com'],[...$names25,'test.zz']] as $invalid) {
+foreach ([[],['com','com'],[...$names25,'zz.test']] as $invalid) {
     commerceReject(fn () => $setup->preview($id,$invalid,$keep));
 }
 same(0,$reads->calls,'No provider I/O');
