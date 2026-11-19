@@ -478,7 +478,13 @@ class WhatYouSell extends Page implements HasTable
             }
         }
         $query = $this->getFilteredTableQuery();
-        $records = ($all ? $query->whereKeyNot($keys) : $query->whereKey($keys))->limit(SetUpSales::MAX_TLDS + 1)->get();
+        if ($all) {
+            // Hidden endings do not have selection controls, so they do not count toward the batch limit.
+            $query->whereNotIn('tld', EndingChoices::hiddenList())->whereKeyNot($keys);
+        } else {
+            $query->whereKey($keys);
+        }
+        $records = $query->limit(SetUpSales::MAX_TLDS + 1)->get();
         if ($records->count() > SetUpSales::MAX_TLDS) {
             throw new \DomainException('Select 1 to 25 TLDs to set up sales.');
         }
