@@ -56,7 +56,8 @@ trait TldSalesPage
         $seller=$fix==='seller'?$actions['seller']->label($verb)->modalHeading($verb)->color('primary'):null;
         // Every sales action is always registered; visibility picks the one that shows.
         return array_values(array_filter([$this->startSellingAction()->color($fix===null?'primary':'gray'),$seller,$actions['override']->color($fix==='override'?'primary':'gray'),
-            ActionGroup::make(array_values(array_filter([$seller?null:$actions['seller'],$this->stopSellingAction()])))->label('More')->button()->color('gray')]));
+            ActionGroup::make(array_values(array_filter([$seller?null:$actions['seller'],$this->stopSellingAction()])))
+                ->label('More')->button()->color('gray')->dropdownTeleport()]));
     }
     /** @return array{label:string,tone:string,reason:?string,invalid:bool,kind:?string} */
     private function sales(): array
