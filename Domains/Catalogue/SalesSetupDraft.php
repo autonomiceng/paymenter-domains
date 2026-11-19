@@ -91,7 +91,7 @@ final readonly class SalesSetupDraft
         foreach ($accounts as $id => $a) {
             try {
                 $bindings[$id] = AccountBindings::binding($a);
-            } catch (\DomainException|\InvalidArgumentException|\TypeError|\ValueError) {
+            } catch (\DomainException|\InvalidArgumentException|\TypeError|\ValueError|\Illuminate\Contracts\Encryption\DecryptException) {
                 $accountErrors[$id] = 'Registrar account identity unreadable.';
                 continue;
             }

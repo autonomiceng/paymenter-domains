@@ -322,7 +322,8 @@ class ViewDomain extends RecordDetailPage
         }
         // A later try that got no answer: a saved failed read, or a failure the scheduler kept before any read was saved.
         $retried=is_string($d->observation['read_retry']['at']??null)?(int)strtotime($d->observation['read_retry']['at']):0;
-        $tried=max($gone?0:(int)$readAt,$retried);$tried=$tried>($found??(int)($check['at']??0))?$tried:null;
+        $manual=\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::latestFailedReadAt($d);
+        $tried=max($gone?0:(int)$readAt,$retried,$manual);$tried=$tried>($found??(int)($check['at']??0))?$tried:null;
         $unclear=Value::state(State::UnderReview,Reader::Staff,$found===null?'The recheck got no answer. The first read is still the latest answer.':'The latest read got no answer.');
         $times=[...($tried?[$fact::date($tried,Reader::Staff,'Last tried')]:[]),...($found?[$fact::date($found,Reader::Staff,'Last found missing')]:[])];
         $recheck=match(true){

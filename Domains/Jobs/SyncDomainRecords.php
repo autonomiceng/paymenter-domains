@@ -19,6 +19,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
     use Dispatchable,InteractsWithQueue,Queueable,SerializesModels;
     public const TIMEOUT=300;
     public const UNIQUE_FOR=900;
+    private const READ_FAILED="Couldn't sync domain";
     public const RUNNING='A scheduled registrar read is running for this domain. This page updates when it finishes.';
     public const WORKER='Sync now needs a database or Redis queue with retry_after above 300 seconds. Ask your site admin to check the queue worker, then try again.';
     public int $timeout=self::TIMEOUT;
@@ -46,6 +47,16 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
             if(!$held){Cache::forget($job->uniqueId().':result');return null;}
         }
         return $result;
+    }
+    public static function latestFailedReadAt(Domain $domain): int
+    {
+        $at=0;
+        foreach ($domain->observation['sync_history']??[] as $entry) {
+            if (($entry['event']??null)===self::READ_FAILED && is_string($entry['at']??null)) {
+                $at=max($at,(int)strtotime($entry['at']));
+            }
+        }
+        return $at;
     }
     public static function enqueue(int $actor,Domain $d,bool $departure=false): bool
     {
@@ -104,7 +115,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
             } catch (\Throwable) {
                 // After its lease expires, the scheduler may claim the work, so this read must not save its result.
                 if ($lost) { $this->notice('Sync stopped','The registrar read ran past its time limit. Press '.$retryAction.'.'); return; }
-                $this->notice("Couldn't sync domain",'Check the registrar account, then try '.$retryAction.'.');
+                $this->notice(self::READ_FAILED,'Check the registrar account, then try '.$retryAction.'.');
             } finally {
                 try{if($this->departure&&!$lost&&$work>0&&HoldingObservationWork::ownsManual($work,$claim,$clock->now())){app(\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::class)->registry($d->fresh());}}
                 finally{HoldingObservationWork::releaseManual($work,$claim);}
@@ -112,7 +123,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
         } finally { Cache::forget($this->pendingKey()); }
     }
     public function failed(?\Throwable $error): void
-    { Cache::forget($this->pendingKey()); $this->notice("Couldn't sync domain",'The background read stopped. Ask your site admin to check the queue worker, then try '.($this->departure?'Check again':'Sync now again').'.'); }
+    { Cache::forget($this->pendingKey()); $this->notice(self::READ_FAILED,'The background read stopped. Ask your site admin to check the queue worker, then try '.($this->departure?'Check again':'Sync now again').'.'); }
     private function recordHistory(string $event): void
     {
         // Only this domain row is locked; no provider or financial work runs inside this transaction.

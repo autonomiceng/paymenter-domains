@@ -98,7 +98,6 @@ final class WatchActions
         return self::action('watch',(int)$w->id,$revision,'profile','Change')
             ->color('gray')->outlined()
             ->modalHeading('Change DNS template')->modalWidth('domains-template-dialog')
-            ->modalFooterActions(fn (Action $action) => [$action->getModalCancelAction(), $action->getModalSubmitAction()])
             ->modalFooterActionsAlignment(Alignment::Start)
             ->modalDescription('Checks compare '.$w->canonical_name.' with this template. Saving leaves live nameservers and DNS records unchanged.')
             ->modalSubmitActionLabel('Save')->schema(fn () => self::assignmentFields($w))

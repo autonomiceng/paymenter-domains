@@ -57,6 +57,21 @@ Illuminate\Support\Facades\DB::transaction(function()use($d,$clock):void {
 $after=Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id])->html(),LIBXML_NOERROR);
 $step=null;foreach($after->querySelectorAll('[data-piece="row"]') as $row){if(trim((string)$row->querySelector('.domains-panel-row-k')?->textContent)==='Departure check'){$step=$row;}}
 $check($step!==null,'After the automatic recheck staff keep the Departure check step');
+$fresh=$d->fresh();
+$answerAt=$clock->now()->getTimestamp()-3600;
+$facts=$fresh->observation;
+$facts['departure_reads']=[['recheck'=>true,'at'=>$answerAt]];
+$fresh->update(['observation'=>$facts]);
+(new \Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords((int)$actor->id,(int)$fresh->id,
+    $fresh->authority_generation,$fresh->account_fingerprint,true))->failed(null);
+$failed=Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.Livewire\Livewire::actingAs($actor)
+    ->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$fresh->id])->html(),LIBXML_NOERROR);
+$recheck=null;
+foreach($failed->querySelectorAll('[data-piece="row"]') as $row){if(trim((string)$row->querySelector('.domains-panel-row-k')?->textContent)==='Recheck'){$recheck=$row;}}
+$check($recheck!==null && str_contains($recheck->textContent,State::UnderReview->label())
+    && str_contains($recheck->textContent,\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($answerAt))
+    && str_contains($recheck->textContent,\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($clock->now()->getTimestamp())),
+    'A failed manual recheck dates the last confirmed absence and failed attempt separately');
 // Phase B, registrar DNS: when the registry lists another registrar nothing serves the records, so Edit and Edit SRV are
 // muted by the row's own reason. While it lists ours the row has no such reason: Edit stays paused only by the
 // review's section notice, like every registrar change under review.

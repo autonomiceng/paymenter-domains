@@ -4,6 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-tlds.php';
 
+use App\Models\Server;
 use Illuminate\Support\Facades\{Auth, DB, Log};
 use Filament\Actions\Testing\TestAction;
 use Livewire\Livewire;
@@ -35,14 +36,14 @@ $detail = Livewire::actingAs($staff)->test(ViewTld::class, ['record' => $target-
 expect(str_contains($detail->html(), $detailUrl), 'The numeric TLD links to the dedicated setup page');
 Livewire::actingAs($viewer)->withQueryParams(['record' => $target->id])->test(SetUpSales::class)->assertForbidden();
 $singlePage = static fn() => Livewire::actingAs($staff)->withQueryParams(['record' => $target->id])->test(SetUpSales::class);
-DB::table('servers')->where('id', $target->server_id)->update(['enabled'=>false]);
+Server::whereKey($target->server_id)->update(['enabled'=>false]);
 $disabled = $singlePage();
 same((int) $other->server_id, (int) $disabled->get('draft.server'), 'Setup starts with an enabled registrar');
 $accountDom = new DOMDocument();
 $accountDom->loadHTML($disabled->html(), LIBXML_NOERROR | LIBXML_NOWARNING);
 same(1, (new DOMXPath($accountDom))->query('//input[@type="radio" and @disabled and @value="'.$target->server_id.'"]')->length,
     'The disabled registrar cannot be selected');
-DB::table('servers')->where('id', $target->server_id)->update(['enabled'=>true]);
+Server::whereKey($target->server_id)->update(['enabled'=>true]);
 $detail = $singlePage()->call('mountAction', 'cancel')
     ->assertRedirect(TldResource::getUrl('view', ['record' => $target->id]).'#set-up-sales');
 $detail = $singlePage()->assertSeeHtml('wire:model.live="draft.server"')
