@@ -4,10 +4,11 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-tlds.php';
 
+use App\Models\{Invoice, InvoiceItem, Order, Service};
 use Illuminate\Support\Facades\{Auth, DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff, TldFacts};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState, Pricing, SalesSetup};
-use Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview as Review;
+use Paymenter\Extensions\Servers\Domains\Services\{RetailLine, StaffSettingsReview as Review};
 
 extract(commerceFixture(true));
 staffSalesFixture();
@@ -102,6 +103,34 @@ $setup->save($id, ['com'], $default, $draft['review_key'], $reason);
 same(null, Pricing::own($target->fresh()), 'Default removes the own rule');
 same('7.80', $setup->preview($id, ['com'], $keep)['rows']['com']['prices']['register:1']['before'], 'Default retail published');
 
+// Explicit publication repairs the USD rows on otherwise available plans.
+$product = $native->product($target, 'register');
+$annualPlan = $product->plans()->where('billing_period', 1)->sole();
+$longPlan = $product->plans()->where('billing_period', 3)->sole();
+$order = Order::withoutEvents(fn () => Order::create(['user_id'=>$actor->id, 'currency_code'=>'USD']));
+$service = Service::withoutEvents(fn () => Service::create(['user_id'=>$actor->id, 'order_id'=>$order->id,
+    'product_id'=>$product->id, 'plan_id'=>$annualPlan->id, 'currency_code'=>'USD', 'quantity'=>1, 'price'=>'12.00', 'status'=>'active']));
+$invoice = Invoice::withoutEvents(fn () => Invoice::create(['user_id'=>$actor->id, 'currency_code'=>'USD', 'status'=>'pending', 'due_at'=>$now]));
+$item = InvoiceItem::withoutEvents(fn () => $invoice->items()->create(['reference_type'=>$service->getMorphClass(), 'reference_id'=>$service->id,
+    'price'=>'12.00', 'quantity'=>1, 'description'=>'Domain registration']));
+$annualPlan->prices()->where('currency_code','USD')->update(['price'=>'12.00','setup_fee'=>'1.00']);
+$longPlan->prices()->where('currency_code','USD')->delete();
+$held = $setup->preview($id, ['com'], $keep);
+same(null, $held['review_key'], 'Keep leaves native price repairs pending');
+foreach (['register:1','register:3'] as $term) {
+    same('native_price_mismatch', $held['rows']['com']['prices'][$term]['reason'], 'Damaged native term is unavailable');
+}
+$repair = $setup->preview($id, ['com'], $default);
+same('ready', $repair['rows']['com']['status'], 'Matching Default can republish native USD');
+$result = $setup->save($id, ['com'], $default, $repair['review_key'], $reason);
+foreach ([1=>$annualPlan, 3=>$longPlan] as $years=>$plan) {
+    $usd = $plan->prices()->where('currency_code','USD')->sole();
+    $quote = $result['outcomes']['com']['prices']['register:'.$years];
+    same(true, $quote['available'], 'Repaired term is eligible');
+    same([$quote['after'],'0.00'], [RetailLine::decimal($usd->price),RetailLine::decimal($usd->setup_fee)], 'Native charge matches publication');
+}
+same('12.00', RetailLine::decimal($item->fresh()->price), 'Issued registration keeps the billed amount');
+
 // Changing registrar with Keep preserves the native legacy own rule and both holder prices.
 $raw = OfferState::decode($other->fresh()->catalogue_intent);
 unset($raw['pricing_rule']);
@@ -116,7 +145,16 @@ $oldAnnual = $target->fresh()->catalogue_retained_annual_retail;
 $rebind = $setup->preview($other->server_id, ['com'], $keep);
 expect(!array_key_exists('cost',$rebind['rows']['com']['prices']['renew:1']), 'Seller-only preview omits costs');
 expect(!empty($rebind['rows']['com']['previous_sales']), 'Review includes displaced public terms');
-$result = $setup->save($other->server_id, ['com'], $keep, $rebind['review_key'], $reason);
+$outgoing = DB::table('domains_prices')->where(['server_id'=>$id,'tld'=>'com','action'=>'register','term'=>3]);
+$unit = $outgoing->value('cost_source_unit');
+$outgoing->update(['cost_source_unit'=>'invalid']);
+$rebind = $setup->preview($other->server_id, ['com','net'], $keep);
+same([], $rebind['rows']['com']['previous_sales'], 'Unreadable outgoing offer has no public terms to displace');
+same('ready', $rebind['rows']['com']['status'], 'Healthy replacement can take over');
+same('blocked', $rebind['rows']['net']['status'], 'Missing target for sibling remains refused');
+expect(!empty($rebind['rows']['net']['previous_sales']), 'Healthy outgoing sibling keeps its public terms');
+$result = $setup->save($other->server_id, ['com','net'], $keep, $rebind['review_key'], $reason);
+$outgoing->update(['cost_source_unit'=>$unit]);
 same(['com'], $result['rows'], 'Seller-only actor switches the one reviewed suffix');
 same(false, array_key_exists('pricing_rule',OfferState::decode($other->fresh()->catalogue_intent)), 'Keep preserves legacy rule representation');
 same('35.00', $other->fresh()->catalogue_retained_annual_retail, 'New seller retains holder annual');
@@ -129,6 +167,21 @@ $setup->save($id,['com'],$custom,$combined['review_key'],$reason);
 same('9.50',$target->fresh()->catalogue_retained_annual_retail,'Combined seller and price change publishes the target renewal');
 same('35.00',$other->fresh()->catalogue_retained_annual_retail,'Combined change preserves the outgoing standard renewal');
 
+// A shared fee publication can leave an older fee embedded in a TLD's own rule.
+$feeRule = [...$custom, 'rule'=>['mode'=>'markup_fee_percent','markup'=>'8','round_up'=>'whole']];
+$draft = $setup->preview($id, ['com'], $feeRule);
+$setup->save($id, ['com'], $feeRule, $draft['review_key'], $reason);
+$intent = OfferState::decode($target->fresh()->catalogue_intent);
+$intent['pricing_rule']['card_fee'] = ['percent'=>'1.00','fixed'=>'0.00'];
+DB::table('domains_tlds')->where('id',$target->id)->update(['catalogue_intent'=>OfferState::json($intent),
+    'catalogue_retained_annual_retail'=>'35.00']);
+same(null, $setup->preview($id, ['com'], $feeRule)['review_key'], 'An obsolete embedded fee does not change the effective rule');
+DB::table('domains_tlds')->where('id',$target->id)->update(['catalogue_published_revision'=>null]);
+$draft = $setup->preview($id, ['com'], $feeRule);
+same('35.00', $draft['rows']['com']['retained_after'], 'Same-rule publication previews the retained renewal');
+$setup->save($id, ['com'], $feeRule, $draft['review_key'], $reason);
+same('35.00', $target->fresh()->catalogue_retained_annual_retail, 'Same-rule publication preserves the holder price');
+
 // The target is already the selected registrar here.
 // A required nameserver blocks a whole row even when the existing intent already allows registration.
 $facts = OfferState::decode($target->fresh()->catalogue_facts);
@@ -137,6 +190,12 @@ DB::table('domains_tlds')->where('id',$target->id)->update(['catalogue_facts'=>O
 $blocked = $setup->preview($id,['com','co.test'],$custom);
 same(['blocked','blocked'],array_column($blocked['rows'],'status'),'Known unsupported and missing offers are each refused');
 same(null,$blocked['review_key'],'No review is issued for all-refused rows');
+$facts['observedAt'] = $now->modify('-2 days')->format(DATE_ATOM);
+$facts['freshUntil'] = $now->modify('-1 day')->format(DATE_ATOM);
+DB::table('domains_tlds')->where('id',$target->id)->update(['catalogue_facts'=>OfferState::json($facts)]);
+$blocked = $setup->preview($id, ['com'], [...$keep, 'transfer'=>false]);
+same('blocked', $blocked['rows']['com']['status'], 'Expired Enom facts retain the known nameserver requirement');
+same(null, $blocked['review_key'], 'Known unsupported Enom setup cannot change the sale actions');
 $names25 = array_map(static fn ($letter) => 'test.'.$letter.$letter, range('a','y'));
 same(25,count($setup->preview($id,$names25,$keep)['rows']),'All 25 requested dispositions returned');
 foreach ([[],['com','com'],[...$names25,'test.zz']] as $invalid) {

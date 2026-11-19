@@ -337,11 +337,11 @@ final class Writer implements Catalogue
         };
     }
 
-    /** Why fresh registrar terms rule out a sale: 'unsupported_facts', 'unsupported_term', or null. Staff pages ask
-     * this too, so they offer only what this writer saves. Unknown or expired terms never block: the review queues a
-     * read of the sold set, and the evaluator holds the sale until it lands. */
+    /** Staff may record intent while terms await refresh. A known Enom nameserver requirement
+     * continues to block setup until a later observation supersedes it. */
     public static function termsBlock(?Facts $facts, string $registrarKey, string $tld, bool $sell, int $longest, bool $transfer, \DateTimeImmutable $now): ?string
     {
+        if ($registrarKey === 'enom' && $facts?->requiresNameservers === true) { return 'unsupported_facts'; }
         if (!$facts || !$facts->fresh($now)) { return null; }
         if (!\Paymenter\Extensions\Servers\Domains\Services\RegistryInputs::supported($registrarKey, $tld, $facts->registryFields) || $facts->renewalSafe !== true
             || $facts->requiresNameservers !== false || $facts->autoRenewOnly !== false) { return 'unsupported_facts'; }
