@@ -228,8 +228,8 @@ class ViewOperation extends RecordDetailPage
             : Value::fact(Fact::date($checks['last_at'],Reader::Staff),$checks['last_result']);
         $next = match (true) {
             $checks['checking'] => Value::state(State::Checking, Reader::Staff),
-            $checks['due'] => Value::state(State::Delayed, Reader::Staff, 'A registrar check is due.',
-                at: Fact::date($checks['next_at'],Reader::Staff)),
+            $checks['due'] => Value::stateAt(State::Delayed, Reader::Staff, 'Due since',
+                Fact::date($checks['next_at'], Reader::Staff)),
             $checks['next_at'] !== null => Value::fact(Fact::date($checks['next_at'], Reader::Staff)),
             default => RequestRows::text('None scheduled', $checks['next_reason']),
         };
