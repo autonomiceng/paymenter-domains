@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/watch-dns.php';
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\{Auth,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,WatchFacts,WatchRows};
 use Paymenter\Extensions\Servers\Domains\Models\{WatchAudit,WatchDnsObservation};
 use Paymenter\Extensions\Servers\Domains\Presentation\State;
@@ -16,7 +16,12 @@ $history=WatchFacts::history($watch);
 $failures=[];
 if(strtotime($history[0]['time'])!==$returned->timestamp||$history[0]['by']!=='System'){$failures[]='The resumed monitoring event must be latest and attributed to the system';}
 $at=time()-86400;
-$watch->setRelation('points',new WatchDnsObservation(['watch_id'=>$watch->id,'user_id'=>$owner->id,'watch_revision'=>$watch->revision,'check_kind'=>'points','started_at'=>$at,'result'=>'partial','partial'=>true,'facts'=>['queries'=>[['name'=>$watch->canonical_name,'type'=>'A','state'=>'unknown','records'=>[]]]]]));
+$attempt=DB::transaction(fn()=>WatchDnsObservation::create(['watch_id'=>$watch->id,'user_id'=>$owner->id,
+    'watch_revision'=>$watch->revision,'profile_id'=>$profile->id,'profile_revision'=>$profile->revision,
+    'psl_revision'=>$watch->psl_revision,'mixed'=>false,'check_kind'=>'points','started_at'=>$at,'completed_at'=>$at+1,
+    'result'=>'partial','partial'=>true,'facts'=>['version'=>1,'queries'=>[['name'=>$watch->canonical_name,'type'=>'A','state'=>'unknown','records'=>[]]]],
+    'digest'=>str_repeat('d',64),'source_digest'=>$source->source_digest]));
+$watch->setRelation('points',$attempt);
 $facts=WatchFacts::for($watch,['keys'=>[],'summary'=>null]);$value=WatchRows::value($facts['Evidence']['Public DNS']);
 if($value->state!==State::CouldntRead){$failures[]='A retained failed public read must not become an unread state';}
 expect($failures===[],implode('; ',$failures));

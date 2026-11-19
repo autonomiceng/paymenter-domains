@@ -311,6 +311,7 @@ $excluded=[
 
     'ManagedPublicEnrollment.php'=>['managed_enrollment'],
     'ManagedDnsSetup.php'=>['external','platform'], // DNS intent values, not staff reason codes.
+    'WatchTemplateAssignment.php'=>['deployment','external','inherit','pin','platform','site','unset'], // Template choices and DNS intents.
     'NativeServiceRefusal.php'=>['identity','price'], // Structured log fields.
     'ProviderSendGuard.php'=>['not_callable','clock_failed','guard_threw'], // Structured log fields.
     'CartHandoffFailure.php'=>['unclassified','eligibility_unconfirmed'], // Structured cart handoff log keys, never request safe codes.
