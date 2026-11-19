@@ -43,7 +43,6 @@ final class TldRegistrar
                 $prices===SellerAvailability::UNREADABLE=>self::unreadablePrice($account->registrar_key,$ending),
                 $priceIssue=>self::missingPrice($account->registrar_key,$ending),
                 !$account->processing_enabled=>'Orders are paused on this account.',
-                !$facts?->fresh($clock->now())=>'Registrar terms still need checking.',
                 default=>null,
             };
             $out[(int)$account->server_id]=['label'=>(string)$server->name,'reason'=>$reason,'disabled'=>$off||$unsupported!==null||$priceIssue,'price_issue'=>$priceIssue];
@@ -73,12 +72,14 @@ final class TldRegistrar
             $state=$status['state']??null;
             $queued=$state==='queued'&&(isset($status['due_at'])||!empty($status['remaining']));
             $failure=$status['failure']??null;
+            $applying=!empty($status['remaining'])&&isset($status['succeeded_at']);
             $completed=$state==='ready'&&isset($status['succeeded_at']);
             $reason=match(true){
                 $failure!==null=>$choice['reason'].' Price sync failed. '.rtrim(TldFacts::syncCause($failure),'.').'.',
+                $applying=>$choice['reason'].' Saving the latest prices.',
                 $state==='running'=>$choice['reason'].' Price sync is running for this account.',
-                $queued=>$choice['reason'].' Price sync is queued for this account.',
-                $completed=>'The last price sync finished. '.$choice['reason'],
+                $queued=>$choice['reason'].' Price sync queued.',
+                $completed=>$choice['reason'].' Last sync completed.',
                 default=>$choice['reason'],
             };
             $url=null;
@@ -110,7 +111,7 @@ final class TldRegistrar
         }catch(\Throwable){return false;}
     }
 
-    /** Give every option a readable status before the native select opens. */
+    /** Explain exceptions outside the native select, so they stay visible when it opens. */
     public static function choiceSummary(array $choices, string $ending): HtmlString
     {
         $prices=self::priceRecovery($choices);
@@ -118,8 +119,8 @@ final class TldRegistrar
         foreach($choices as $id=>$choice){
             $price=$prices[$id]??null;
             $reason=$price['reason']??$choice['reason'];
-            $line='<strong>'.e($choice['label']).'</strong><br>';
-            $line.=$choice['disabled']?e($reason):e('Can be selected.'.($reason===null?'':' '.$reason));
+            if($reason===null){continue;}
+            $line='<strong>'.e($choice['label']).'</strong><br>'.e($reason);
             if(($url=$price['url']??null)!==null){
                 $line.=' '.Blade::render('<x-filament::link :href="$url" size="sm">{{ $label }}</x-filament::link>',['url'=>$url,'label'=>'Open '.$choice['label']]);
             }

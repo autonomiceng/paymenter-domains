@@ -8,8 +8,9 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName, CatalogueFreshness};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName, CatalogueFreshness, Environment};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestCatalogueFacts;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AcquisitionOffers, CardFee, NativeCatalogue, PricingRules, StaffSettingsReview as Review};
 
 /** A normalized selection. Both the preview and the locked writer rebuild its local evidence. */
@@ -87,7 +88,7 @@ final readonly class SalesSetupDraft
         $accounts = Account::whereIn('server_id', $groups->pluck('server_id')->push($this->serverId))->get()->keyBy('server_id');
         $servers = Server::whereIn('id', $accounts->keys())->get()->keyBy('id');
         $freshness = CatalogueFreshness::forAccounts($accounts->keys()->all(), omitInvalid: true);
-        $bindings = $accountErrors = [];
+        $bindings = $accountErrors = $credentials = [];
         foreach ($accounts as $id => $a) {
             try {
                 $bindings[$id] = AccountBindings::binding($a);
@@ -103,6 +104,7 @@ final readonly class SalesSetupDraft
             $credential = null;
             try {
                 $credential = $this->bindings->offerCredentialRevision($b);
+                $credentials[$id] = $credential;
                 $this->bindings->requireOfferAccount($b, $servers[$id], $a);
                 $ready = true;
             } catch (\DomainException) { $ready = false; }
@@ -163,6 +165,11 @@ final readonly class SalesSetupDraft
                 };
                 [$row, $command] = $this->propose($row, $t, $before, $intent, $block, $rule, $defaultRule, $fee, $showCosts,
                     $readiness[$this->serverId], $now, $native[$t->id] ?? []);
+                if ($block === null && $binding->registrarKey === 'namesilo' && $binding->environment === Environment::Test
+                    && isset($credentials[$this->serverId])
+                    && TestCatalogueFacts::hasEvidence($binding, $credentials[$this->serverId], $name, $this->clock) === false) {
+                    $row['facts_state'] = 'waiting_for_evidence';
+                }
                 if ($command || $row['status'] === 'unchanged' && $this->pricing !== 'keep') {
                     // Seller changes also republish this suffix's other accounts. Price-only edits touch the target.
                     $publishing = $command?->publishesSeller() ? $group : [$t];

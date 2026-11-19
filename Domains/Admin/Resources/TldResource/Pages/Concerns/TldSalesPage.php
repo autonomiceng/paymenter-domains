@@ -56,7 +56,8 @@ trait TldSalesPage
         $seller=$fix==='seller'?$actions['seller']->label($verb)->modalHeading($verb)->color('primary'):null;
         // Every sales action is always registered; visibility picks the one that shows.
         return array_values(array_filter([$this->startSellingAction()->color($fix===null?'primary':'gray'),$seller,$actions['override']->color($fix==='override'?'primary':'gray'),
-            ActionGroup::make(array_values(array_filter([$seller?null:$actions['seller'],$this->stopSellingAction()])))->label('More')->button()->color('gray')]));
+            ActionGroup::make(array_values(array_filter([$seller?null:$actions['seller'],$this->stopSellingAction()])))
+                ->label('More')->button()->color('gray')->dropdownTeleport()]));
     }
     /** @return array{label:string,tone:string,reason:?string,invalid:bool,kind:?string} */
     private function sales(): array
@@ -133,6 +134,7 @@ trait TldSalesPage
         if($this->fix()==='seller'&&$reason!=='No registrar selected'&&!TldFacts::canChangeSeller()){
             return rtrim($reason,'.').'. '.TldFacts::ASK_SELLER;
         }
+        if($reason===TldFacts::TERMS_EVIDENCE_MISSING){return $reason.'.';}
         if(($this->snap()['selected']??false)&&!\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::read($this->getRecord())&&!str_contains($reason,'registrar terms')){
             // Expired terms were read; they are out of date, and Sync prices refreshes them.
             return ($reason===''?'':rtrim($reason,'.').'. ').(\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::stale($this->getRecord())

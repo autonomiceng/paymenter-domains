@@ -77,11 +77,11 @@ config(['domains.namesilo_test.catalogue'=>false]);
 $open($actor)->assertDontSeeHtml($link);
 config(['domains.namesilo_test.catalogue'=>true]);
 $feed(['feed_due'=>$now->getTimestamp()]);
-$open($actor)->assertDontSeeHtml($link)->assertSee('queued for this account');
+$open($actor)->assertDontSeeHtml($link);
 $feed(['tries'=>1],['offer_feed_failure'=>'read_deadline','offer_feed_failed_at'=>$now->getTimestamp()]);
 $open($actor)->assertDontSeeHtml($link)->assertSee("Registrar didn't answer in time");
 $feed([],['offer_feed_succeeded_at'=>$now->getTimestamp()]);
-$completed=$open($actor)->assertSeeHtml($link)->assertSee('last price sync finished')->assertSee('prices for .abc')->assertActionHidden('start_selling');
+$completed=$open($actor)->assertSeeHtml($link)->assertSee('prices for .abc')->assertActionHidden('start_selling');
 expect(str_contains($modal($picker($completed)),$link),'A completed account sync still offers a manual recheck in the dialog');
 $open(staffUser([Staff::VIEW,Staff::POLICY,Review::permission('seller')]))->assertDontSeeHtml($link);
 

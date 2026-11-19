@@ -21,7 +21,7 @@ final class OfferWork
     public function __construct(private readonly Writer $writer, private readonly Clock $clock,
         private readonly AccountReadBudget $minute, private readonly \Closure $feed, private readonly \Closure $allowance,
         private readonly ?\Closure $credentials = null, private readonly ?int $generation = null,
-        private readonly ?\Closure $guard = null) {
+        private readonly ?\Closure $guard = null, private readonly ?\Closure $factsEvidence = null) {
         if (($generation === null) !== ($guard === null)) { throw new \LogicException('Generation and guard must be composed together.'); }
     }
 
@@ -103,7 +103,16 @@ final class OfferWork
             $t = Tld::where('server_id', $binding->serverId)->where('tld', $tld)->firstOrFail(); $this->offerBinding($binding, $t);
             if ($failure) { return $failure; }
             $state = $work['facts'][$tld] ?? []; $facts = OfferState::facts($t->catalogue_facts);
-            return [...$state, 'state' => $facts && $facts->fresh($this->clock->now()) && TermSupport::currentFacts($binding, $tld, $facts) && OfferState::testFactsAccepted($binding, $tld, $facts, $this->clock) ? 'ready' : (!$state ? 'unknown' : (!empty($state['unsupported']) ? 'unsupported' : (!empty($state['failure']) ? 'retrying' : 'queued'))),
+            $status = match (true) {
+                $facts && $facts->fresh($this->clock->now()) && TermSupport::currentFacts($binding, $tld, $facts)
+                    && OfferState::testFactsAccepted($binding, $tld, $facts, $this->clock) => 'ready',
+                !$state => 'unknown',
+                !empty($state['waiting_for_evidence']) => 'waiting_for_evidence',
+                !empty($state['unsupported']) => 'unsupported',
+                !empty($state['failure']) => 'retrying',
+                default => 'queued',
+            };
+            return [...$state, 'state' => $status,
                 'due_at' => $state['due_at'] ?? null];
         }
         if (!$row || $row->offer_work === null) { return ['state' => 'idle']; }
@@ -191,6 +200,7 @@ final class OfferWork
             $this->republish($writer, $b, $work, $guard, $touched);
             // Republication can wake retained facts when reviewed authority changes.
             $work['facts'] = OfferState::decode(DB::table('domains_observation_queues')->where('server_id', $b->serverId)->value('offer_work'))['facts'] ?? [];
+            $this->checkFactsEvidence($b, $credential, $work);
             $t = $this->nextFacts($work);
             if (!empty($work['pending'])) {
                 if ($t) { $this->facts($writer, $b, $t, $work, $guard, $touched); }
@@ -296,11 +306,33 @@ final class OfferWork
         $work['facts'][$tld] = [...$state, 'due_at' => $due];
     }
 
+    /** Some terms require independent local evidence before a provider lookup can confirm the ending. */
+    private function checkFactsEvidence(AccountBinding $binding, ?string $revision, array &$work): void
+    {
+        if (!$this->factsEvidence || $revision === null || empty($work['facts'])) { return; }
+        // A failed terms lookup must still let already-fetched prices drain under the normal writer fence.
+        try { $check = ($this->factsEvidence)($binding, $revision); }
+        catch (\Throwable) { $check = static fn (): bool => false; }
+        if ($check === null) { return; }
+
+        foreach ($work['facts'] as $tld => $state) {
+            try { $ready = $check((string) $tld); }
+            catch (\Throwable) { $ready = false; }
+            if (!$ready) {
+                $work['facts'][$tld] = [...$state, 'waiting_for_evidence' => true,
+                    'failure' => 'catalogue_evidence_missing', 'due_at' => null];
+            } elseif (!empty($state['waiting_for_evidence'])) {
+                unset($state['waiting_for_evidence'], $state['failure'], $state['tries']);
+                $work['facts'][$tld] = [...$state, 'due_at' => $this->at()];
+            }
+        }
+    }
+
     private function nextFacts(array $work): ?string
     {
         $ending = null; $due = PHP_INT_MAX;
         foreach ($work['facts'] ?? [] as $tld => $state) {
-            if (!empty($state['unsupported'])) { continue; }
+            if (!empty($state['unsupported']) || !empty($state['waiting_for_evidence'])) { continue; }
             if ($state['due_at'] <= $this->at() && ($state['due_at'] < $due || $state['due_at'] === $due && strcmp($tld, $ending ?? '') < 0)) {
                 $ending = $tld; $due = $state['due_at'];
             }

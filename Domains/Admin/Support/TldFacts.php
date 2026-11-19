@@ -21,6 +21,7 @@ final class TldFacts
     public const UNREADABLE_SETTINGS="Saved TLD settings can't be read, so Edit prices can't fix them. Ask your site admin to restore them from a backup.";
     public const TERMS_CHECKING='Set to sell; checking registrar terms';
     public const TERMS_FAILED="Set to sell; couldn't read registrar terms";
+    public const TERMS_EVIDENCE_MISSING='Verified NameSilo test terms are missing for this ending';
     /** Registrations here need annual renewals on the same account, and its Renewals switch is off. */
     public const RENEWALS_OFF='Renewals are off for this account';
     /** Why a TLD is not for sale when no term has current prices. */

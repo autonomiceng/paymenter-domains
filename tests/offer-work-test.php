@@ -273,7 +273,21 @@ $credential = 'synthetic-revision-two'; $clock->time = $clock->time->modify('+61
 $before = count($wire->calls); $worker->tick(2);
 same(5, count($wire->calls) - $before, 'Rotation discards the old buffer and fetches current account evidence before publishing more offers');
 same(38, $worker->status($b)['remaining'], 'The replacement feed has its own complete bounded buffer');
-$worker->tick(2); $worker->tick(2);
+$accountEvidenceUnreadable = true;
+$failingFactsWorker = new OfferWork($writer, $clock, new AccountReadBudget($clock, 25), $factory, static fn () => 25,
+    $credentialPort, factsEvidence: static function () use (&$accountEvidenceUnreadable): Closure {
+        if ($accountEvidenceUnreadable) { throw new DomainException('Account evidence unavailable.'); }
+        return static fn () => throw new DomainException('Ending evidence unavailable.');
+    });
+$failingFactsWorker->requestFacts($b, 'suffixad');
+$before = count($wire->calls);
+$failingFactsWorker->accountTurn($b->serverId);
+same(13, $worker->status($b)['remaining'], 'An unreadable evidence account must still apply its next price batch');
+$accountEvidenceUnreadable = false;
+$failingFactsWorker->accountTurn($b->serverId);
+same(0, $worker->status($b)['remaining'], 'An unreadable ending must still finish its retained price batch');
+same('waiting_for_evidence', $worker->status($b, 'suffixad')['state'], 'Unreadable terms remain held');
+same($before, count($wire->calls), 'The retained buffer drains without any provider reads');
 $clock->time = $clock->time->modify('+61 seconds'); $worker->sync($b);
 $oldRevision = $read()->revision; $lastGood = $worker->status($b)['succeeded_at'];
 $wire->during = static function ($command) use (&$credential): void {

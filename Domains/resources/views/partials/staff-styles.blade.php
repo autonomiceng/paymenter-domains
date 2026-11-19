@@ -20,6 +20,11 @@
 .domains-missing__cause{margin-inline-start:.5rem;color:var(--panel-fg-2,var(--gray-500))}
 .domains-note{min-width:14rem;max-width:24rem;overflow-wrap:anywhere}
 .domains-narrow{max-width:12rem}
+.domains-price-notices{display:grid;gap:.5rem;margin-block-end:.75rem;white-space:normal;overflow-wrap:anywhere}
+.domains-price-preview table{width:100%;font-variant-numeric:tabular-nums}
+.domains-price-preview table :is(th,td){text-align:end;white-space:nowrap;padding:.375rem .5rem}
+.domains-price-preview table th:first-child{text-align:start}
+@media(max-width:639px){.domains-price-preview table :is(th,td){padding-inline:.25rem}.domains-price-preview table th{white-space:normal}}
 /* P-TBL-7: columns size to content. Values and people's names stay whole on one line, and only a linked
    name or note shortens with "..." (the record it opens shows it in full). */
 .domains-line{display:block;white-space:nowrap}
