@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\User;
-use Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue;
+use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,StaffCatalogue,Writer};
 use Paymenter\Extensions\Servers\Domains\Services\StaffReason;
 use Filament\Actions\{Action,ActionGroup};
 use Filament\Forms\Components\{Checkbox,Hidden,Radio,Select,Textarea,TextInput};
@@ -333,25 +333,53 @@ final class SettingsActions
     {
         $t=$tld?Tld::find($tld):null;
         if($t===null||$rule===null){return new \Illuminate\Support\HtmlString('');}
-        $now=now()->toDateTimeImmutable();
         try{$rows=(StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE))->preview($t,$rule);}catch(\Throwable){$rows=[];}
         if($rows===[]){return new \Illuminate\Support\HtmlString('<p>Exact registrar costs missing. '.e(TldFacts::refreshText(TldFacts::snapshot($t)['refresh']??[])).'</p>');}
         $costs=Staff::can(Staff::COSTS);$money=static fn(?string $v)=>$v===null?'None':'$'.preg_replace('/(\.\d{2}\d*?)0+$/D','$1',$v);
         $cell=static fn(string $html)=>'<td>'.$html.'</td>';
         $html='<div class="domains-preview"><table cellpadding="6"><thead><tr>';
         foreach(['Price',...($costs?['Cost']:[]),'Now','After saving'] as $label){$html.='<th scope="col">'.e($label).'</th>';}
-        $html.='</tr></thead><tbody>';$outdated=false;
+        $html.='</tr></thead><tbody>';
         foreach($rows as $row){
-            $outdated=$outdated||(!$row['synced']&&$row['cost']!==null);
-            $note=match(true){$row['cost']===null=>TldFacts::NOT_OFFERED,!$row['synced']=>'Cost out of date',$row['hold']==='below_cost'=>'Below cost: not sold',
-                $row['alert']==='below_cost'=>'Below cost: still billed',$row['hold']!==null=>'Not sold',default=>null};
+            $note=self::previewNote($t,$row);
             $html.='<tr>'.$cell(e(ucfirst($row['action']).', '.$row['term'].' '.($row['term']===1?'year':'years')))
                 .($costs?$cell(e($money($row['cost']))):'').$cell(e($money($row['current'])))
-                .$cell(e(in_array($row['hold'],[null,'below_cost'],true)?$money($row['new']):'Not sold').($note===null?'':'<div class="domains-warn">'.e($note).'</div>')).'</tr>';
+                .$cell(e($money($row['new'])).($note===null?'':'<div class="domains-warn">'.e($note).'</div>')).'</tr>';
         }
         $html.='</tbody></table></div>';
-        if($outdated){$html.='<p class="domains-warn">Saving publishes prices using saved costs. New sales with out-of-date costs stay off sale until Sync prices completes.</p>';}
         return new \Illuminate\Support\HtmlString($html);
+    }
+    private static function previewNote(Tld $t,array $row): ?string
+    {
+        if($row['synced']&&$row['cost']===null){return TldFacts::NOT_OFFERED.' by this registrar for this term.';}
+        if($row['hold']==='stale_price'||(!$row['synced']&&in_array($row['hold'],[null,'below_cost'],true))){
+            return 'Cost out of date. Use Sync prices on the TLD page.';
+        }
+        if($row['alert']==='below_cost'){return TldFacts::BELOW_COST.': still billed';}
+        return match($row['hold']){
+            'below_cost'=>TldFacts::BELOW_COST.': not sold. '.TldFacts::FIXES[TldFacts::BELOW_COST],
+            'staff_stopped'=>'Sales are off. Check the sales settings on the TLD page.',
+            'staff_term_stopped'=>$row['action']==='transfer'
+                ?'Transfers are off. Check Edit terms in What you sell.'
+                :'This term is off. Check the longest registration term in Edit terms.',
+            'renewal_stopped'=>'Renewals are off for this TLD. Check its sales settings.',
+            'seller_changed'=>'This account is not set to sell this action. '.TldFacts::fixText(TldFacts::NO_SELLER),
+            'account_unavailable'=>'Check setup on Registrar account.',
+            'unknown_facts'=>'Registrar terms are missing. Check them on the TLD page.',
+            'stale_facts'=>'Registrar terms are out of date. Check them on the TLD page.',
+            'unsupported_facts'=>self::previewRegistrarRequirement($t),
+            'unsupported_term','provider_disabled'=>'A required term is not offered by this registrar. Check the TLD terms.',
+            'unknown_price'=>'A required cost is missing. Use Sync prices on the TLD page.',
+            'unpublished_price'=>'A required price is missing. Check the prices for this term and annual renewal.',
+            'cost_limit'=>'Over the cost limit. Check Default for new TLDs in What you sell.',
+            null=>$row['new']===null?'Price missing. Check the costs and pricing for this term.':null,
+            default=>'Check why sales are off on the TLD page.',
+        };
+    }
+    private static function previewRegistrarRequirement(Tld $t): string
+    {
+        $reason='This registrar '.Writer::unsupportedCause(OfferState::facts($t->catalogue_facts),(string)$t->registrar_key,(string)$t->tld);
+        return $reason.'. '.TldFacts::fixText($reason);
     }
     /** What saving Default pricing publishes: TLDs on enabled accounts, and who waits for a price sync. */
     private static function reach(): array
