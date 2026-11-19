@@ -3,11 +3,13 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\User;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,StaffCatalogue,Writer};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value;
+use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,SalesSetup,StaffCatalogue,Writer};
+use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Reader,State};
 use Paymenter\Extensions\Servers\Domains\Services\StaffReason;
 use Filament\Actions\{Action,ActionGroup};
 use Filament\Forms\Components\{Checkbox,Hidden,Radio,Select,Textarea,TextInput};
-use Filament\Schemas\Components\Text;
+use Filament\Schemas\Components\{Text,View};
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Utilities\{Get,Set};
 use Illuminate\Support\Facades\Auth;
@@ -83,13 +85,60 @@ final class SettingsActions
             'probe'=>'Reads the balance once and shows it on this page.',
         };
     }
-    /** Change registrar on a TLD that already has one says what the change does to its sales before it is saved. */
+    /** The chooser shows the sales effect once staff select a registrar and the orders it should take. */
     private static function sellerDescription(int $tld, ?int $seller, bool $selectable): string
     {
-        if($seller===null){return $selectable?self::description('seller'):'';}
-        $ending=Tld::findOrFail($tld)->tld;
-        if(!$selectable){return 'Removing the registrar stops new orders for .'.$ending.'. Existing domains stay with their registrar.';}
-        return 'Choose the registrar for new orders. If you pick another account, new orders for .'.$ending.' stop until that account\'s terms and prices are checked, and open carts drop .'.$ending.'. Existing domains stay where they are.';
+        if ($selectable) {
+            return self::description('seller');
+        }
+        return $seller === null ? '' : 'Removing the registrar stops new orders for .'.Tld::findOrFail($tld)->tld
+            .'. Existing domains stay with their registrar.';
+    }
+
+    private static function sellerSalePreview(string $ending, ?int $current, array $choices, Get $get): ?Value
+    {
+        $selected = (int) $get('seller');
+        $register = (bool) $get('register');
+        $transfer = (bool) $get('transfer');
+        $carts = $current === null || $current === $selected ? '' :
+            ' Checkout removes .'.$ending.' from carts that used the previous registrar.';
+        if (!$selected || !$register && !$transfer) {
+            return $current === null ? null : Value::state(State::NotForSale, Reader::Staff,
+                'New orders stop after saving. Checkout removes .'.$ending.' from open carts.');
+        }
+        if ($choices[$selected]['disabled'] ?? true) {
+            return null;
+        }
+        try {
+            $preview = SalesSetup::routed()?->preview($selected, [$ending], [
+                'register' => $register, 'transfer' => $transfer, 'longest' => null, 'pricing' => 'keep',
+            ]);
+        } catch (\DomainException|\InvalidArgumentException) {
+            $preview = null;
+        }
+        $row = $preview['rows'][$ending] ?? null;
+        if ($row === null || $row['status'] === 'blocked') {
+            return Value::state(State::NeedsReview, Reader::Staff, $row === null
+                ? 'Check the registrar account and its saved prices.'
+                : SalesSetupReview::blocked($row['reason']));
+        }
+        $state = SalesSetupReview::saleState($row);
+        $note = match ($state) {
+            State::ForSale => self::sellerPriceOnSave($row['prices']),
+            State::Checking => SalesSetupReview::termsCheck($row),
+            default => $row['orders_paused'] ? 'Sales stay off while orders are paused on this account.'
+                : 'Check the registrar account and its prices before selling.',
+        };
+        return Value::state($state, Reader::Staff, $note.$carts);
+    }
+
+    private static function sellerPriceOnSave(array $prices): string
+    {
+        $term = SalesSetupReview::firstSale($prices);
+        [$action, $years] = explode(':', $term);
+        $price = Fact::money($prices[$term]['after'], code: true);
+        $order = $action === 'register' ? 'a '.$years.'-year registration' : 'a transfer';
+        return 'Sales are available immediately after saving. The price for '.$order.' is '.$price->text.'.';
     }
     /** The rest of what staff may want to know, behind the dialog's "?" helper. Null when the sentence says it all. */
     public static function details(string $name): ?string
@@ -260,6 +309,9 @@ final class SettingsActions
                     ->placeholder('None')->default(fn()=>$policy()?->server_id)->live()->visible($sellerSubmit)->dehydratedWhenHidden();
                 $fields[]=Checkbox::make('register')->label('Allow registrations')->default(fn()=>$policy()?->register_enabled??false)->live()->visible($selectable)->dehydratedWhenHidden();
                 $fields[]=Checkbox::make('transfer')->label('Allow transfers')->default(fn()=>$policy()?->transfer_enabled??false)->live()->visible($selectable)->dehydratedWhenHidden();
+                $fields[]=View::make('domains::admin.seller-sale-preview')->visible($selectable)
+                    ->viewData(fn (Get $get) => ['preview' => self::sellerSalePreview(
+                        Tld::findOrFail($tld)->tld, $policy()?->server_id, $proposed($get), $get)]);
             }
             if($name==='renewal_billing'){
                 $billing=static fn()=>\Paymenter\Extensions\Servers\Domains\Services\RenewalBillingSettings::read($server);

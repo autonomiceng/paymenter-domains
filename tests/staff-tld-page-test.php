@@ -88,6 +88,11 @@ $other=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$silo->id])->asser
 same('.com on OFFLINE DEMO NameSilo (synthetic)',$named($other),'Two pages for one TLD never share a title');
 // Each price shows the cost for the same action, so a price never reads against another action's cost.
 expect(substr_count($text($page->html()),'Cost $')>=2,'Registration and renewal each show their own cost');
+// A choice with usable current terms describes the charge that is available when the change saves.
+$dialog=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->mountAction('seller')->call('$refresh');
+$sellerModal=$text($dialog->effects['partials']['action-modals.0']??'');
+$registerPrice='$'.PriceCatalogue::retail(Price::where(['server_id'=>$enom->server_id,'tld'=>'com','action'=>'register','term'=>1])->value('retail'));
+expect(str_contains($sellerModal,State::ForSale->label())&&str_contains($sellerModal,$registerPrice),'Change registrar previews the available one-year charge');
 foreach(['For sale','Change registrar','More','Sales','Registrar for new orders','Existing domains stay with their registrar','Terms','1 to 3 years',
     'Price sync','Last updated','Oct 18, 2026','No update scheduled. Check Site setup on the Registrar account page, and the background worker.',
     'Edit prices','Pricing','Registration','Renewal','Transfer','Default pricing','New orders','History'] as $see){$page->assertSee($see);}

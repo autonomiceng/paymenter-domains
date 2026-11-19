@@ -10,8 +10,9 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{SetUpSales,ViewTld};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{SalesSetupReview, Staff};
 use Paymenter\Extensions\Servers\Domains\Catalogue\OfferState;
+use Paymenter\Extensions\Servers\Domains\Presentation\State;
 use Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview as Review;
 
 extract(commerceFixture(true));
@@ -99,6 +100,7 @@ $setup->set('draft', [...$setup->get('draft'), 'server' => $target->server_id, .
 same(['com' => 'ready', 'net' => 'blocked'], array_map(static fn($row) => $row['status'], $setup->get('review.rows')),
     'The full selection is reviewed, including a suffix missing from the target account');
 same([], $setup->get('review.rows.net.prices'), 'Missing prices do not produce a draft amount');
+$setup->assertSeeHtml('aria-label="Draft prices for .net"');
 
 DB::table('domains_tlds')->where('id', $absent->id)->update(['tld' => 'org']);
 $setup->set('confirmation', $reason)->call('save');
@@ -107,27 +109,54 @@ same($initialKeys, $reviewKeyCount(), 'Selection substitution writes nothing');
 DB::table('domains_tlds')->where('id', $absent->id)->update(['tld' => 'net']);
 
 $setup->call('reviewChanges')->assertHasNoErrors();
-DB::table('domains_prices')->where('server_id', $target->server_id)->where('tld', 'com')->where('action', 'renew')->increment('revision');
+$firstKey = $setup->get('review.review_key');
+DB::table('domains_prices')->where('server_id', $target->server_id)->where('tld', 'com')->where('action', 'transfer')
+    ->increment('revision', 1, ['wholesale' => '9.0000']);
 $setup->call('save')->assertHasNoErrors();
-same([], $setup->get('review'), 'A price revision requires a fresh review');
+$setup->assertSet('outcome', null);
+expect($setup->get('review.review_key') !== $firstKey && $setup->get('review.review_key') !== null,
+    'A stale save issues a fresh confirmation');
+same('8.50', $setup->get('previousReview.com.prices.transfer:1.after'), 'The previous proposal remains visible');
+same('10.50', $setup->get('review.rows.com.prices.transfer:1.after'), 'The updated proposal reflects the new cost');
+$setup->assertSee('$8.50')->assertSee('$10.50');
 $setup->assertSet('draft.markup', '1.20')->assertSet('confirmation.reason', $reason['reason']);
 same($initialKeys, $reviewKeyCount(), 'A stale review writes nothing');
-$setup->call('reviewChanges')->assertHasNoErrors();
+$rights = array_keys(Staff::permissions());
+$staff->role->update(['permissions' => array_values(array_diff($rights, [Staff::COSTS]))]);
+$setup->call('$refresh');
+foreach ([$setup->get('previousReview'), $setup->get('review.rows')] as $snapshot) {
+    expect(!array_key_exists('cost', $snapshot['com']['prices']['transfer:1']), 'Revoked Costs access removes wholesale from the review state');
+}
+$setup->assertSee('$8.50')->assertSee('$10.50');
+$staff->role->update(['permissions' => $rights]);
 $setup->call('save')->assertHasNoErrors();
 same(['com'], $setup->get('outcome.rows'), 'Confirmation saves exactly the reviewed ready suffix');
 same(['net'], array_keys($setup->get('outcome.failures')), 'The blocked suffix is in the actual outcome');
 same('26.50', $setup->get('outcome.outcomes.com.prices.register:3.after'), 'The saved result uses the writer amount');
+same('10.50', $setup->get('outcome.outcomes.com.prices.transfer:1.after'), 'Confirmation publishes the refreshed amount');
+same([], $setup->get('previousReview'), 'Confirmation clears the comparison');
 same($initialKeys + 1, $reviewKeyCount(), 'The confirmed review is used once');
-$facts = OfferState::decode($target->fresh()->catalogue_facts);
+$facts = OfferState::decode($other->fresh()->catalogue_facts);
 $facts['requiresNameservers'] = true;
-DB::table('domains_tlds')->where('id', $target->id)->update(['catalogue_facts' => OfferState::json($facts)]);
+DB::table('domains_tlds')->where('id', $other->id)->update(['catalogue_facts' => OfferState::json($facts)]);
 $refusal = $singlePage();
-$refusal->set('draft', [...$refusal->get('draft'), ...$custom])->call('reviewChanges')->assertHasNoErrors();
+$refusal->set('draft', [...$refusal->get('draft'), ...$custom, 'server' => $other->server_id, 'markup' => '3.20'])
+    ->call('reviewChanges')->assertHasNoErrors();
 same('blocked', $refusal->get('review.rows.com.status'), 'Known required nameservers refuse sales setup');
-same('26.50', $refusal->get('review.rows.com.prices.register:3.after'), 'The refused row has a calculated draft');
-$refusal->assertSeeHtml('aria-label="Draft prices for .com"')->assertSee('$26.50')->assertDontSeeHtml('wire:click="save"');
+same('9.50', $refusal->get('review.rows.com.prices.register:1.after'), 'The refused account has a distinct calculated draft');
+same('7.50', $refusal->get('review.rows.com.previous_sales.register:1'), 'The current account keeps its live price');
+$refusal->assertSeeHtml('aria-label="Draft prices for .com"')->assertSee('$7.80')->assertSee('$9.50')->assertSee('$7.50')
+    ->assertDontSeeHtml('wire:click="save"');
 $refusal->set('confirmation', $reason)->call('save')->assertSet('outcome', null);
 same($initialKeys + 1, $reviewKeyCount(), 'The refused draft cannot be confirmed');
+
+DB::table('domains_tlds')->where('id', $target->id)->update(['catalogue_facts' => null]);
+$checking = $singlePage();
+$checking->set('draft', [...$checking->get('draft'), ...$custom, 'markup' => '2.20'])->call('reviewChanges')->assertHasNoErrors();
+same(State::Checking, SalesSetupReview::saleState($checking->get('review.rows.com')), 'Unread terms hold the planned sale');
+$checking->set('confirmation', $reason)->call('save')->assertHasNoErrors();
+same(['com'], $checking->get('outcome.rows'), 'The writer saves intent while terms need checking');
+$checking->assertSee(State::Checking->label());
 same(0, $reads->calls, 'Staff setup uses saved prices and terms');
 $nativeSuccessful = true;
 echo "Single and bulk sales setup pages require a matching review.\n";

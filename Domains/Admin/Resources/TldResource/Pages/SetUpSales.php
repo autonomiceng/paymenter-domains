@@ -35,6 +35,7 @@ class SetUpSales extends RecordDetailPage
     public array $confirmation = [];
     #[Locked] public array $selected = [];
     #[Locked] public array $review = [];
+    #[Locked] public array $previousReview = [];
     #[Locked] public ?array $outcome = null;
     #[Locked] public ?string $problem = null;
     #[Locked] public string $initial = '';
@@ -108,6 +109,25 @@ class SetUpSales extends RecordDetailPage
     public function hydrate(): void
     {
         abort_unless(self::canAccess() && $this->origin['actor'] === (int) Auth::id(), 403);
+        if (!Staff::can(Staff::COSTS)) {
+            $this->previousReview = self::withoutCosts($this->previousReview);
+            if (isset($this->review['rows'])) {
+                $this->review['rows'] = self::withoutCosts($this->review['rows']);
+            }
+            if (isset($this->outcome['outcomes'])) {
+                $this->outcome['outcomes'] = self::withoutCosts($this->outcome['outcomes']);
+            }
+        }
+    }
+
+    private static function withoutCosts(array $rows): array
+    {
+        foreach ($rows as &$row) {
+            foreach ($row['prices'] as &$price) {
+                unset($price['cost'], $price['profit']);
+            }
+        }
+        return $rows;
     }
 
     private function records(): array
@@ -221,6 +241,7 @@ class SetUpSales extends RecordDetailPage
     public function updatedDraft(): void
     {
         $this->review = [];
+        $this->previousReview = [];
         $this->problem = null;
     }
 
@@ -247,7 +268,7 @@ class SetUpSales extends RecordDetailPage
         try {
             if (self::stamp($this->records()) !== $this->origin['stamp']
                 || isset($this->origin['until']) && array_filter($this->selected, EndingChoices::hidden(...))) {
-                $this->review = [];
+                $this->updatedDraft();
                 $this->problem = self::SELECTION_CHANGED;
                 return;
             }
@@ -276,8 +297,19 @@ class SetUpSales extends RecordDetailPage
             } catch (\DomainException $error) {
                 throw ValidationException::withMessages(['confirmation.reason' => $error->getMessage()]);
             }
-            $this->outcome = $writer->save($server, $this->selected, $options, $review['review_key'], $reason);
-            $this->review = [];
+            try {
+                $this->outcome = $writer->save($server, $this->selected, $options, $review['review_key'], $reason);
+            } catch (\DomainException $error) {
+                if (!in_array($error->getMessage(), ['Settings changed. Reload this page.', 'Invalid review key.'], true)) {
+                    throw $error;
+                }
+                // The old rows are for display only. Saving again needs a newly reviewed key.
+                $this->previousReview = $review['rows'];
+                $this->review = [];
+                $this->reviewChanges();
+                return;
+            }
+            $this->updatedDraft();
             unset($this->cachedSchemas['content']);
         } catch (ValidationException $error) {
             throw $error;
@@ -297,7 +329,8 @@ class SetUpSales extends RecordDetailPage
                 if (isset($this->origin['until']) && self::stamp($this->records()) === $this->origin['stamp']) {
                     session()->flash(self::RETURN_SELECTION, ['actor' => $this->origin['actor'], 'ids' => $this->origin['ids']]);
                 }
-                $this->review = $this->draft = $this->confirmation = [];
+                $this->updatedDraft();
+                $this->draft = $this->confirmation = [];
                 $this->redirect($this->origin['url'].'#set-up-sales');
             });
     }
@@ -329,9 +362,6 @@ class SetUpSales extends RecordDetailPage
         $message = $error->getMessage();
         if ($message === 'Current staff permissions required.') {
             return 'Your permissions changed. Nothing was saved.';
-        }
-        if (in_array($message, ['Settings changed. Reload this page.', 'Invalid review key.'], true)) {
-            return 'Prices or settings changed, or the review expired. Nothing was saved. Review the changes again.';
         }
         if ($message === 'Review key used.') {
             return 'This review was already submitted. Check the TLDs before trying again.';
