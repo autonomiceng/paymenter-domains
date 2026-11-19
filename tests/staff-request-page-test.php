@@ -392,11 +392,21 @@ $policy['reconciliation']['manual_check']=true;
 $policy['status_check']=['outcome'=>'scheduled','at'=>$readNow,'next_at'=>$readNow];
 $transfer->update(['policy'=>$policy]);
 same($readNow+3600,RequestFacts::transferChecks($transfer)['next_at'],'A manual check deferred by the registrar limit uses the recorded retry time');
-$policy['reconciliation'] = ['reason'=>'transfer_pending', 'transfer_status'=>'pending', 'staff_alert'=>false,
-    'final_check'=>'running', 'reading_until'=>$readNow+120, 'next_at'=>$readNow+3600];
-$transfer->update(['policy'=>$policy]);
-Livewire::actingAs($manager)->test(ViewOperation::class, ['record'=>$transfer->id])->assertSuccessful()
-    ->assertDontSee('Check now');
+$failedRead = ['reason'=>'transfer_status_unavailable', 'staff_alert'=>true, 'read_failed'=>true];
+foreach ([false, true] as $checking) {
+    $policy['reconciliation'] = $failedRead + ($checking ? [
+        'final_check'=>'running', 'reading_until'=>$readNow+120, 'next_at'=>$readNow+3600,
+    ] : []);
+    $transfer->update(['policy'=>$policy]);
+    $page = Livewire::actingAs($manager)->test(ViewOperation::class, ['record'=>$transfer->id])->assertSuccessful();
+    $checks = RequestFacts::transferChecks($transfer);
+    same([!$checking,$checking],[$checks['due'],$checks['checking']],'A prior read failure still has a due or running automatic check');
+    $html = $page->html();
+    expect(str_contains($html, '-row-last-check"') && str_contains($html, '-row-next-check"'),'The request displays the automatic check schedule after an earlier failure');
+    same(!$checking,str_contains($html, "mountAction('recheck',"),'Only the due check offers an immediate staff read');
+    unset($page);
+    gc_collect_cycles();
+}
 $transfer->update(['started_at'=>gmdate('Y-m-d H:i:s',$readNow-15*86400)]);
 $policy['reconciliation'] = ['reason'=>'transfer_pending', 'transfer_status'=>'pending', 'staff_alert'=>false];
 $transfer->update(['policy'=>$policy]);

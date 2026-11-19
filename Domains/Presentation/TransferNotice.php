@@ -34,8 +34,7 @@ final class TransferNotice
         if($reason==='transfer_rejection_unreconciled'){
             return ['title'=>'Registrar rejected the transfer.','body'=>'Final result and fee need a check. Contact support. Don’t start another transfer.','tone'=>'warning'];
         }
-        $retryingUnavailable = $reason === 'transfer_status_unavailable' && TransferPolling::followupScheduled($op, $now);
-        if($reason==='transfer_deadline_passed'||$retryingUnavailable){
+        if($reason==='transfer_deadline_passed'||TransferPolling::retryingFailedRead($op, $now)){
             if (($r['transfer_status'] ?? null) === 'needs_action') {
                 $privacy = ($r['transfer_privacy_blocked'] ?? false) === true ? ' Turn off WHOIS privacy there.' : '';
                 return ['title'=>self::title('transfer_deadline_passed'),'body'=>'Check approval, the domain lock and auth code at your old registrar.'.$privacy,

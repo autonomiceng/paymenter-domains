@@ -106,6 +106,13 @@ final class TransferPolling
         return self::expired($op, $now) && self::schedule($op, $now)['next_read_at'] !== null;
     }
 
+    /** A failed read before day seven can still have an overdue check scheduled. */
+    public static function retryingFailedRead(Operation $op, int $now): bool
+    {
+        return ($op->policy['reconciliation']['reason'] ?? null) === 'transfer_status_unavailable'
+            && self::followupScheduled($op, $now);
+    }
+
     public static function expired(Operation $op,int $now): bool { return self::applies($op)&&$now>=self::deadline($op); }
     public static function delay(int $checks): int { return min(43200,7200*(2**min(3,max(0,$checks-1)))); }
     /** Called under the operation locks before I/O, including failed/deferred attempts and worker restarts. */
