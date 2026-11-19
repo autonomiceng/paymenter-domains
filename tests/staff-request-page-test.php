@@ -424,6 +424,21 @@ foreach ([false, true] as $checking) {
     unset($page,$document,$times,$lastRow);
     gc_collect_cycles();
 }
+// A queued or running manual read keeps the previous registrar instruction until a new result replaces it.
+foreach ([[], ['reading_until'=>$readNow+120]] as $reservation) {
+    $policy['reconciliation'] = $reservation + ['reason'=>'resumed','transfer_status'=>'needs_action',
+        'transfer_privacy_blocked'=>true,'manual_check'=>true,'final_check'=>'done'];
+    $policy = Paymenter\Extensions\Servers\Domains\Services\TransferFollowup::record($transfer, $policy, $lastReadAt, 'needs_action');
+    $transfer->update(['policy'=>$policy]);
+    $instruction = RequestFacts::transferChecks($transfer)['customer_action'];
+    expect($instruction !== null, 'The stored response requires action at the old registrar');
+    $page = Livewire::actingAs($manager)->test(ViewOperation::class, ['record'=>$transfer->id])->assertSuccessful()
+        ->assertSee($instruction);
+    expect(!str_contains($page->html(), "mountAction('resume_reads',") && !str_contains($page->html(), "mountAction('recheck',"),
+        'The request does not offer a duplicate check');
+    unset($page);
+    gc_collect_cycles();
+}
 $transfer->update(['started_at'=>gmdate('Y-m-d H:i:s',$readNow-15*86400)]);
 $policy['reconciliation'] = ['reason'=>'transfer_pending', 'transfer_status'=>'pending', 'staff_alert'=>false];
 $transfer->update(['policy'=>$policy]);
