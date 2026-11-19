@@ -7,6 +7,8 @@ require __DIR__.'/Support/staff-tlds.php';
 require __DIR__.'/Support/native-commerce.php';
 require __DIR__.'/Support/offer-commerce.php';
 use Illuminate\Support\Facades\{Auth,DB};
+use Livewire\Livewire;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,Staff};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting,Context,Edit,Intent,OfferState,Projection,Query,StaffCatalogue,StaffCommands,Writer};
 use Paymenter\Extensions\Servers\Domains\Models\Price;
@@ -37,4 +39,42 @@ $commands=new StaffCommands(new Writer(new Projection($native),$clock,static fn(
 $r=new Review($actor->id,$binding->serverId,$t->id,'override',Review::ticket($actor->id,$binding->serverId,$t->id,'override',StaffCommands::stamp($binding->serverId,$t->id)),'Save supported terms');
 $commands->run($r,['mode'=>$rule['mode'],'markup'=>$rule['markup'],'round_up'=>$rule['round_up']]);
 same('7.99',Paymenter\Extensions\Servers\Domains\Services\PriceCatalogue::retail(Price::where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->where('term',1)->value('retail')),'Save changes the fresh term just as the preview says');
+
+// Update the mounted fields individually, as the live pricing controls do.
+$probe->setValue(null,[StaffCatalogue::class=>$source]);
+try {
+    $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])
+        ->mountAction('override')->assertActionMounted('override');
+    $draft='mountedActions.0.data.';
+    $previewRows=static function($page): int {
+        $modal=$page->call('$refresh')->effects['partials']['action-modals.0']??'';
+        $dom=new DOMDocument();
+        $dom->loadHTML('<div>'.$modal.'</div>',LIBXML_NOERROR|LIBXML_NOWARNING);
+        return (int)(new DOMXPath($dom))->evaluate('count(//div[@class="domains-preview"]//tbody/tr)');
+    };
+    $page->assertActionDataSet(['pricing'=>'custom','mode'=>'markup_percent','markup'=>'25.00']);
+    expect($previewRows($page)>0,'The saved percentage has a retail preview');
+
+    $page->set($draft.'mode','markup_fee_percent')->assertActionDataSet(['markup'=>'25.00']);
+    $page->set($draft.'mode','markup_percent')->assertActionDataSet(['markup'=>'25.00']);
+    $page->set($draft.'mode','markup_amount');
+    same(null,$page->get($draft.'markup'),'Changing from percent to dollars clears the old markup');
+    same(0,$previewRows($page),'A blank dollar markup has no retail preview');
+    $page->set($draft.'reason','Change markup units')->callMountedAction()->assertHasActionErrors(['markup'=>'required']);
+
+    $page->set($draft.'markup','0')->assertActionDataSet(['markup'=>'0']);
+    expect($previewRows($page)>0,'An explicitly entered zero has a retail preview');
+    $page->set($draft.'pricing','default');
+    expect($previewRows($page)>0,'Default pricing can still be previewed');
+    $page->set($draft.'pricing','custom')->assertActionDataSet(['markup'=>'0']);
+
+    $page->set($draft.'mode','fixed')->set($draft.'fixed_register','9')
+        ->set($draft.'fixed_renew','10')->set($draft.'fixed_transfer','11');
+    expect($previewRows($page)>0,'Fixed prices can still be previewed');
+    $page->set($draft.'mode','markup_fee_percent')->assertActionDataSet(['markup'=>null]);
+    same(0,$previewRows($page),'Switching from dollars through fixed to percent still requires a new markup');
+    $page->set($draft.'mode','fixed')->assertActionDataSet(['fixed_register'=>'9','fixed_renew'=>'10','fixed_transfer'=>'11']);
+} finally {
+    $probe->setValue(null,null);
+}
 $nativeSuccessful=true;echo "Pricing preview distinguishes stale cost and saving.\n";

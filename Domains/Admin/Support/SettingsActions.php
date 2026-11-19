@@ -8,6 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Services\StaffReason;
 use Filament\Actions\{Action,ActionGroup};
 use Filament\Forms\Components\{Checkbox,Hidden,Radio,Select,Textarea,TextInput};
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Utilities\{Get,Set};
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit,EnomTestSendLimit,EnomTestTransfer,CardFee,PriceCatalogue,PricingRule,PricingRules,StaffSettingsReview as Review,StaffSettingsWrites};
@@ -141,9 +142,27 @@ final class SettingsActions
                             fn($key)=>self::canSee(Review::permission($key==='default'?'remove_override':'override')),ARRAY_FILTER_USE_KEY))
                         ->default(fn()=>((StaffCatalogue::routed()!==null?!StaffCatalogue::routed()->own(Tld::findOrFail($tld)):(Tld::find($tld)?->use_default_rule??true))&&self::canSee(Review::permission('remove_override')))||!self::canSee(Review::permission('override'))?'default':'custom');
                 }
+                $markupUnit = static fn(mixed $mode): ?string => match ($mode) {
+                    'markup_percent', 'markup_fee_percent' => 'percent',
+                    'markup_amount' => 'usd',
+                    default => null,
+                };
+                // Remember the markup's unit while fixed pricing hides the input.
+                $fields[]=Hidden::make('last_markup_unit')->default(fn()=>$markupUnit($rule()['mode']??null))->dehydrated(false);
                 $fields[]=Select::make('mode')->label('Pricing')->options(['markup_percent'=>'Add a percentage to cost','markup_fee_percent'=>'Add a percentage to cost and card fee','markup_amount'=>'Add an amount to cost',
                     // One own price for every TLD ignores each TLD's cost, so own prices are set per TLD only.
-                    ...($name==='default_pricing'?[]:['fixed'=>'Set my own price'])])->required()->live()->default(fn()=>$rule()['mode']??null)->visible($own);
+                    ...($name==='default_pricing'?[]:['fixed'=>'Set my own price'])])->required()->live()->default(fn()=>$rule()['mode']??null)->visible($own)
+                    ->afterStateUpdated(static function (mixed $state, Get $get, Set $set) use ($markupUnit): void {
+                        $unit = $markupUnit($state);
+                        if ($unit === null) {
+                            return;
+                        }
+                        $previous = $get('last_markup_unit');
+                        if ($previous !== null && $previous !== $unit) {
+                            $set('markup', null);
+                        }
+                        $set('last_markup_unit', $unit);
+                    });
                 $fields[]=TextInput::make('markup')->label(fn($get)=>$get('mode')==='markup_amount'?'Amount to add (USD)':'Percentage to add')->default(fn()=>$rule()['markup']??null)->required()->maxLength(12)->live(debounce:500)
                     ->rule(static fn($get):\Closure=>static function(string $attribute,mixed $value,\Closure $fail)use($rule,$get):void{if(($error=self::margin($value,$rule()['markup']??null,$get('mode'),$rule()['mode']??null))!==null){$fail($error);}})
                     ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
