@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages;
 use Filament\Pages\Enums\SubNavigationPosition;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{RegistrarFacts,Sheet,Staff,TldFacts,TldRows};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{Sheet,Staff,TldFacts,TldRegistrar,TldRows};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Row,Value};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{RecordDetailPage,Section};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
@@ -25,12 +25,19 @@ class ViewTld extends RecordDetailPage
     protected function sections(): array
     {
         $grants=Staff::requireView();$t=$this->getRecord();$staff=Reader::Staff;$snapshot=$this->snap();
-        $sellerId=TldFacts::sellerId($t->tld);$seller=$sellerId===null?null:Account::where('server_id',$sellerId)->first();
+        $sellerId=$snapshot['seller']??null;$seller=$sellerId===null?null:Account::where('server_id',$sellerId)->first();
         $reason=$this->saleReason();
-        $choose=$this->settings()['seller']->isVisible()?($this->headFix()==='seller'?self::CHOOSE_SELLER_HEAD:self::CHOOSE_SELLER):'Ask staff who can change the registrar.';
+        $choose=$this->registrarBlocked()?null:($this->settings()['seller']->isVisible()?($this->headFix()==='seller'?self::CHOOSE_SELLER_HEAD:self::CHOOSE_SELLER):'Ask staff who can change the registrar.');
         $sales=[...($reason===null?[]:[Row::notice('sales',Value::state(State::NotForSale,$staff,$reason))]),
             Row::make('Registrar for new orders',$seller?Value::fact(Fact::entered((string)\App\Models\Server::whereKey($sellerId)->value('name'))??Fact::count((int)$sellerId),'Existing domains stay with their registrar.'):Value::state(State::NotSet,$staff,$choose)),
             Row::make('Terms',$snapshot['unreadable']?Value::state(State::CouldntRead,$staff,"Saved settings can't be read."):Value::fact(Fact::entered(TldFacts::terms($t))))];
+        if($this->registrarBlocked()){
+            foreach(TldRegistrar::priceRecovery($this->registrarChoices()) as $id=>$price){
+                $row=Row::make($price['label'],Value::fact(Fact::entered($price['reason'])))->key('registrar-price-'.$id);
+                if($price['url']!==null){$row->actions(Sheet::link('recheck_registrar_prices_'.$id,'Open '.$price['label'],$price['url']));}
+                $sales[]=$row;
+            }
+        }
         $refresh=$snapshot['refresh']??[];
         $next=isset($refresh['due_at'])?'Next update '.StaffTime::at((int)$refresh['due_at']).'.':'No update scheduled. Check Site setup on the Registrar account page, and the background worker.';
         $sync=[Row::make('Last updated',isset($refresh['succeeded_at'])?Value::fact(Fact::date((int)$refresh['succeeded_at'],$staff),$next):Value::state(State::NotReadYet,$staff,$next))

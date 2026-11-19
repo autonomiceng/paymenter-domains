@@ -5,21 +5,76 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-extract(commerceFixture());tldPanel();pinStaffClock($now);
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,Staff,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Facts,OfferState,UpgradeGate};
+use Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview as Review;
+
+extract(commerceFixture(ending:'abc'));staffSalesFixture();tldPanel();pinStaffClock($now);
 [$enom,$silo]=$tlds;
 $actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);
+DB::table('extensions')->where('id',$enom->server_id)->update(['name'=>'Demo Enom TEST']);
 DB::table('extensions')->where('id',$silo->server_id)->update(['name'=>'Demo NameSilo OTE']);
-// Replay W8: Enom has this TLD; the connected NameSilo account has no row or price for it.
-DB::table('domains_prices')->where('server_id',$silo->server_id)->delete();
-DB::table('domains_tlds')->where('id',$silo->id)->delete();
-$page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$enom->id])->mountAction('seller')->call('$refresh');
+// Replay the retained .abc picker. NameSilo has other TLDs on the account, but no .abc price or record.
+$renameSilo=static function(string $from,string $to)use($silo):void {
+    DB::table('domains_prices')->where('server_id',$silo->server_id)->where('tld',$from)->update(['tld'=>$to]);
+    DB::table('domains_tlds')->where('id',$silo->id)->update(['tld'=>$to]);
+};
+$renameSilo('abc','net');
+DB::table('domains_tlds')->where('id',$enom->id)->update(['catalogue_facts'=>OfferState::encodeFacts(
+    new Facts(['register'=>[1],'renew'=>[1],'transfer'=>[1]],[],true,true,false,'synthetic',$now,$now->modify('+1 day')))]);
+$feed=static function(array $work=[],array $result=[])use($silo,$now):void {
+    DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$silo->server_id],[
+        'account_fingerprint'=>$silo->account_fingerprint,
+        'offer_work'=>OfferState::json(['upgrade_generation'=>UpgradeGate::generation(),'feed_due'=>$now->modify('+1 day')->getTimestamp(),...$work]),
+        'offer_feed_succeeded_at'=>null,'offer_feed_failed_at'=>null,'offer_feed_failure'=>null,...$result]);
+};
+$feed();
+$open=static fn($user)=>Livewire::actingAs($user)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful();
+$picker=static fn($page)=>$page->mountAction('seller')->call('$refresh')->assertSuccessful();
+$modal=static fn($page)=>$page->effects['partials']['action-modals.0']??'';
+$link='href="'.e(RegistrarAccount::getUrl(['account'=>$silo->server_id])).'"';
+$blocked=$open($actor)->assertActionHidden('start_selling');
+expect(str_contains($blocked->html(),$link),'Sales recovery opens the NameSilo account with Import rights and a price reader. '.TldFacts::salesState($enom->fresh())['reason']);
+$page=$picker($blocked);
 $schema=$page->instance()->getSchema($page->instance()->getMountedActionSchemaName());
-$select=$schema->getComponentByStatePath('seller');
-$options=$select->getOptions();
-expect(!isset($options[$silo->server_id])||$select->isOptionDisabled($silo->server_id,$options[$silo->server_id]),'NameSilo without a .com price cannot be selected');
-expect(str_contains($page->effects['partials']['action-modals.0']??'','No NameSilo price for .com yet. Sync prices first.'),'The rendered dialog explains the disabled NameSilo choice');
+$select=$schema->getComponentByStatePath('seller');$options=$select->getOptions();
+foreach([$enom,$silo] as $t){
+    expect($select->isOptionDisabled($t->server_id,$options[$t->server_id]),$t->registrar_key.' cannot be selected for .abc');
+}
+expect(str_contains($modal($page),'needs nameservers at registration'),'The dialog names the Enom terms refusal');
+expect(str_contains($modal($page),'prices for .abc'),'The dialog names the NameSilo price refusal');
+expect(str_contains($modal($page),$link),'The dialog links to the applicable account refresh');
+expect($page->instance()->getMountedAction()->getModalSubmitAction()->isDisabled(),'The blocked stored seller cannot be resubmitted');
+
+foreach([
+    [Staff::VIEW,Staff::POLICY,Review::permission('seller')],
+    [Staff::VIEW,Review::permission('import')],
+    [Staff::VIEW,Staff::POLICY,Review::permission('import')],
+] as $rights){
+    $reader=staffUser($rights);
+    $view=$open($reader);
+    if(in_array(Review::permission('seller'),$rights,true)){
+        $view->assertDontSeeHtml($link);
+        expect(!str_contains($modal($picker($view)),$link),'Seller permission alone cannot offer a refresh');
+    }elseif(in_array(Staff::POLICY,$rights,true)){
+        $view->assertActionHidden('seller')->assertSeeHtml($link);
+    }else{
+        $view->assertActionHidden('seller')->assertDontSeeHtml($link);
+    }
+}
+config(['domains.namesilo_test.catalogue'=>false]);
+$open($actor)->assertDontSeeHtml($link);
+config(['domains.namesilo_test.catalogue'=>true]);
+$feed(['feed_due'=>$now->getTimestamp()]);
+$open($actor)->assertDontSeeHtml($link)->assertSee('queued for this account');
+$feed(['tries'=>1],['offer_feed_failure'=>'read_deadline','offer_feed_failed_at'=>$now->getTimestamp()]);
+$open($actor)->assertDontSeeHtml($link)->assertSee("Registrar didn't answer in time");
+$feed([],['offer_feed_succeeded_at'=>$now->getTimestamp()]);
+$open($actor)->assertDontSeeHtml($link)->assertSee('last price sync finished')->assertSee('prices for .abc')->assertActionHidden('start_selling');
+
 // A stale or forged selection reaches the command guard, not ModelNotFoundException or a generic toast.
 $commands=new Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands(
     new Paymenter\Extensions\Servers\Domains\Catalogue\Writer(new Paymenter\Extensions\Servers\Domains\Catalogue\Projection($native),$clock,static fn()=>null,static fn()=>true),$bindings,static fn()=>null);
@@ -27,8 +82,10 @@ $reviewClass=Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::
 $r=new $reviewClass($actor->id,$enom->server_id,$enom->id,'seller',$reviewClass::ticket($actor->id,$enom->server_id,$enom->id,'seller',
     Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::stamp($enom->server_id,$enom->id)),'Choose another registrar');
 try{$commands->run($r,['seller'=>$silo->server_id,'register'=>true,'transfer'=>true]);expect(false,'Missing offer selection must refuse');}
-catch(DomainException $error){same('No NameSilo price for .com yet. Sync prices first.',
-    Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::refusal($error,'seller',['seller'=>$silo->server_id],$enom->server_id,$enom->id),'Refusal names missing prices and its next step');}
+catch(DomainException $error){
+    same('Seller offer missing.',$error->getMessage(),'The writer refuses a forged seller with no offer');
+    expect(str_contains(SettingsActions::refusal($error,'seller',['seller'=>$silo->server_id],$enom->server_id,$enom->id),'prices for .abc'),'The refusal names the missing offer');
+}
 // An unrecognized registrar refusal on a TLD that still exists gives the safe next step, never its private text.
 foreach([new DomainException('Unrecognized private seller detail'),new RuntimeException('Unrecognized private seller detail')] as $error){
     foreach([$silo->server_id,$enom->server_id,0] as $seller){
@@ -37,5 +94,24 @@ foreach([new DomainException('Unrecognized private seller detail'),new RuntimeEx
         expect(!str_contains($text,'private'),'Unknown seller refusal hides its private text');
     }
 }
-same(0,$reads->calls,'Opening Change registrar makes no provider calls');
+// The blocked dialog only allows an explicit choice of None to clear the existing policy.
+$remove=$picker($open($actor))->set('mountedActions.0.data.seller',null)->set('mountedActions.0.data.reason','Remove the blocked seller');
+expect(!$remove->instance()->getMountedAction()->getModalSubmitAction()->isDisabled(),'Selecting None allows the seller to be cleared');
+$remove->callMountedAction()->assertHasNoActionErrors();
+same(null,TldFacts::sellerId('abc'),'The removal clears the seller policy for new orders');
+$noSeller=$picker($open($actor)->assertActionDisabled('start_selling'));
+same(null,$noSeller->instance()->getMountedAction()->getModalSubmitAction(),'No seller and no eligible account leaves an informational dialog');
+
+// A valid alternate is selectable and runs the same reviewed writer and redirect.
+$renameSilo('net','abc');
+$pick=$picker($open($actor)->assertActionVisible('seller'));
+$schema=$pick->instance()->getSchema($pick->instance()->getMountedActionSchemaName());
+$select=$schema->getComponentByStatePath('seller');
+expect(!$select->isOptionDisabled($silo->server_id,$select->getOptions()[$silo->server_id]),'NameSilo with eligible saved prices is selectable');
+$pick->set('mountedActions.0.data.seller',(string)$silo->server_id)
+    ->set('mountedActions.0.data.register',true)->set('mountedActions.0.data.transfer',false)
+    ->set('mountedActions.0.data.reason','Select the alternate registrar')->callMountedAction()->assertHasNoActionErrors()
+    ->assertRedirect(TldResource::getUrl('view',['record'=>$silo->id]));
+same($silo->server_id,TldFacts::sellerId('abc'),'The alternate becomes the seller for new orders');
+same(0,$reads->calls,'Viewing the picker and changing the seller make no provider calls');
 echo "TLD registrar options passed.\n";$nativeSuccessful=true;

@@ -7,6 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,StaffCatalogue,Wr
 use Paymenter\Extensions\Servers\Domains\Services\StaffReason;
 use Filament\Actions\{Action,ActionGroup};
 use Filament\Forms\Components\{Checkbox,Hidden,Radio,Select,Textarea,TextInput};
+use Filament\Schemas\Components\Text;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Utilities\{Get,Set};
 use Illuminate\Support\Facades\Auth;
@@ -83,12 +84,12 @@ final class SettingsActions
         };
     }
     /** Change registrar on a TLD that already has one says what the change does to its sales before it is saved. */
-    private static function sellerDescription(int $tld): string
+    private static function sellerDescription(int $tld, ?int $seller, bool $selectable): string
     {
-        $t=\Paymenter\Extensions\Servers\Domains\Models\Tld::find($tld);
-        $p=$t?\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',$t->tld)->first():null;
-        if($p===null||$p->server_id===null){return self::description('seller');}
-        return 'Choose the registrar for new orders. If you pick another account, new orders for .'.$t->tld.' stop until that account\'s terms and prices are checked, and open carts drop .'.$t->tld.'. Existing domains stay where they are.';
+        if($seller===null){return $selectable?self::description('seller'):'';}
+        $ending=Tld::findOrFail($tld)->tld;
+        if(!$selectable){return 'Removing the registrar stops new orders for .'.$ending.'. Existing domains stay with their registrar.';}
+        return 'Choose the registrar for new orders. If you pick another account, new orders for .'.$ending.' stop until that account\'s terms and prices are checked, and open carts drop .'.$ending.'. Existing domains stay where they are.';
     }
     /** The rest of what staff may want to know, behind the dialog's "?" helper. Null when the sentence says it all. */
     public static function details(string $name): ?string
@@ -222,15 +223,27 @@ final class SettingsActions
                 $fields[]=\Filament\Schemas\Components\Text::make('These switches control new sales here. They do not renew domains at the registrar.');
                 $fields[]=Checkbox::make('verified')->label('I checked these against this account’s setup');
             }
+            $sellerSubmit=true;$submitLabel='Confirm';$cancelLabel=null;$submitAction=null;
             if($name==='seller'){
                 $policy=self::cached(static fn()=>\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',Tld::findOrFail($tld)->tld)->first());
                 $choices=self::cached(static fn()=>TldRegistrar::choices($tld));
+                $selectable=fn()=>TldRegistrar::selectable($choices());
+                $hasSeller=fn()=>$policy()?->server_id!==null;
+                $sellerSubmit=fn()=>$selectable()||$hasSeller();
+                $submitLabel=fn()=>$selectable()?'Confirm':'Remove registrar';
+                $cancelLabel=fn()=>$sellerSubmit()?'Cancel':'Close';
+                $submitAction=static function(Action $action,$livewire)use($sellerSubmit,$choices): Action|false {
+                    if(!$sellerSubmit()){return false;}
+                    $selected=$livewire->getMountedAction()?->getRawData()['seller']??null;
+                    return $action->disabled(filled($selected)&&($choices()[(int)$selected]['disabled']??true));
+                };
+                $fields[]=Text::make(fn()=>TldRegistrar::choiceSummary($choices(),Tld::findOrFail($tld)->tld));
                 $fields[]=Select::make('seller')->label('Registrar for new orders')
                     ->options(fn()=>array_map(static fn($row)=>$row['label'],$choices()))
                     ->disableOptionWhen(fn($value)=>$choices()[(int)$value]['disabled']??true)
-                    ->helperText(fn()=>new \Illuminate\Support\HtmlString(implode('<br>',array_map(static fn($row)=>e($row['label'].': '.$row['reason']),array_filter($choices(),static fn($row)=>$row['reason']!==null)))))
-                    ->placeholder('None')->default(fn()=>$policy()?->server_id);
-                $fields[]=Checkbox::make('register')->label('Allow registrations')->default(fn()=>$policy()?->register_enabled??false);$fields[]=Checkbox::make('transfer')->label('Allow transfers')->default(fn()=>$policy()?->transfer_enabled??false);
+                    ->placeholder('None')->default(fn()=>$policy()?->server_id)->live()->visible($sellerSubmit)->dehydratedWhenHidden();
+                $fields[]=Checkbox::make('register')->label('Allow registrations')->default(fn()=>$policy()?->register_enabled??false)->visible($selectable)->dehydratedWhenHidden();
+                $fields[]=Checkbox::make('transfer')->label('Allow transfers')->default(fn()=>$policy()?->transfer_enabled??false)->visible($selectable)->dehydratedWhenHidden();
             }
             if($name==='renewal_billing'){
                 $billing=static fn()=>\Paymenter\Extensions\Servers\Domains\Services\RenewalBillingSettings::read($server);
@@ -253,7 +266,7 @@ final class SettingsActions
                 $fields[]=Select::make('environment')->label('Account type')->options(['test'=>'Test','live'=>'Live'])->default(fn()=>Account::where('server_id',$server)->value('environment')??'test')->required();
                 foreach(['uid'=>'Enom user ID','token'=>'Enom API token','api_key'=>'NameSilo API key'] as $key=>$label){$fields[]=TextInput::make($key)->label($label)->password()->autocomplete('new-password')->maxLength(4096)->visible(fn($get)=>$get('registrar')===($key==='api_key'?'namesilo':'enom'))->required();}
             }
-            if(!in_array($name,Review::NO_REASON,true)){$fields[]=Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(2)->rules(['regex:'.StaffReason::SINGLE_LINE])->helperText('Use one line. Do not include credentials.');}
+            if(!in_array($name,Review::NO_REASON,true)){$fields[]=Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(2)->rules(['regex:'.StaffReason::SINGLE_LINE])->helperText('Use one line. Do not include credentials.')->visible($sellerSubmit);}
             if(($help=self::details($name))!==null){(collect($fields)->last(fn($f)=>$f instanceof Checkbox&&in_array($f->getName(),['verified','confirmed'],true))
                 ??collect($fields)->first(fn($f)=>$f instanceof Select||$f instanceof Textarea))?->hintAction(HelpHint::make($help));}
             $processing=fn()=>(bool)Account::where('server_id',$server)->value('processing_enabled');
@@ -267,8 +280,9 @@ final class SettingsActions
             $out[]=Action::make($id.($setup&&$server!==Review::ALL_ACCOUNTS?'_'.$server:''))->label($label)->color(fn()=>$name==='processing'&&$processing()?'danger':'gray')->modalWidth('lg')
                 ->visible(fn()=>!($setup&&$blocked())&&(!in_array($name,Review::PUBLISHES,true)||self::canSee(Review::permission('publish')))&&self::canSee(Staff::POLICY)&&(collect(Review::rights($name))->every(fn($right)=>self::canSee($right))||($name==='override'&&self::canSee(Review::permission('remove_override'))))&&self::featureVisible($server,$name))
                 ->requiresConfirmation(!$switch||$popup)->modalIcon($name==='probe'?self::READ_ICON:null)->modalIconColor($name==='probe'?'gray':null)->modalHidden($switch&&!$popup)->modalHeading($setup?fn()=>$popup?$turn().' '.self::POPUPS[$id].'?':self::setupHeading($name,$registrar()!==null):$label)
-                ->modalDescription($popup?fn()=>self::switchWarning($id,$server):($switch?null:($name==='probe'?fn()=>self::description($name).($registrar()==='namesilo'?' '.self::details($name):''):($name==='configure'?fn(Action $action)=>($action->getRawData()['registrar']??null)==='namesilo'?'Checks the key with one balance read, then saves it. Orders stay paused. This does not confirm who owns the account.':self::description($name):($name==='seller'&&$tld!==null?fn()=>self::sellerDescription((int)$tld):self::description($name))))))
-                ->modalSubmitActionLabel($setup?fn()=>$popup?$turn():self::submitLabel($name,$registrar()!==null):($name==='override'?'Save and publish':'Confirm'))->schema($switch?[]:$fields)
+                ->modalDescription($popup?fn()=>self::switchWarning($id,$server):($switch?null:($name==='probe'?fn()=>self::description($name).($registrar()==='namesilo'?' '.self::details($name):''):($name==='configure'?fn(Action $action)=>($action->getRawData()['registrar']??null)==='namesilo'?'Checks the key with one balance read, then saves it. Orders stay paused. This does not confirm who owns the account.':self::description($name):($name==='seller'&&$tld!==null?fn()=>self::sellerDescription((int)$tld,$policy()?->server_id,$selectable()):self::description($name))))))
+                ->modalSubmitActionLabel($setup?fn()=>$popup?$turn():self::submitLabel($name,$registrar()!==null):($name==='override'?'Save and publish':$submitLabel))->modalCancelActionLabel($cancelLabel)
+                ->modalSubmitAction($submitAction)->schema($switch?[]:$fields)
                 ->action(function(#[\SensitiveParameter] array $data,$livewire)use($id,$name,$server,$tld,$setup,$stamp,$switch){
                     try{$data=[...$data,...self::saved($id,$server)];
                         if($switch){$data+=['review_key'=>Review::ticket((int)Auth::id(),$server,$tld,$name,value($stamp)),'reason'=>self::switchOn($id,$server)?'Turned off':'Turned on'];}

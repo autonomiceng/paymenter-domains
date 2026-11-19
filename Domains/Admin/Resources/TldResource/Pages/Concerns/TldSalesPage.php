@@ -8,7 +8,7 @@ use Filament\Navigation\NavigationItem;
 use Filament\Forms\Components\Hidden;
 use Filament\Notifications\Notification;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{RegistrarFacts,Staff,TldFacts,SettingsActions};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{RegistrarFacts,Staff,TldFacts,TldRegistrar,SettingsActions};
 use Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue;
 use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview as Review,StaffSettingsWrites};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Head;
@@ -31,7 +31,7 @@ trait TldSalesPage
         }
         // Writers load their own models. Rebuild the page so the next change needs no reload.
         $t=$this->getRecord()->refresh();$this->reviewStamp=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::stamp((int)$t->server_id,(int)$t->id);
-        unset($this->cachedSchemas['infolist'],$this->cachedSchemas['content']);$this->sales=null;$this->snap=null;$this->start=null;$this->cachedActions=[];$this->cachedHeaderActions=[];
+        unset($this->cachedSchemas['infolist'],$this->cachedSchemas['content']);$this->sales=null;$this->snap=null;$this->start=null;$this->registrarChoices=null;$this->cachedActions=[];$this->cachedHeaderActions=[];
         $this->cacheInteractsWithHeaderActions();$this->forceRender();
     }
     /** @return array<string,Action> */
@@ -48,6 +48,9 @@ trait TldSalesPage
     private function tldActions(): array
     {
         $actions=$this->settings();$fix=$this->headFix();
+        if($this->registrarBlocked()&&$this->snap()['seller']===null){
+            $actions['seller']->label('Registrar choices')->modalHeading('Registrar choices');
+        }
         // The dialog keeps the button's verb.
         $verb=$this->sales()['reason']==='No registrar selected'?'Choose registrar':'Change registrar';
         $seller=$fix==='seller'?$actions['seller']->label($verb)->modalHeading($verb)->color('primary'):null;
@@ -64,7 +67,22 @@ trait TldSalesPage
     private ?array $sales=null;private ?array $snap=null;
     private function snap(): array {return $this->snap??=TldFacts::snapshot($this->getRecord(),Staff::requireView());}
     /** The fix that holds the primary spot: none while Start selling lifts a staff stop. */
-    private function headFix(): ?string {return $this->staffStop()?null:$this->fix();}
+    private function headFix(): ?string
+    {
+        if($this->staffStop()){return null;}
+        $fix=$this->fix();
+        if($fix==='seller'&&(!$this->registrarAlternative()||!TldFacts::canChangeSeller())){return null;}
+        return $fix;
+    }
+    private ?array $registrarChoices=null;
+    private function registrarChoices(): array
+    {return $this->registrarChoices??=TldRegistrar::choices((int)$this->getRecord()->id);}
+    private function registrarAlternative(): bool
+    {
+        return TldRegistrar::selectable($this->registrarChoices(),$this->snap()['seller']??null);
+    }
+    private function registrarBlocked(): bool
+    {return $this->fix()==='seller'&&!$this->registrarAlternative();}
     /** Which head button fixes the reason a TLD is not for sale, when it is on this page. */
     private function fix(): ?string
     {
@@ -98,6 +116,12 @@ trait TldSalesPage
         $s=$this->sales();$reason=(string)$s['reason'];
         if($s['label']==='For sale'){return null;}
         if($this->staffStop()){return rtrim($reason,'.').'.';}
+        if($this->registrarBlocked()){
+            return rtrim($reason,'.').'. '.TldRegistrar::none($this->getRecord()->tld,TldRegistrar::selectable($this->registrarChoices()));
+        }
+        if($this->fix()==='seller'&&$reason!=='No registrar selected'&&!TldFacts::canChangeSeller()){
+            return rtrim($reason,'.').'. '.TldFacts::ASK_SELLER;
+        }
         if(($this->snap()['selected']??false)&&!\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::read($this->getRecord())&&!str_contains($reason,'registrar terms')){
             // Expired terms were read; they are out of date, and Sync prices refreshes them.
             return ($reason===''?'':rtrim($reason,'.').'. ').(\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::stale($this->getRecord())
