@@ -77,9 +77,13 @@ commerceReject(fn () => $setup->save($id, $names, $custom, $key, $reason));
 $role->update(['permissions' => $rights]);
 $costRow = DB::table('domains_prices')->where(['server_id'=>$id,'tld'=>'com','action'=>'renew','term'=>1]);
 $costRevision = (clone $costRow)->value('revision');
+$resumedAt = Server::findOrFail($id)->updated_at->addSecond()->toDateTimeString();
 Server::whereKey($id)->update(['enabled'=>false]);
 commerceReject(fn () => $setup->save($id, $names, $custom, $key, $reason));
-Server::whereKey($id)->update(['enabled'=>true]);
+// The pause and resume change the server's review stamp even after the enabled flag is restored.
+Server::whereKey($id)->update(['enabled'=>true, 'updated_at'=>$resumedAt]);
+commerceReject(fn () => $setup->save($id, $names, $custom, $key, $reason));
+$key = $setup->preview($id, $names, $custom)['review_key'];
 $costRow->increment('revision');
 commerceReject(fn () => $setup->save($id, $names, $custom, $key, $reason));
 $costRow->update(['revision'=>$costRevision]);
