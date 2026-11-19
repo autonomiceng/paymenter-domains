@@ -214,13 +214,13 @@ try {
 
     $reset();
     DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','transfer')->update(['retail'=>null]);
+    $beforeQueue=$queue->value('offer_work');
     $sales=\Livewire\Livewire::actingAs($actor)->withQueryParams(['account'=>$binding->serverId])
         ->test(NextStepStaffPage::class,['allTlds'=>true])->assertCountTableRecords(1);
     $transferPrice=static function(NextStepStaffPage $page): void {
         $record=$page->getTableRecords()->items()[0];
         $page->getTable()->getColumn('transfer_price')->record($record)->getState();
     };
-    $beforeQueue=$queue->value('offer_work');
     $transferPrice($sales->instance());
     same($beforeQueue,$queue->value('offer_work'),'All TLDs does not queue a price read for a missing transfer price');
     $sales->filterTable('for_sale',true)->assertCountTableRecords(1);
@@ -250,14 +250,22 @@ expect($xpath->query('//td[contains(@class,"domains-sell-status") and (contains(
 try {
 $reset();$clearPrice();$readable=false;
 $intent=OfferState::decode($original['catalogue_intent']);$intent['transfers']=false;DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>OfferState::json($intent)]);
-$html=\Livewire\Livewire::actingAs($actor)->test(NextStepStaffPage::class)->filterTable('for_sale',false)->assertSee('Missing')->html();
+$sales=\Livewire\Livewire::actingAs($actor)->test(NextStepStaffPage::class)->filterTable('for_sale',false)->assertSee('Missing');
+$html=$sales->html();
 $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
 expect($xpath->query('//*[contains(@class,"description") and contains(.,"Check account setup on Registrar account.")]')->length>0,'The next step is visible beside Missing, outside its tooltip');
 $url=\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$binding->serverId]);
-expect($xpath->query('//a[@href="'.$url.'" and contains(.,"Missing")]')->length>0,'Missing links to the account page that fixes setup');
-expect($xpath->query('//td[contains(@class,"domains-sell-status") and (contains(.,"Check account setup on Registrar account.") or .//*[contains(@x-tooltip,"Check account setup on Registrar account.")])]//a[@href="'.$url.'"]')->length===1,'The Status setup step links to Registrar account, like the money cell');
+$page=$sales->instance();$record=$page->getTableRecords()->items()[0];
+foreach(['status','register_price'] as $column){
+    same($url,$page->getTable()->getColumn($column)->record($record)->getUrl(),'Account recovery has an explicit destination in '.$column);
+}
+$statusLinks=$xpath->query('//td[contains(@class,"domains-sell-status") and contains(.,"Check account setup on Registrar account.")]//a[@href]');
+same([$url],array_map(fn($link)=>$link->getAttribute('href'),iterator_to_array($statusLinks)),'Status links only to the account that fixes setup');
+expect($xpath->query('//td[contains(@class,"domains-sell-register")]//a[@href="'.$url.'" and contains(.,"Missing")]')->length>0,
+    'The missing price links to the account that fixes setup');
 } catch (Throwable $error) {$failures[]='Account status link: '.$error->getMessage();}
-// Review probe C: exercise the actual Status anchors, including deliberate absence of a link.
+// A plain status cell follows the row. A recovery step can supply its own destination.
+$detailUrl=\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$t->id]);
 foreach(['cost limit','registrar cost','registrar terms','registrar requirements','price choice'] as $scenario){
 try {
 $reset();$intent=OfferState::decode($original['catalogue_intent']);$intent['transfers']=false;
@@ -279,23 +287,33 @@ case 'registrar requirements':
     $facts=OfferState::decode($original['catalogue_facts']);$facts['requiresNameservers']=true;DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::json($facts)]);
     // Change registrar is on the TLD page, so the step links there.
     $next='This registrar needs nameservers at registration for .com. Use Change registrar to sell it through another account.';$open='tld';
-    $url=\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$t->id]);break;
+    $url=$detailUrl;break;
 case 'price choice':
     DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->update(['retail'=>'0.00']);
     $next='Set a positive registration price in Edit prices on .com.';$open='tld';
-    $url=\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$t->id]);break;
+    $url=$detailUrl;break;
 }
 [$table,$row]=nextTable();$status=$table->status($row);
 same($next,$status['next'],'The Status step names the action for '.$scenario);
 same($open,$status['open'],'The Status preserves the step destination for '.$scenario);
-$html=\Livewire\Livewire::actingAs($actor)->test(NextStepStaffPage::class)->filterTable('for_sale',false)->html();
+$sales=\Livewire\Livewire::actingAs($actor)->test(NextStepStaffPage::class)->filterTable('for_sale',false);
+$page=$sales->instance();$record=$page->getTableRecords()->items()[0];
+same($url,$page->getTable()->getColumn('status')->record($record)->getUrl(),'The explicit Status destination matches '.$scenario);
+$html=$sales->html();
 $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
 // Compact gray states carry the reason on hover; actionable colored states
 // show it as a description. Both retain the same destination.
 $cell='//td[contains(@class,"domains-sell-status") and (contains(.,"'.$next.'") or .//*[contains(@x-tooltip,"'.$next.'")])]';
 same(1,$xpath->query($cell)->length,'The current Status description or tooltip explains '.$scenario);
-if($url===null){same(0,$xpath->query($cell.'//a[@href]')->length,'Status has no unrelated TLD link for '.$scenario);}
-else{same(1,$xpath->query($cell.'//a[@href="'.$url.'"]')->length,'Status links to the TLD that fixes '.$scenario);}
+$links=$xpath->query($cell.'//a[@href]');
+same([$url??$detailUrl],array_map(fn($link)=>$link->getAttribute('href'),iterator_to_array($links)),
+    'Status links only to the expected numeric TLD for '.$scenario);
+if($scenario==='registrar cost'){
+    same(null,$page->getTable()->getColumn('register_cost')->record($record)->getUrl(),'Plain costs have no explicit recovery destination');
+    $costLinks=$xpath->query('//td[contains(@class,"domains-sell-register")]//a[@href and contains(.,"Missing")]');
+    same([$detailUrl],array_values(array_unique(array_map(fn($link)=>$link->getAttribute('href'),iterator_to_array($costLinks)))),
+        'Missing registrar costs use their own numeric TLD link');
+}
 } catch (Throwable $error) {$failures[]='Status link '.$scenario.': '.$error->getMessage();}
 }
 try {

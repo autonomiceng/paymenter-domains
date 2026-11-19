@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';require __DIR__.'/Support/offer-commerce.php';
 use Illuminate\Support\Facades\{Auth,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,Cost,Facts,FactsObserved,FeedObserved,OfferState,Query,StaffCatalogue};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,Cost,Edit,Facts,FactsObserved,FeedObserved,Intent,OfferState,Query,StaffCatalogue};
 use Paymenter\Extensions\Servers\Domains\Data\CostUnit;
 use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 extract(offerCommerceFixture());tldPanel();pinStaffClock($now);
@@ -15,8 +15,14 @@ $cost=static fn(string $action,int $term,string $amount,CostUnit $unit=CostUnit:
 $ports->apply(new FeedObserved($binding,'com',[$cost('register',1,'15.5500'),$cost('renew',1,'8.9500'),$cost('register',2,'8.9500',CostUnit::Annual),$cost('register',5,'8.9500',CostUnit::Annual)]),$rev());
 $ports->apply(new FactsObserved($binding,'com',new Facts(['register'=>[1,2,5],'renew'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day'))),$rev());
 $source=new StaffCatalogue($ports,$clock);$rule=PricingRule::validate(['mode'=>'fixed','round_up'=>'none','fixed'=>['register'=>'9','renew'=>'9','transfer'=>'9']]);
+$registrationPreview=static fn(int $term)=>collect($source->preview($t->fresh(),$rule))
+    ->first(fn($price)=>$price['action']==='register'&&$price['term']===$term);
+$stopped=$registrationPreview(5);
+same(['51.3500','45.00','staff_term_stopped'],[$stopped['cost'],$stopped['new'],$stopped['hold']],
+    'The staff term limit takes precedence while the five-year draft keeps its cost and price');
+$ports->apply(Edit::override($binding,'com',new Intent(sell:true,longest:5,transfers:true)),$rev());
 foreach([2=>'24.5000',5=>'51.3500'] as $years=>$expected){
-    $preview=collect($source->preview($t->fresh(),$rule))->first(fn($p)=>$p['action']==='register'&&$p['term']===$years);
+    $preview=$registrationPreview($years);
     same([$expected,'below_cost'],[$preview['cost'],$preview['hold']],'Preview uses built cost and marks the loss for '.$years.' years');
     $page=collect($source->page(collect([$t->fresh()]))[$t->id]['prices'])->first(fn($p)=>$p['action']==='register'&&$p['term']===$years);
     same(Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::money($expected,4),$page['cost'],'TLD page uses built cost for '.$years.' years');

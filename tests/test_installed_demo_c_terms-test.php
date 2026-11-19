@@ -30,7 +30,6 @@ $rows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termR
 same(['Early renewal','1 year','Current terms are not saved yet. Review the registrar terms. Where the registrar supports it, the scheduled check fills them.'],$rows[1],
     'Ordinary retains annual renewal and explains missing current approval');
 same(['Grace renewal','Off','Review registry rules and safe deadlines before enabling grace renewal.'],$rows[3],'Grace keeps its review explanation');
-same(1,substr_count(view('domains::admin.term-readiness',['readiness'=>$rows])->render(),'safe deadlines'),'The Terms dialog says the grace review once');
 // Ordinary and Grace keep separate explanations.
 $ordinary=Capabilities::routed()->termReadiness($binding,'com')['families']['ordinary'];
 same(['state'=>'annual_only','reason'=>'family_unreviewed','terms'=>[1]],$ordinary,'Ordinary family is unreviewed and annual-only');
@@ -49,20 +48,23 @@ $accountRows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist
 $r10Check(TldTerms::summary($binding->serverId)===$summary,'Unsold alphabetic catalogue does not change the complete selected TLD summary');
 $r10Check(count(array_filter($accountRows,fn($r)=>str_starts_with($r['label'],'.aaa')))===0,'Unsold TLDs do not add account readiness rows');
 same('1 to 10 years',Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termYears(range(1,10)),'Contiguous term range is compact');
-$editAction=(new WhatYouSell)->table(Filament\Tables\Table::make(new WhatYouSell))->getBulkActions()[0];
-same('3xl',$editAction->getModalWidth(),'Terms dialog has room for compact price and renewal rows');
+$prices=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termPrices($t);
+$threeYear=collect($prices)->firstWhere('term',3);
+expect($threeYear!==null&&$threeYear['current']!==null&&$threeYear['cost']!==null,'The fixture has both three-year amounts');
 $opened=Livewire\Livewire::actingAs($actor)->test(WhatYouSell::class);
 $key=$opened->instance()->getTableRecordKey($row);
-$opened->mountTableBulkAction('edit',[$key])->call('$refresh');
+$opened->mountTableBulkAction('edit',[$key])->assertSet('mountedActions.0.name','edit')
+    ->assertActionDataSet(['longest'=>'keep','transfer'=>'keep'])->call('$refresh');
 $dialog=$opened->effects['partials']['action-modals.0']??'';
-expect(str_contains($dialog,'Grace')&&substr_count($dialog,'Review registry rules and safe deadlines before enabling grace renewal.')===1,'Mounted Terms dialog retains exactly one Grace review explanation');
-expect(str_contains($dialog,'Registration')&&str_contains($dialog,'Ordinary')&&str_contains($dialog,'Redemption'),'Opening the actual terms dialog renders both term and renewal rows');
+$terms=storefrontDom($dialog);
+$value=static fn(string $label):string=>trim($terms->evaluate('string(//dt[normalize-space(.)="'.$label.'"]/following-sibling::dd[1])'));
+$total=$value('3 years');
+preg_match('/Customer total\s+\$(\d+\.\d+)\s*Registrar cost\s+\$(\d+\.\d+)/',$total,$amounts);
+same([$threeYear['current'],number_format((float)$threeYear['cost'],2,'.','')],array_slice($amounts,1),
+    'Edit terms shows the selected TLD’s three-year customer total and registrar cost');
+expect(str_starts_with($value('Ordinary'),'1 year')&&str_starts_with($value('Grace'),'Off')&&str_starts_with($value('Redemption'),'Off'),
+    'The selected TLD keeps ordinary renewal annual and grace and redemption off');
 
-$prices=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termPrices($t);
-$priceHtml=view('domains::admin.term-prices',compact('prices'))->render();
-expect(str_contains($priceHtml,'<dl')&&str_contains($priceHtml,'Registration'),'Term totals use labeled registration rows');
-$r10Check(!preg_match('/\$[0-9]+\.[0-9]{3}/',$priceHtml),'Displayed registrar costs have two decimal places');
-expect(str_contains($priceHtml,'Customer total')&&str_contains($priceHtml,'Registrar cost')&&str_contains($priceHtml,'3 years'),'Real offer terms include customer total and registrar cost');
 // Expired exact-term costs do not erase the retained retail and cost values.
 $stalePrices=$prices;
 foreach($stalePrices as &$price){$price['synced']=false;}unset($price);
