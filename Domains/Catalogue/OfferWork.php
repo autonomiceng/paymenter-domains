@@ -309,11 +309,16 @@ final class OfferWork
     /** Some terms require independent local evidence before a provider lookup can confirm the ending. */
     private function checkFactsEvidence(AccountBinding $binding, ?string $revision, array &$work): void
     {
-        if (!$this->factsEvidence || $revision === null || empty($work['facts'])
-            || ($check = ($this->factsEvidence)($binding, $revision)) === null) { return; }
+        if (!$this->factsEvidence || $revision === null || empty($work['facts'])) { return; }
+        // A failed terms lookup must still let already-fetched prices drain under the normal writer fence.
+        try { $check = ($this->factsEvidence)($binding, $revision); }
+        catch (\Throwable) { $check = static fn (): bool => false; }
+        if ($check === null) { return; }
 
         foreach ($work['facts'] as $tld => $state) {
-            if (!$check((string) $tld)) {
+            try { $ready = $check((string) $tld); }
+            catch (\Throwable) { $ready = false; }
+            if (!$ready) {
                 $work['facts'][$tld] = [...$state, 'waiting_for_evidence' => true,
                     'failure' => 'catalogue_evidence_missing', 'due_at' => null];
             } elseif (!empty($state['waiting_for_evidence'])) {
