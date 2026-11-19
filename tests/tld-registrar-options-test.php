@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewT
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,Facts,OfferState,Query,StaffCatalogue,UpgradeGate};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,PricingRule};
 use Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview as Review;
 
 extract(commerceFixture(ending:'abc'));staffSalesFixture();tldPanel();pinStaffClock($now);
@@ -104,7 +104,7 @@ foreach([new DomainException('Unrecognized private seller detail'),new RuntimeEx
         expect(!str_contains($text,'private'),'Unknown seller refusal hides its private text');
     }
 }
-// Known terms must support the proposed actions on the alternate's saved term limit.
+// The alternate must offer the selected actions in its credential-bound TEST protocol terms.
 $renameSilo('net','abc');
 $savedSilo=$silo->fresh();
 $account=Account::where('server_id',$silo->server_id)->sole();
@@ -113,25 +113,29 @@ DB::table('domains_accounts')->where('id',$account->id)->update(['catalogue_defa
 DB::table('domains_tlds')->where('id',$silo->id)->update(['catalogue_intent'=>OfferState::json([
     ...OfferState::decode($savedSilo->catalogue_intent),'sell'=>null,'longest'=>null,
 ])]);
-$terms=static function(int $firstYear)use($silo,$now):void{
-    DB::table('domains_tlds')->where('id',$silo->id)->update(['catalogue_facts'=>OfferState::encodeFacts(
-        new Facts(['register'=>[$firstYear],'renew'=>[1],'transfer'=>[]],[],true,false,false,'synthetic',$now,$now->modify('+1 day')))]);
+$protocol=config('domains.namesilo_test.accounts');
+$binding=AccountBindings::binding($account);
+$terms=static function(array $register)use($binding,$silo,$now):void{
+    $facts=fixtureNameSiloFacts($binding,'abc',new Facts(['register'=>$register,'renew'=>[1],'transfer'=>[]],
+        [],true,false,false,'synthetic',$now,$now->modify('+1 day')));
+    DB::table('domains_tlds')->where('id',$silo->id)->update(['catalogue_facts'=>OfferState::encodeFacts($facts)]);
 };
 $option=static function($page)use($silo):bool{
     $livewire=$page->instance();
     $select=$livewire->getSchema($livewire->getMountedActionSchemaName())->getComponentByStatePath('seller');
     return $select->isOptionDisabled($silo->server_id,$select->getOptions()[$silo->server_id]);
 };
-$terms(2);
+$terms([]);
 $ineligible=$open($actor);
 expect(!collect($ineligible->instance()->getCachedHeaderActions())->contains(fn($action)=>$action instanceof \Filament\Actions\Action&&$action->getName()==='seller'),
-    'Terms outside the alternate’s saved limit do not promote Change registrar to the header');
-expect($option($picker($ineligible)),'A two-year minimum cannot be selected with a one-year limit and no transfer path');
-$terms(1);
+    'Unavailable acquisition terms do not promote Change registrar to the header');
+expect($option($picker($ineligible)),'An account with no acquisition path cannot be selected');
+$terms([1]);
 $registrationOnly=$picker($open($actor));
 expect($option($registrationOnly),'A registration-only registrar cannot take the proposed transfers');
 $registrationOnly->set('mountedActions.0.data.transfer',false);
 expect(!$option($registrationOnly),'Turning off transfers makes the one-year registration path selectable');
+config(['domains.namesilo_test.accounts'=>$protocol]);
 DB::table('domains_accounts')->where('id',$account->id)->update(['catalogue_defaults'=>$siloDefaults]);
 DB::table('domains_tlds')->where('id',$silo->id)->update([
     'catalogue_facts'=>$savedSilo->catalogue_facts,'catalogue_intent'=>$savedSilo->catalogue_intent,
