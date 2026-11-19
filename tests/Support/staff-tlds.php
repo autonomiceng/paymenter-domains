@@ -38,7 +38,7 @@ function staffSetupActions(): array
 /** No TLD/settings button: request answers belong to requests; price publication/defaults are choices in Edit prices; Default pricing lives on What you sell. */
 function staffNoButtonActions(): array
 {
-    return ['call_limits','activate','enom_answer','publish','remove_override','acceptance','history','delivery_review','alert_review','default_pricing','default_rule','card_fee'];
+    return ['sales_setup','call_limits','activate','enom_answer','publish','remove_override','acceptance','history','delivery_review','alert_review','default_pricing','default_rule','card_fee'];
 }
 
 /** The Default pricing dialog sends rule and fee together; a test names only what it changes. */

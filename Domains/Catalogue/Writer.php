@@ -277,7 +277,7 @@ final class Writer implements Catalogue
         // Legacy reviewed publication takes this same native -> all servers/accounts prefix.
         $review->lockAccounts();
         if ($this->current) { ($this->current)(); } else { UpgradeGate::active(UpgradeGate::generation()); }
-        $names = $review->action === 'sales_setup' ? [] : Tld::where('server_id', $review->serverId)->when($review->tldId !== null, fn ($q) => $q->whereKey($review->tldId))->pluck('tld')->all();
+        $names = Tld::where('server_id', $review->serverId)->when($review->tldId !== null, fn ($q) => $q->whereKey($review->tldId))->pluck('tld')->all();
         $names = array_values(array_unique([...$names, ...$endings])); sort($names, SORT_STRING);
         DB::table('domains_sales_policies')->whereIn('tld', $names)->orderBy('tld')->lockForUpdate()->get();
         Tld::whereIn('tld', $names)->orderBy('id')->lockForUpdate()->get();

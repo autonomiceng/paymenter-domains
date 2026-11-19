@@ -241,6 +241,7 @@ final readonly class SalesSetupDraft
         $actual = $this->plan();
         $stamp = $actual['stamp'];
         $failures = $unchanged = $changes = $outgoing = [];
+        $outcomes = $plan['rows'];
         foreach ($plan['rows'] as $name => $row) {
             if ($row['status'] === 'unchanged') { $unchanged[] = $name; continue; }
             if ($row['status'] === 'blocked') { $failures[$name] = $row['reason']; continue; }
@@ -256,12 +257,13 @@ final readonly class SalesSetupDraft
             if ($row['seller_before'] !== null && $row['seller_before'] !== $this->serverId) {
                 $outgoing[$row['seller_before']][] = $name;
             }
+            $outcomes[$name]['status'] = 'saved';
             $changes[$name] = array_intersect_key($row, array_flip(['seller_before','server_id','actions_before','actions_after',
                 'longest_before','longest_after','pricing_before','pricing_after','retained_before','retained_after']));
         }
         $review->input(['rows' => $changes]);
         $review->record('completed', ['rows' => $saved, 'failures' => $failures, 'unchanged' => $unchanged], $outgoing);
         return ['rows' => $saved, 'failures' => $failures, 'unchanged' => $unchanged,
-            'outcomes' => $actual['rows'], 'binding' => $plan['binding']];
+            'outcomes' => $outcomes, 'binding' => $plan['binding']];
     }
 }
