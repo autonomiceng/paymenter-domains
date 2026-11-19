@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\Server;
 use Illuminate\Support\{Facades\Blade,HtmlString};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Facts,OfferState,SellerAvailability,StaffCatalogue,TermSupport,Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Facts,OfferState,SellerAvailability,StaffCatalogue,Writer};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,SalesPolicy,Tld};
@@ -43,7 +43,7 @@ final class TldRegistrar
                 $prices===SellerAvailability::UNREADABLE=>self::unreadablePrice($account->registrar_key,$ending),
                 $priceIssue=>self::missingPrice($account->registrar_key,$ending),
                 !$account->processing_enabled=>'Orders are paused on this account.',
-                !self::termsChecked($account,$ending,$facts,$clock)=>'Registrar terms still need checking.',
+                !$facts?->fresh($clock->now())=>'Registrar terms still need checking.',
                 default=>null,
             };
             $out[(int)$account->server_id]=['label'=>(string)$server->name,'reason'=>$reason,'disabled'=>$off||$unsupported!==null||$priceIssue,'price_issue'=>$priceIssue];
@@ -132,14 +132,6 @@ final class TldRegistrar
     {
         if($row===null||!$row->catalogue_converted||$row->account_fingerprint!==$account->account_fingerprint||$row->registrar_key!==$account->registrar_key){return null;}
         try{return OfferState::acquisitionFacts(AccountBindings::binding($account),$row,$clock);}catch(\Throwable){return null;}
-    }
-    private static function termsChecked(Account $account,string $ending,?Facts $facts,Clock $clock): bool
-    {
-        if(!$facts||!$facts->fresh($clock->now())){return false;}
-        try{
-            $binding=AccountBindings::binding($account);
-            return TermSupport::currentFacts($binding,$ending,$facts);
-        }catch(\Throwable){return false;}
     }
     /** Known terms must fit the proposed sale. The writer can record intent while independent terms are pending. */
     private static function termsReason(Account $account,?Tld $row,?Facts $facts,\DateTimeImmutable $now,bool $register,bool $transfer): ?string

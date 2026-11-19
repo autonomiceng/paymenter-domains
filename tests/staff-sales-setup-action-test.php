@@ -10,8 +10,8 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{SetUpSales,ViewTld};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{SalesSetupReview, Staff};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts, Context, Edit, OfferState, Query};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{SalesSetupReview, Staff, TldFacts};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts, Context, Edit, OfferState, Query, StaffCatalogue};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Presentation\State;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, RenewalBillingSettings, StaffSettingsReview as Review};
@@ -172,11 +172,16 @@ same($initialKeys + 1, $reviewKeyCount(), 'The refused draft cannot be confirmed
 DB::table('domains_tlds')->where('id', $target->id)->update(['catalogue_facts' => null]);
 $checking = $singlePage();
 $checking->set('draft', [...$checking->get('draft'), ...$custom, 'server' => $target->server_id, 'markup' => '2.20'])
+    ->set('draft.register', false)->set('draft.transfer', true)
     ->call('reviewChanges')->assertHasNoErrors();
 same(State::Checking, SalesSetupReview::saleState($checking->get('review.rows.com')), 'Unread terms hold the planned sale');
 $checking->set('confirmation', $reason)->call('save')->assertHasNoErrors();
 same(['com'], $checking->get('outcome.rows'), 'The writer saves intent while terms need checking');
 $checking->assertSee(State::Checking->label());
+$overview = StaffCatalogue::routed()->page(collect([$target->fresh()]))[$target->id];
+same(true, $overview['checking_sales'], 'A saved transfer-only choice keeps the same pending sales state on Overview');
+same(TldFacts::TERMS_CHECKING, $overview['sales']['reason'], 'Overview explains the transfer terms it is waiting on');
+Livewire::actingAs($staff)->test(ViewTld::class, ['record' => $target->id])->assertSee(State::Checking->label());
 same(0, $reads->calls, 'Staff setup uses saved prices and terms');
 $nativeSuccessful = true;
 echo "Single and bulk sales setup pages require a matching review.\n";

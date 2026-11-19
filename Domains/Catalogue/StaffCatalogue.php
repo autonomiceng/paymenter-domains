@@ -8,7 +8,7 @@ use App\Models\Server;
 use Illuminate\Support\Collection;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{Sheet,Staff,StaffGrants,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{Sheet,Staff,StaffGrants,TldFacts,TldTerms};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,OfferRow,Tld};
@@ -337,7 +337,10 @@ final class StaffCatalogue
             }
             $register=collect($all)->first(fn($o)=>$o->decision->action==='register'&&$o->decision->available);
             $transfer=$all['transfer:1']??null;$chosen=$register??($transfer?->decision->available?$transfer:null);
-            $reason=(in_array('register',$raw['stops']??[],true)?$transfer?->decision->reason:($all['register:1']->decision->reason??null))??'unknown_facts';
+            $policy=$policies[$t->tld]??null;
+            $transferOnly=$policy!==null&&TldTerms::matches($t,(array)$policy)&&!$policy->register_enabled&&$policy->transfer_enabled;
+            $reason=($transferOnly||in_array('register',$raw['stops']??[],true)
+                ?$transfer?->decision->reason:($all['register:1']->decision->reason??null))??'unknown_facts';
             // Staff can sell it, but the storefront can't: name what it waits for instead of saying For sale.
             $sold=self::storefront($all);
             if($chosen!==null&&!in_array(true,$sold,true)){
@@ -355,9 +358,7 @@ final class StaffCatalogue
                     &&!\Paymenter\Extensions\Servers\Domains\Services\EndingChoices::hidden($t->tld)){$reason='not_sold_by_default';}
             }
             $label=match($reason){'staff_stopped','staff_term_stopped','renewal_stopped'=>'Stopped by staff','not_sold_by_default'=>'Not sold by default','seller_changed'=>'No registrar selected','publication_pending'=>'Prices not published','renewals_off'=>TldFacts::RENEWALS_OFF,'stale_price'=>'Cost out of date','below_cost'=>'Below cost','unknown_price'=>'Cost missing','unknown_facts','stale_facts'=>TldFacts::TERMS_CHECKING,'unsupported_facts'=>($stopped?'This':'Set to sell, but this').' registrar '.Writer::unsupportedCause($facts,(string)$t->registrar_key,(string)$t->tld),'unsupported_term','provider_disabled'=>'Not offered by this registrar','unpublished_price'=>'Price missing','account_unavailable'=>'Check registrar account','cost_limit'=>'Over the cost limit',default=>'Check TLD settings'};
-            $policy=$policies[$t->tld]??null;
-            $selected=!$unreadable&&$policy&&(int)$policy->server_id===(int)$t->server_id&&$policy->account_fingerprint===$t->account_fingerprint&&$policy->registrar_key===$t->registrar_key
-                &&\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::chosen($t,(array)$policy,$d);
+            $selected=!$unreadable&&$policy!==null&&TldTerms::chosen($t,(array)$policy,$d);
             $chosen=$invalidRule?null:$chosen;
             if(!$selected&&!isset($sellers[$t->tld])){$label=TldFacts::NO_SELLER;}
             // Another account takes this TLD's new orders: name it, so each account's page for one TLD tells the same story.
