@@ -392,19 +392,36 @@ $policy['reconciliation']['manual_check']=true;
 $policy['status_check']=['outcome'=>'scheduled','at'=>$readNow,'next_at'=>$readNow];
 $transfer->update(['policy'=>$policy]);
 same($readNow+3600,RequestFacts::transferChecks($transfer)['next_at'],'A manual check deferred by the registrar limit uses the recorded retry time');
+// Reserve the missed final check shortly before cutoff, when the next retry is already outside the window.
+$transfer->update(['started_at'=>gmdate('Y-m-d H:i:s',$readNow-14*86400+1800)]);
+$lastReadAt = $readNow-8*86400;
 $failedRead = ['reason'=>'transfer_status_unavailable', 'staff_alert'=>true, 'read_failed'=>true];
 foreach ([false, true] as $checking) {
     $policy['reconciliation'] = $failedRead + ($checking ? [
         'final_check'=>'running', 'reading_until'=>$readNow+120, 'next_at'=>$readNow+3600,
     ] : []);
+    $policy = Paymenter\Extensions\Servers\Domains\Services\TransferFollowup::record($transfer, $policy, $lastReadAt, 'unavailable');
     $transfer->update(['policy'=>$policy]);
     $page = Livewire::actingAs($manager)->test(ViewOperation::class, ['record'=>$transfer->id])->assertSuccessful();
     $checks = RequestFacts::transferChecks($transfer);
     same([!$checking,$checking],[$checks['due'],$checks['checking']],'A prior read failure still has a due or running automatic check');
     $html = $page->html();
-    expect(str_contains($html, '-row-last-check"') && str_contains($html, '-row-next-check"'),'The request displays the automatic check schedule after an earlier failure');
+    $times = [];
+    $document = \Dom\HTMLDocument::createFromString($html, LIBXML_NOERROR);
+    foreach ($document->querySelectorAll('time[datetime]') as $time) {
+        $times[(new DateTimeImmutable($time->getAttribute('datetime')))->getTimestamp()] = $time;
+    }
+    $lastRow = ($times[$lastReadAt] ?? null)?->closest('[data-domains-row]');
+    expect($lastRow !== null, 'The request displays the last failed read while the final check is due or running');
+    if ($checking) {
+        same(null,$checks['next_at'],'The active reservation survives when the next retry falls outside the window');
+        expect($lastRow->closest('section')?->querySelector('[data-domains-row][data-domains-wait]') !== null,
+            'The active read displays its checking state beside the last result');
+    } else {
+        expect(isset($times[$checks['next_at']]), 'The due request renders the time of its automatic check');
+    }
     same(!$checking,str_contains($html, "mountAction('recheck',"),'Only the due check offers an immediate staff read');
-    unset($page);
+    unset($page,$document,$times,$lastRow);
     gc_collect_cycles();
 }
 $transfer->update(['started_at'=>gmdate('Y-m-d H:i:s',$readNow-15*86400)]);

@@ -228,7 +228,7 @@ final class RequestFacts
             && ($op->action==='register' || ($op->action==='transfer' && $op->state==='held' && $op->safe_code===self::HELD_TRANSFER_CODE));
     }
     public const AUTO_TRANSFER='Transfer pending. We keep checking. There is nothing you need to do.';
-    /** An overdue registrar wait, including a failed read if another overdue check is scheduled. */
+    /** An overdue registrar wait, including a check still running when further reads are no longer scheduled. */
     public static function delayedTransfer(Operation $op): bool
     {
         if ($op->action !== 'transfer') { return false; }
@@ -236,7 +236,7 @@ final class RequestFacts
             $now = app(Clock::class)->now()->getTimestamp();
             if (!TransferPolling::expired($op, $now)) { return false; }
             $r = $op->policy['reconciliation'] ?? [];
-            if (TransferPolling::retryingFailedRead($op, $now)) { return true; }
+            if (TransferPolling::reading($op, $now) || TransferPolling::retryingFailedRead($op, $now)) { return true; }
             return in_array($r['transfer_status'] ?? null, [null, 'pending', 'needs_action'], true)
                 && in_array($r['reason'] ?? null, [null, 'transfer_deadline_passed', 'transfer_pending', 'transfer_read_deferred', 'original_attempt_unresolved', 'poll_limit_reached', 'resumed'], true);
         } catch (\Throwable) { return false; }
