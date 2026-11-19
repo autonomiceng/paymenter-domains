@@ -198,6 +198,16 @@
         };
         select.addEventListener('change', updateRenewal);
         const dialog = form.closest('dialog');
+        // Native modal focus makes the page inert, but Tab can still reach browser chrome.
+        dialog.addEventListener('keydown', event => {
+            if (event.key !== 'Tab' || event.defaultPrevented || !dialog.matches(':modal')) return;
+            const stops = [...dialog.querySelectorAll('a[href], button, input, select, textarea, [tabindex]')]
+                .filter(control => control.tabIndex >= 0 && !control.matches(':disabled') && control.getClientRects().length);
+            const first = stops[0], last = stops.at(-1);
+            if (!first || document.activeElement !== (event.shiftKey ? first : last)) return;
+            event.preventDefault();
+            (event.shiftKey ? last : first).focus();
+        });
         dialog.addEventListener('close', () => {
             if (dialog.open) return;
             select.selectedIndex = 0;

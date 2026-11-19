@@ -30,7 +30,7 @@ $manager=staffUser([Staff::VIEW,Paymenter\Extensions\Servers\Domains\Services\St
 $history=WatchFacts::history($watch);expect(in_array('Registrar read partial',array_column($history,'event'),true)&&in_array('Registrar read complete',array_column($history,'event'),true),'Monitoring history contains actual current and last-complete registrar reads');
 $otherWatch=clone $watch;$otherWatch->user_id=$other->id;same([],MonitoringEvidence::history($otherWatch),'Another owner cannot join this registrar evidence');
 staffPanel();$panel=Filament::getCurrentPanel();$resources=[WatchResource::class,Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource::class];$panel->resources($resources);Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($resources,$panel){foreach($resources as $resource){$resource::registerRoutes($panel);}});app('router')->getRoutes()->refreshNameLookups();
-$html=Livewire\Livewire::test(ViewWatch::class,['record'=>$watch->id])->html();expect(str_contains($html,'192.0.2.10')&&str_contains($html,'192.0.2.20')&&str_contains($html,'Evidence'),'Real monitoring detail renders both observations');
+$html=Livewire\Livewire::test(ViewWatch::class,['record'=>$watch->id])->html();expect(str_contains($html,'192.0.2.10')&&str_contains($html,'192.0.2.20'),'Real monitoring detail renders both observations');
 $html=Livewire\Livewire::test(WatchHistory::class,['record'=>$watch->id])->html();expect(str_contains($html,'Registrar read partial'),'Real monitoring history renders registrar reads');
 $html=Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\MonitoringSettings::class)->html();
 same([\Paymenter\Extensions\Servers\Domains\Presentation\Plain::Daily->label(),\Paymenter\Extensions\Servers\Domains\Presentation\Plain::None->label()],[settingsRowValue($html,'Registrar refresh')['word']??null,settingsRowValue($html,'Registrar read failure emails')['word']??null],'Real settings shows daily reads and no alert switch for read failures');
@@ -50,16 +50,21 @@ $Value=static fn(array $e)=>MonitoringEvidence::rows($e)['Public DNS'];
 $expired=MonitoringEvidence::read($d,$managed);$stale=$Value($expired);$fresh=$Value([...$expired,'public_stale'=>false]);$tried=gmdate('Y-m-d\\TH:i:s\\Z',$at->getTimestamp()-60);
 expect($expired['public_stale']&&$stale->fact?->items===['A @ → 192.0.2.10']&&$stale->subAt?->datetime===$tried&&$stale->sub!==$fresh->sub,'Saved expired IP answers keep their check time and do not read as current');
 // A failed resolver read saves a time and no answers. It never reads as None or as checked, fresh or expired.
-$noAnswer=static fn(string $state,?string $code,int $until)=>new Paymenter\Extensions\Servers\Domains\Models\ManagedPublicObservation(['domain_id'=>$d->id,'user_id'=>$d->user_id,'generation'=>$d->authority_generation,'account_fingerprint'=>$d->account_fingerprint,'domain_revision'=>$d->confirmed_revision,'check_kind'=>'points','started_at'=>$at->getTimestamp()-60,'valid_until'=>$until,'result'=>$state==='negative'?'complete':'unknown','facts'=>['version'=>1,'queries'=>[['name'=>'example.com','type'=>'A','state'=>$state,'records'=>[],'code'=>$code]]]]);
+$noAnswer=static function (string $state, ?string $code, int $until, array $types = ['A']) use ($d,$at) {
+    $queries = array_map(static fn (string $type): array => ['name'=>'example.com','type'=>$type,'state'=>$state,'records'=>[],'code'=>$code], $types);
+    return new Paymenter\Extensions\Servers\Domains\Models\ManagedPublicObservation(['domain_id'=>$d->id,'user_id'=>$d->user_id,'generation'=>$d->authority_generation,'account_fingerprint'=>$d->account_fingerprint,'domain_revision'=>$d->confirmed_revision,'check_kind'=>'points','started_at'=>$at->getTimestamp()-60,'valid_until'=>$until,'result'=>$state==='negative'?'complete':'unknown','facts'=>['version'=>1,'queries'=>$queries]]);
+};
 foreach([$at->getTimestamp()+60,$at->getTimestamp()-1] as $until){
     $read=MonitoringEvidence::read($d,$noAnswer('unknown','resolver_failed',$until));$failed=$Value($read);
     expect($read['public_stale']&&$failed->state===Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead&&$failed->word!==Paymenter\Extensions\Servers\Domains\Presentation\Plain::None->label(),'A failed resolver read is Couldn\'t read, never None');
     expect($failed->subAt?->datetime===$tried,'A failed resolver read keeps when it was tried');
     expect($failed->sub!==$Value([...$read,'public_stale'=>false])->sub,'An outdated failed public read remains explicitly historical');
 }
-// A confirmed negative reply is None; once expired it keeps the stale reading, like saved answers.
+// Type-specific absence needs both families. Once expired it is historical, like saved answers.
+$onlyA=$Value(MonitoringEvidence::read($d,$noAnswer('negative',null,$at->getTimestamp()-1)));
+same(Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead,$onlyA->state,'An A-only negative cannot establish whole-host absence');
 $confirmedFresh=$Value(['public_read'=>'negative','public'=>[],'public_at'=>$at->getTimestamp()-60,'public_stale'=>false]);
-$confirmedStale=$Value(MonitoringEvidence::read($d,$noAnswer('negative',null,$at->getTimestamp()-1)));
+$confirmedStale=$Value(MonitoringEvidence::read($d,$noAnswer('negative',null,$at->getTimestamp()-1,['A','AAAA'])));
 same([Paymenter\Extensions\Servers\Domains\Presentation\Plain::None->label(),Paymenter\Extensions\Servers\Domains\Presentation\Plain::None->label()],[$confirmedFresh->word,$confirmedStale->word],'A confirmed negative public read is None');
 expect($confirmedStale->sub===$stale->sub&&$confirmedFresh->sub===$fresh->sub,'An empty public result keeps the same fresh or stale reading as answers');
 // The registrar side says None only after a complete DNS read.
@@ -128,4 +133,11 @@ $facts=WatchFacts::for($candidate,['summary'=>null,'keys'=>[]]);
 if(($facts['Checks']['DNS records']['value']??null)==='A @ → 192.0.2.10'){$dnsFailures[]='Latest checks must not borrow managed public DNS';}
 same('A @ → 192.0.2.10',$facts['Evidence']['Public DNS']['value'],'Managed answers remain available under Evidence');
 expect($dnsFailures===[],implode('; ',$dnsFailures));
+// A retained watch read from before presentation stamps still has its worker scope and read time.
+$attempt = $public->replicate()->fill(['result'=>'unknown','partial'=>true,'valid_until'=>null,'started_at'=>$at->getTimestamp(),
+    'completed_at'=>$at->getTimestamp()+1,'facts'=>['version'=>1,'queries'=>[]],'safe_code'=>'resolver_failed']);
+DB::transaction(fn()=>$attempt->save());
+$retained = WatchFacts::for($watch->fresh(),['summary'=>null,'keys'=>[]])['Evidence']['Public DNS'];
+same('A @ → 192.0.2.10',$retained['value'],'A failed watch refresh preserves the original public address');
+same([$public->started_at],$instants((string)$retained['sub']),'The address stays dated to the earlier watch observation');
 $nativeSuccessful=true;echo "Demo C monitoring evidence passed.\n";

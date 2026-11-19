@@ -83,7 +83,7 @@
 @if ($loop->first)
 @if (($recordFamilies ?? null) && $recordFamilies['stale'] && !($recordFamilies['initial_read_pending'] ?? false) && !$readHeld && !$unreadRows)<p class="domains-hint">Registrar records are waiting for an update.@if ($recordFamilies['retained']) Last confirmed data is retained.@endif</p>@endif
 @if (($recordFamilies ?? null) && !$readHeld)@include('domains::partials.record-read-note', ['recordFamilies' => $recordFamilies])@endif
-@if ($readAt)<p class="domains-hint">Checked @include('domains::partials.moment', ['at' => $readAt, 'dateOnly' => true]).</p>@endif
+@if ($readAt)<p class="domains-hint">Checked @include('domains::partials.moment', ['at' => $readAt, 'dateOnly' => true, 'suffix' => '.'])</p>@endif
 @endif
 </x-slot:head>
 @if ($title === 'Ownership and transfer' && $authCode)

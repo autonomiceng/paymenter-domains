@@ -13,7 +13,7 @@ $mixed=count(array_filter($inventory,$readOnly))>0 && count(array_filter($invent
 @foreach ($inventory as $record)<tr @if ($readOnly($record)) data-read-only @endif><td class="domains-mono">{{ $record['name']??'@' }}</td><td data-label="Type">{{ $record['type'] }}</td><td class="domains-cell-wide domains-mono">{!! str_replace('.', '.<wbr>', e($record['address'])) !!}@if ($mixed && $readOnly($record))<span class="domains-sub">Read-only</span>@endif</td>@if ($reportsTtl)<td>{{ $record['ttl'] ?? 'Not reported' }}</td>@endif</tr>@endforeach
 </tbody></table></div>
 @if (empty($section['unavailable']) && array_filter($inventory, $readOnly))
-<p class="domains-hint">{{ $mixed ? 'Read-only records are read from the registrar.' : 'Read from the registrar.' }}@include('domains::partials.contact-support', ['before' => ' To change '.($mixed ? 'one' : 'a record').', ', 'supportLabel' => 'contact support', 'after' => '.'])</p>
+<p class="domains-hint">{{ $mixed ? 'Read-only records are read from the registrar.' : 'Read from the registrar.' }} @include('domains::partials.contact-support', ['before' => 'To change '.($mixed ? 'one' : 'a record').', ', 'supportLabel' => 'contact support', 'after' => '.'])</p>
 @endif
 @if ($section['caa']??[])<p class="domains-hint">Saving other DNS records keeps CAA values and TTL unchanged.</p>@endif
 @endif

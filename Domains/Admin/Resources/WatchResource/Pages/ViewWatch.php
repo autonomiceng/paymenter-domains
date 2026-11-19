@@ -17,17 +17,34 @@ class ViewWatch extends RecordDetailPage
     protected function sections(): array
     {
         ['facts' => $facts, 'status' => $status] = $this->watchFacts();
-        // Each check time that isn't saved yet gets its own Check now.
-        $check = $this->getAction('check', false)?->isVisible() ? fn () => WatchActions::check($this->getRecord(), $this->revision) : null;
+        $checks = $facts['Checks'];
+        $facts['Checks'] = [];
+        foreach (['Last check', 'Next check', 'Registry', 'Nameservers', 'DNS records'] as $label) {
+            if (isset($checks[$label])) { $facts['Checks'][$label] = $checks[$label]; }
+        }
+        $facts['Checks'] += ($facts['Evidence'] ?? []) + $checks;
+        unset($facts['Evidence']);
+        $failed = ($checks['Last check']['tone'] ?? null) === 'danger';
         $sections = [];
-        foreach ($facts as $title => $rows) {
-            $rows = array_map(function (string $label) use ($rows, $check): Row {
-                if ($label === 'Expected nameservers' && $rows[$label]['value'] === null) {
-                    return Row::make($label, Value::state(State::NotSet, Reader::Staff))
-                        ->actions(WatchActions::changeTemplate($this->getRecord(), $this->revision, expected: true)->name('changeExpectedNameservers')->label('Change')->link());
+        foreach ($facts as $title => $entries) {
+            $rows = [];
+            if ($title === 'Checks' && $failed) {
+                $reason = $checks['Last check']['sub'];
+                $kind = $checks['Last check']['retryKind'];
+                $work = $this->getRecord()->work->firstWhere('kind',$kind);
+                if ($this->getRecord()->state === 'active' && $work) {
+                    $label = \Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::checkLabel($kind);
+                    if ($work->backoff_until > time()) { $reason .= ' '.$label.' can retry after '.WatchFacts::date($work->backoff_until).'.'; }
+                    elseif ($work->claim) { $reason .= ' '.$label.' is already running.'; }
                 }
-                return WatchRows::row($label, $rows[$label], $check);
-            }, array_keys($rows));
+                $rows[] = Row::notice('failed-check', Value::state(State::Failed, Reader::Staff, $reason), $this->checkAction());
+                $entries['Last check']['tone'] = $entries['Last check']['sub'] = null;
+                if (!$entries['Last check']['value']) { unset($entries['Last check']); }
+            }
+            foreach ($entries as $label => $fact) {
+                $change = $label === 'DNS template' ? WatchActions::changeTemplate($this->getRecord(), $this->revision) : null;
+                $rows[] = WatchRows::row($label, $fact, $change);
+            }
             // The head shows the state; its reason opens the sheet, so the page has no banner repeating it.
             // A stopped domain starts again from a monitored hosting product, so its notice links to that setting.
             $settings = $this->getRecord()->state === 'retired' && MonitoringSettings::canAccess() ? Sheet::link('monitoring_settings', 'Monitoring settings', WatchResource::getUrl('settings')) : null;

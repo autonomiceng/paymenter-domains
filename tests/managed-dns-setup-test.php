@@ -82,6 +82,8 @@ $manager->role->update(['permissions'=>[Staff::VIEW,StaffWatchWrites::VIEW,Staff
 Livewire::actingAs($manager)->test(ListManagedDns::class)->callTableAction('assignTemplate',$d,['profile'=>$profile->id,'expected_dns'=>'external'])->assertNotified('DNS template assigned');
 same((int)$profile->id,(int)ManagedPublicConfig::find($id)->profile_id,'Staff action uses tested writer');
 // A live registered-domain assignment is explained before retained history, alone and beside a linked watch.
+$usage = \Paymenter\Extensions\Servers\Domains\Admin\Support\WatchFacts::assignments($profile->id)->where('kind','registered')->get();
+same([[$d->domain, 0]], $usage->map(fn($row)=>[$row->domain,(int)$row->inherited])->all(), 'A configured monitored registration appears once in the template assignment list');
 $live='This template is assigned to monitored registered domains. Keep it while they are monitored.';
 expect(!\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::uses((int)$profile->id),'The assigned template is not the site default');
 same($live,\Paymenter\Extensions\Servers\Domains\Services\DnsTemplateUsage::refusal((int)$profile->id),'Live registered-domain assignment is not called history');

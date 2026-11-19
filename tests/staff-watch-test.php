@@ -7,7 +7,7 @@ use Livewire\Livewire;
 use Filament\Facades\Filament;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{WatchResource,RoutingProfileResource,PendingAdoptionResource};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\{ListWatches,ViewWatch};
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\ViewConfiguration as ViewProfile;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\{EditConfiguration,ViewConfiguration as ViewProfile};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\PendingAdoptionResource\Pages\{ListPending,ViewPending};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,WatchFacts};
 use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchProductMap,WatchProfile,WatchAudit};
@@ -87,13 +87,13 @@ foreach(['nameservers','website_endpoints','email_endpoints'] as $field){
     }
 }
 $profileQuery->update($profileOriginal);
-$mounted=Livewire::actingAs($manager)->test(ViewProfile::class,['record'=>$profile->id])->mountAction('save')->assertActionMounted('save');
+$mounted=Livewire::actingAs($manager)->test(EditConfiguration::class,['record'=>$profile->id]);
 $profileQuery->update(['email_endpoints'=>'{"exact":[[]]}']);$profileBefore=(array)(clone $profileQuery)->sole();$auditBefore=WatchAudit::count();
-$mounted->setActionData($validProfile)->callMountedAction()->assertSuccessful();
+$mounted->call('save')->assertStatus(409);
 Livewire::actingAs($manager)->test(ViewProfile::class,['record'=>$profile->id])->assertActionDisabled('save')->assertSee(WatchFacts::TEMPLATE_UNAVAILABLE);
 same($profileBefore,(array)(clone $profileQuery)->sole(),'Corruption after mounting preserves template');same($auditBefore,WatchAudit::count(),'Refused mounted template preserves audit');
 $profileQuery->update($profileOriginal);
-Livewire::actingAs($manager)->test(ViewProfile::class,['record'=>$profile->id])->assertActionEnabled('save')->mountAction('save')->assertActionMounted('save');
+Livewire::actingAs($manager)->test(ViewProfile::class,['record'=>$profile->id])->assertActionEnabled('save');
 $monitored=WatchFacts::usedBy($profile->id);
 // Staff can't stop monitoring: Pause is the reversible pair, and a domain stops only when its hosting service ends.
 $standing=WatchName::findOrFail($id)->getRawOriginal();Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->assertActionDoesNotExist('retire');dnsRefused(fn()=>$run('retire'),'Staff stop refuses',false);same($standing,WatchName::findOrFail($id)->getRawOriginal(),'Refused staff stop changes nothing');

@@ -2,7 +2,6 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
-use Filament\Actions\Action;
 use Illuminate\Contracts\Support\Htmlable;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Row, Trace, Value};
 use Paymenter\Extensions\Servers\Domains\Presentation\{Fact, Plain, Reader, State};
@@ -16,17 +15,13 @@ final class WatchRows
     {
         return match ($label) { 'Paused' => State::Paused, 'Stopped' => State::Stopped, 'Problem found' => State::NeedsReview, 'Check failed' => State::Failed, default => State::Monitored };
     }
-    /** @param array{value:mixed,sub:mixed,url:?string,tone:?string,cause:?string,check:bool,at?:?int} $fact
-     *  @param ?\Closure():Action $check the Check now action, for a check time that isn't saved yet */
-    public static function row(string $label, array $fact, ?\Closure $check): Row
+    public static function row(string $label, array $fact, ?\Filament\Actions\Action $action = null): Row
     {
-        [$shown, $problem, $word, $sub] = self::shown($fact);$staff = Reader::Staff;$value = $fact['value'];
+        [$shown, $problem, $word, $sub] = self::shown($fact);$staff = Reader::Staff;
         $row = Row::make($label, $shown);
         if ($problem) { $row->result(Value::state($word ?? (($fact['tone'] ?? null) === 'danger' ? State::Failed : State::NeedsReview), $staff, $sub)); }
-        $actions = [];
+        $actions = $action ? [$action] : [];
         if (($fact['url'] ?? null) !== null) { $actions[] = Sheet::link('open_'.substr(md5($label), 0, 8), 'Open', $fact['url'])->extraAttributes(['aria-label' => 'Open '.$label]); }
-        // Check now sits beside a value that isn't saved yet, as a quiet row button.
-        if ($value === null && ($fact['check'] ?? false) && $check !== null) { $actions[] = Sheet::button($check()); }
         return $actions === [] ? $row : $row->actions(...$actions);
     }
     /** The fact's value alone, as a list cell shows it: a value not saved yet reads Not read yet with its cause. */
@@ -40,12 +35,14 @@ final class WatchRows
         $word = $sub !== null && Fact::isWord($sub) ? (State::tryFrom(strtolower(str_replace(' ', '_', $sub))) ?? State::NeedsReview) : null;
         if ($word !== null) { $sub = null; }
         $shown = match (true) {
+            $value instanceof Value => $value,
             ($fact['state'] ?? null) instanceof State => self::timed($fact['state'], $fact['sub'] ?? null, $sub),
             $value === null => self::notYet($fact['cause'] ?? null),
             ($fact['at'] ?? null) !== null && is_string($value) => Value::fact(Fact::date((int) $fact['at'], $staff), $problem ? null : $sub),
             is_array($value) => self::fact($value, $problem ? null : $sub),
             $value === 'On' => Value::plain(Plain::On, $sub),
             $value === 'Off' => Value::plain(Plain::Off, $sub),
+            $value === Plain::None->label() => Value::plain(Plain::None, $sub),
             $value === 'Unknown' => self::timed(State::NotReadYet, $fact['sub'] ?? null, $sub),
             $value === 'Checking now' => self::timed(State::Checking, $fact['sub'] ?? null, $sub),
             default => self::fact([(string) $value], $problem ? null : $sub),

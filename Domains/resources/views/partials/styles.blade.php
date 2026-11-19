@@ -587,7 +587,14 @@
 .domains .domains-confirm .domains-buttons { margin-top: 1.25rem; justify-content:flex-end; }
 .domains .domains-dialog-sheet { padding: 0; border-radius: .5rem; }
 .domains .domains-dialog-sheet > .domains-owner-form { gap: 0; margin: 0; max-width: none; }
-.domains .domains-dialog-sheet > h3 { padding: 1rem 1.25rem; font-family: var(--font-display, inherit); overflow-wrap: anywhere; }
+.domains .domains-dialog-sheet > .domains-edit__heading { padding: 1rem 1.25rem; font-family: var(--font-display, inherit); }
+.domains .domains-edit__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
+.domains .domains-edit__heading h3 { margin: 0; overflow-wrap: anywhere; }
+.domains .domains-edit__dismiss { display: inline-grid; place-items: center; flex: none; width: 2rem; height: 2rem; padding: 0; border: 0; border-radius: .375rem; background: transparent; color: var(--e-muted); font: inherit; text-decoration: none; cursor: pointer; }
+.domains .domains-edit__dismiss:hover { color: var(--e-fg); }
+@media (pointer: coarse), (max-width: 639px) {
+    .domains .domains-edit__dismiss { width: 44px; height: 44px; }
+}
 
 .domains .domains-dialog-sheet form > .domains-hint { margin:.75rem 0 0; padding:0 1.25rem; }
 
@@ -615,6 +622,9 @@
 /* ---------- Domain page ---------- */
 .domains .domains-crumb { font-size: .8125rem; color: var(--e-muted); margin-bottom: .5rem; }
 .domains .domains-crumb a { color: var(--e-muted); text-decoration: none; }
+@media (pointer: coarse), (max-width: 639px) {
+    .domains .domains-crumb a { display: inline-flex; align-items: center; min-width: 44px; min-height: 44px; }
+}
 .domains .domains-crumb__sep { display: inline-block; width: .875rem; height: .875rem; margin: 0 .125rem; vertical-align: -2px; }
 .domains .domains-transfer { max-width: 36rem; }
 .domains .domains-crumb a:hover { color: var(--e-fg); }

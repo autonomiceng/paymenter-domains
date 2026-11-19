@@ -73,7 +73,7 @@
     $currentServers = collect($section['current'] ?? [])->sort(SORT_NATURAL | SORT_FLAG_CASE)->values()->all();
     $nsValue = $confirmStep === 'nameservers' ? $retry['values']['nameservers'] : implode("\n", $currentServers);
 @endphp
-@component('domains::partials.owner-edit', ['id' => $cap, 'title' => 'Edit nameservers', 'open' => $editOpen, 'cancel' => $show, 'buttons' => true])
+@component('domains::partials.owner-edit', ['id' => $cap, 'title' => 'Edit nameservers', 'open' => $editOpen, 'cancel' => $show, 'buttons' => true, 'headerClose' => true])
 <form method="POST" action="{{ $section['url'] }}" class="domains-owner-form" data-confirm data-nameservers-max="{{ $section['max'] }}" @if ($section['letterEnding'] ?? false) data-nameservers-letter-ending="1" @endif @if ($section['defaults'] ?? false) data-default-servers="{{ implode("\n", $section['defaultServers'] ?? []) }}" @endif>
 @include('domains::partials.form-key', ['action' => 'nameservers'])
 @if (!($section['defaults'] ?? false))<p class="domains-hint">{{ $section['defaultError'] ?? \Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::MISSING }}</p>@endif
@@ -107,7 +107,8 @@
 <span class="domains-row__a"><button class="domains-a domains-linkbtn" type="button" aria-disabled="true" disabled>{{ $cap === 'glue' ? 'Manage' : 'Add DS record' }}</button></span>
 @elseif ($section['actions'] ?? [])
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">{{ $cap === 'glue' ? 'Manage' : ($records && isset($section['actions']['ds_delete']) ? 'Remove' : 'Add DS record') }}</a></span>
-@component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show, 'buttons' => $cap === 'ds' && isset($section['actions']['ds_add'])])@include('domains::partials.owner-'.$cap)@endcomponent
+@php($addsDs = $cap === 'ds' && isset($section['actions']['ds_add']))
+@component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show, 'buttons' => $addsDs, 'headerClose' => $addsDs])@include('domains::partials.owner-'.$cap)@endcomponent
 @endif
 @elseif ($cap === 'lock')
 <span class="domains-row__v">@if ($state === null)@if ($initial){{ $value::state($st::Checking, $customer) }}@else <x-domains::customer.unread :cause="$waits" :calm="$waits === null" />@endif@else{{ $value::plain($state ? $plain::On : $plain::Off) }}@endif@if (isset($section['transferFrom'])) <span class="domains-sub">{{ $section['transferFrom'] }}</span>@endif</span>

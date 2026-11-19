@@ -212,10 +212,11 @@ class ViewOperation extends RecordDetailPage
     private static function transferReview(Operation $op,array $checks,?Action $action): array
     {
         $who=PaidUncertainty::registrar($op);
+        $customerAction = $checks['customer_action'];
         $plan = match (true) {
             $checks['checking'] => 'A registrar check is in progress.',
             $checks['manual_queued'] => 'A manual check is queued.',
-            $checks['customer_action'] !== null => $checks['customer_action'],
+            $customerAction !== null => $customerAction,
             $checks['next_reason'] !== null && $action === null => 'Contact '.$who.' to confirm the result.',
             $checks['next_reason'] !== null => 'If the check cannot confirm the result, contact '.$who.'.',
             default => 'The system will check with '.$who.' again.',
@@ -223,18 +224,19 @@ class ViewOperation extends RecordDetailPage
         $guard = $action === null ? null : ($action->getName() === 'resume_reads'
             ? 'Check now queues a status check for the original transfer.'
             : 'Check now reads the status of the original transfer.');
+        $detail = $checks['checking'] || $checks['manual_queued'] ? $customerAction : $guard;
         $last=$checks['last_at']===null
             ? ($checks['last_result']===null ? Value::state(State::NotReadYet,Reader::Staff,'No transfer result is recorded.') : RequestRows::text($checks['last_result']))
             : Value::fact(Fact::date($checks['last_at'],Reader::Staff),$checks['last_result']);
         $next = match (true) {
             $checks['checking'] => Value::state(State::Checking, Reader::Staff),
-            $checks['due'] => Value::state(State::Delayed, Reader::Staff, 'A registrar check is due.',
-                at: Fact::date($checks['next_at'],Reader::Staff)),
+            $checks['due'] => Value::stateAt(State::Delayed, Reader::Staff, 'Due since',
+                Fact::date($checks['next_at'], Reader::Staff)),
             $checks['next_at'] !== null => Value::fact(Fact::date($checks['next_at'], Reader::Staff)),
             default => RequestRows::text('None scheduled', $checks['next_reason']),
         };
         return [
-            Row::noticeText('request',RequestRows::text($plan,$guard),$action),
+            Row::noticeText('request',RequestRows::text($plan,$detail),$action),
             Row::make('Last check',$last),
             Row::make('Next check',$next),
         ];

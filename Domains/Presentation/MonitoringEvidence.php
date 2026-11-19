@@ -2,16 +2,117 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
-use Paymenter\Extensions\Servers\Domains\Models\{Domain,ManagedPublicObservation,PublicDnsObservation,WatchName};
+use Paymenter\Extensions\Servers\Domains\Models\{Domain,ManagedPublicObservation,PublicDnsObservation,WatchDnsObservation,WatchName};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value;
 /** Read-only evidence: public answers never certify registrar mutations or billing. */
 final class MonitoringEvidence
 {
+    private const ADDRESS_TYPES = ['A'=>FILTER_FLAG_IPV4, 'AAAA'=>FILTER_FLAG_IPV6];
+
     public static function domain(WatchName $w): ?Domain
     {
         return $w->managed_domain_id===null?null:Domain::whereKey($w->managed_domain_id)->where('user_id',$w->user_id)->where('domain',$w->canonical_name)->first();
     }
+    /** An inconclusive read can retain evidence for the attempted target up to an owner alias. */
+    public static function forWatch(WatchName $watch): array
+    {
+        $attempt = $watch->points;
+        $name = $watch->canonical_name;
+        $evidence = self::read(self::domain($watch), $attempt, $name);
+        $records = $evidence['public_families'];
+        if ($evidence['public_cname'] !== null) { $records['CNAME'] = $evidence['public_cname']; }
+        if (!$attempt?->id || !empty($records['CNAME']['answers']) || isset($records['A'], $records['AAAA'], $records['CNAME'])) { return $evidence; }
+        try { $stamp = $attempt->facts['presentation_stamp'] ?? null; }
+        catch (\Illuminate\Contracts\Encryption\DecryptException) { return $evidence; }
+        // Compare with the attempted read. A later pause does not erase the history of that target.
+        $history = WatchDnsObservation::where('watch_id',$watch->id)->where('user_id',$watch->user_id)
+            ->where('watch_revision',$attempt->watch_revision)->where('profile_id',$attempt->profile_id)
+            ->where('profile_revision',$attempt->profile_revision)->where('psl_revision',$attempt->psl_revision)
+            ->where('check_kind','points')->where('id','<',$attempt->id);
+        foreach ($history->lazyByIdDesc(32) as $prior) {
+            try { $facts = $prior->facts; }
+            catch (\Illuminate\Contracts\Encryption\DecryptException) { continue; }
+            $priorStamp = $facts['presentation_stamp'] ?? null;
+            // The presentation stamp covers rotating sources. Legacy rows can still match the worker's source digest.
+            $sameTarget = $stamp && $priorStamp
+                ? $stamp === $priorStamp
+                : $attempt->source_digest && $attempt->source_digest === $prior->source_digest;
+            if (!$sameTarget) { continue; }
+            $priorRecords = self::ownerRecords($facts['queries'] ?? [], $name, $prior->started_at, retained:true);
+            $records += $priorRecords;
+            // A confirmed alias superseded direct answers even if a newer read ruled that alias out.
+            if (!empty($priorRecords['CNAME']['answers']) || isset($records['A'], $records['AAAA'], $records['CNAME'])) { break; }
+        }
+        return [...$evidence, ...self::publicEvidence($records, $attempt->started_at, $evidence['public_stale'])];
+    }
+
+    /** An empty answer list means a confirmed absence. An omitted type has no definitive result. */
+    private static function ownerRecords(array $queries, ?string $name, ?int $at, bool $retained = false): array
+    {
+        $records = [];
+        $nameAbsent = false;
+        foreach ($queries as $query) {
+            if (($query['name'] ?? null) !== $name) { continue; }
+            $type = $query['type'] ?? null;
+            $state = $query['state'] ?? null;
+            $nameAbsent = $nameAbsent || ($state === 'negative' && ($query['code'] ?? null) === 'nxdomain');
+            if ($type === 'CNAME') {
+                $target = $query['records'][0]['value'] ?? null;
+                if ($state === 'rrset' && is_string($target) && $target !== '') {
+                    // This owner is an alias. Addresses from its target are separate evidence.
+                    $records = ['CNAME'=>['CNAME @ → '.$target]];
+                    break;
+                }
+                if ($state === 'negative') { $records['CNAME'] ??= []; }
+                continue;
+            }
+            if (!isset(self::ADDRESS_TYPES[$type])) { continue; }
+            if ($state === 'negative') { $records[$type] ??= []; }
+            // Older stored answer lists may lack a state field.
+            if ($state !== null && $state !== 'rrset') { continue; }
+            foreach ($query['records'] ?? [] as $record) {
+                $value = $record['value'] ?? null;
+                if (is_string($value) && filter_var($value, FILTER_VALIDATE_IP, self::ADDRESS_TYPES[$type])) {
+                    $records[$type][] = $type.' @ → '.$value;
+                    $records['CNAME'] ??= [];
+                }
+            }
+        }
+        if ($nameAbsent && empty($records['CNAME'])) { $records += ['A'=>[], 'AAAA'=>[], 'CNAME'=>[]]; }
+        return array_map(static fn (array $answers): array => ['answers'=>$answers, 'at'=>$at, 'retained'=>$retained], $records);
+    }
+
+    private static function publicEvidence(array $records, ?int $attemptAt, bool $stale): array
+    {
+        $cname = $records['CNAME'] ?? null;
+        unset($records['CNAME']);
+        $families = $records;
+        ksort($families);
+        $answered = empty($cname['answers'])
+            ? array_filter($families, static fn (array $family): bool => $family['answers'] !== [])
+            : ['CNAME'=>$cname];
+        $answers = array_merge(...array_column($answered, 'answers'));
+        $read = match (true) {
+            $answers !== [] => 'answered',
+            count($families) === count(self::ADDRESS_TYPES) => 'negative',
+            $attemptAt !== null => 'unknown',
+            default => null,
+        };
+        $shown = match ($read) {
+            'answered' => $answered,
+            'negative' => $families,
+            default => [],
+        };
+        $times = array_values(array_unique(array_column($shown, 'at')));
+        $retained = in_array(true, array_column($shown, 'retained'), true);
+        // A single date applies only when all displayed evidence comes from that time.
+        $at = match (count($times)) { 0 => $attemptAt, 1 => $times[0], default => null };
+        $families = array_map(static fn (array $family): array => [...$family, 'stale'=>$stale || $family['retained']], $families);
+        return ['public_stale'=>$stale || $retained,'public'=>$answers,'public_at'=>$at,'public_read'=>$read,
+            'public_retained'=>$retained,'public_families'=>$families,'public_cname'=>$cname];
+    }
+
     public static function read(?Domain $d,?PublicDnsObservation $public=null,?string $name=null): array
     {
         $name??=$d?->domain;
@@ -21,21 +122,16 @@ final class MonitoringEvidence
         $state=!$states?'Unknown':(count(array_unique($states))===1&&$states[0]==='complete'?'Complete':(array_intersect($states,['complete','partial'])?'Partial':'Unknown'));
         $registrar=[];
         foreach($families['families']['dns']['records']??[] as $r){if(in_array($r['type']??null,['A','AAAA'],true)){$registrar[]=$r['type'].' '.($r['name']?:'@').' → '.$r['address'];}}
-        // How the public read ended: answered, a confirmed negative (every A/AAAA query got a valid negative reply), or
-        // unknown (a resolver failure, timeout or no address query), so an empty result never reads as confirmed absence.
-        $answers=[];$asked=[];
-        try{foreach($public?->facts['queries']??[] as $q){if(($q['name']??null)!==$name||!in_array($q['type']??null,['A','AAAA'],true)){continue;}
-            $asked[]=$q['state']??null;
-            foreach($q['records']??[] as $r){if(is_string($r['value']??null)&&filter_var($r['value'],FILTER_VALIDATE_IP)){$answers[]=$q['type'].' @ → '.$r['value'];}}}}
-        catch(\Illuminate\Contracts\Encryption\DecryptException){$answers=[];$asked=[];}
-        $publicRead=$public===null?null:($answers!==[]?'answered':($asked!==[]&&array_unique($asked)===['negative']?'negative':'unknown'));
+        try { $queries = $public?->facts['queries'] ?? []; }
+        catch (\Illuminate\Contracts\Encryption\DecryptException) { $queries = []; }
+        $ownerRecords = self::ownerRecords($queries, $name, $public?->started_at);
         $registrarAt=$families['families']['dns']['at']??null;$failedAt=$families['read_failed_at']??null;
         if($failedAt!==null&&($registrarAt===null||strtotime($failedAt)>strtotime($registrarAt))){$registrarAt=$failedAt;}
         // Retained family values do not turn a failed registrar attempt into a complete read.
         $absent=false;$failed=false;
         try { $absent=$d&&\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($d); $failed=$d&&($d->observation['record_failure']['identity']??null)===\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d); }
         catch (\Illuminate\Contracts\Encryption\DecryptException) {}
-        return ['state'=>$state,'public_stale'=>self::publicStale($d,$public,$name),'public'=>$answers,'public_at'=>$public?->started_at,'public_read'=>$publicRead,
+        return ['state'=>$state,...self::publicEvidence($ownerRecords, $public?->started_at, self::publicStale($d,$public,$name)),
             'registrar'=>$registrar,'registrar_absent'=>$absent,'registrar_at'=>$registrarAt,'registrar_read'=>$failed?'unknown':($families['families']['dns']['state']??null),'at'=>$families['at']??null,'families'=>$families,
             'separation'=>RecordFamilies::EVIDENCE];
     }
@@ -57,8 +153,8 @@ final class MonitoringEvidence
         return !collect(['website','email'])->contains(fn($axis)=>!($fresh[$axis]['stale']??true)&&($fresh[$axis]['checked_at']??null)===$public->started_at);
     }
     /** The Monitoring rows, label => value: what public DNS answered and what the registrar holds, each with when it was
-     * checked. None only follows a read that confirmed there is no address: every public A/AAAA query got a valid
-     * negative reply, or a complete registrar DNS read. A read that failed or stopped part way says Couldn't read with
+     * checked. None follows a confirmed absence of the public name or both address families, or a complete registrar
+     * DNS read. A read that failed or stopped part way says Couldn't read with
      * when it was tried; registrar addresses from such a read stay listed over the same words. Saved public answers past
      * their freshness, empty or not, say they are not current. Never checked says Not read yet, once. A failed first
      * registrar read has no record time, so it takes the failure time. $withRecords: the page already shows the

@@ -1,6 +1,10 @@
 {{-- MIT, Copyright (c) 2026 Autonomic Engineering. An editor opened from a page row. Script shows it as a modal; without script ?edit= renders it open in place. --}}
 <dialog id="edit-{{ $id }}" class="domains-confirm domains-edit" aria-labelledby="edit-{{ $id }}-title" @if ($open) open @endif>
+@if ($headerClose ?? false)
+@include('domains::partials.edit-heading')
+@else
 <h3 id="edit-{{ $id }}-title" class="domains-h3">{{ $title }}</h3>
+@endif
 {{ $slot }}
 {{-- A form that ends in its own Cancel and primary (edit-buttons) passes buttons: true; any other dialog keeps this Cancel. --}}
 @unless ($buttons ?? false)<div class="domains-edit__close">@if ($open)<a class="domains-btn domains-btn--ghost" href="{{ $cancel }}">{{ $close ?? 'Cancel' }}</a>@else<button type="button" class="domains-btn domains-btn--ghost" data-dialog-close>{{ $close ?? 'Cancel' }}</button>@endif</div>@endunless
