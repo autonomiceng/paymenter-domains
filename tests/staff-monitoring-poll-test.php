@@ -144,6 +144,8 @@ DB::transaction(function () use ($service,$source): void {
     $source->replicate()->fill(['service_id'=>$sibling->id,'hostname'=>'shop.example.com'])->save();
 });
 $reader = new class implements DnsReader {
+    public ?string $ipv4 = null;
+
     public function read(DnsQuery $query, DnsContext $context): DnsAnswer
     {
         if (!$context->reserve()) { return DnsAnswer::unknown($query, 'budget_exhausted'); }
@@ -151,6 +153,7 @@ $reader = new class implements DnsReader {
         $record = ['host'=>$host,'class'=>'IN','type'=>$type,'ttl'=>60];
         return match ($query->key()) {
             'www.example.com|CNAME' => DnsAnswer::rrset($query, [[...$record,'target'=>'edge.example.net']]),
+            'example.com|A' => $this->ipv4 === null ? DnsAnswer::negative($query) : DnsAnswer::rrset($query, [[...$record,'ip'=>$this->ipv4]]),
             'example.com|AAAA' => DnsAnswer::rrset($query, [[...$record,'ipv6'=>'2001:db8::8']]),
             default => DnsAnswer::negative($query),
         };
@@ -210,6 +213,34 @@ same([], $notificationStatuses(), 'A completed rotation sends feedback only once
 $reload = Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id]);
 same([], $reload->get('pendingCheck'), 'Reload does not reopen a completed rotation');
 same([], $notificationStatuses(), 'Reload does not resend rotation feedback');
+
+// Exercise the same cap with two saved addresses and a newer positive A answer.
+$collectPoints = static function (int $at, int $startCursor) use ($pointsWork,$dns,$id,$uid,$collector): array {
+    $pointsWork->update(['cursor'=>$startCursor,'due_at'=>$at,'backoff_until'=>null]);
+    $ticket = $dns->begin($id,$uid,'points',$at);
+    expect($ticket !== null, 'Dual-stack points ticket');
+    $context = new DnsContext(static fn () => 0.0);
+    [$reading,$cursor,$sourceCursor] = $collector->collect($ticket,$context);
+    expect($dns->finish($ticket,$reading,$at+1,$cursor,$sourceCursor), 'Dual-stack observation saved');
+    $apex = array_column(array_filter($reading->queries,fn ($q) => $q['name'] === 'example.com'),'state','type');
+    return [$context->used(),$reading->result(),$reading->safeCode(),$apex['A'] ?? null,$apex['AAAA'] ?? null];
+};
+$dualAt = $rotationAt + 60;
+$reader->ipv4 = '192.0.2.8';
+same(['rrset','rrset'],array_slice($collectPoints($dualAt,0),3),'Initial collection saves both apex families');
+$reload->call('refreshFacts')->assertSee('192.0.2.8')->assertSee('2001:db8::8');
+$newAAt = $dualAt + 60;
+$reader->ipv4 = '192.0.2.18';
+same([DnsContext::MAX_QUERIES,'partial','rotation','rrset',null],$collectPoints($newAAt,1),
+    'The capped rotation saves a positive apex A answer and skips AAAA');
+$reload->call('refreshFacts')->assertDontSee('192.0.2.8');
+$page = storefrontDom($reload->html());
+foreach (['2001:db8::8'=>$dualAt, '192.0.2.18'=>$newAAt] as $address=>$observedAt) {
+    $row = $page->query('//div[@data-domains-row][starts-with(normalize-space(*[1]),"Public DNS") and contains(., "'.$address.'")]')->item(0);
+    expect($row !== null, 'Public DNS still shows '.$address.' after the capped refresh');
+    $observed = array_map(fn ($time) => strtotime($time->getAttribute('datetime')),iterator_to_array($page->query('.//time',$row)));
+    same([$observedAt],$observed,'Public DNS shows the exact observation time for '.$address);
+}
 
 // Staff have no Stop: Pause is the supported way to halt checks, and the page then reads Paused.
 Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->assertActionDoesNotExist('retire')->callAction('pause')->assertNotified('Monitoring paused');same('paused',WatchName::find($id)->state,'Pause saves');

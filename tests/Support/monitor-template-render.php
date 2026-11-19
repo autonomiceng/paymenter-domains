@@ -11,11 +11,34 @@ use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\{AssignedDomains, EditConfiguration, ListConfiguration, ViewConfiguration};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\ViewWatch;
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Dns\{DnsAnswer, DnsQuery, DnsReading};
 use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
+
+if (getenv('DOMAINS_RENDER_DUAL_STACK')) {
+    $at = app(Clock::class)->now()->getTimestamp()-1200;
+    $query = new DnsQuery($watch->canonical_name, 'A');
+    $address = static fn (string $ip): DnsAnswer => DnsAnswer::rrset($query, [['host'=>$query->name,'class'=>'IN','type'=>'A','ttl'=>60,'ip'=>$ip]]);
+    $ipv6 = DnsAnswer::rrset(new DnsQuery($query->name, 'AAAA'), [['host'=>$query->name,'class'=>'IN','type'=>'AAAA','ttl'=>60,'ipv6'=>'2001:db8::8']]);
+    $points = DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','points');
+    foreach ([new DnsReading('points',website:true,email:false,queries:[$address('192.0.2.8'),$ipv6]),
+        new DnsReading('points',website:true,email:false,queries:[$address('192.0.2.18')],budgetLimited:true)] as $reading) {
+        $points->update(['due_at'=>$at,'backoff_until'=>null]);
+        $ticket = $dns->begin($id,$uid,'points',$at);
+        expect($ticket && $dns->finish($ticket,$reading,$at+1), 'Synthetic Public DNS observation');
+        $at += 600;
+    }
+    panelTheme(getenv('PAYMENTER_TEST_FIXTURE'));
+    $page = Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id]);
+    writePanelPage($argv[1].'/watch.html', $page, implode('', $page->effects['partials'] ?? []));
+    $nativeSuccessful = true;
+    return;
+}
+
 $off = DB::transaction(fn () => WatchProfile::create(['name'=>'Previous hosting template','nameservers'=>['ns1.old.test','ns2.old.test'],
     'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$manager->id,'reason'=>'Synthetic former template']));
 DB::table('domains_watch_names')->where('id',$id)->update(['ns_profile_id'=>$off->id,'profile_revision'=>1,'expected_dns'=>null]);
-$at = app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()-1800;
+$at = app(Clock::class)->now()->getTimestamp()-1800;
 foreach (['not_registered','endpoint_failed'] as $reason) {
     DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','expiry')->update(['due_at'=>$at,'backoff_until'=>null]);
     $ticket = $registry->begin($id,$uid,$at);

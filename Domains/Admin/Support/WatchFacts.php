@@ -4,7 +4,8 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\User;
 use Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence;
-use Paymenter\Extensions\Servers\Domains\Presentation\{Plain,State};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value;
+use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Plain,Reader,State};
 use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault, ManagedDnsSetup, WatchTemplateAssignment};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
 use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchAudit,WatchProfile};
@@ -112,6 +113,16 @@ final class WatchFacts
         if(!$active){foreach(['Nameservers','Registry','Last check'] as $label){if(isset($checks[$label])&&$checks[$label]['value']===null){$checks[$label]['value']='';}}}
         // Saved answers only. Registrar records with no values are already Unknown in the Domain section.
         $evidence=[];foreach(['public'=>'Public DNS','registrar'=>'Registrar records'] as $key=>$label){
+            if ($key === 'public' && $e['public_at'] === null && in_array($e['public_read'], ['answered', 'negative'], true)) {
+                foreach ($e['public_families'] as $type=>$family) {
+                    if ($e['public'] && !$family['answers']) { continue; }
+                    $when = Fact::date($family['at'], Reader::Staff);
+                    $note = $family['stale'] ? 'Not current. Last checked' : 'Checked';
+                    $value = $family['answers'] ? Value::fact(Fact::lines($family['answers']), $note, $when) : Value::plainAt(Plain::None, $note, $when);
+                    $evidence[$label.' ('.$type.')'] = self::fact($value);
+                }
+                continue;
+            }
             if(!$e[$key]&&($key==='registrar'||(!$active&&$e['public_at']===null))){continue;}
             // A check that saved no answers says so, so Not read yet beside its Checked time reads as one fact.
             $at=$e[$key.'_at'];$time=$at?$checked($at,$key==='public' && empty($e['public_retained'])):null;

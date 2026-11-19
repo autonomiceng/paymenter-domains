@@ -146,4 +146,40 @@ foreach ($negativeAnswers as $scope => $answers) {
 $view->call('refreshFacts');
 same(Plain::None->label(), panelRowValue($view->html(), 'Public DNS'), 'The panel renders the confirmed absence');
 
+// A failed A reply keeps that family's address independently of a new AAAA answer.
+$v6Query = new DnsQuery($query->name,'AAAA');
+$v6 = DnsAnswer::rrset($v6Query,[['host'=>$query->name,'class'=>'IN','type'=>'AAAA','ttl'=>60,'ipv6'=>'2001:db8::39']]);
+$dual = new DnsReading('points',website:true,email:false,queries:[$answer,$v6]);
+$onlyA = new DnsReading('points',website:true,queries:[$answer]);
+$failedA = new DnsReading('points',website:true,queries:[DnsAnswer::unknown($query,'resolver_failed'),$v6]);
+$evidence = static fn (): array => MonitoringEvidence::forWatch(WatchName::findOrFail($id));
+$savePoints($when, $dual);
+$savePoints($when+60, $failedA);
+$retained = $evidence();
+same([['A @ → 192.0.2.39','AAAA @ → 2001:db8::39'],null,true],
+    [$retained['public'],$retained['public_at'],$retained['public_stale']], 'Mixed observations are historical and have no shared date');
+same(['A'=>$when,'AAAA'=>$when+60],array_map(fn ($family) => $family['at'],$retained['public_families']),
+    'The failed family keeps its date while the answered family advances');
+$savePoints($when+120, new DnsReading('points',email:false,queries:[DnsAnswer::negative($query)],budgetLimited:true));
+$afterNegative = $evidence();
+same([['AAAA @ → 2001:db8::39'],$when+60,[],$when+120],
+    [$afterNegative['public'],$afterNegative['public_at'],$afterNegative['public_families']['A']['answers'],$afterNegative['public_families']['A']['at']],
+    'An A negative replaces A alone and leaves the last IPv6 address and date');
+$savePoints($when+180, $failedA);
+same(['AAAA @ → 2001:db8::39'],$evidence()['public'],'A later failure cannot revive an address replaced by a negative reply');
+
+// A source change and a DNS template change each fence history from the next partial check.
+DB::table($source->getTable())->where('id',$source->id)->increment('revision');
+$savePoints($when+240, $onlyA);
+same(['A @ → 192.0.2.39'],$evidence()['public'],'The next attempt cannot borrow IPv6 from a different source target');
+$savePoints($when+300, $dual);
+$replacement = DB::transaction(function () use ($profile): WatchProfile {
+    $replacement = $profile->replicate()->fill(['name'=>'Replacement template','enabled'=>true]);
+    $replacement->save();
+    return $replacement;
+});
+DB::table('domains_watch_names')->where('id',$id)->update(['ns_profile_id'=>$replacement->id,'profile_revision'=>$replacement->revision]);
+$savePoints($when+360, $onlyA);
+same(['A @ → 192.0.2.39'],$evidence()['public'],'The next attempt cannot borrow IPv6 from a different DNS template');
+
 $nativeSuccessful=true;echo "Staff monitoring list and details passed\n";
