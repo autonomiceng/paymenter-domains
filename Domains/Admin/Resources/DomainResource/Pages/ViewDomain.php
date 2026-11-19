@@ -320,15 +320,20 @@ class ViewDomain extends RecordDetailPage
         foreach (is_array($d->observation['departure_reads']??null)?$d->observation['departure_reads']:[] as $saved) {
             if (is_array($saved)&&($saved['recheck']??false)&&is_int($saved['at']??null)&&$saved['at']>=(int)($check['at']??PHP_INT_MAX)) { $found=max((int)$found,$saved['at']); }
         }
-        // A later try that got no answer: a saved failed read, or a failure the scheduler kept before any read was saved.
+        // A later try that got no answer: a saved failure or an attempt that stopped before saving any read.
         $retried=is_string($d->observation['read_retry']['at']??null)?(int)strtotime($d->observation['read_retry']['at']):0;
         $manual=\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::latestFailedReadAt($d);
-        $tried=max($gone?0:(int)$readAt,$retried,$manual);$tried=$tried>($found??(int)($check['at']??0))?$tried:null;
+        $tried=max($gone?0:(int)$readAt,$retried,$manual);$tried=$tried>($found??(int)$at)?$tried:null;
         $unclear=Value::state(State::UnderReview,Reader::Staff,$found===null?'The recheck got no answer. The first read is still the latest answer.':'The latest read got no answer.');
         $times=[...($tried?[$fact::date($tried,Reader::Staff,'Last tried')]:[]),...($found?[$fact::date($found,Reader::Staff,'Last found missing')]:[])];
+        $scheduled=isset($check['at'])?(int)$check['at']+86400:null;
         $recheck=match(true){
-            !isset($check['at'])=>Value::fact($fact::entered('Not scheduled'),'No automatic recheck scheduled.'),
-            !$rechecked=>Value::state(State::Queued,Reader::Staff,'Automatic recheck scheduled',at:$fact::date((int)$check['at']+86400,Reader::Staff)),
+            $scheduled===null&&$tried!==null=>Value::stateAt(State::CouldntRead,Reader::Staff,'Last tried',$fact::date($tried,Reader::Staff))
+                ->note('No automatic recheck is scheduled.'),
+            $scheduled===null=>Value::fact($fact::entered('Not scheduled'),'No automatic recheck scheduled.'),
+            !$rechecked&&$tried!==null=>Value::state(State::Queued,Reader::Staff,'The latest read got no answer.')
+                ->detail(...[...$times,$fact::date($scheduled,Reader::Staff,'Next automatic check')]),
+            !$rechecked=>Value::state(State::Queued,Reader::Staff,'Automatic recheck scheduled',at:$fact::date($scheduled,Reader::Staff)),
             $found!==null&&$tried===null=>Value::fact($fact::entered($absent),'Last read',$fact::date($found,Reader::Staff)),
             default=>$times?$unclear->detail(...$times):$unclear};
         $statuses=array_values(array_unique(array_map(fn($status)=>match(strtolower(str_replace(' ','',$status))){'ok'=>'No registry restriction reported.','clienttransferprohibited','servertransferprohibited'=>'Transfers prohibited.','pendingtransfer'=>'Transfer pending.',default=>'Registry status is not recognized.'},$registry['status']??[])));

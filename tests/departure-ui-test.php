@@ -64,14 +64,23 @@ $facts['departure_reads']=[['recheck'=>true,'at'=>$answerAt]];
 $fresh->update(['observation'=>$facts]);
 (new \Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords((int)$actor->id,(int)$fresh->id,
     $fresh->authority_generation,$fresh->account_fingerprint,true))->failed(null);
-$failed=Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.Livewire\Livewire::actingAs($actor)
-    ->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$fresh->id])->html(),LIBXML_NOERROR);
-$recheck=null;
-foreach($failed->querySelectorAll('[data-piece="row"]') as $row){if(trim((string)$row->querySelector('.domains-panel-row-k')?->textContent)==='Recheck'){$recheck=$row;}}
-$check($recheck!==null && str_contains($recheck->textContent,State::UnderReview->label())
-    && str_contains($recheck->textContent,\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($answerAt))
-    && str_contains($recheck->textContent,\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($clock->now()->getTimestamp())),
-    'A failed manual recheck dates the last confirmed absence and failed attempt separately');
+$recheckDates=static function()use($actor,$fresh):array {
+    $page=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$fresh->id]);
+    $dom=Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.$page->html(),LIBXML_NOERROR);
+    $row=$dom->querySelector("button[wire\\:click^=\"mountAction('check_departure',\"]")?->closest('[data-piece="row"]');
+    $dates=[];
+    foreach($row?->querySelectorAll('time[datetime]')??[] as $time){$dates[]=strtotime($time->getAttribute('datetime'));}
+    return $dates;
+};
+$failedAt=$clock->now()->getTimestamp();
+$check($recheckDates()===[$failedAt,$answerAt],'A failed manual recheck dates the last confirmed absence and failed attempt separately');
+$firstAt=$failedAt-7200;
+$facts=$fresh->refresh()->observation;
+$facts['departure_check']['at']=$firstAt;
+$facts['departure_check']['rechecked']=false;
+unset($facts['departure_reads']);
+$fresh->update(['observation'=>$facts]);
+$check($recheckDates()===[$failedAt,$firstAt+86400],'The failed manual check stays visible beside the upcoming automatic check');
 // Phase B, registrar DNS: when the registry lists another registrar nothing serves the records, so Edit and Edit SRV are
 // muted by the row's own reason. While it lists ours the row has no such reason: Edit stays paused only by the
 // review's section notice, like every registrar change under review.
@@ -99,6 +108,7 @@ $blank=$dnsButtons();
 $check(isset($blank['Edit'])&&!$blank['Edit']['reason'],'DNS Edit is not muted as stopped when the registry names no registrar');
 // Absence saved before departure checks existed has no marker; the staff page still opens and offers Check again.
 Illuminate\Support\Facades\DB::transaction(function()use($d):void{$fresh=$d->fresh();$p=$fresh->observation;unset($p['departure_check']);$fresh->update(['observation'=>$p]);});
+$check($recheckDates()===[$failedAt],'A holding with no scheduled check still dates the failed manual check');
 try{Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id])->assertSuccessful()->assertActionVisible('check_departure');$legacy=true;}
 catch(Throwable $error){$legacy=false;echo 'Legacy absence page: '.$error->getMessage()."\n";}
 $check($legacy,'A suspected holding without a departure marker renders with Check again');
