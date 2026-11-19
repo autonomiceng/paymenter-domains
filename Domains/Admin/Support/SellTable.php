@@ -127,6 +127,13 @@ final class SellTable
         $this->facts();$tld=$this->rowTlds[self::key($row)]??null;
         return $tld===null?null:(int)$tld->id;
     }
+    public function holders(OfferRow $row): int {return $this->facts()[self::key($row)]['holders']??0;}
+    public function isDemo(OfferRow $row): bool {return $this->facts()[self::key($row)]['demo']??false;}
+    public function renewal(OfferRow $row): ?string
+    {
+        $fact=$this->facts()[self::key($row)]??null;
+        return $fact===null?null:TldFacts::priceState($fact,refresh:false)['value'];
+    }
     /** @return array{0:?string,1:?string,2?:?string} estimated price, profit and why the price is a loss, from the saved rule. Only for a row with no saved price. */
 
     /** The saved prices for this view. Staff without costs never read them. */

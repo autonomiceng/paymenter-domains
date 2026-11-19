@@ -2,10 +2,14 @@
 // Adapted from Enom 444f31c Admin/Resources/TldResource; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources;
+use Filament\Panel;
 use Filament\Resources\Resource;
+use Filament\Resources\Pages\PageRegistration;
 use Illuminate\Database\Eloquent\{Builder,Model};
+use Illuminate\Support\Facades\Route;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,ViewTld};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
 class TldResource extends Resource
 {
@@ -14,8 +18,6 @@ class TldResource extends Resource
     protected static string|\UnitEnum|null $navigationGroup='Domains';
     protected static ?string $navigationLabel='TLDs & pricing';
     protected static ?int $navigationSort=3;
-    /** The menu item stays marked on What you sell, its tab. */
-    public static function getNavigationItemActiveRoutePattern(): string|array { return [static::getRouteBaseName().'.*',\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getRouteName()]; }
     protected static ?string $modelLabel='TLD';
     protected static ?string $pluralModelLabel='TLDs';
     protected static ?string $breadcrumb='TLDs & pricing';
@@ -39,5 +41,13 @@ class TldResource extends Resource
         return $out;
     }
     public static function getPages(): array
-    {return ['index'=>ListTlds::route('/'),'view'=>ViewTld::route('/{record}'),'history'=>TldResource\Pages\TldHistory::route('/{record}/history')];}
+    {
+        return [
+            'index'=>new PageRegistration(WhatYouSell::class,fn(Panel $panel)=>Route::get('/',WhatYouSell::class)
+                ->middleware(WhatYouSell::getRouteMiddleware($panel))->withoutMiddleware(WhatYouSell::getWithoutRouteMiddleware($panel))
+                ->defaults('allTlds',true)),
+            'view'=>ViewTld::route('/{record}'),
+            'history'=>TldResource\Pages\TldHistory::route('/{record}/history'),
+        ];
+    }
 }
