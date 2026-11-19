@@ -183,8 +183,6 @@ final readonly class SalesSetupDraft
             $proposed->catalogue_intent = OfferState::json([...OfferState::decode($t->catalogue_intent), 'pricing_rule' => $rule]);
         }
         $effective = Pricing::rule($proposed, $defaultRule, $fee);
-        $needsWrite = $changedSeller || $intent != $oldIntent || $changedRule;
-        $row['status'] = $needsWrite ? 'ready' : 'unchanged';
         $row['facts_state'] = $before->facts === null ? 'unknown' : ($before->facts->fresh($now) ? 'current' : 'stale');
         $row['pricing_after'] = Pricing::hasOwn($proposed) ? 'custom' : 'default';
         $row['pricing_before'] = Pricing::hasOwn($t) ? 'custom' : 'default';
@@ -196,6 +194,11 @@ final readonly class SalesSetupDraft
             [$retail, $annual] = Retail::publication($cost, $effective, $before->costs, $now, $annual);
             if ($retail !== null) { $quotes[$key] = $retail; }
         }
+        // Explicit price publication can still be due when the stored pricing rule already matches.
+        $pendingPrice = $this->pricing !== 'keep' && (!$before->publishedRevision?->matches($before->revision)
+            || !OfferState::equivalent($before->retail, $quotes));
+        $needsWrite = $changedSeller || $intent != $oldIntent || $changedRule || $pendingPrice;
+        $row['status'] = $needsWrite ? 'ready' : 'unchanged';
         $row['retained_after'] = $changedRule ? $annual : $before->retainedAnnualRetail;
         $after = $needsWrite ? new Snapshot($before->feed, $before->facts, $intent, $before->revision, $before->revision,
             $quotes, $binding, $this->actions, true, $before->hidden, $row['retained_after']) : $before;

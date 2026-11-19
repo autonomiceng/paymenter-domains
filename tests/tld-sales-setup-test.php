@@ -83,6 +83,11 @@ $published = $state();
 commerceReject(fn () => $setup->save($id, $names, $custom, $key, $reason));
 same($published, $state(), 'Replay leaves native and catalogue revisions intact');
 same(null, $setup->preview($id, $names, $custom)['review_key'], 'No writable change needs no confirmation');
+DB::table('domains_tlds')->where('id',$target->id)->update(['catalogue_published_revision'=>null]);
+$pending = $setup->preview($id,['com'],$custom);
+same('ready',$pending['rows']['com']['status'],'Explicit pricing republishes a pending matching rule');
+$setup->save($id,['com'],$custom,$pending['review_key'],$reason);
+expect($target->fresh()->catalogue_published_revision !== null,'Matching rule publication completes');
 $fixed = [...$custom, 'rule'=>['mode'=>'fixed','fixed_register'=>'5.00','fixed_renew'=>'7.00','fixed_transfer'=>'9.00']];
 $draft = $setup->preview($id, ['com'], $fixed);
 $quoted = $draft['rows']['com']['prices'];
@@ -119,6 +124,12 @@ same($oldAnnual, $target->fresh()->catalogue_retained_annual_retail, 'Outgoing s
 same($reason,TldFacts::history($id,$target->id)[0]['reason'],'Outgoing registrar history includes switch');
 Auth::setUser($actor);
 
+$combined = $setup->preview($id,['com'],$custom);
+$setup->save($id,['com'],$custom,$combined['review_key'],$reason);
+same('9.50',$target->fresh()->catalogue_retained_annual_retail,'Combined seller and price change publishes the target renewal');
+same('35.00',$other->fresh()->catalogue_retained_annual_retail,'Combined change preserves the outgoing standard renewal');
+
+// The target is already the selected registrar here.
 // A required nameserver blocks a whole row even when the existing intent already allows registration.
 $facts = OfferState::decode($target->fresh()->catalogue_facts);
 $facts['requiresNameservers'] = true;
