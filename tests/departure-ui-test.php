@@ -130,7 +130,7 @@ same(true,$afterAutomatic['departure_check']['rechecked']??false,'The automatic 
 same($automaticAt,strtotime($afterAutomatic['record_failure']['at']),'The automatic read saves its failure time');
 same($answerAt,strtotime($afterAutomatic['renewal_ownership']['at']),'The automatic failure retains the last definite registrar read');
 $after=$staffPage();
-$check($after->querySelector('[id$="-row-departure-check"]')!==null,'After the automatic attempt staff keep the next step');
+$check($after->querySelector('[id$="-row-departure-next-step"]')!==null,'After the automatic attempt staff keep the next step');
 $check($readDates($after)===[[$absenceAt],[$automaticAt,$answerAt]],'An automatic failure dates the failed attempt and retained recheck separately');
 $clock->instant=$clock->now()->modify('+61 seconds');
 $job()->failed(null);

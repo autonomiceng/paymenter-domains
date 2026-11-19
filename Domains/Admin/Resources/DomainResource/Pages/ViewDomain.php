@@ -365,7 +365,7 @@ class ViewDomain extends RecordDetailPage
         }
         // Name carries the re-entry fact, so it stays on the page when a block replaces the step.
         $outcome=\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::allowed()?array_values(array_filter(array_intersect_key(\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::rows($d),['name'=>1,'email'=>1]))):[];
-        return [$step,Row::make('First read',$first)->key('row-first-read'),Row::make('Recheck',$recheck)->actions($this->cachedActions['check_departure']??$this->check_departureAction()),Row::make('Public registry',$registryValue),...$outcome];
+        return [$step->key('row-departure-next-step'),Row::make('First read',$first)->key('row-first-read'),Row::make('Recheck',$recheck)->actions($this->cachedActions['check_departure']??$this->check_departureAction()),Row::make('Public registry',$registryValue),...$outcome];
     }
     /** The rail: the newest history, with the History tab holding the rest. */
     protected function rail(): array
