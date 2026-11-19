@@ -35,12 +35,22 @@ class Row extends Component implements HasEmbeddedView
         $row->configure();
         return $row->key('row-'.self::slug($label));
     }
-    /** A page notice at the top of its section: the state and its sentence, then at most one action. $key names it, so
+    /** A notice at the top of its section: a state and its sentence, then at most one action. $key names it, so
      * the rows it blocks can point to it. */
     public static function notice(string $key, Value $state, ?Action $action = null): static
     {
         if ($state->kind !== 'state') { throw new \InvalidArgumentException('A notice starts with a state.'); }
-        $row = app(static::class, ['rowLabel' => '', 'rowValue' => $state]);
+        return static::makeNotice($key, $state, $action);
+    }
+    /** The page head already names the state, so this notice leads with its reason. */
+    public static function noticeText(string $key, Value $reason, ?Action $action = null): static
+    {
+        if ($reason->kind !== 'fact') { throw new \InvalidArgumentException('A text notice needs its reason.'); }
+        return static::makeNotice($key, $reason, $action);
+    }
+    private static function makeNotice(string $key, Value $value, ?Action $action): static
+    {
+        $row = app(static::class, ['rowLabel' => '', 'rowValue' => $value]);
         $row->configure();
         $row->kind = 'notice';
         $row->key('notice-'.self::slug($key));

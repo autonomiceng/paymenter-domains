@@ -61,14 +61,23 @@ $filter('status',['completed'])->assertCanSeeTableRecords([$doneOp])->assertCoun
 $filter('action',['transfer'])->assertCountTableRecords(3);
 $filter('server_id',[$active->server_id])->assertCanSeeTableRecords([$doneOp])->assertCountTableRecords(1);
 
-// Request #1: held on a real cause. Heading pill, one notice with its fix, Details and History.
+// Request #1: held on a real cause. The heading, its recovery link and history stay visible.
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>'configuration_unavailable','attempt'=>null]);
 $manager=staffUser([Staff::VIEW,'admin.domains.manage',...array_map(StaffOperationReview::permission(...),array_keys(StaffOperationReview::ACTIONS))]); Auth::setUser($manager);
 $page=Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSuccessful();
+$customer = staffUser([]);
+$held->newQuery()->whereKey($held->id)->update(['user_id'=>$customer->id]);
+Livewire::actingAs($manager)->test(ViewOperation::class, ['record'=>$heldOp->id])->assertSuccessful()
+    ->assertSee('Customer #'.$customer->id)->assertDontSee($customer->email)->assertDontSee('Open customer');
+$customerReader = staffUser([Staff::VIEW, 'admin.users.view']);
+Livewire::actingAs($customerReader)->test(ViewOperation::class, ['record'=>$heldOp->id])->assertSuccessful()
+    ->assertSee($customer->email)->assertDontSee('Open customer');
+$held->newQuery()->whereKey($held->id)->update(['user_id'=>$held->user_id]);
+Auth::setUser($manager);
 expect(str_contains((string)$page->instance()->getHeading(),'Request #'.$heldOp->id)&&str_contains($page->instance()->getSubheading()->toHtml(),'Under review'),'The line under the heading carries the request state');
 same([Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl()=>'Registrar requests','Request #'.$heldOp->id],$page->instance()->getBreadcrumbs(),'Breadcrumbs');
 // Retained expiry and actual charge in this display fixture cannot prove an unsent acquisition.
-$page->assertSee("Not sent: couldn't load the registrar account's settings.")->assertSee('Open account')->assertSeeHtml(e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$heldOp->server_id])))->assertDontSee('Release hold')->assertSee('Details')->assertSee('History')
+$page->assertSee("Not sent: couldn't load the registrar account's settings.")->assertSee('Open account')->assertSeeHtml(e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$heldOp->server_id])))->assertDontSee('Release hold')->assertSee('History')
     ->assertSee('Registrar account')->assertSee('NameSilo, Test')->assertSee('Request created')
     ->assertDontSee('Domain not found')->assertDontSee('No time recorded')->assertDontSee('Review actions')->assertDontSee('Saved evidence')->assertDontSee('Request type')->assertDontSee('Customer credit');
 $page->assertActionHidden('release')->assertActionVisible('refund')->assertActionHidden('hold')->assertSee('More');
@@ -367,9 +376,71 @@ unset($policy['reconciliation']['read_at']);$transfer->policy=$policy;
 same(false,RequestFacts::automaticTransfer($transfer),'Without a read the old transfer start is stale');
 $transfer->started_at=gmdate('Y-m-d H:i:s',$readNow-3600);
 same(true,RequestFacts::automaticTransfer($transfer),'A newly started transfer can await its first read');
+DB::table('domains_operations')->where('id',$transfer->id)->update(['started_at'=>gmdate('Y-m-d H:i:s',$readNow-8*86400)]);
+$transfer=$transfer->fresh();
+$policy['reconciliation']=['transfer_status'=>'pending','reason'=>'transfer_deadline_passed','staff_alert'=>true,
+    'read_at'=>$readNow-3600,'next_at'=>$readNow+3600,'final_check'=>'done'];
+$policy = Paymenter\Extensions\Servers\Domains\Services\TransferFollowup::record($transfer, $policy, $readNow-3600, 'pending');
+$transfer->update(['policy'=>$policy]);
+$filter('status',['delayed'])->assertCanSeeTableRecords([$transfer]);
+$filter('status',['under_review'])->assertCanNotSeeTableRecords([$transfer]);
+$timing=RequestFacts::transferChecks($transfer);
+same([$readNow-3600,null],[$timing['last_at'],$timing['next_at']],'A stopped transfer retains the last read and ignores the expired schedule');
+Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$transfer->id])->assertSuccessful()
+    ->assertActionVisible('resume_reads')->assertActionHidden('recheck')->assertActionHidden('release');
+$policy['reconciliation']['manual_check']=true;
+$policy['status_check']=['outcome'=>'scheduled','at'=>$readNow,'next_at'=>$readNow];
+$transfer->update(['policy'=>$policy]);
+same($readNow+3600,RequestFacts::transferChecks($transfer)['next_at'],'A manual check deferred by the registrar limit uses the recorded retry time');
+// Reserve the missed final check shortly before cutoff, when the next retry is already outside the window.
+$transfer->update(['started_at'=>gmdate('Y-m-d H:i:s',$readNow-14*86400+1800)]);
+$lastReadAt = $readNow-8*86400;
+$failedRead = ['reason'=>'transfer_status_unavailable', 'staff_alert'=>true, 'read_failed'=>true];
+foreach ([false, true] as $checking) {
+    $policy['reconciliation'] = $failedRead + ($checking ? [
+        'final_check'=>'running', 'reading_until'=>$readNow+120, 'next_at'=>$readNow+3600,
+    ] : []);
+    $policy = Paymenter\Extensions\Servers\Domains\Services\TransferFollowup::record($transfer, $policy, $lastReadAt, 'unavailable');
+    $transfer->update(['policy'=>$policy]);
+    $page = Livewire::actingAs($manager)->test(ViewOperation::class, ['record'=>$transfer->id])->assertSuccessful();
+    $checks = RequestFacts::transferChecks($transfer);
+    same([!$checking,$checking],[$checks['due'],$checks['checking']],'A prior read failure still has a due or running automatic check');
+    $html = $page->html();
+    $times = [];
+    $document = \Dom\HTMLDocument::createFromString($html, LIBXML_NOERROR);
+    foreach ($document->querySelectorAll('time[datetime]') as $time) {
+        $times[(new DateTimeImmutable($time->getAttribute('datetime')))->getTimestamp()] = $time;
+    }
+    $lastRow = ($times[$lastReadAt] ?? null)?->closest('[data-domains-row]');
+    expect($lastRow !== null, 'The request displays the last failed read while the final check is due or running');
+    if ($checking) {
+        same(null,$checks['next_at'],'The active reservation survives when the next retry falls outside the window');
+        expect($lastRow->closest('section')?->querySelector('[data-domains-row][data-domains-wait]') !== null,
+            'The active read displays its checking state beside the last result');
+    } else {
+        expect(isset($times[$checks['next_at']]), 'The due request renders the time of its automatic check');
+    }
+    same(!$checking,str_contains($html, "mountAction('recheck',"),'Only the due check offers an immediate staff read');
+    unset($page,$document,$times,$lastRow);
+    gc_collect_cycles();
+}
+$transfer->update(['started_at'=>gmdate('Y-m-d H:i:s',$readNow-15*86400)]);
+$policy['reconciliation'] = ['reason'=>'transfer_pending', 'transfer_status'=>'pending', 'staff_alert'=>false];
+$transfer->update(['policy'=>$policy]);
+$transfer->forceFill(['started_at'=>gmdate('Y-m-d H:i:s',$readNow-8*86400)]);
+same(true,RequestFacts::transferChecks($transfer)['due'],'A missed day-seven read is due even if the saved deadline is in the past');
+$customerNotice = Paymenter\Extensions\Servers\Domains\Presentation\TransferNotice::for($transfer, $readNow);
+same(false,$customerNotice['contact']??true,'A missed day-seven read still due automatically does not send the customer to support');
+$transfer->refresh();
+$recovery = staffUser([Staff::VIEW, StaffOperationReview::permission('resume_reads')]);
+Livewire::actingAs($recovery)->test(ViewOperation::class, ['record'=>$transfer->id])->assertSuccessful()
+    ->assertActionVisible('resume_reads')->assertSee('Check now');
+Livewire::actingAs($viewer)->test(ViewOperation::class, ['record'=>$transfer->id])->assertSuccessful()
+    ->assertActionHidden('resume_reads')->assertDontSee('Check now');
+Auth::setUser($manager);
 DB::table('domains_operations')->where('id',$longOp->id)->update($storedTransfer);
 // Unreadable saved data: one notice with its fix, never an "unavailable" value.
 DB::table('domains_operations')->where('id',$longOp->id)->update(['policy'=>'not-encrypted']);
 Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$longOp->id])->assertSee("Can't read saved data. Ask your site admin to check the encryption key.")->assertDontSee('unavailable');
-echo "Staff request page: status set, reasons, list, notice, Details, History and action names passed.\n";
+echo "Staff request page: status set, reasons, list, notice, history and actions passed.\n";
 $nativeSuccessful=true;

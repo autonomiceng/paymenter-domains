@@ -252,9 +252,12 @@ final class DomainBilling
             if (($support = self::renewalTerms($l, $this->catalogue)) !== null) {
                 $terms = array_values(array_filter($terms, static fn (int $y) => $support[$y]['available'] ?? false));
             }
+            $scheduled = self::enabled($l['settings']->pluck('value', 'key')->get(RenewalBillingSettings::SCHEDULED, false))
+                && !RenewalStop::stopped($l) && in_array(1, $terms, true);
             return ['terms' => $terms, 'order_by' => (new \DateTimeImmutable($calendar['expiry']))->modify('-1 day')->format('Y-m-d'),
                 'lines' => array_combine($terms, array_map(static fn (int $y) => TermSupport::lines($annual, $annual, $y)
-                    + ['expiry' => $l['domain']->provider_expires_at->addYearsNoOverflow($y)->format('Y-m-d')], $terms)), 'next_annual' => $annual];
+                    + ['expiry' => $l['domain']->provider_expires_at->addYearsNoOverflow($y)->format('Y-m-d')], $terms)), 'next_annual' => $annual,
+                'scheduled_annual' => $scheduled ? $annual : null];
         })();
     }
 

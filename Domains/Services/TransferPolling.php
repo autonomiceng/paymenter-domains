@@ -40,6 +40,7 @@ final class TransferPolling
         return $op->started_at?->getTimestamp()??0;
     }
     public static function deadline(Operation $op): int { return self::start($op)+7*86400; }
+    public static function cutoff(Operation $op): int { return self::deadline($op) + 7 * TransferFollowup::DAY; }
     public static function light(Operation $op,int $now): bool
     {
         $r=$op->policy['reconciliation']??[];
@@ -49,21 +50,82 @@ final class TransferPolling
     public static function due(Operation $op,int $now): bool
     {
         if(!self::applies($op)){return true;}
-        $r=$op->policy['reconciliation']??[];
-        if($r['manual_check']??false){return ($r['next_at']??0)<=$now;}
-        if(($r['final_check']??null)==='done'){return false;}
-        if(self::expired($op,$now)&&!isset($r['final_check'])){return true;}
-        if(!isset($r['final_check'])&&($r['polls']??0)>=OperationReconciliation::POLL_LIMIT&&!self::expected($op)){return false;}
-        return ($r['next_at']??0)<=$now;
+        $next = self::schedule($op, $now)['next_read_at'];
+        return $next !== null && $next <= $now && !self::reading($op, $now);
     }
+
+    public static function reading(Operation $op, int $now): bool
+    {
+        return ($op->policy['reconciliation']['reading_until'] ?? 0) > $now;
+    }
+
+    /** Unix seconds for both the dispatcher and staff. Local reservations are never a registrar observation. */
+    public static function schedule(Operation $op, int $now): array
+    {
+        $r = $op->policy['reconciliation'] ?? [];
+        $read = $op->action === 'transfer' ? TransferFollowup::observation($op) : null;
+        $view = ['last_read_at' => $read['at'] ?? null, 'last_result' => $read['result'] ?? null,
+            'next_read_at' => null, 'stop_reason' => null];
+        if (!self::applies($op)) {
+            $view['stop_reason'] = $op->state;
+            return $view;
+        }
+        $deadline = self::deadline($op);
+        $cutoff = self::cutoff($op);
+        $next = (int) ($r['next_at'] ?? 0);
+        if ($r['manual_check'] ?? false) {
+            $view['next_read_at'] = $next ?: $now;
+            return $view;
+        } elseif (($r['final_check'] ?? null) === 'done') {
+            $view['stop_reason'] = TransferFollowup::stopReason($op, $read);
+            if ($view['stop_reason'] === null) {
+                // An old final check's backoff was inoperative. Only a real read, an active reservation
+                // (including a crashed worker) or a capacity retry can pace the second week.
+                $retry = isset($r['capacity_wait_since']) ? $next : 0;
+                // An unfinished check could have entered the wire any time before its saved deadline.
+                $lastPossibleRead = max($read['at'], $r['reading_until'] ?? 0);
+                $view['next_read_at'] = max($retry, $deadline, $lastPossibleRead + TransferFollowup::DAY);
+            }
+        } elseif (!isset($r['final_check']) && ($now >= $deadline
+            || ($r['polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT && !self::expected($op))) {
+            $view['next_read_at'] = $deadline;
+        } else {
+            $view['next_read_at'] = $next ?: $now;
+        }
+        if ($view['stop_reason'] === null && $now >= $cutoff) {
+            $view['next_read_at'] = null;
+            $view['stop_reason'] = 'transfer_followup_expired';
+        } elseif ($view['next_read_at'] !== null && $view['next_read_at'] >= $cutoff) {
+            $view['next_read_at'] = null;
+            $view['stop_reason'] = 'transfer_followup_window_complete';
+        }
+        return $view;
+    }
+    public static function followupScheduled(Operation $op, int $now): bool
+    {
+        return self::expired($op, $now) && self::schedule($op, $now)['next_read_at'] !== null;
+    }
+
+    /** A failed read before day seven can still have an overdue check scheduled. */
+    public static function retryingFailedRead(Operation $op, int $now): bool
+    {
+        return ($op->policy['reconciliation']['reason'] ?? null) === 'transfer_status_unavailable'
+            && self::followupScheduled($op, $now);
+    }
+
     public static function expired(Operation $op,int $now): bool { return self::applies($op)&&$now>=self::deadline($op); }
     public static function delay(int $checks): int { return min(43200,7200*(2**min(3,max(0,$checks-1)))); }
     /** Called under the operation locks before I/O, including failed/deferred attempts and worker restarts. */
     public static function reserve(Operation $op,int $now): void
     {
         $p=$op->policy;$r=$p['reconciliation']??[];$checks=(int)($r['checks']??0)+1;
-        $manual=$r['manual_check']??false;$final=self::expired($op,$now)&&!$manual;
+        $manual=$r['manual_check']??false;$overdue=self::expired($op,$now);
+        $final=$overdue&&!$manual&&($r['final_check']??null)!=='done';
         $p['reconciliation']=[...$r,'checks'=>$checks,'next_at'=>$final||$manual?$now+self::delay($checks):min(self::deadline($op),$now+self::delay($checks))];
+        if ($overdue) {
+            $p['reconciliation']['reading_until'] = $now + OperationReconciliation::READ_SECONDS;
+            if (!$final && !$manual) { $p['reconciliation']['next_at'] = $now + TransferFollowup::DAY; }
+        }
         if($final){$p['reconciliation']['final_check']='running';}
         $op->update(['policy'=>$p]);
     }
@@ -72,6 +134,7 @@ final class TransferPolling
     {
         if(!$noWire){$policy=self::countResumption($policy);}
         $r=$policy['reconciliation'];
+        unset($r['reading_until']);
         $r['capacity_wait_since']??=$now;
         if($noWire){$r['checks']=max(0,$r['checks']-1);}
         if($noWire||($r['final_check']??null)==='running'){
@@ -91,7 +154,7 @@ final class TransferPolling
     public static function finished(array $policy,bool $readStarted=true): array
     {
         if($readStarted){$policy=self::countResumption($policy);if($policy['reconciliation']['manual_check']??false){$policy['reconciliation']['manual_check']=false;}}
-        unset($policy['reconciliation']['capacity_wait_since']);
+        unset($policy['reconciliation']['capacity_wait_since'], $policy['reconciliation']['reading_until']);
         if(($policy['reconciliation']['final_check']??null)==='running'){$policy['reconciliation']['final_check']='done';}
         return $policy;
     }

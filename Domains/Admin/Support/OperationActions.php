@@ -9,7 +9,7 @@ use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\{Auth,Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,EnomTestRegistration,ManagementEvidence,ObservationRecords,ObservationWork,OperationFailure,OperationTerminalProof,ReceiptReturns,StaffOperationReview,StaffOperations,StaffOperationWrites,StaffReviewRefused,StaffSyncReview,TransferInputs,UnpaidAcquisitionProof};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,EnomTestRegistration,ManagementEvidence,ObservationRecords,ObservationWork,OperationFailure,OperationTerminalProof,ReceiptReturns,StaffOperationReview,StaffOperations,StaffOperationWrites,StaffReviewRefused,StaffSyncReview,TransferInputs,TransferPolling,UnpaidAcquisitionProof};
 final class OperationActions
 {
     /** Toast titles, named for the action. */
@@ -29,7 +29,8 @@ final class OperationActions
             $complimentaryClosure=$name==='credit'&&$op->funding_basis==='complimentary';
             if($complimentaryClosure){$label='Close order';}
             $ticket=fn()=>StaffOperationReview::ticket((int)Auth::id(),(int)$op->domain_id,(int)$op->id,$name,$stamp,app(Clock::class));
-            $action=Action::make($name)->label($label)->color($name==='refund'?'danger':'gray')
+            $button=in_array($name,['recheck','resume_reads'],true)&&RequestFacts::delayedTransfer($op)?'Check now':$label;
+            $action=Action::make($name)->label($button)->color($name==='refund'?'danger':'gray')
                 ->visible(fn()=>Staff::can(StaffOperationReview::permission($name))&&self::relevant($name,$op));
             if(in_array($name,[...self::REASON,'disposition'],true)){
                 $action->requiresConfirmation()->modalHeading($name==='disposition'?$label:$label.'?')->modalSubmitActionLabel($label)->modalWidth('lg')
@@ -62,7 +63,8 @@ final class OperationActions
                     $check=$name!=='recheck'?null:(in_array($op->action,['register','transfer','renew'],true)?\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($op->fresh()):ManagementCheck::words($op->fresh()));
                     $notification=Notification::make();
                     $check&&$check['title']!=='Registrar checked'?$notification->warning():$notification->success();
-                    $notification->title($check['title']??($contactRecovery?'Contact details updated':($complimentaryClosure?'Order closed':self::DONE[$name])))
+                    $queuedCheck=$name==='resume_reads'&&RequestFacts::delayedTransfer($op);
+                    $notification->title($check['title']??($queuedCheck?'Check requested':($contactRecovery?'Contact details updated':($complimentaryClosure?'Order closed':self::DONE[$name]))))
                         ->body($check['body']??($name==='resume_reads'?'The system will check again on its next turn.':($name==='recheck'?'Open this request for its current result and next step.':($sends===null?null:"The {$sends} goes to Enom within a few minutes."))))->send();
                 }catch(StaffReviewRefused $error){
                     ($error->getMessage()===StaffOperationReview::CHANGED?self::stale($name,$op->fresh()):Notification::make()->danger()->persistent()->title(self::FAILED)->body($error->getMessage()))->send();
@@ -178,8 +180,11 @@ final class OperationActions
             if($op->action==='renew'&&($op->attempt['seal']??null)==='sealed'
                 &&\Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::capturedChargeHeld($op)){return true;}
         } catch (\Throwable) { return false; }
+        $now = app(Clock::class)->now()->getTimestamp();
+        if (TransferPolling::followupScheduled($op, $now)) { return false; }
         if(($p['reconciliation']['reason']??null)==='transfer_deadline_passed'||($p['reconciliation']['final_check']??null)==='done'){return true;}
-        if(\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expected($op)){return false;}
+        if (TransferPolling::applies($op) && $now >= TransferPolling::cutoff($op)) { return true; }
+        if(TransferPolling::expected($op)){return false;}
         return ($p['renewal_polls']??0)>=\Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT||($p['reconciliation']['polls']??0)>=\Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT;
     }
     /** Cancel and refund names the amount and where it goes before staff confirm. A new order and its service end first. */

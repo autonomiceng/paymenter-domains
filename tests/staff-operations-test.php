@@ -41,11 +41,11 @@ same(['Request #'.$ops[0]->id.' unconfirmed'],PaidUncertainty::for($held),'Accou
 $accountHold=PaidUncertainty::accounts((int)$ops[0]->server_id);expect($accountHold!==null,'Fixture holds paid changes on the account');
 $accountPage=new \Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;$accountPage->account=(int)$ops[0]->server_id;$accountHead=$accountPage->getSubheading();
 $holdText=static fn($html)=>html_entity_decode(strip_tags($html instanceof \Illuminate\Contracts\Support\Htmlable?$html->toHtml():(string)$html),ENT_QUOTES|ENT_HTML5);
-// This fixture's catalogue is retired, so only the Balance and usage notice is built, not the whole sheet.
-$usageNotice=(fn()=>$this->notice('usage')[0]??null)->call($accountPage);
+// This fixture's catalogue is retired, so only the paid-request notice is built, not the whole sheet.
+$paidNotice=(fn()=>$this->notice('paid-orders')[0]??null)->call($accountPage);
 $accountHolds=PaidUncertainty::holds((int)$ops[0]->server_id);
-expect($usageNotice!==null&&str_contains((string)(fn()=>$this->rowValue->sub)->call($usageNotice),PaidUncertainty::line($accountHolds[0])),'Registrar account usage notice names the paid changes hold');
-same($accountHolds[0]['label'],(fn()=>$this->controls[0]->getLabel())->call($usageNotice),'The usage notice links the held request');
+expect($paidNotice!==null&&str_contains((string)(fn()=>$this->rowValue->sub)->call($paidNotice),PaidUncertainty::line($accountHolds[0])),'Registrar account notice names the paid changes hold');
+same($accountHolds[0]['label'],(fn()=>$this->controls[0]->getLabel())->call($paidNotice),'The notice links the held request');
 expect(!str_contains($holdText($accountHead),$accountHolds[0]['label']),'Registrar account head shows only the account state');
 same(null,PaidUncertainty::holdSummary($ops[0]),'No orders-paused line while WHOIS privacy is not sold');
 same(null,RequestFacts::for($ops[1])['reason'],'Absent reason remains absent');

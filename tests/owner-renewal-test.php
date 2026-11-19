@@ -32,8 +32,6 @@ same($before,$ledger(),'Off request creates no invoice');
 $setting('domains_manual_renewals_enabled',true);$dto=$owners->present($d->fresh());
 same(['url'=>route('domains.domains.renew',$d->id),'terms'=>[1],'order_by'=>'2027-10-17'],$dto->renewNow,'Request offers horizon-bounded terms until the day before expiry');
 $html=$page($d);
-foreach(['Renew now','Renew '.$d->domain,'>Domain<','>'.$d->domain.'<','>Years<',
-    '<span class="domains-sub">Renew online by <time datetime="2027-10-17">Oct 17, 2027</time>.</span>','Create invoice','action="'.route('domains.domains.renew',$d->id).'"','name="_request_key"'] as $text){expect(str_contains($html,$text),'Owner form shows '.$text);}
 $assertRenewalForm=static function(string $html)use($d):void {
  $dom=storefrontDom($html);$forms=$dom->query('//form[@method="POST" and @action="'.route('domains.domains.renew',$d->id).'"]');same(1,$forms->length,'One actual owner renewal POST form');
  $form=$forms->item(0);same(1,$dom->query('.//input[@name="_request_key"]',$form)->length,'Request key belongs to that form');

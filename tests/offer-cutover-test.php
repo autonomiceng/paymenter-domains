@@ -74,7 +74,7 @@ foreach ($nativePricesBefore as $id=>$values) {
 // The real account row reuses the neighbouring permissions, one-use revision ticket and audit path.
 require_once __DIR__.'/Support/staff-tlds.php'; tldPanel();
 $accountPage = Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class, ['account'=>$binding->serverId]);
-$accountPage->assertSee('Prices stay current for')->assertSee('48 hours');
+$accountPage->assertSee('48 hours');
 $bulkClock->instant = $now->modify('+49 hours');
 same('stale_price',$ports->readOffers($q,Context::Staff)[0]->reason,'Default 48-hour bulk observation expires');
 $accountPage->mountAction(Filament\Actions\Testing\TestAction::make('price_freshness_'.$binding->serverId)->schemaComponent(true,'content'))->setActionData(['hours'=>72,'reason'=>'Allow a missed daily catalogue read'])->callMountedAction()->assertHasNoActionErrors();

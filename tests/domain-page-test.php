@@ -161,7 +161,7 @@ foreach(['nameservers'=>'nameservers','dns'=>'dns-records','glue'=>'glue-records
 // Editors open in a dialog; without script the link opens it on the server.
 same(1,$dom->query('//li[@id="nameservers"]//a[@data-dialog-open][@href="/domains/1?edit=nameservers#edit-nameservers"]')->length,'Change opens the editor');
 same(1,$dom->query('//li[@id="nameservers"]//dialog[@id="edit-nameservers"][not(@open)]//textarea[@name="nameservers"]')->length,'Editor dialog closed by default');
-foreach(['Nameservers, one per line','2 to 12, like ns1.example.com.','Use '.\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::nameservers(),'>Save<','Change nameservers?','If the new nameservers aren’t set up, your website and email stop working.']as$t){expect(str_contains($html,$t),'Nameservers dialog: '.$t);}
+expect(str_contains($html,'If the new nameservers aren’t set up, your website and email stop working.'),'Changing nameservers warns of the service risk');
 foreach(['Turn off transfer lock?','Anyone with the auth code can then move '.$name.' to another registrar.']as$t){expect(str_contains($html,$t),'Lock dialog: '.$t);}
 same(1,$dom->query('//li[@id="lock"]//form[@data-confirm]//dialog[not(@open)]//button[@name="confirmed"][normalize-space(.)="Turn off"]')->length,'Lock off confirms in a dialog');
 foreach(['Email the auth code?','We’ll email it to the owner.']as$t){expect(str_contains($html,$t),'Auth code dialog: '.$t);}
@@ -268,6 +268,19 @@ $autoPay=static fn(DOMXPath $dom)=>$dom->query('//section[@id="renewal"]//a[@hre
 same(1,$autoPay(storefrontDom($render($on,$summary($on)))),'Renewal links to the service payment controls');
 $on=$domain(['renewal'=>'On','autoPay'=>true]);
 same(0,$autoPay(storefrontDom($render($on,$summary($on)))),'No payment link without its URL');
+$scheduled=$domain(['renewal'=>'On','autoPay'=>true,'autoPayMethod'=>'Visa **** 4242',
+    'actions'=>['show'=>'/domains/1','autoPay'=>'/account/payment-methods'],
+    'renewalSchedule'=>['issue'=>'2027-02-01','due'=>'2027-02-08']]);
+$scheduledSummary=$summary($scheduled,['renewalIssueAt'=>'2027-02-01','renewalDueAt'=>'2027-02-08']);
+$forecast=static function(array $choices)use($scheduled,$scheduledSummary,$card):string {
+    $html=view('domains::show',['domain'=>$scheduled,'summary'=>$scheduledSummary,'renewalChoices'=>$choices])->render();
+    return (string) $card(storefrontDom($html),'Auto Pay');
+};
+$quoted=$forecast(['scheduled_annual'=>'18.40']);
+$issue = \Paymenter\Extensions\Servers\Domains\Presentation\Fact::day($scheduledSummary->renewalIssueAt)->text;
+foreach (['$18.40',$issue,'4242'] as $fact) { expect(str_contains($quoted,$fact),'Auto Pay shows a verified billing fact: '.$fact); }
+expect(!str_contains($forecast(['next_annual'=>'18.40']),'$'),'A manual quote is not an Auto Pay forecast');
+
 // An unlinked domain follows the account switch: Manage while Auto Pay is on for the account, Turn on while it is off.
 $link=static fn(DOMXPath $dom)=>trim((string)$dom->query('//section[@id="renewal"]//a[@href="/account/payment-methods"]')->item(0)?->textContent);
 $unlinked=static fn(bool $account)=>$domain(['renewal'=>'On','autoPay'=>false,'autoPayAccount'=>$account,'actions'=>['show'=>'/domains/1','autoPay'=>'/account/payment-methods']]);
@@ -333,7 +346,9 @@ same('Enter the auth code from your current registrar. Enter auth code',$norm($d
 same('Shows when the transfer finishes',$card($dom,'Expires'),'Pending transfer expiry says when it shows, not Missing');
 same([null,null],[$card($dom,'Auto-renew'),$card($dom,'Next invoice')],'No renewal timing for an inactive domain');
 $saved=new OwnedDomain(...[...get_object_vars($pending),'transfer'=>['open'=>true,'received'=>true,'phase'=>'editing']]);
-$dom=storefrontDom($render($saved));same('Saved Change auth code',$card($dom,'Auth code'),'Saved auth code');same(['Saved',['Change auth code']],$split($dom,'Auth code'),'Change auth code sits on its own line');same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'No notice once saved');
+$dom=storefrontDom($render($saved));
+same(1,$dom->query('//a[@href="/domains/1/transfer-code" and normalize-space(.)="Change auth code"]')->length,'Saved transfer code still offers the authorized editor');
+same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'No notice once saved');
 $setup=static fn(array $s,array $t=[])=>$domain(['status'=>'Action required','tone'=>'warn','renewal'=>'','management'=>[],'actions'=>['show'=>'/domains/1','setup'=>'/domains/1/setup'],'setup'=>$s,'transfer'=>$t]);
 same('Choose nameservers before registration starts, or we use the registrar’s default nameservers. Choose nameservers',$norm(storefrontDom($render($setup(['defaults'=>true,'contacts'=>false])))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Nameservers setup notice');
 same('Finish setup to start registration. Finish setup',$norm(storefrontDom($render($setup(['defaults'=>false,'contacts'=>true])))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Setup notice');

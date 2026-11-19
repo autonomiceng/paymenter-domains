@@ -18,13 +18,23 @@ final class RenewalPayment
     {
         if (!$autoPay) { return 'Off. You pay each renewal invoice.'; }
         $method = trim((string) $method);
-        $card = match (true) {
-            // A no-break space keeps the dots with the digits in a narrow value column.
-            (bool) preg_match('/([0-9]{4})$/D', $method, $last) => "••••\u{00A0}".$last[1],
-            str_starts_with(strtolower($method), 'link') => 'Link wallet',
-            default => $method,
-        };
-        return $card === '' ? 'On.' : 'On, '.$card.'.';
+        if (preg_match('/^link\b/i', $method)) { return 'On, Link wallet'; }
+        if (preg_match('/^(?:card|visa|mastercard|amex|american express|discover|jcb|diners(?: club)?|unionpay|cartes bancaires|eftpos(?: au)?) (?:(?:\*{4}|•{4})\h+|ending )([0-9]{4})$/iuD', $method, $last)) {
+            return 'On, card ending '.$last[1];
+        }
+        return 'On';
+    }
+
+    /** The forecast uses the regular quote and saved issue date. An issued invoice or a missed issue date takes precedence. */
+    public static function scheduledInvoice(OwnedDomain $domain, ?DomainSummary $summary, ?string $annual): ?string
+    {
+        if (!$domain->autoPay || $domain->departureSuspected || $domain->renewalInvoice || !$summary
+            || $summary->renewalInvoiceMissing || $summary->renewalInvoiceOverdue) { return null; }
+        $issue = $domain->renewalSchedule['issue'] ?? null;
+        if ($issue !== $summary->renewalIssueAt || $issue === null) { return null; }
+        $amount = Fact::money($annual);
+        $day = Fact::day($issue);
+        return $amount && $day ? 'We expect a '.$amount->text.' invoice on '.$day->text.'. Auto Pay is set to pay any balance.' : null;
     }
 
     /** Manage while the domain or the account switch is On, so the link never offers to turn on what is already on. */

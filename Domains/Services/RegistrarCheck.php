@@ -28,7 +28,7 @@ final class RegistrarCheck
     public function capture(Operation $op): void
     {
         $this->identity=RegistrarAnswers::identity($op);$this->seen=$op->policy['status_check']??null;$this->started=$this->clock->now()->getTimestamp();
-        $this->order=self::nextOrder($op);$op->update(['policy'=>[...($op->policy??[]),'status_check_order'=>$this->order]]);
+        $this->order=self::nextOrder($op);$op->update(['policy'=>[...TransferFollowup::retain($op),'status_check_order'=>$this->order]]);
     }
     private static function nextOrder(Operation $op): int { return max(0,(int)($op->policy['status_check_order']??0))+1; }
     /** A saved result is newer when it was ranked after this check, or, before order numbers existed, started no earlier. */
@@ -70,9 +70,11 @@ final class RegistrarCheck
             $watch = TransferPolling::applies($op);
             $stopped = $op->action === 'renew' ? RenewalCompletion::capturedChargeHeld($op) || ($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT
                 : ($op->policy['reconciliation']['polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT && (!$watch || !TransferPolling::expected($op));
-            if ($watch && ($op->policy['reconciliation']['final_check'] ?? null) === 'done') { $stopped = true; }
+
             $transferNext = $op->policy['reconciliation']['next_at'] ?? null;
-            if (Schema::hasTable('domains_runtime_operations') && !$stopped && $op->state !== 'succeeded' && ($outcome === 'deferred' || $outcome === 'checked')) {
+            if ($watch && TransferPolling::expired($op, $now)) {
+                $next = TransferPolling::schedule($op, $now)['next_read_at'];
+            } elseif (Schema::hasTable('domains_runtime_operations') && !$stopped && $op->state !== 'succeeded' && ($outcome === 'deferred' || $outcome === 'checked')) {
                 if ($watch) { $next = max($now + 60, (int) $transferNext); }
                 else {
                     $continued = $this->continued && $outcome === 'checked';

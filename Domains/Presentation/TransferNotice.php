@@ -19,6 +19,14 @@ final class TransferNotice
             'transfer_completion_unconfirmed'=>'Transfer completion needs a check.',
             default=>'Transfer needs a check.'};
     }
+    private static function deadline(Operation $op, int $now): array
+    {
+        $title = self::title('transfer_deadline_passed');
+        return TransferPolling::followupScheduled($op, $now)
+            ? ['title'=>$title,'body'=>'We’re still checking the original transfer with the registrar.','tone'=>'warning','contact'=>false]
+            : ['title'=>$title,'body'=>'Contact support. We’ll check the transfer status.','tone'=>'warning'];
+    }
+
     public static function for(Operation $op,int $now): ?array
     {
         if(!TransferPolling::applies($op)){return null;}
@@ -26,9 +34,13 @@ final class TransferNotice
         if($reason==='transfer_rejection_unreconciled'){
             return ['title'=>'Registrar rejected the transfer.','body'=>'Final result and fee need a check. Contact support. Don’t start another transfer.','tone'=>'warning'];
         }
-        if($reason==='transfer_deadline_passed'){
-            return ['title'=>self::title('transfer_deadline_passed'),'body'=>($r['final_check']??null)==='pending'
-                ?'Contact support. We keep trying to check the status.':'Contact support. We’ll check the transfer status.','tone'=>'warning'];
+        if($reason==='transfer_deadline_passed'||TransferPolling::retryingFailedRead($op, $now)){
+            if (($r['transfer_status'] ?? null) === 'needs_action') {
+                $privacy = ($r['transfer_privacy_blocked'] ?? false) === true ? ' Turn off WHOIS privacy there.' : '';
+                return ['title'=>self::title('transfer_deadline_passed'),'body'=>'Check approval, the domain lock and auth code at your old registrar.'.$privacy,
+                    'tone'=>'warning','contact'=>false];
+            }
+            return self::deadline($op, $now);
         }
         if(TransferPolling::expected($op)&&($r['transfer_status']??null)==='needs_action'){
             $privacy=($r['transfer_privacy_blocked']??false)===true?' Turn off WHOIS privacy there.':'';
@@ -38,7 +50,7 @@ final class TransferNotice
             return ['title'=>self::title($reason),'body'=>'Contact support to check this transfer. Don’t start another transfer.','tone'=>'warning'];
         }
         if(TransferPolling::expired($op,$now)&&($r['final_check']??null)!=='done'){
-            return ['title'=>self::title('transfer_deadline_passed'),'body'=>'Contact support. We’ll check the transfer status.','tone'=>'warning'];
+            return self::deadline($op, $now);
         }
         if($reason==='transfer_read_deferred'||TransferPolling::expected($op)){
             return ['title'=>self::title('transfer_pending'),'body'=>'We keep checking. There’s nothing you need to do.','tone'=>'info'];

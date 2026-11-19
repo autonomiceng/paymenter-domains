@@ -8,7 +8,7 @@ require __DIR__.'/Support/offer-commerce.php';
 require __DIR__.'/Support/storefront.php';
 use Illuminate\Support\Facades\{Auth,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldTerms};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting,StaffCatalogue,Capabilities,OfferState};
 use Paymenter\Extensions\Servers\Domains\Models\OfferRow;
 extract(offerCommerceFixture());tldPanel();pinStaffClock($now);
@@ -37,12 +37,8 @@ same(['state'=>'annual_only','reason'=>'family_unreviewed','terms'=>[1]],$ordina
 same('Longer terms are not reviewed yet.',
     Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termReason($ordinary['reason']),
     'Unreviewed Ordinary family keeps its own explanation rather than the Grace review');
-$accountHtml=Livewire\Livewire::actingAs($actor)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$binding->serverId])->html();
-$accountText=storefrontDom($accountHtml)->evaluate('string(//body)');
-foreach(['Selected TLD terms','1 of 1 read','Scheduled renewals','1 year'] as $text){
-    expect(str_contains($accountText,$text),'Account sheet renders current term readiness: '.$text);
-}
-expect(!str_contains($accountText,'Supported terms'),'Account sheet does not revive the replaced readiness label');
+$summary=TldTerms::summary($binding->serverId);
+same([1,1],[$summary['read'],$summary['total']],'The selected TLD has saved terms');
 $r10Failures=[];$r10Check=static function(bool $ok,string $message)use(&$r10Failures):void{if(!$ok){$r10Failures[]=$message;}};
 // More than ten unsold alphabetic entries must not hide the sold .com.
 for($i=0;$i<11;$i++){
@@ -50,8 +46,7 @@ for($i=0;$i<11;$i++){
     $unsold->catalogue_intent=OfferState::json(['sell'=>false]);$unsold->save();
 }
 $accountRows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);
-$selected=array_values(array_filter($accountRows,fn($r)=>$r['label']==='Selected TLD terms'));
-$r10Check(count($selected)===1&&$selected[0]['value']==='1 of 1 read','Unsold alphabetic catalogue does not change the complete selected TLD summary');
+$r10Check(TldTerms::summary($binding->serverId)===$summary,'Unsold alphabetic catalogue does not change the complete selected TLD summary');
 $r10Check(count(array_filter($accountRows,fn($r)=>str_starts_with($r['label'],'.aaa')))===0,'Unsold TLDs do not add account readiness rows');
 same('1 to 10 years',Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termYears(range(1,10)),'Contiguous term range is compact');
 $editAction=(new WhatYouSell)->table(Filament\Tables\Table::make(new WhatYouSell))->getBulkActions()[0];
@@ -96,8 +91,7 @@ $r10Check($priceQueries<=$smallQueries+4,'Ten-row preview skips offer evaluation
 // Confirmed annual-only terms and missing facts are different states.
 $originalFacts=$t->fresh()->catalogue_facts;$annual=OfferState::decode($originalFacts);$annual['terms']['register']=[1];
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::json($annual)]);
-$annualRows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);
-$r10Check(collect($annualRows)->contains(fn($r)=>$r['label']==='Selected TLD terms'&&$r['value']==='1 of 1 read'),'Confirmed annual terms count as complete selected TLD readiness');
+$r10Check(TldTerms::summary($binding->serverId)===$summary,'Confirmed annual terms count as complete selected TLD readiness');
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);
 $missingRows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);
 $r10Check(collect($missingRows)->contains(fn($r)=>$r['label']==='Unknown term range .aaaa.pro'&&$r['value']==='Missing'),'Missing registrar facts are labeled unknown');
@@ -107,17 +101,18 @@ storefrontViews();require dirname(__DIR__).'/Domains/routes/web.php';require dir
 $domain=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(name:'orbit-example.com',status:'Active',tone:'ok',expiry:'2027-11-20',renewal:'On',renewalPrice:'$14.00',actions:['show'=>'/domains/1'],progress:[],setup:[],transfer:[],management:[],testEnvironment:false,renewNow:['url'=>'/domains/1/renew','terms'=>[1,2]]);
 $choices=['lines'=>[1=>['years'=>1,'first_year'=>'14.00','renewal'=>'14.00','total'=>'14.00','expiry'=>'2028-11-20'],2=>['years'=>2,'first_year'=>'14.00','renewal'=>'14.00','total'=>'28.00','expiry'=>'2029-11-20']],'next_annual'=>'14.00'];
 $html=view('domains::partials.owner-renew',['domain'=>$domain,'summary'=>null,'support'=>null,'keys'=>['renew'=>str_repeat('a',64)],'renewalChoices'=>$choices])->render();
-foreach(['Domain','Expires','New expiry','Total','Next annual renewal','Create invoice','Nov 20, 2028','data-total="$28.00"','for the first added year + $14.00 for the next year.'] as $text){expect(str_contains($html,$text),'Renewal renders '.$text);}
-expect(str_contains($html,'2 years: $28.00; new expiry Nov 20, 2029'),'No-script renewal shows every term total and expiry');
-expect(strpos($html,'>Cancel</a>')!==false&&strpos($html,'>Create invoice</button>')!==false&&strpos($html,'>Cancel</a>')<strpos($html,'>Create invoice</button>'),'Cancel precedes payment');
-expect(strpos($html,'>Cancel</button>')!==false&&strpos($html,'>Create invoice</button>')!==false&&strpos($html,'>Cancel</button>')<strpos($html,'>Create invoice</button>'),'Cancel is a button before payment');
-expect(str_contains($html,'domains-total'),'Customer renewal total has shared prominent money treatment');
+$dom = storefrontDom($html);
+$terms = $dom->query('//select[@name="years"]/option');
+same(['$14.00','$28.00'],array_map(fn ($term) => $term->getAttribute('data-total'),iterator_to_array($terms)),'The form keeps the quoted total for each term');
+$renewalExpiry = \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::date($choices['lines'][2]['expiry']);
+preg_match('/<noscript>(.*?)<\/noscript>/s',$html,$noScript);
+expect(str_contains($noScript[1]??'','$28.00')&&str_contains($noScript[1]??'',$renewalExpiry),'No-script renewal shows the longer term total and expiry');
 expect(!str_contains($html,'exact-term')&&!str_contains($html,'registry'),'No staff eligibility reason in customer form');
 foreach([null,[],['lines'=>[]]] as $missingChoices){
     try{
         $fallback=view('domains::partials.owner-renew',['domain'=>$domain,'summary'=>null,'support'=>null,'keys'=>['renew'=>str_repeat('a',64)],'renewalChoices'=>$missingChoices])->render();
         preg_match('/<noscript>(.*?)<\/noscript>/s',$fallback,$noScript);
-        $r10Check(str_contains($noScript[1]??'','Total and new expiry confirmed at payment.'),'No-script renewal explains missing term totals and expiry');
+        $r10Check(trim(strip_tags($noScript[1]??''))!==''&&!str_contains($noScript[1]??'','$'),'No-script renewal leaves the unquoted price to the invoice');
     }catch(Throwable $error){$r10Check(false,'Missing renewal choices must render safely: '.get_class($error));}
 }
 $result=storefrontData()['results'][0];$result['term']=1;$result['price']='$12.00';

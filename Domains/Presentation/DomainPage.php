@@ -70,7 +70,8 @@ final class DomainPage
             $setup && self::optionalSetup($d) => ['tone' => 'info', 'text' => 'Choose nameservers before registration starts, or we use '.(implode(', ', $d->setup['defaultNameservers'] ?? []) ?: 'the registrar’s default nameservers').'.', 'action' => ['label' => 'Choose nameservers', 'url' => $setup]],
             (bool) $setup => ['tone' => 'warn', 'text' => 'Finish setup to start registration.', 'action' => ['label' => 'Finish setup', 'url' => $setup]],
             isset($d->actions['code']) && ($d->transfer['open'] ?? false) && !($d->transfer['received'] ?? false) => ['tone' => 'warn', 'text' => 'Enter the auth code from your current registrar.', 'action' => ['label' => 'Enter auth code', 'url' => $d->actions['code']]],
-            ($d->transfer['notice']['tone'] ?? null) === 'warning' => ['tone' => 'warn', 'text' => $d->transfer['notice']['title'].' '.$d->transfer['notice']['body'], 'action' => $contact],
+            ($d->transfer['notice']['tone'] ?? null) === 'warning' => ['tone' => 'warn', 'text' => $d->transfer['notice']['title'].' '.$d->transfer['notice']['body'],
+                'action' => ($d->transfer['notice']['contact'] ?? true) ? $contact : null],
             // A pending check's title ("Registration pending") repeats the head's state, so the notice is its sentence alone.
             $order === 'paid' && isset($d->order['check']) => ['tone' => $d->order['check']['tone'] ?? 'warn', 'text' => (str_ends_with($d->order['check']['title'], ' pending') ? '' : $d->order['check']['title'].'. ').$d->order['check']['body'], 'action' => $contact],
             $order === 'paid' && self::orderHeld($d->order) => self::ours('This '.$word.' is under review. We’ll check it and update you.', $contact),

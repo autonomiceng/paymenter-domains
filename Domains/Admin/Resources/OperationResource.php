@@ -30,8 +30,8 @@ class OperationResource extends Resource
     public static function getEloquentQuery(): Builder
     { Staff::requireView(); return OperationQueries::bound(parent::getEloquentQuery())->with('invoice:id,status'); }
     /** Statuses that wait on staff. Awaiting payment waits on the customer, and In progress on the registrar. */
-    public const NEEDS_STAFF=['on_hold','under_review'];
-    /** Menu count: held requests and those Under review, the list's Status filter for those two. Null at zero, so the menu shows nothing. */
+    public const NEEDS_STAFF=['on_hold','under_review','delayed'];
+    /** Menu count uses the same statuses as the linked list. Null at zero, so the menu shows nothing. */
     public static function getNavigationBadge(): ?string
     {
         if (!Staff::can()) { return null; }

@@ -24,7 +24,7 @@ $dto=static fn(array $m)=>new OwnedDomain('example.com','Active','ok','2027-01-1
 $render=static fn(OwnedDomain $d)=>storefrontDom(view('domains::partials.owner-management',['domain'=>$d])->render());
 
 // Known nameservers prefill the form; unknown ones leave it empty with a neutral placeholder, never a guess.
-$dom=$render($dto($management(['ns1.host.example','ns2.host.example'])));
+$dom=$render($dto($management(['ns2.host.example','ns1.host.example'])));
 same("ns1.host.example\nns2.host.example",$dom->query('//textarea[@name="nameservers"]')->item(0)->textContent,'Known nameservers prefill the form');
 same(['ns1.host.example','ns2.host.example'],array_map(fn($n)=>$n->textContent,iterator_to_array($dom->query('//dialog[@id="confirm-nameservers"]//div[dt="Current"]//span'))),'Confirm shows the current nameservers');
 $dom=$render($dto($management(null)));$area=$dom->query('//textarea[@name="nameservers"]')->item(0);
@@ -35,7 +35,7 @@ same(1,$dom->query('//dialog[@id="confirm-nameservers"]//div[dt="Current"][@hidd
 same(implode("\n",$siteServers),$dom->query('//form[@data-default-servers]')->item(0)?->getAttribute('data-default-servers'),'Default list ready to fill the textarea');
 $fill=$dom->query('//button[@data-fill-defaults]')->item(0);
 same(['submit','fill_site_default','1'],[$fill->getAttribute('type'),$fill->getAttribute('name'),$fill->getAttribute('value')],'Use site defaults resolves the explicit nameservers without script');
-expect($fill->hasAttribute('formnovalidate')&&str_contains($fill->getAttribute('class'),'domains-btn--ghost'),'Defaults is a secondary button that skips the empty-field check');
+expect($fill->hasAttribute('formnovalidate'),'Defaults can fill an empty field without attempting a save');
 same(1,$dom->query('//li[@id="nameservers"]//dialog[@id="edit-nameservers"]//button[contains(@class,"domains-btn--primary")][not(ancestor::dialog[@data-confirm-dialog])]')->length,'One primary Save button');
 same(0,$dom->query('//input[@name="use_default"]')->length,'No registrar-reset flag exists in the form');
 

@@ -9,11 +9,17 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 final readonly class RuntimeDispatch
 {
     public function __construct(private Clock $clock) {}
+    public static function matchesHolding(Operation $op, ?Domain $domain, ?Account $account): bool
+    {
+        return $domain && !$domain->adoptionPending() && !($op->attempt['legacy_retained'] ?? false) && $account
+            && $account->account_fingerprint === $op->account_fingerprint && $domain->account_fingerprint === $op->account_fingerprint
+            && $domain->authority_generation === $op->authority_generation;
+    }
     public function current(Operation $op): bool
     {
         ConversionGate::requireComplete();$d=Domain::find($op->domain_id);$a=Account::where('server_id',$op->server_id)->first();
         if ($d && $op->action === 'renew' && in_array($op->state, ['awaiting_payment', 'queued'], true) && RenewalCycles::registrarVirgin($op) && RenewalStop::adopted(RenewalStop::read($d))) { ObligationAlerts::record($d, 'operation_review', $this->clock->now()->getTimestamp(), (int) $op->id); return false; }
-        if($d&&!$d->adoptionPending()&&!($op->attempt['legacy_retained']??false)&&$a&&$a->account_fingerprint===$op->account_fingerprint&&$d->account_fingerprint===$op->account_fingerprint&&$d->authority_generation===$op->authority_generation){return true;}
+        if (self::matchesHolding($op, $d, $a)) { return true; }
         if($d){ObligationAlerts::record($d,'operation_review',$this->clock->now()->getTimestamp(),(int)$op->id);}return false;
     }
     public function enqueue(int $id,bool $force=false): void

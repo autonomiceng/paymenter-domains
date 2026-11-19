@@ -87,9 +87,9 @@ final class RegistrarFacts
         return 'No TLDs are for sale. '.$label.' for '.\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($reasons[$label]).'. '.(TldFacts::FIXES[$label]??'Open the TLD to see what it needs.');
     }
     /** Registrar requests list words that are still open: all but Completed, Failed and Cancelled. */
-    public const OPEN_REQUESTS=['awaiting_payment','action_required','in_progress','on_hold','under_review'];
+    public const OPEN_REQUESTS=['awaiting_payment','action_required','in_progress','on_hold','under_review','delayed'];
     /** Requests on this account, counted with the Registrar requests list's own query and Status filter, so each count's link opens exactly
-     * those rows. 'staff': On hold and Under review, the statuses that wait on staff (the menu count), by status.
+     * those rows. 'staff' holds the statuses that wait on staff (the menu count), by status.
      * @return array{open:int,staff:array<string,int>} */
     public static function requests(int $server): array
     {

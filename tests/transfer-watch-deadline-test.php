@@ -34,16 +34,33 @@ $next=$r->policy['reconciliation']['next_at'];expect($next>=$clock->now()->getTi
 $clock->instant=$clock->now()->modify('+61 seconds');same(false,TransferPolling::due($r,$clock->now()->getTimestamp()),'Returned minute capacity does not spin partial final reads');
 $clock->instant=new DateTimeImmutable('@'.$next);same('succeeded',$reconcile->run($r->id)->state,'Partial final check retries itself to completion');
 $op=$prepare('unresolved-final');HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,8*86400,'namesilo_transfer_v1'));
-$observe->status='Pending at Registry';$clock->instant=new DateTimeImmutable('@'.TransferPolling::deadline($op));
+$observe->status='Pending at Registry';$observe->fault='reject';$clock->instant=new DateTimeImmutable('@'.TransferPolling::deadline($op));
 $r=$reconcile->run($op->id);expect(count($observe->calls)>0,'Unresolved expiry is established by one final read');
 same('transfer_deadline_passed',$r->policy['reconciliation']['reason'],'Unresolved final facts give the deadline exception');
 same(null,$refunds->creditRejected($r->id),'Time and a pending final read never grant a refund');
-$calls=count($observe->calls);$clock->instant=$clock->now()->modify('+1 day');$reconcile->run($r->id);
-same($calls,count($observe->calls),'Completed final pass does not start another watch');
+$calls=count($observe->calls);$clock->instant=$clock->now()->modify('+1 day');$r=$reconcile->run($r->id);
+same(['checkTransferStatus'],array_slice($observe->calls,$calls),'Daily overdue check reads the pending status once');
+$observe->status='Unrecognized status';$clock->instant=$clock->now()->modify('+1 day');$observe->calls=[];
+$r=$reconcile->run($r->id);
+same(['checkTransferStatus'],$observe->calls,'Unknown overdue status does not scan order history');
+same(null,TransferPolling::schedule($r,$clock->now()->getTimestamp())['next_read_at'],'Unknown status requires review');
 // A final capacity wait must not hide a previously observed conflicting charge.
 $p=$r->policy;unset($p['reconciliation']['final_check']);$p['reconciliation']['reason']='transfer_charge_unexpected';
 $p['reconciliation']['staff_alert']=true;$r->update(['policy'=>$p]);
 for($i=0;$i<25;$i++){$token=$budget->acquire($binding,RequestOrigin::Background);$budget->release($binding,RequestOrigin::Background,$token);}
 $r=$reconcile->run($r->id);same('transfer_charge_unexpected',$r->policy['reconciliation']['reason'],'Final capacity refusal preserves an existing anomaly');
 same(true,$r->policy['reconciliation']['staff_alert'],'Capacity refusal cannot clear an anomaly alert');
+
+$op = $prepare('late-final-check');
+HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,16*86400,'namesilo_transfer_v1'));
+$cutoff = TransferPolling::cutoff($op);
+$clock->instant = new DateTimeImmutable('@'.($cutoff - 2));
+$observe->during = static function () use ($clock, $cutoff) {
+    $clock->instant = new DateTimeImmutable('@'.$cutoff);
+};
+$before = nativeFinancialSnapshot($op);
+$r = $reconcile->run($op->id);
+same(['checkTransferStatus'], $observe->calls, 'A final check started before cutoff cannot continue reading at cutoff');
+same($before, nativeFinancialSnapshot($r), 'A late status alone cannot change payments or credits');
+same(null, $r->completed_at, 'Expired evidence cannot settle the transfer');
 echo "Automatic final completion, deferred final admission and unresolved expiry passed.\n";$nativeSuccessful=true;

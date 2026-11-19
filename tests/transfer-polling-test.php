@@ -23,6 +23,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{TransferInputs,RuntimeSchema,
 use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{RequestFacts,OperationActions};
+use Paymenter\Extensions\Servers\Domains\Presentation\TransferNotice;
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 RuntimeSchema::install(); Queue::fake();
 DB::table('domains_read_budgets')->delete();
@@ -50,7 +51,7 @@ $clock->instant=$now;activeFixtureRepublish($bindings,$tlds[1]);
 // No customer or staff event extends the original window, and a deadline is never negative proof.
 DB::table('domains_read_budgets')->delete();
 $op=$prepare('deadline');HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,8*86400,'namesilo_transfer_v1'));
-$observe->status='Pending at Registry';$reads=[];
+$observe->status='Pending at Registry';$observe->fault='reject';$reads=[];
 while($clock->now()->getTimestamp()<TransferPolling::deadline($op)){
     $reads[]=$clock->now()->getTimestamp();$r=$reconcile->run($op->id);
     $r=$op->fresh();$calls=count($observe->calls);$reconcile->run($op->id);same($calls,count($observe->calls),'Early duplicate does no I/O');
@@ -59,12 +60,13 @@ while($clock->now()->getTimestamp()<TransferPolling::deadline($op)){
 $calls=count($observe->calls);$r=$reconcile->run($op->id);expect(count($observe->calls)>$calls,'Expiry performs a final bounded check');same('transfer_deadline_passed',$r->policy['reconciliation']['reason'],'Original seven-day deadline surfaces one exception');
 same(true,$r->policy['reconciliation']['staff_alert'],'Deadline is visible');same(null,$r->completed_at,'Timeout never invents finality');
 same(null,$refunds->creditRejected($r->id),'Deadline never grants a refund');same(null,$r->attempt['transfer_terminal']??null,'Deadline is not negative proof');
-$calls=count($observe->calls);$clock->instant=$clock->now()->modify('+1 day');$reconcile->run($r->id);same($calls,count($observe->calls),'After deadline no automatic registrar reads');
+$calls=count($observe->calls);$clock->instant=$clock->now()->modify('+1 day');$r=$reconcile->run($r->id);same(['checkTransferStatus'],array_slice($observe->calls,$calls),'Overdue pending needs only the daily status read');
 foreach($reads as $start){expect(count(array_filter($reads,fn($at)=>$at>=$start&&$at<$start+86400))<=4,'At most four automatic passes per rolling day');}
 same(16,count($reads),'Seven-day watch has sixteen automatic passes');
-$notice=RequestFacts::notice($r,['unreadable'=>false]);expect(!empty($notice['body'])&&($notice['action']??null)==='resume_reads','Deadline gives staff a resolution route');
+$notice=RequestFacts::notice($r,['unreadable'=>false]);
+same([true,'recheck'],[$notice['transfer_checks']??false,$notice['action']??null],'Scheduled transfers show their checks and retain ordinary read permission');
 HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,9*86400,'namesilo_transfer_v1'));
-$reconcile->resume($r->id,'provider_facts_updated');$observe->status='Transfer Completed';
+$reconcile->resume($r->id,'provider_facts_updated');$observe->status='Transfer Completed';$observe->fault='';
 same('succeeded',$reconcile->run($r->id)->state,'Explicit reviewed check can confirm a late success without extending the window');
 // Our shared account guard defers ordinary waits, then retries without staff readmission.
 DB::table('domains_read_budgets')->delete();$op=$prepare('guard-recovery');$observe->status='Pending at Registry';
@@ -86,6 +88,17 @@ $p=$r->policy;$p['reconciliation']['polls']=OperationReconciliation::POLL_LIMIT;
 Queue::fake();app(RuntimeDispatch::class)->enqueue($r->id);
 expect(!Queue::pushed(RunOperation::class)->contains(fn($job)=>$job->operationId===$r->id),'Stopped unexpected results do not queue every minute');
 expect(TransferPolling::due($r,TransferPolling::deadline($r)),'Unexpected poll stop still permits the single final check');
+$afterDeadline=TransferPolling::deadline($r)+86400;
+expect(TransferPolling::due($r,$afterDeadline),'A missed deadline leaves the final check due after a prior failure');
+$notice=TransferNotice::for($r,$afterDeadline);
+same(false,$notice['contact']??true,'Do not send the customer to support while the overdue automatic read is due');
+$needsAction=clone $r;
+$needsAction->policy=[...$r->policy,'reconciliation'=>[...$r->policy['reconciliation'],'transfer_status'=>'needs_action','transfer_privacy_blocked'=>true]];
+$notice=TransferNotice::for($needsAction,$afterDeadline);
+same(false,$notice['contact']??true,'A confirmed old-registrar task needs no support link');
+expect(str_contains($notice['body'],'WHOIS privacy'),'A failed read preserves the confirmed old-registrar task');
+$notice=TransferNotice::for($r,TransferPolling::cutoff($r));
+same(true,$notice['contact']??true,'Support is available when the automatic read window has closed');
 // A tighter configured background guard remains tighter than the transfer allowance.
 DB::table('domains_read_budgets')->delete();$narrow=new TransferReadBudget($clock,new AccountReadBudget($clock,1));
 $token=$narrow->acquire($binding,RequestOrigin::Background);$narrow->release($binding,RequestOrigin::Background,$token);
@@ -101,8 +114,13 @@ same(false,TransferPolling::due($r,$clock->now()->getTimestamp()),'Surfaced dead
 $op=$prepare('read-outage');expect(TransferPolling::due($op,$clock->now()->getTimestamp()),'Outage transfer is due');
 $outage=new class implements Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\DeadlineTransport {
     public int $calls=0;
+    public bool $capped=false;
     public function send($e,$c,$r,string $k):Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\TransportResponse{throw new LogicException;}
-    public function sendWithin($e,$c,$r,string $k,int $t):Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\TransportResponse{$this->calls++;throw new RuntimeException('Synthetic registrar outage');}
+    public function sendWithin($e,$c,$r,string $k,int $t):Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\TransportResponse{
+        $this->calls++;
+        if ($this->capped) { throw new \Paymenter\Extensions\Servers\Domains\Services\LiveReservationLimit; }
+        throw new RuntimeException('Synthetic registrar outage');
+    }
 };
 $failureRegistry=new Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
 $failureRegistry->register('namesilo',['token'],$verifier,fn($b,$c)=>new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Driver(new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Client($b,$c['token'],$outage),['renew'],$clock),authenticator:$verifier);
@@ -114,4 +132,22 @@ same('Cannot check registrar',Paymenter\Extensions\Servers\Domains\Services\Regi
 same('unavailable',$r->policy['status_check']['outcome'],'No successful reply remains unavailable');
 same(null,$r->policy['status_check']['reason'],'A future reservation is not a scheduled deferral');
 expect($r->policy['reconciliation']['next_at']>$clock->now()->getTimestamp(),'Existing future retry remains reserved');
+
+$op = $prepare('daily-cap-refusal');
+HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,16*86400,'namesilo_transfer_v1'));
+$observe->status = 'Pending at Registry';
+$observe->fault = 'reject';
+$clock->instant = new DateTimeImmutable('@'.TransferPolling::deadline($op));
+$op = $reconcile->run($op->id);
+$clock->instant = $clock->now()->modify('+1 day');
+$nowDue = $clock->now()->getTimestamp();
+$previous = TransferPolling::schedule($op, $nowDue);
+$outage->capped = true;
+$r = $failureReconcile->run($op->id);
+same($op->policy['reconciliation']['checks'], $r->policy['reconciliation']['checks'], 'A NameSilo pre-wire refusal spends no transfer check');
+same([...$previous, 'next_read_at' => $nowDue + 60], TransferPolling::schedule($r, $nowDue), 'Account capacity defers the same observed transfer');
+$observe->calls = [];
+$clock->instant = $clock->now()->modify('+60 seconds');
+$reconcile->run($op->id);
+same(['checkTransferStatus'], $observe->calls, 'Returning capacity admits one status read');
 echo "Automatic transfer pacing, held runtime dispatch, deadline, guard recovery, outages and late read-only completion passed.\n"; $nativeSuccessful=true;

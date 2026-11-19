@@ -10,6 +10,7 @@ use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,TldResource};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price};
 use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus,Missing};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,DisputeRecoveries,DomainBilling,EnomLiveActivation,EnomTestManagement,EnomTestRenewal,EnomTestTransfer,NativePaidHooks,NativeServerGuard,NativeServiceRefusal,UnpaidHoldSetting,
@@ -27,7 +28,7 @@ final class AccountChecklist
     private const EDITOR='Adds the domain fields and warnings to Paymenter’s service page. If it fails, update Paymenter or Domains.';
     private const WORKER='Runs background work every minute: sending orders, retries and domain checks. If it stops, start the scheduler and the queue worker.';
     private const NOT_YET='Not available yet';
-    private const REGISTRATIONS='Lets customers buy domains on this account. The site sets this, so it has no switch here. Orders must be on too.';
+    private const REGISTRATIONS='Follows Orders when registrations are enabled on this site.';
     private const TRANSFERS='Lets customers move a domain here with an auth code, for TLDs with Transfers on in What you sell. Orders must be on too. Experimental: it has never run against a real test transfer.';
     private const RENEWALS='Can issue renewal invoices, use customer credit, try saved Auto Pay and send paid renewals. Off: no new invoices. Issued invoices stay payable, and paid renewals wait.';
     private const MANAGEMENT='Sends changes to DNS records, nameservers and contact details to the registrar. Off: those changes are not sent.';
@@ -50,7 +51,8 @@ final class AccountChecklist
         $rows=[$connection,$tlds,...self::pricing($a,$offers,$tlds['using_default']),self::prices($a,$binding),self::orders($a)];
         $gates=app(RuntimePorts::class)->acquisitionGates($a);
         $off=fn(?bool $gate)=>match(true){$gate===null=>'Not set up on this site yet. See System checks.',default=>self::siteOff($a)};
-        $rows[]=$gates['register']===true?self::row('Registrations',$a->processing_enabled?'On':'Off',null,null,null,self::REGISTRATIONS):self::unavailable('Registrations',$off($gates['register']));
+        $rows[]=$gates['register']===true?self::row('Registrations',$a->processing_enabled?'On':'Off',null,self::REGISTRATIONS,null,
+            'Lets customers register new domains with this registrar. The site manages this setting.'):self::unavailable('Registrations',$off($gates['register']));
         $rows[]=self::transfers($a,$binding,$gates['transfer'],$off);
         foreach(['renewal'=>['Renewals',EnomTestRenewal::class,self::RENEWALS],'management'=>['DNS, nameservers and contacts',EnomTestManagement::class,self::MANAGEMENT]] as $key=>[$label,$feature,$help]){
             if($key==='management'&&$a->registrar_key==='namesilo'){$help='Sends nameserver and contact changes to NameSilo. DNS records and DNSSEC are not offered for NameSilo.';}
@@ -64,7 +66,7 @@ final class AccountChecklist
         if ($binding !== null && $a->registrar_key === 'enom') {
             $on=\Paymenter\Extensions\Servers\Domains\Services\EnomLateRenewal::stored($binding);
             $ready=\Paymenter\Extensions\Servers\Domains\Services\EnomLateRenewal::available($binding);
-            $cause=$ready?'Late renewal is paused until you approve it. Turn on to allow billing for expired domains.':(EnomTestRenewal::accepted($binding)?'Ask your site admin to record Enom’s late renewal evidence.':'Late renewal is paused. Turn on Renewals first.');
+            $cause=$ready?'Turn on to allow billing for expired domains.':(EnomTestRenewal::accepted($binding)?'Ask your site admin to record Enom’s late renewal evidence.':'Late renewal is paused. Turn on Renewals first.');
             $rows[]=self::paused($a,self::row('Late renewal',$on?'On':'Off',$on?'success':null,$on?null:$cause,$ready||$on?'late_renewal':null,\Paymenter\Extensions\Servers\Domains\Services\EnomLateRenewal::HELP));
         }
         if($a->registrar_key==='namesilo'){$rows[]=self::row('Late renewal','Not supported',null,'Late renewal is not offered for NameSilo.',null,'Renew expired domains only through a registrar-supported late renewal process. NameSilo late renewal is not available here.');}
@@ -206,7 +208,13 @@ final class AccountChecklist
         if ($offers=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()) {
             $status=$offers->progress((int)$a->server_id);
             if(!empty($status['failure'])){return [...self::row('TLD prices','Sync failed','danger',TldFacts::syncCause($status['failure']).(isset($status['failed_at'])?', '.self::date((int)$status['failed_at']):'').'. Fix this cause first. Sync prices is an optional retry.',null,self::PRICES),'buttons'=>self::priceButtons($a)];}
-            return [...self::row('TLD prices',ucfirst($status['state']),null,isset($status['succeeded_at'])?Sheet::moment((int)$status['succeeded_at'],'Updated'):'Not updated yet.',null,self::PRICES),'buttons'=>self::priceButtons($a)];
+            $updated=isset($status['succeeded_at']);
+            $word=match($status['state']) {
+                'ready'=>$updated?self::priceAge($a,(int)$status['succeeded_at']):'Not read yet',
+                'idle'=>'Not read yet',
+                default=>ucfirst($status['state']),
+            };
+            return [...self::row('TLD prices',$word,null,$updated?Sheet::moment((int)$status['succeeded_at'],'Updated'):'Not updated yet.',null,self::PRICES),'buttons'=>self::priceButtons($a)];
         }
         $failure=TldFacts::syncFailure((int)$a->server_id);
         if ($failure!==null) {
@@ -215,7 +223,12 @@ final class AccountChecklist
             return [...$row,'buttons'=>self::priceButtons($a)];
         }
         $synced=RegistrarFacts::lastSync((int)$a->server_id);
-        return [...self::row('TLD prices',$synced?'OK':null,$synced?'success':null,$synced?Sheet::moment($synced,'Synced'):'No price refresh has finished yet. Check Site setup and the background worker. Sync prices is an optional retry.',null,self::PRICES),'buttons'=>self::priceButtons($a)];
+        return [...self::row('TLD prices',$synced?self::priceAge($a,$synced):null,null,$synced?Sheet::moment($synced,'Updated'):'No price refresh has finished yet. Check Site setup and the background worker. Sync prices is an optional retry.',null,self::PRICES),'buttons'=>self::priceButtons($a)];
+    }
+    private static function priceAge(Account $account,int $updatedAt): string
+    {
+        $age=app(Clock::class)->now()->getTimestamp()-$updatedAt;
+        return $age<CatalogueFreshness::forAccount((int)$account->server_id)->maxAge()?'Ready':'Out of date';
     }
     /** Sync covers every TLD of the account at once. Staff who can't sync can still open the TLD list. */
     private static function priceButtons(Account $a): array
@@ -231,7 +244,7 @@ final class AccountChecklist
         foreach(['issue_days'=>['Invoice issued','How long before expiry the renewal invoice goes out.'],'due_days'=>['Invoice due','How long before expiry the customer must pay.']] as $key=>[$label,$help]){
             $rows[]=$billing[$key]===null?self::row($label,null,null,'Saved invoice days are invalid. New renewal invoices wait.','renewal_billing',$help):self::row($label,$billing[$key].' days before expiry',null,null,'renewal_billing',$help);
         }
-        $rows[]=self::row('Unpaid hold',UnpaidHoldSetting::minutes($server).' minutes',null,null,'unpaid_hold',SettingsActions::details('unpaid_hold'));
+        $rows[]=self::row('Unpaid hold',UnpaidHoldSetting::minutes($server).' minutes',null,'An unpaid new order keeps the domain name for this long.','unpaid_hold',SettingsActions::details('unpaid_hold'));
         $rows[]=self::renewEarly($server);
         try{$a=Account::where('server_id',$server)->sole();$binding=AccountBindings::binding($a);
             // Use the same effective sales projection as What you sell; don't fill the preview with unsold catalogue entries.

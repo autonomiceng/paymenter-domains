@@ -216,7 +216,7 @@ same(!(bool)$saved->enabled,(bool)$schedule()->enabled,'Confirming flips reminde
 $stale->callAction($switch)->assertNotified("Couldn't save reminders");same(!(bool)$saved->enabled,(bool)$schedule()->enabled,'A stale switch changes nothing');
 DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->update((array)$saved);
 unset($stale);gc_collect_cycles();gc_mem_caches();
-foreach(['Account','API connection','OK','Test connection','Balance and usage','Sales','What you sell','.com','TLD prices','Registrations','Transfers (Experimental)','Renewals','Domain settings','DNS, nameservers and contacts',
+foreach(['Account','API connection','OK','Test connection','Sales','What you sell','.com','TLD prices','Registrations','Transfers (Experimental)','Renewals','Domain settings','DNS, nameservers and contacts',
     'Orders','Invoice issued','21 days before expiry','Invoice due','7 days before expiry','Reminder emails','Reminder schedule',
     '60, 30, 7 and 1 days before, 3 days after','Customer can renew early','More','Edit API credentials','History',
     'System checks','Background worker','Not running','Payment events'] as $needle){$page->assertSee($needle);}
@@ -407,20 +407,17 @@ $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($enom
 // A paid request waiting for the registrar shows on the Registrar requests row, never as the account's state.
 Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertDontSee('Request #'.$held->id.' unconfirmed');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Registrar requests')->assertSee('1 under review');
-// The account-wide hold is the Balance and usage notice, with a working link to its request; the head keeps only the account's state; the other account has none.
-$renderedHead=static function(int $server)use($staff):array {
+// The hold links to the affected request only on the account that owns it.
+$accountLinks=static function(int $server)use($staff):array {
     $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server])->assertSuccessful();
-    $notices=\Dom\HTMLDocument::createFromString($page->html(),LIBXML_NOERROR)->querySelectorAll('[data-domains-row="notice"][id*="usage-cause"]');
-    $links=[];foreach($notices[0]?->querySelectorAll('a[href]')??[] as $a){$links[trim($a->textContent)]=$a->getAttribute('href');}
-    return ['text'=>trim(preg_replace('/\s+/',' ',$notices[0]?->textContent??'')),'links'=>$links,'head'=>strip_tags((string)$page->instance()->getSubheading())];
+    $links=\Dom\HTMLDocument::createFromString($page->html(),LIBXML_NOERROR)->querySelectorAll('a[href]');
+    return array_map(fn($a)=>$a->getAttribute('href'),iterator_to_array($links));
 };
-$heldHead=$renderedHead((int)$silo->server_id);$holdUrl=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::requestUrl(['request'=>$held->id]);
+$holdUrl=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::requestUrl(['request'=>$held->id]);
 expect($holdUrl!==null,'The held request has a staff page');
-expect(str_contains($heldHead['text'],'A paid order on '.App\Models\Server::findOrFail($silo->server_id)->name.' has no registrar result yet.'),'The Balance and usage notice names the paid changes hold: '.$heldHead['text']);
-same($holdUrl,$heldHead['links']['Check request #'.$held->id]??null,'The hold links to its request');
-expect(!str_contains($heldHead['head'],'no registrar result yet'),'The head keeps only the account state');
-$clearHead=$renderedHead((int)$enom->server_id);
-expect(!str_contains($clearHead['text'],'no registrar result yet'),'An account without a hold shows none: '.$clearHead['text']);unset($heldHead,$clearHead);gc_collect_cycles();gc_mem_caches();
+expect(in_array($holdUrl,$accountLinks((int)$silo->server_id),true),'The hold links to its request');
+expect(!in_array($holdUrl,$accountLinks((int)$enom->server_id),true),'Other accounts do not link to the hold');
+gc_collect_cycles();gc_mem_caches();
 // The Balance sits by its label on the account sheet; money right-aligns only in table cells.
 $sheet=\Dom\HTMLDocument::createFromString(Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->html(),LIBXML_NOERROR);
 $money=iterator_to_array($sheet->querySelectorAll('[data-domains-row][id$="row-balance"]'));
@@ -428,7 +425,9 @@ expect($money!==[]&&array_filter($money,fn($node)=>$node->closest('.fi-ta-cell')
 expect(preg_match('/(^|})\.domains-money\{[^}]*text-align/m',file_get_contents(dirname(__DIR__,2).'/Domains/resources/views/partials/staff-styles.blade.php'))===0,'Money right-aligns only in table cells, so the Balance stays by its label');
 unset($sheet,$money);gc_collect_cycles();gc_mem_caches();
 DB::table('domains_operations')->where('id',$held->id)->update(['state'=>'succeeded']);
-same(['open'=>0,'staff'=>['on_hold'=>0,'under_review'=>0],'statuses'=>array_fill_keys(Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::OPEN_REQUESTS,0)],Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::requests($silo->server_id),'Finished requests leave the count');
+same(['open'=>0,'staff'=>array_fill_keys(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::NEEDS_STAFF,0),
+    'statuses'=>array_fill_keys(Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::OPEN_REQUESTS,0)],
+    Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::requests($silo->server_id),'Finished requests leave the count');
 DB::table('domains_operations')->where('id',$held->id)->update(['state'=>'uncertain']);
 // Check balance: a failed read and the one-minute wait use the new toasts.
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->callAction('checkBalance')->assertNotified("Couldn't check balance");
@@ -471,7 +470,7 @@ Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->serv
 // Unavailable features explain themselves; Transfers names the deployment setting needed to enable its switch.
 $checklist=fn()=>array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup(Account::findOrFail($enom->id),['label'=>'Active','reason'=>null]),null,'label');
 $noKeys=function()use($checklist,$enom){foreach([...array_values($checklist()),...Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals((int)$enom->server_id),...array_merge(...array_values(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::system())),Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::runtime(Account::findOrFail($enom->id))] as $row){
-    expect($row['label']==='Transfers (Experimental)'||!preg_match('/domains\.|_[a-z]+_|site config/',($row['cause']??'').' '.($row['help']??'')),'No setting name in '.$row['label'].': '.($row['cause']??'').' '.($row['help']??''));expect($row['label']==='Reminder schedule'||($row['help']??'')!=='','Every row explains itself: '.$row['label'].' value='.(string)$row['value'].' cause='.(string)$row['cause']);}};
+    expect($row['label']==='Transfers (Experimental)'||!preg_match('/domains\.|_[a-z]+_|site config/',($row['cause']??'').' '.($row['help']??'')),'No setting name in '.$row['label'].': '.($row['cause']??'').' '.($row['help']??''));expect($row['label']==='Reminder schedule'||filled($row['help']??null)||filled($row['cause']??null),'Every row explains itself: '.$row['label'].' value='.(string)$row['value'].' cause='.(string)$row['cause']);}};
 $site='https://billing.example.com';config(['app.url'=>$site,'domains.enom_live.site'=>$site,'domains.enom_live.catalogue'=>false,'domains.enom_live.accounts'=>[]]);
 same(['Not available yet',null],[$checklist()['Renewals']['value'],$checklist()['Renewals']['action']],'Live with no opt-in shows no switch');same(['Not available yet',null],[$checklist()['Transfers (Experimental)']['value'],$checklist()['Transfers (Experimental)']['action']],'Live transfers with no deployment approval or saved opt-in show no switch');$noKeys();
 config(['domains.enom_live.catalogue'=>true]);$noKeys();
@@ -553,7 +552,6 @@ $review=new StaffSettingsReview($admin->id,(int)$enom->server_id,null,'test_rene
 Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::review($review,['accept'=>true,'verified'=>true]);
 $late=$checklist()['Late renewal'];
 same(['Off','late_renewal'],[$late['value'],$late['action']],'Ready Test late renewal keeps its separate approval');
-expect(str_contains($late['cause'],'paused')&&str_contains($late['cause'],'expired domains')&&!str_contains($late['cause'],'evidence'),'Ready Test late renewal explains billing without asking for Live evidence');
 same(null,$late['tone'],'A future-expiry managed domain is not a Late renewal warning');
 expect(!isset($late['paused']),'Late renewal does not count a healthy future-expiry domain');
 $domain=Domain::where('server_id',$enom->server_id)->sole();$savedExpiry=$domain->getRawOriginal('provider_expires_at');

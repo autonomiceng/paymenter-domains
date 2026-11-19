@@ -9,6 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Presentation\{PrivacyVisibility, State}
 /** Read-only projection, never a settlement or spending-release authority. */
 final class PaidUncertainty
 {
+    public const REQUEST_STATUSES = ['under_review','delayed'];
     /** Paid and the registrar result is not known yet: the request notice title. */
     public static function summary(Operation $op, ?StaffGrants $grants = null): ?string
     {
@@ -68,11 +69,11 @@ final class PaidUncertainty
     {
         Staff::requireView();
         $off=OperationQueries::ordersOffAccounts();
-        $held=OperationQueries::status(OperationQueries::paidUncertainty(AccountSpendingHolds::query(Operation::query())),['under_review'],$off)->when($server!==null,fn($q)=>$q->where('server_id',$server))
+        $held=OperationQueries::status(OperationQueries::paidUncertainty(AccountSpendingHolds::query(Operation::query())->when($server!==null,fn($q)=>$q->where('server_id',$server))),self::REQUEST_STATUSES,$off)
             ->selectRaw('server_id, min(id) as first')->groupBy('server_id')->orderBy('server_id')->limit(100)->pluck('first','server_id');
         if ($held->isEmpty()) { return []; }
         $ids=$held->keys()->map(fn($id)=>(int)$id)->all();
-        $reviews=OperationQueries::status(OperationQueries::paidUncertainty(OperationResource::getEloquentQuery()->whereIn('domains_operations.server_id',$ids)),['under_review'],$off)->toBase()
+        $reviews=OperationQueries::status(OperationQueries::paidUncertainty(OperationResource::getEloquentQuery()->whereIn('domains_operations.server_id',$ids)),self::REQUEST_STATUSES,$off)->toBase()
             ->selectRaw('domains_operations.server_id as server_id, count(*) as total, min(domains_operations.id) as first')->groupBy('domains_operations.server_id')->get()->keyBy('server_id');
         $names=\App\Models\Server::whereIn('id',$ids)->pluck('name','id');
         // The oldest held request per account decides Delayed: one bounded read of the rows already found.

@@ -28,6 +28,12 @@ final class Section
     }
     /** The one link beside the title, such as "View all 12" on an Activity rail. */
     public function link(Action $link): self { return new self($this->title, $this->rows, $this->note, $this->key, $link); }
+    /** A leading job notice without a second heading above its state. */
+    public static function notice(Row $notice): self
+    {
+        if (!self::isNotice($notice)) { throw new \InvalidArgumentException('A notice section holds a notice row.'); }
+        return new self('', [$notice], null, 'leading-notice', null);
+    }
     public function hasTrace(): bool { return ($this->rows[0] ?? null) instanceof Trace; }
     public function hasPartial(): bool { return array_filter($this->rows, static fn ($row): bool => $row instanceof Partial) !== []; }
     public static function isNotice(Row $row): bool { return str_starts_with((string) $row->getKey(false), 'notice-'); }

@@ -13,12 +13,13 @@ use Paymenter\Extensions\Servers\Domains\Services\{StaffReason,StaffSettingsRevi
 /** Uses the neighbouring call-limit row's permission, review ticket, audit and Filament form. */
 final class PriceFreshnessAction
 {
+    public const LABEL = 'Prices stay current for';
     public static function make(Account $account,string $stamp): Action
     {
         $server=(int)$account->server_id;
         return Action::make('price_freshness_'.$server)->label('Edit')->color('gray')
             ->visible(fn()=>Staff::can(Staff::POLICY)&&Staff::can(Review::permission('price_freshness')))
-            ->modalHeading('Prices stay current for')->modalSubmitActionLabel('Save')
+            ->modalHeading(self::LABEL)->modalSubmitActionLabel('Save')
             ->schema([Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,null,'price_freshness',$stamp)),
                 TextInput::make('hours')->label('Hours')->default(CatalogueFreshness::forAccount($server)->hours)->required()->integer()->minValue(24)->maxValue(168)
                     ->dehydrateStateUsing(static fn($state):int=>(int)$state),

@@ -2,7 +2,8 @@
 // Adapted from Enom 444f31c staff activity; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
-use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, TransferPolling};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{RequestStatus,State};
 use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, ComplimentaryCosts, ContactProfileHold, ContactStepRetries, EnomTestManagement, EnomTestRegistration, ManagementEvidence, ManagementProgress, OperationClaims, RegistrarCheck, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
@@ -205,6 +206,7 @@ final class RequestFacts
     public static function reason(Operation $op, bool $ordersOff=true, ?StaffGrants $grants=null, ?array $accounts=null, ?array $release=null): ?string
     {
         try {
+            if (self::delayedTransfer($op)) { return 'Transfer is taking too long.'; }
             if(self::automaticTransfer($op)){return self::AUTO_TRANSFER;}
             return ($op->state==='held'||$op->state==='queued'&&$ordersOff?self::readyMessage($op,$accounts,$release):null)
                 ??self::paidWaiting($op,$accounts)??Labels::requestStatus($op,grants:$grants)['reason']??self::paidMoving($op);
@@ -217,7 +219,7 @@ final class RequestFacts
      * and $accounts, the OperationQueries::ordersOffAccounts() snapshot their Status filter reads. */
     /** A registration stopped here, or a transfer staff held, waits for a staff check, so it reads Under review (P-STA-8):
      * one word for one hold. Its own key keeps it apart in the Status filter. Setup still waits on the customer. */
-    public const STATUSES = [...RequestStatus::SET, 'on_hold'=>RequestStatus::SET['under_review']];
+    public const STATUSES = [...RequestStatus::SET, 'on_hold'=>RequestStatus::SET['under_review'], 'delayed'=>['Delayed','warning']];
     /** A transfer reads as held only when staff held it; a transfer waiting on its old registrar keeps its own word. */
     public const HELD_TRANSFER_CODE = 'staff_review_required';
     public static function heldAcquisition(Operation $op, bool $ordersOff=false): bool
@@ -226,6 +228,19 @@ final class RequestFacts
             && ($op->action==='register' || ($op->action==='transfer' && $op->state==='held' && $op->safe_code===self::HELD_TRANSFER_CODE));
     }
     public const AUTO_TRANSFER='Transfer pending. We keep checking. There is nothing you need to do.';
+    /** An overdue registrar wait, including a check still running when further reads are no longer scheduled. */
+    public static function delayedTransfer(Operation $op): bool
+    {
+        if ($op->action !== 'transfer') { return false; }
+        try {
+            $now = app(Clock::class)->now()->getTimestamp();
+            if (!TransferPolling::expired($op, $now)) { return false; }
+            $r = $op->policy['reconciliation'] ?? [];
+            if (TransferPolling::reading($op, $now) || TransferPolling::retryingFailedRead($op, $now)) { return true; }
+            return in_array($r['transfer_status'] ?? null, [null, 'pending', 'needs_action'], true)
+                && in_array($r['reason'] ?? null, [null, 'transfer_deadline_passed', 'transfer_pending', 'transfer_read_deferred', 'original_attempt_unresolved', 'poll_limit_reached', 'resumed'], true);
+        } catch (\Throwable) { return false; }
+    }
     public static function automaticTransfer(Operation $op): bool
     {
         $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp();
@@ -247,6 +262,7 @@ final class RequestFacts
     }
     public static function status(Operation $op, bool $ordersOff=true, ?Domain $d=null, ?StaffGrants $grants=null, ?array $accounts=null): array
     {
+        if (self::delayedTransfer($op)) { return ['label'=>'Delayed','tone'=>'warning','reason'=>'Transfer is taking too long.']; }
         if(self::automaticTransfer($op)){return ['label'=>'In progress','tone'=>'info','reason'=>self::AUTO_TRANSFER];}
         $d??=$op->relationLoaded('domain')?$op->domain:null;
         $off=$ordersOff&&$op->state==='queued'&&OperationQueries::ordersOff($op,$accounts);
@@ -255,7 +271,7 @@ final class RequestFacts
         if ($key!==null) { [$status['label'],$status['tone']]=RequestStatus::SET[$key]; }
         if ($paid=self::paidWaiting($op,$accounts)) { [$status['label'],$status['tone']]=RequestStatus::SET['in_progress'];$status['reason']=$paid; }
         // A scheduled check still settles the result by itself: Checking inside the normal time, Delayed after it (P-STA-8).
-        if (self::checking($op)) { $late=PaidUncertainty::waitState($op)===State::Delayed; [$status['label'],$status['tone']]=$late?['Delayed','warning']:['Checking','info']; }
+        if (($check=self::checkState($op))!==null) { [$status['label'],$status['tone']]=[$check->label(),$check===State::Delayed?'warning':'info']; }
         // A renewal with Enom's order number has stopped checking: it waits for staff to record Enom's answer.
         try { if (\Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers::stoppedOrder($op)&&RegistrarCheck::stopped($op)) { [$status['label'],$status['tone']]=['Needs review','warning']; } } catch (\Throwable) {}
         if (!self::heldAcquisition($op,$off)) { return $status; }
@@ -273,6 +289,8 @@ final class RequestFacts
     /** A registration or renewal whose result the next scheduled check reads, so staff have nothing to record yet. */
     public static function checking(Operation $op): bool
     { try { return $op->state==='uncertain'&&RegistrarCheck::scheduled($op); } catch (\Throwable) { return false; } }
+    public static function checkState(Operation $op): ?State
+    { return self::checking($op) ? PaidUncertainty::waitState($op) : null; }
     /** Where an unconfirmed registration or renewal stands for staff: 'checking' while a check is scheduled, then, once checks
      * stop and the answer can be recorded, 'unclear'. Null otherwise. */
     public static function answerState(Operation $op): ?string
@@ -422,6 +440,10 @@ final class RequestFacts
             return ['title'=>'Registrar rejected the transfer.','body'=>'Final result and fee need a check. Ask '.$registrar.' to confirm the final result and charge or refund.'
                 .(\Paymenter\Extensions\Servers\Domains\Services\TransferRejections::eligible($op)?' Use '.EnomAnswerAction::label($op).'.':' Don’t start another transfer.'),'tone'=>'warning','link'=>'registrars'];
         }
+        if (self::delayedTransfer($op)) {
+            return ['title'=>'Transfer is taking too long.','tone'=>'warning','action'=>OperationActions::readLimit($op)?'resume_reads':'recheck',
+                'transfer_checks'=>true];
+        }
         if(\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::applies($op)&&$notice=\Paymenter\Extensions\Servers\Domains\Presentation\TransferNotice::for($op,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp())){
             if(($op->policy['reconciliation']['staff_alert']??false)&&!\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expected($op)){
                 $notice['action']=OperationActions::readLimit($op)?'resume_reads':'recheck';
@@ -490,6 +512,43 @@ final class RequestFacts
                 'link'=>$approval?'domain':$recovery['link'],'link_label'=>$fix,'next_try'=>self::nextTry($op)];
         }
         return null;
+    }
+    /**
+     * Staff display of recorded transfer checks. The scheduler owns the next timestamp and when checks stop.
+     * @return array{last_at:?int,last_result:?string,next_at:?int,next_reason:?string,due:bool,manual_queued:bool,checking:bool,customer_action:?string}
+     */
+    public static function transferChecks(Operation $op): array
+    {
+        $r = $op->policy['reconciliation'] ?? [];
+        $now = app(Clock::class)->now()->getTimestamp();
+        $schedule = TransferPolling::schedule($op, $now);
+        $result = match ($schedule['last_result']) {
+            'pending' => 'Transfer pending.',
+            'needs_action' => 'Old registrar needs an update.',
+            'completed' => 'Transfer reported complete.',
+            'rejected' => 'Transfer reported rejected.',
+            'unknown', 'unavailable', 'incomplete' => 'Transfer status could not be confirmed.',
+            default => null,
+        };
+        $customerAction = $schedule['last_result'] === 'needs_action'
+            ? 'Ask the customer to check approval, the domain lock and the auth code with their old registrar.'
+            : null;
+        if ($customerAction !== null && ($r['transfer_privacy_blocked'] ?? false) === true) {
+            $customerAction .= ' Ask them to turn off WHOIS privacy there.';
+        }
+        $reason = match ($schedule['stop_reason']) {
+            null => null,
+            'transfer_followup_expired', 'transfer_followup_window_complete', 'transfer_followup_unproven'
+                => RequestRows::sentence(Labels::reason($schedule['stop_reason'])),
+            'transfer_status_unavailable' => 'The last check could not confirm the transfer status.',
+            'transfer_needs_action' => 'The old registrar needs an update.',
+            'transfer_authority_changed' => 'The saved transfer details changed.',
+            default => 'The registrar did not confirm that automatic checks could continue.',
+        };
+        return ['last_at'=>$schedule['last_read_at'], 'last_result'=>$result, 'next_at'=>$schedule['next_read_at'],
+            'next_reason'=>$reason, 'due'=>$schedule['next_read_at'] !== null && $schedule['next_read_at'] <= $now,
+            'manual_queued'=>($r['manual_check'] ?? false) === true,
+            'checking'=>TransferPolling::reading($op, $now), 'customer_action'=>$customerAction];
     }
     /** An unconfirmed registration or renewal by answerState(): while a check is scheduled, Check status is the one step; once
      * checks stop, recording the answer is. */
