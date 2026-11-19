@@ -5,5 +5,5 @@
 @endphp
 @if ($instant && ($dateOnly ?? false))
 @php($day = \Paymenter\Extensions\Servers\Domains\Presentation\Fact::date($instant, \Paymenter\Extensions\Servers\Domains\Presentation\Reader::Customer))
-<time datetime="{{ $day->datetime }}">{{ $day->text }}</time>
-@elseif ($instant)<time datetime="{{ $instant->toIso8601String() }}" data-domains-time="{{ $style ?? 'full' }}" wire:ignore wire:key="moment-{{ $instant->timestamp }}" x-data x-init="const date = new Date($el.dateTime); if (!isNaN(date)) $el.textContent = new Intl.DateTimeFormat(undefined, {year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short'}).format(date)">{{ \Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($instant->getTimestamp()) }}</time>@else{{ $fallback ?? 'Never' }}@endif
+<time datetime="{{ $day->datetime }}">{{ $day->text }}</time>{{ $suffix ?? '' }}
+@elseif ($instant)<time datetime="{{ $instant->toIso8601String() }}" data-domains-time="{{ $style ?? 'full' }}" wire:ignore wire:key="moment-{{ $instant->timestamp }}" x-data x-init="const date = new Date($el.dateTime); if (!isNaN(date)) $el.textContent = new Intl.DateTimeFormat(undefined, {year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short'}).format(date)">{{ \Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($instant->getTimestamp()) }}</time>{{ $suffix ?? '' }}@else{{ $fallback ?? 'Never' }}{{ $suffix ?? '' }}@endif

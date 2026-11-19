@@ -4,7 +4,7 @@
 @foreach ($section['records'] ?? [] as $index => $ds)
 <div class="domains-record-card">
 <p><strong>Key tag {{ $ds['key_tag'] }}</strong>, algorithm {{ $ds['algorithm'] }}, digest type {{ $ds['digest_type'] }}</p>
-<p class="domains-record-value" tabindex="0">{{ $ds['digest'] }}</p>
+<p class="domains-record-value" tabindex="0" @if ($loop->first && isset($section['actions']['ds_add'])) autofocus @endif>{{ $ds['digest'] }}</p>
 @if (isset($section['actions']['ds_delete']))
 <form method="POST" action="{{ $section['actions']['ds_delete'] }}" class="domains-owner-form" data-confirm>
 @include('domains::partials.form-key', ['action'=>'ds_delete'])
@@ -22,7 +22,7 @@
 @include('domains::partials.form-key', ['action'=>'ds_add'])
 <div class="domains-fields">
 @foreach (['key_tag'=>'Key tag','algorithm'=>'Algorithm','digest_type'=>'Digest type','digest'=>'Digest'] as $field=>$label)
-@include('domains::partials.record-field', ['key'=>'ds.'.$field, 'id'=>'ds-'.$field, 'name'=>'ds['.$field.']', 'label'=>$label, 'current'=>$draft[$field] ?? '', 'showError'=>($section['retry']['action'] ?? 'ds_add') === 'ds_add', 'required'=>true, 'type'=>$field==='key_tag'?'number':'text', 'limit'=>$field==='digest'?64:5, 'options'=>match($field){'algorithm'=>[13=>'ECDSA P-256/SHA-256 (13)',8=>'RSA/SHA-256 (8)',14=>'ECDSA P-384/SHA-384 (14)',10=>'RSA/SHA-512 (10)',7=>'RSA/SHA-1 NSEC3 (7)',5=>'RSA/SHA-1 (5)',3=>'DSA/SHA-1 (3)',12=>'GOST (12)'],'digest_type'=>[2=>'SHA-256 (2)',1=>'SHA-1 (1)'],default=>null}])
+@include('domains::partials.record-field', ['key'=>'ds.'.$field, 'id'=>'ds-'.$field, 'name'=>'ds['.$field.']', 'label'=>$label, 'current'=>$draft[$field] ?? '', 'showError'=>($section['retry']['action'] ?? 'ds_add') === 'ds_add', 'required'=>true, 'autofocus'=>$field === 'key_tag' && empty($section['records']), 'type'=>$field==='key_tag'?'number':'text', 'limit'=>$field==='digest'?64:5, 'options'=>match($field){'algorithm'=>[13=>'ECDSA P-256/SHA-256 (13)',8=>'RSA/SHA-256 (8)',14=>'ECDSA P-384/SHA-384 (14)',10=>'RSA/SHA-512 (10)',7=>'RSA/SHA-1 NSEC3 (7)',5=>'RSA/SHA-1 (5)',3=>'DSA/SHA-1 (3)',12=>'GOST (12)'],'digest_type'=>[2=>'SHA-256 (2)',1=>'SHA-1 (1)'],default=>null}])
 @endforeach
 </div>
 @include('domains::partials.edit-buttons', ['open' => $editOpen ?? false, 'cancel' => $domain->actions['show'], 'label' => 'Add DS record'])</form>
