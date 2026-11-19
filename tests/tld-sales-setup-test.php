@@ -8,7 +8,7 @@ use App\Models\{Invoice, InvoiceItem, Order, Product, Server, Service};
 use Illuminate\Support\Facades\{Auth, DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState, Pricing, SalesSetup};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState, Pricing, SalesSetup, StaffCatalogue};
 use Paymenter\Extensions\Servers\Domains\Services\{RetailLine, StaffSettingsReview as Review};
 
 extract(commerceFixture(true));
@@ -42,6 +42,9 @@ $absent->save();
 $alternate = Server::findOrFail($other->server_id);
 $freshness = $alternate->settings()->create(['key'=>CatalogueFreshness::KEY, 'type'=>'integer', 'value'=>48, 'encrypted'=>false]);
 DB::table('settings')->where('id', $freshness->id)->update(['value'=>'48broken']);
+$catalogue = StaffCatalogue::routed()->page(collect([$absent, $net]));
+same([], $catalogue[$absent->id]['offers'], 'An unreadable age policy suppresses that account’s offers');
+expect(isset($catalogue[$net->id]['offers']['register:1']), 'The other account retains its registration offer');
 $isolated = $setup->preview($id, ['co.test','net'], $custom);
 same(['blocked','ready'], array_column($isolated['rows'], 'status'), 'Invalid freshness is isolated to the unused account');
 same(null, $setup->preview($other->server_id, ['com'], $custom)['review_key'], 'Unreadable freshness cannot publish a target');

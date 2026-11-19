@@ -19,6 +19,10 @@ final readonly class CatalogueFreshness
     {
         return self::forAccounts([$server])[$server];
     }
+    public static function readableForAccount(int $server): ?self
+    {
+        return self::forAccounts([$server], omitInvalid: true)[$server] ?? null;
+    }
     /** A review may omit invalid accounts to refuse just the rows that use them. */
     public static function forAccounts(array $servers, bool $lock = false, bool $omitInvalid = false): array
     {

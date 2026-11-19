@@ -175,7 +175,7 @@ final class StaffSettingsReview
             'sellers'=>SalesPolicy::when($t,fn($q)=>$q->where('tld',$t->tld))->limit($t?1:0)->lockForUpdate()->get()->map(fn($p)=>['tld'=>$p->tld,'server'=>$p->server_id,'revision'=>$p->revision,'register'=>$p->register_enabled,'transfer'=>$p->transfer_enabled])->all(),
             'prices'=>Price::where('server_id',$server)->when($t,fn($q)=>$q->where('tld',$t->tld))->orderBy('id')->limit($t?12:0)->lockForUpdate()->get()->map(fn($p)=>['id'=>$p->id,'revision'=>$p->revision,'retail'=>$p->retail,'hold'=>$p->hold_reason])->all(),
             ...(in_array($this->action,['activate','renewal_billing','test_renewal','live_renewal'],true)?['renewal_billing'=>RenewalBillingSettings::read($server,true)]:[]),
-            ...($this->action==='price_freshness'?['price_freshness'=>\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount($server)->hours]:[]),
+            ...($this->action==='price_freshness'?['price_freshness'=>\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::readableForAccount($server)?->hours??'unavailable']:[]),
             ...($this->action==='call_limits'?['call_limits'=>$a?ApiCallLimits::forAccount($a):null]:[]),
             ...($this->action==='unpaid_hold'?['unpaid_hold'=>UnpaidHoldSetting::minutes($server)]:[]),
             'live_activation'=>$live,

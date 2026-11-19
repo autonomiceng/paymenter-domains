@@ -228,7 +228,8 @@ final class AccountChecklist
     private static function priceAge(Account $account,int $updatedAt): string
     {
         $age=app(Clock::class)->now()->getTimestamp()-$updatedAt;
-        return $age<CatalogueFreshness::forAccount((int)$account->server_id)->maxAge()?'Ready':'Out of date';
+        $freshness=CatalogueFreshness::readableForAccount((int)$account->server_id);
+        return $freshness===null ? 'Couldn’t read price age limit' : ($age<$freshness->maxAge()?'Ready':'Out of date');
     }
     /** Sync covers every TLD of the account at once. Staff who can't sync can still open the TLD list. */
     private static function priceButtons(Account $a): array
