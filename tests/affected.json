@@ -21,6 +21,7 @@
     "composer.lock"
   ],
   "explicit": {
+    "tests/staff-tld-pricing-render.php": ["tests/staff-sales-setup-action-test.php"],
     "Domains/Data/RequestContext.php": ["tests/enom-history-scan-test.php", "tests/renewal-history-deadline-proof-test.php"],
     "Domains/Services/StaffSettingsReview.php": ["tests/renewal-answer-retained-proof-test.php"],
     "Domains/Services/HoldingLocks.php": ["tests/cli-renewal-resume-proof-test.php", "tests/renewal-proof-observed-test.php"],

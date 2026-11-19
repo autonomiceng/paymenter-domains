@@ -22,6 +22,7 @@ use Illuminate\Support\HtmlString;
 use Livewire\Attributes\{Locked,Url};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,HelpHint,SellTable,SettingsActions,Sheet,Staff,StaffTabs,StatusMark,TldFacts,TldTerms};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\SetUpSales;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Row,Value};
 use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Reader,State};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
@@ -41,7 +42,7 @@ class WhatYouSell extends Page implements HasTable
     protected \Filament\Support\Enums\Width|string|null $maxContentWidth = Sheet::WIDTH;
     /** One save reviews at most this many TLDs. */
     private const MOST=25;
-    /** The account choice that reads every account. Saves belong to one account, so this view is read-only. */
+    /** The account choice that reads every account. The sales setup page picks its own target account. */
     public const ALL=0;
     protected static string|\BackedEnum|null $navigationIcon='heroicon-o-check-circle';
     protected static string|\UnitEnum|null $navigationGroup='Domains';
@@ -97,6 +98,10 @@ class WhatYouSell extends Page implements HasTable
         if ($this->tableSearch===''&&!request()->query->has('search')) {$this->tableSearch=$this->tld??'';}
         $this->keepChoices();
         $this->reload();
+        $return = session()->pull(SetUpSales::RETURN_SELECTION);
+        if (($return['actor'] ?? null) === (int) Auth::id() && SetUpSales::canAccess()) {
+            $this->selectedTableRecords = array_map('strval', $return['ids']);
+        }
     }
     public function hydrate(): void {Staff::requireView();}
     /** This page reads its rows before Filament applies a filter change, so the change starts a fresh list. Otherwise the
@@ -454,10 +459,47 @@ class WhatYouSell extends Page implements HasTable
             ...($readiness?[\Filament\Schemas\Components\Html::make(fn()=>view('domains::admin.term-readiness',['readiness'=>$readiness]))]:[]),
         ];
     }
+    private function detailUrl(OfferRow $record): ?string
+    {
+        $id = $this->reads()->tldId($record);
+        return $id === null ? null : TldResource::getUrl('view', ['record' => $id]);
+    }
+    /** Resolve the exact displayed rows before leaving the catalogue, including Select all with exclusions. */
+    private function salesSetupSelection(): array
+    {
+        $all = $this->isTrackingDeselectedTableRecords;
+        $keys = $all ? $this->deselectedTableRecords : $this->selectedTableRecords;
+        if (!$all && (count($keys) > SetUpSales::MAX_TLDS || !$keys)) {
+            throw new \DomainException('Select 1 to 25 TLDs to set up sales.');
+        }
+        foreach ($keys as $key) {
+            if (!is_int($key) && !is_string($key)) {
+                throw new \DomainException('The selection changed. Select the TLDs again.');
+            }
+        }
+        $query = $this->getFilteredTableQuery();
+        $records = ($all ? $query->whereKeyNot($keys) : $query->whereKey($keys))->limit(SetUpSales::MAX_TLDS + 1)->get();
+        if ($records->count() > SetUpSales::MAX_TLDS) {
+            throw new \DomainException('Select 1 to 25 TLDs to set up sales.');
+        }
+        $selected = [];
+        foreach ($records as $record) {
+            if ($this->getTable()->isRecordSelectable($record)) {
+                $selected[(string) $record->getKey()] = $record;
+            }
+        }
+        if (!$all && array_diff($keys, array_keys($selected))) {
+            throw new \DomainException('The selection changed. Select the TLDs again.');
+        }
+        return $selected;
+    }
     public function table(Table $table): Table
     {
         $costs=fn()=>$this->canSeeCosts();
         return $table->query(fn()=>$this->reads()->rows($this->focused()?$this->tld:null))
+            ->recordUrl(fn(OfferRow $record) => $this->detailUrl($record))
+            // The explicit TLD link is the keyboard stop. Other cells use native record links.
+            ->extraRecordLinkAttributes(['tabindex' => '-1'], merge: true)
             ->defaultSort('tld')->paginated([25,50,100])->defaultPaginationPageOption(25)->searchPlaceholder('Search TLDs')
             ->emptyStateHeading(fn()=>$this->emptyHeading())
             ->emptyStateDescription(fn()=>$this->emptyDescription())
@@ -485,7 +527,7 @@ class WhatYouSell extends Page implements HasTable
             ])
             ->columns([
                 TextColumn::make('tld')->label('TLD')->extraCellAttributes(['class'=>'domains-sell-pin'])->extraHeaderAttributes(['class'=>'domains-sell-pin'])->weight('medium')->fontFamily('mono')->sortable()->formatStateUsing(fn(string $state)=>'.'.$state)
-                    ->url(fn(OfferRow $record)=>($id=$this->reads()->tldId($record))===null?null:TldResource::getUrl('view',['record'=>$id]))->color(fn(OfferRow $record)=>$this->reads()->tldId($record)===null?null:'primary')
+                    ->url(fn(OfferRow $record) => $this->detailUrl($record))->color(fn(OfferRow $record)=>$this->reads()->tldId($record)===null?null:'primary')
                     ->searchable(query:fn($query,string $search)=>$query->where('tld','like','%'.strtolower(ltrim(trim($search),'.')).'%')),
                 TextColumn::make('status')->label('Status')->extraHeaderAttributes(['class'=>'domains-sell-status'])->extraCellAttributes(['class'=>'domains-sell-status'])->badge()->state(fn(OfferRow $record)=>$this->reads()->status($record)['label'])
                     ->color(fn(OfferRow $record)=>$this->reads()->status($record)['tone'])->extraAttributes(fn(OfferRow $record)=>StatusMark::attributes($this->reads()->status($record)['tone'],'sell-'.$record->server_id.'-'.$record->tld))
@@ -502,9 +544,25 @@ class WhatYouSell extends Page implements HasTable
                 TextColumn::make('terms')->label('Terms')->toggleable(isToggledHiddenByDefault:true)->state(fn(OfferRow $record)=>$this->reads()->terms($record)),
                 TextColumn::make('pricing')->label('Pricing')->visible($costs)->toggleable(isToggledHiddenByDefault:true)->state(fn(OfferRow $record)=>$this->reads()->pricing($record)),
             ])
+            ->currentSelectionLivewireProperty('selectedTableRecords')
             ->checkIfRecordIsSelectableUsing(fn(OfferRow $record)=>$this->reads()->blocked($record)===null)
             ->toolbarActions([
                 // The table counts the selection in the browser, so the button reads it there. Select all works with filters.
+                BulkAction::make('set_up_sales')->label(new HtmlString('Set up sales for <span x-text="getSelectedRecordsCount()"></span> selected'))
+                    ->visible(SetUpSales::canAccess(...))->extraAttributes(SetUpSales::openerAttributes())
+                    ->action(function (): void {
+                        abort_unless(SetUpSales::canAccess(), 403);
+                        try {
+                            $origin = TldResource::getUrl('index', array_filter([
+                                'account' => $this->account, 'tld' => $this->tld, 'years' => $this->years(),
+                                'search' => $this->getTableSearch(), 'filters' => $this->tableFilters, 'sort' => $this->tableSort,
+                                $this->getTablePaginationPageName() => $this->getTablePage(),
+                            ], static fn($value) => $value !== null));
+                            $this->redirect(SetUpSales::selectionUrl($this->salesSetupSelection(), $this->account, $origin));
+                        } catch (\DomainException $error) {
+                            Notification::make()->warning()->title($error->getMessage())->send();
+                        }
+                    }),
                 BulkAction::make('edit')->label(new HtmlString('Edit <span x-text="getSelectedRecordsCount()"></span> selected'))->visible(fn()=>$this->canEdit())->deselectRecordsAfterCompletion()
                     ->modalHeading(fn($records)=>$records->count()===1?'Edit terms: .'.$records->first()->tld:'Edit '.$records->count().' TLDs')->modalSubmitActionLabel('Save terms')->modalFooterActionsAlignment(\Filament\Support\Enums\Alignment::End)->modalWidth('3xl')
                     ->modalDescription(fn($records)=>self::selection($records))

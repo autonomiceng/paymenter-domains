@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\{Builder,Model};
 use Illuminate\Support\Facades\Route;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{SetUpSales,ViewTld};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
 class TldResource extends Resource
 {
@@ -46,6 +46,7 @@ class TldResource extends Resource
             'index'=>new PageRegistration(WhatYouSell::class,fn(Panel $panel)=>Route::get('/',WhatYouSell::class)
                 ->middleware(WhatYouSell::getRouteMiddleware($panel))->withoutMiddleware(WhatYouSell::getWithoutRouteMiddleware($panel))
                 ->defaults('allTlds',true)),
+            'sales-setup'=>SetUpSales::route('/set-up-sales'),
             'view'=>ViewTld::route('/{record}'),
             'history'=>TldResource\Pages\TldHistory::route('/{record}/history'),
         ];

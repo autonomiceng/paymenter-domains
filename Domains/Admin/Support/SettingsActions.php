@@ -105,6 +105,41 @@ final class SettingsActions
             default=>null,
         };
     }
+    /** Shared pricing inputs, including margin validation and reset when its unit changes. */
+    public static function pricingRuleFields(\Closure $rule, \Closure $own, bool $allowFixed = true,
+        string $methodLabel = 'Pricing', bool $requireFixed = false): array
+    {
+        $fields = [];
+        $markupUnit = static fn(mixed $mode): ?string => match ($mode) {
+            'markup_percent', 'markup_fee_percent' => 'percent',
+            'markup_amount' => 'usd',
+            default => null,
+        };
+        // Remember the markup's unit while fixed pricing hides the input.
+        $fields[]=Hidden::make('last_markup_unit')->default(fn()=>$markupUnit($rule()['mode']??null))->dehydrated(false);
+        $fields[]=Select::make('mode')->label($methodLabel)->options(['markup_percent'=>'Add a percentage to cost','markup_fee_percent'=>'Add a percentage to cost and card fee','markup_amount'=>'Add an amount to cost',
+            // One own price for every TLD ignores each TLD's cost, so own prices are set per TLD only.
+            ...($allowFixed?['fixed'=>'Set my own price']:[])])->required()->live()->default(fn()=>$rule()['mode']??null)->visible($own)
+            ->afterStateUpdated(static function (mixed $state, Get $get, Set $set) use ($markupUnit): void {
+                $unit = $markupUnit($state);
+                if ($unit === null) {
+                    return;
+                }
+                $previous = $get('last_markup_unit');
+                if ($previous !== null && $previous !== $unit) {
+                    $set('markup', null);
+                }
+                $set('last_markup_unit', $unit);
+            });
+        $fields[]=TextInput::make('markup')->label(fn($get)=>$get('mode')==='markup_amount'?'Amount to add (USD)':'Percentage to add')->default(fn()=>$rule()['markup']??null)->required()->maxLength(12)->live(debounce:500)
+            ->rule(static fn($get):\Closure=>static function(string $attribute,mixed $value,\Closure $fail)use($rule,$get):void{if(($error=self::margin($value,$rule()['markup']??null,$get('mode'),$rule()['mode']??null))!==null){$fail($error);}})
+            ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
+        $fields[]=Select::make('round_up')->label('Round up')->options(PricingRule::ROUNDING_LABELS)->default(fn()=>$rule()['round_up']??null)->required()->live()
+            ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
+        foreach(['register'=>'Register','renew'=>'Renew','transfer'=>'Transfer'] as $key=>$label){$fields[]=TextInput::make('fixed_'.$key)->label($key==='register'?'First registration year (USD)':$label.' price per year (USD)')->default(fn()=>$rule()['fixed'][$key]??null)->maxLength(14)->required($requireFixed)->live(debounce:500)
+            ->visible(fn($get)=>$own($get)&&$get('mode')==='fixed');}
+        return $fields;
+    }
     /** One account setup action, keyed by its name (e.g. "processing"). */
     public static function setup(int $server,string $stamp,string $name): Action
     { return self::make($server,null,$stamp,true,[$name])[0]; }
@@ -143,34 +178,7 @@ final class SettingsActions
                             fn($key)=>self::canSee(Review::permission($key==='default'?'remove_override':'override')),ARRAY_FILTER_USE_KEY))
                         ->default(fn()=>((StaffCatalogue::routed()!==null?!StaffCatalogue::routed()->own(Tld::findOrFail($tld)):(Tld::find($tld)?->use_default_rule??true))&&self::canSee(Review::permission('remove_override')))||!self::canSee(Review::permission('override'))?'default':'custom');
                 }
-                $markupUnit = static fn(mixed $mode): ?string => match ($mode) {
-                    'markup_percent', 'markup_fee_percent' => 'percent',
-                    'markup_amount' => 'usd',
-                    default => null,
-                };
-                // Remember the markup's unit while fixed pricing hides the input.
-                $fields[]=Hidden::make('last_markup_unit')->default(fn()=>$markupUnit($rule()['mode']??null))->dehydrated(false);
-                $fields[]=Select::make('mode')->label('Pricing')->options(['markup_percent'=>'Add a percentage to cost','markup_fee_percent'=>'Add a percentage to cost and card fee','markup_amount'=>'Add an amount to cost',
-                    // One own price for every TLD ignores each TLD's cost, so own prices are set per TLD only.
-                    ...($name==='default_pricing'?[]:['fixed'=>'Set my own price'])])->required()->live()->default(fn()=>$rule()['mode']??null)->visible($own)
-                    ->afterStateUpdated(static function (mixed $state, Get $get, Set $set) use ($markupUnit): void {
-                        $unit = $markupUnit($state);
-                        if ($unit === null) {
-                            return;
-                        }
-                        $previous = $get('last_markup_unit');
-                        if ($previous !== null && $previous !== $unit) {
-                            $set('markup', null);
-                        }
-                        $set('last_markup_unit', $unit);
-                    });
-                $fields[]=TextInput::make('markup')->label(fn($get)=>$get('mode')==='markup_amount'?'Amount to add (USD)':'Percentage to add')->default(fn()=>$rule()['markup']??null)->required()->maxLength(12)->live(debounce:500)
-                    ->rule(static fn($get):\Closure=>static function(string $attribute,mixed $value,\Closure $fail)use($rule,$get):void{if(($error=self::margin($value,$rule()['markup']??null,$get('mode'),$rule()['mode']??null))!==null){$fail($error);}})
-                    ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
-                $fields[]=Select::make('round_up')->label('Round up')->options(PricingRule::ROUNDING_LABELS)->default(fn()=>$rule()['round_up']??null)->required()->live()
-                    ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
-                foreach(['register'=>'Register','renew'=>'Renew','transfer'=>'Transfer'] as $key=>$label){$fields[]=TextInput::make('fixed_'.$key)->label($key==='register'?'First registration year (USD)':$label.' price per year (USD)')->default(fn()=>$rule()['fixed'][$key]??null)->maxLength(14)->live(debounce:500)
-                    ->visible(fn($get)=>$own($get)&&$get('mode')==='fixed');}
+                array_push($fields,...self::pricingRuleFields($rule,$own,allowFixed:$name!=='default_pricing'));
                 $saved=self::cached(static function():?array{try{return CardFee::read();}catch(\Throwable){return null;}});
                 if($name==='default_pricing'){
                     $fields[]=TextInput::make('fee_percent')->label('Card fee (%)')->default(fn()=>$saved()['percent']??null)->required()->maxLength(6)->live(debounce:500);

@@ -2,6 +2,7 @@
 // Enom 444f31c TLD pricing layout; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages;
+use Filament\Actions\Action;
 use Filament\Pages\Enums\SubNavigationPosition;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Sheet,Staff,TldFacts,TldRegistrar,TldRows};
@@ -18,7 +19,15 @@ class ViewTld extends RecordDetailPage
     protected static ?SubNavigationPosition $subNavigationPosition=SubNavigationPosition::Top;
     public const CHOOSE_SELLER='Use More → Change registrar.';
     public const CHOOSE_SELLER_HEAD='Use Choose registrar above.';
-    protected function actions(): array {return $this->tldActions();}
+    protected function actions(): array
+    {
+        return [
+            Action::make('set_up_sales')->label('Set up sales')->color('gray')->visible(SetUpSales::canAccess(...))
+                ->url(fn() => TldResource::getUrl('sales-setup', ['record' => $this->getRecord()->getKey()]))
+                ->extraAttributes(SetUpSales::openerAttributes()),
+            ...$this->tldActions(),
+        ];
+    }
     /** Prices and costs on this tab are all USD, so the head says it once. */
     protected function head(): \Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Head {return $this->salesHead()->note(Fact::IN_USD);}
     /** The sales state and its reason, then price sync; the rail holds the newest changes. */
