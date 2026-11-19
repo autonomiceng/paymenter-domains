@@ -102,7 +102,7 @@ trait TldSalesPage
         $t=$this->getRecord();$s=$this->sales();$reason=(string)$s['reason'];$a=$this->account();
         // Only the account for new orders is named: on another account's row the name would read as the registrar.
         $head=Head::make('.'.$t->tld.($a!==null&&($this->snap()['seller']??null)===(int)$t->server_id?' on '.$a:''),Reader::Staff)->tag((bool)($this->snap()['demo']??false),false)
-            ->state($s['label']==='For sale'?State::ForSale:State::NotForSale,'tld-'.$t->id);
+            ->state($this->saleState(),'tld-'.$t->id);
         if($s['label']==='For sale'||$this->staffStop()){return $head;}
         $url=match(true){
             in_array($reason,['Check registrar account',TldFacts::RENEWALS_OFF],true)=>RegistrarFacts::accountUrl((int)$t->server_id),
@@ -110,6 +110,17 @@ trait TldSalesPage
             default=>null};
         return $url===null?$head:$head->link($reason==='Over the cost limit'?'Change it in What you sell':'Open the registrar account',$url);
     }
+    private function saleState(): State
+    {
+        $sales = $this->sales();
+
+        return match (true) {
+            $sales['label'] === 'For sale' => State::ForSale,
+            $this->snap()['checking_sales'] ?? false => State::Checking,
+            default => State::NotForSale,
+        };
+    }
+
     /** Why the TLD is not for sale, as the sentence the Sales notice says. Null while it is for sale. */
     private function saleReason(): ?string
     {

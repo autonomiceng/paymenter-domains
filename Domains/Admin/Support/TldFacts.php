@@ -19,6 +19,7 @@ final class TldFacts
     public const OTHER_SELLER='New orders go to';
     /** Edit prices reads the same saved settings before it writes, so it can't repair them. */
     public const UNREADABLE_SETTINGS="Saved TLD settings can't be read, so Edit prices can't fix them. Ask your site admin to restore them from a backup.";
+    public const TERMS_CHECKING='Set to sell; checking registrar terms';
     public const TERMS_FAILED="Set to sell; couldn't read registrar terms";
     /** Registrations here need annual renewals on the same account, and its Renewals switch is off. */
     public const RENEWALS_OFF='Renewals are off for this account';

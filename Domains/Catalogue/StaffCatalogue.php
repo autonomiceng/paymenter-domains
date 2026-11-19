@@ -354,7 +354,7 @@ final class StaffCatalogue
                 elseif($reason==='staff_stopped'&&($raw['sell']??null)===null&&!($d['defaultSell']??true)&&($raw['stops']??[])===[]
                     &&!\Paymenter\Extensions\Servers\Domains\Services\EndingChoices::hidden($t->tld)){$reason='not_sold_by_default';}
             }
-            $label=match($reason){'staff_stopped','staff_term_stopped','renewal_stopped'=>'Stopped by staff','not_sold_by_default'=>'Not sold by default','seller_changed'=>'No registrar selected','publication_pending'=>'Prices not published','renewals_off'=>TldFacts::RENEWALS_OFF,'stale_price'=>'Cost out of date','below_cost'=>'Below cost','unknown_price'=>'Cost missing','unknown_facts','stale_facts'=>'Set to sell; checking registrar terms','unsupported_facts'=>($stopped?'This':'Set to sell, but this').' registrar '.Writer::unsupportedCause($facts,(string)$t->registrar_key,(string)$t->tld),'unsupported_term','provider_disabled'=>'Not offered by this registrar','unpublished_price'=>'Price missing','account_unavailable'=>'Check registrar account','cost_limit'=>'Over the cost limit',default=>'Check TLD settings'};
+            $label=match($reason){'staff_stopped','staff_term_stopped','renewal_stopped'=>'Stopped by staff','not_sold_by_default'=>'Not sold by default','seller_changed'=>'No registrar selected','publication_pending'=>'Prices not published','renewals_off'=>TldFacts::RENEWALS_OFF,'stale_price'=>'Cost out of date','below_cost'=>'Below cost','unknown_price'=>'Cost missing','unknown_facts','stale_facts'=>TldFacts::TERMS_CHECKING,'unsupported_facts'=>($stopped?'This':'Set to sell, but this').' registrar '.Writer::unsupportedCause($facts,(string)$t->registrar_key,(string)$t->tld),'unsupported_term','provider_disabled'=>'Not offered by this registrar','unpublished_price'=>'Price missing','account_unavailable'=>'Check registrar account','cost_limit'=>'Over the cost limit',default=>'Check TLD settings'};
             $policy=$policies[$t->tld]??null;
             $selected=!$unreadable&&$policy&&(int)$policy->server_id===(int)$t->server_id&&$policy->account_fingerprint===$t->account_fingerprint&&$policy->registrar_key===$t->registrar_key
                 &&\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::chosen($t,(array)$policy,$d);
@@ -369,7 +369,7 @@ final class StaffCatalogue
             $work=$queue?OfferState::decode($queue->offer_work):[];
             // A terms read that failed says so, instead of checking with no end. The next try is in the row's refresh.
             if(!$unreadable&&in_array($reason,['unknown_facts','stale_facts'],true)&&!empty($work['facts'][$t->tld]['failure'])
-                &&str_ends_with($label,'checking registrar terms')){$label=TldFacts::TERMS_FAILED;}
+                &&$label===TldFacts::TERMS_CHECKING){$label=TldFacts::TERMS_FAILED;}
             // Only seller-policy writes establish selection time; pricing revisions do not.
             $selectedAt=$policy?->updated_at;
             try{$selectedAt=$selectedAt?\Carbon\CarbonImmutable::parse($selectedAt)->getTimestamp():null;}catch(\Throwable){$selectedAt=null;}
@@ -387,6 +387,7 @@ final class StaffCatalogue
             $out[$t->id]=['selected'=>(bool)$selected,'invalid_rule'=>$invalidRule,...$error,
                 'refresh'=>$refreshed,
                 'prices'=>$prices,'acquisition'=>$sold,'sales'=>['label'=>$chosen?'For sale':'Not for sale','tone'=>$chosen?'success':(!$invalidRule&&TldFacts::unsupported($label)?'warning':'gray'),'reason'=>$chosen?null:($invalidRule?TldFacts::ruleProblem($error):$label)],
+                'checking_sales'=>!$chosen&&!$invalidRule&&$selected&&$label===TldFacts::TERMS_CHECKING,
                 'seller'=>isset($sellers[$t->tld])?(int)$sellers[$t->tld]:null,'holders'=>(int)($holders[$t->server_id.':'.$t->tld.':'.$t->account_fingerprint]->holders??0),
                 'demo'=>\Paymenter\Extensions\Servers\Domains\Support\DemoData::is($accounts[$t->server_id]),'intent'=>array_intersect_key(get_object_vars($unreadable?new Intent:OfferState::intent($t,$badDefaults?[]:$d)),array_flip(['sell','longest','transfers','stops','defaultTransfers','salesPaused'])),'defaults'=>$this->publicDefaults($d,$grants->costs),
                 'unreadable'=>$unreadable,'own'=>$own,'pricing'=>!$own?'Default pricing':(($raw['pricing_rule']['mode']??$t->pricing_mode)==='fixed'?'Fixed price':'Custom markup'),'offers'=>$all,'facts'=>$facts];
