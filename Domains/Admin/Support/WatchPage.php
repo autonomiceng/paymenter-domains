@@ -46,17 +46,20 @@ trait WatchPage
     }
     private function checkTime(): int { $w = $this->getRecord(); return max((int) $w->delegation?->started_at, (int) $w->points?->started_at, (int) $w->registry?->started_at); }
     /** A targeted retry finishes only on evidence from its own work row or observation stream. */
-    private function retryOutcome(): ?bool
+    private function retryOutcome(): ?string
     {
         [, $after, $kind, $backoff] = $this->pendingCheck;
         $w = $this->getRecord();
         $observation = $w->{$kind === 'expiry' ? 'registry' : $kind};
         $work = $w->work->firstWhere('kind',$kind);
-        if (($work?->backoff_until ?? 0) > $backoff) { return false; }
+        if (($work?->backoff_until ?? 0) > $backoff) { return 'failed'; }
         if (!$observation || $observation->id <= $after) { return null; }
-        return $kind === 'expiry'
-            ? in_array($observation->result,['facts','not_registered'],true) || $observation->reason === 'no_coverage'
-            : $observation->result === 'complete' || $observation->safe_code === 'nameservers_missing';
+        if ($kind === 'expiry') {
+            return in_array($observation->result,['facts','not_registered'],true) || $observation->reason === 'no_coverage'
+                ? 'finished' : 'failed';
+        }
+        if ($observation->safe_code === 'rotation') { return 'rotation'; }
+        return $observation->result === 'complete' || $observation->safe_code === 'nameservers_missing' ? 'finished' : 'failed';
     }
     /** Refresh saved facts only. Keep the mounted revision so stale actions still refuse. */
     public function refreshFacts(): void { $this->getRecord()->refresh(); $this->resolved = null; }
@@ -68,8 +71,11 @@ trait WatchPage
         if ($kind !== null) {
             $outcome = $this->retryOutcome();
             $label = Writes::checkLabel($kind);
-            if ($outcome === true) { Notification::make()->success()->title($label.' finished')->send(); }
-            elseif ($outcome === false) { Notification::make()->warning()->title($label.' failed')->send(); }
+            if ($outcome === 'finished') { Notification::make()->success()->title($label.' finished')->send(); }
+            elseif ($outcome === 'failed') { Notification::make()->warning()->title($label.' failed')->send(); }
+            elseif ($outcome === 'rotation') {
+                Notification::make()->info()->title($label.' finished with partial results')->body('Checks continue automatically.')->send();
+            }
             elseif (now()->timestamp >= $until) { Notification::make()->warning()->title($label.' is taking longer')->send(); }
             else { return; }
         }

@@ -9,8 +9,9 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\{WatchResource,RoutingP
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\{ListWatches,ViewWatch};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\{ListConfiguration as ListTemplates,ViewConfiguration as ViewTemplate};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,WatchFacts,WatchFindings};
+use Paymenter\Extensions\Servers\Domains\Dns\{DnsAnswer,DnsQuery,DnsReading};
 use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchProfile};
-use Paymenter\Extensions\Servers\Domains\Presentation\State;
+use Paymenter\Extensions\Servers\Domains\Presentation\{MonitoringEvidence,Plain,State};
 use Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites as Writes;
 // Unchecked: Monitoring, with Last check Missing and its cause.
 $list=Livewire::actingAs($manager)->test(ListWatches::class)->assertCanSeeTableRecords([$watch]);$clean($list->html(),'monitoring list');
@@ -113,17 +114,36 @@ same(null, $facts['Domain']['Expires']['value'] ?? null, 'A superseded expiry ca
 
 $pointsWork = DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','points');
 $addressAt = $absentAt+180;
-$query = new \Paymenter\Extensions\Servers\Domains\Dns\DnsQuery($watch->canonical_name,'A');
-$answer = \Paymenter\Extensions\Servers\Domains\Dns\DnsAnswer::rrset($query,[['host'=>$query->name,'class'=>'IN','type'=>'A','ttl'=>60,'ip'=>'192.0.2.39']]);
-foreach ([$addressAt=>new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('points',website:true,email:false,queries:[$answer]),
-    $addressAt+60=>new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('points')] as $when=>$reading) {
+$query = new DnsQuery($watch->canonical_name,'A');
+$answer = DnsAnswer::rrset($query,[['host'=>$query->name,'class'=>'IN','type'=>'A','ttl'=>60,'ip'=>'192.0.2.39']]);
+$address = new DnsReading('points',website:true,email:false,queries:[$answer]);
+$savePoints = static function (int $when, DnsReading $reading) use ($pointsWork,$dns,$id,$uid): void {
     $pointsWork->update(['due_at'=>$when,'backoff_until'=>null]);
     $ticket = $dns->begin($id,$uid,'points',$when);
     expect($ticket && $dns->finish($ticket,$reading,$when+1), 'Points observation saved');
-}
+};
+$savePoints($addressAt, $address);
+$savePoints($addressAt+60, new DnsReading('points'));
 $facts = WatchFacts::for(WatchName::findOrFail($id));
 same('A @ → 192.0.2.39', $facts['Evidence']['Public DNS']['value'], 'A failed refresh keeps the last public address');
 same([gmdate('c',$addressAt)], $times($facts['Evidence']['Public DNS']['sub']), 'The retained address keeps its own read time');
 same($addressAt+60, $facts['Checks']['Last check']['at'], 'The failure has a separate attempt time');
+
+// Name-wide absence needs only one reply. Type-specific absence needs both address families.
+$negativeAnswers = [
+    'name absent' => [DnsAnswer::negative($query, reason:'nxdomain')],
+    'both families absent' => [DnsAnswer::negative($query), DnsAnswer::negative(new DnsQuery($query->name,'AAAA'))],
+];
+$when = $addressAt+120;
+foreach ($negativeAnswers as $scope => $answers) {
+    $savePoints($when, $address);
+    $savePoints($when+60, new DnsReading('points',email:false,queries:$answers,budgetLimited:true));
+    $evidence = MonitoringEvidence::forWatch(WatchName::findOrFail($id));
+    same([[], 'negative', $when+60], [$evidence['public'], $evidence['public_read'], $evidence['public_at']],
+        'A partial collection with '.$scope.' supersedes the saved address and its time');
+    $when += 120;
+}
+$view->call('refreshFacts');
+same(Plain::None->label(), panelRowValue($view->html(), 'Public DNS'), 'The panel renders the confirmed absence');
 
 $nativeSuccessful=true;echo "Staff monitoring list and details passed\n";

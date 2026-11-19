@@ -88,7 +88,9 @@ expect(str_contains(panelRowValue($draft->html(),'Pending edits') ?? '', 'web.pr
 $document = new DOMDocument;
 @$document->loadHTML($draft->html());
 $xpath = new DOMXPath($document);
-$button = $xpath->query('//button[@type="submit" and normalize-space(.)="Save"]')->item(0);
+$buttons = $xpath->query('//button[@type="submit"]');
+same(1, $buttons->length, 'The editor has one submit button');
+$button = $buttons->item(0);
 $form = $button?->hasAttribute('form') ? $document->getElementById($button->getAttribute('form'))
     : ($button ? $xpath->query('ancestor::form[1]', $button)->item(0) : null);
 same('save', $form?->getAttribute('wire:submit'), 'The visible submit button submits the editor form');

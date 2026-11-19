@@ -12,7 +12,7 @@ final class MonitoringEvidence
     {
         return $w->managed_domain_id===null?null:Domain::whereKey($w->managed_domain_id)->where('user_id',$w->user_id)->where('domain',$w->canonical_name)->first();
     }
-    /** A failed points attempt leaves the last definitive address answer and its own timestamp visible. */
+    /** An inconclusive points attempt leaves the last definitive address answer and its timestamp visible. */
     public static function forWatch(WatchName $watch): array
     {
         $attempt = $watch->points;
@@ -42,15 +42,28 @@ final class MonitoringEvidence
 
     private static function addresses(?PublicDnsObservation $public, ?string $name): array
     {
-        // How the public read ended: answered, a confirmed negative (every A/AAAA query got a valid negative reply), or
-        // unknown (a resolver failure, timeout or no address query), so an empty result never reads as confirmed absence.
-        $answers=[];$asked=[];
-        try{foreach($public?->facts['queries']??[] as $q){if(($q['name']??null)!==$name||!in_array($q['type']??null,['A','AAAA'],true)){continue;}
-            $asked[]=$q['state']??null;
-            foreach($q['records']??[] as $r){if(is_string($r['value']??null)&&filter_var($r['value'],FILTER_VALIDATE_IP)){$answers[]=$q['type'].' @ → '.$r['value'];}}}}
-        catch(\Illuminate\Contracts\Encryption\DecryptException){$answers=[];$asked=[];}
-        $publicRead=$public===null?null:($answers!==[]?'answered':($asked!==[]&&array_unique($asked)===['negative']?'negative':'unknown'));
-        return [$answers,$publicRead];
+        if ($public === null) { return [[], null]; }
+        try { $queries = $public->facts['queries'] ?? []; }
+        catch (\Illuminate\Contracts\Encryption\DecryptException) { return [[], 'unknown']; }
+
+        $answers = [];
+        $absent = [];
+        $nameAbsent = false;
+        foreach ($queries as $query) {
+            if (($query['name'] ?? null) !== $name) { continue; }
+            $type = $query['type'] ?? null;
+            $negative = ($query['state'] ?? null) === 'negative';
+            $nameAbsent = $nameAbsent || ($negative && ($query['code'] ?? null) === 'nxdomain');
+            if (!in_array($type, ['A','AAAA'], true)) { continue; }
+            if ($negative) { $absent[$type] = true; }
+            foreach ($query['records'] ?? [] as $record) {
+                $value = $record['value'] ?? null;
+                if (is_string($value) && filter_var($value, FILTER_VALIDATE_IP)) { $answers[] = $type.' @ → '.$value; }
+            }
+        }
+        if ($answers) { return [$answers, 'answered']; }
+        // A type-specific absence only covers the family the resolver actually checked.
+        return [[], $nameAbsent || isset($absent['A'], $absent['AAAA']) ? 'negative' : 'unknown'];
     }
 
     public static function read(?Domain $d,?PublicDnsObservation $public=null,?string $name=null): array
@@ -91,8 +104,8 @@ final class MonitoringEvidence
         return !collect(['website','email'])->contains(fn($axis)=>!($fresh[$axis]['stale']??true)&&($fresh[$axis]['checked_at']??null)===$public->started_at);
     }
     /** The Monitoring rows, label => value: what public DNS answered and what the registrar holds, each with when it was
-     * checked. None only follows a read that confirmed there is no address: every public A/AAAA query got a valid
-     * negative reply, or a complete registrar DNS read. A read that failed or stopped part way says Couldn't read with
+     * checked. None follows a confirmed absence of the public name or both address families, or a complete registrar
+     * DNS read. A read that failed or stopped part way says Couldn't read with
      * when it was tried; registrar addresses from such a read stay listed over the same words. Saved public answers past
      * their freshness, empty or not, say they are not current. Never checked says Not read yet, once. A failed first
      * registrar read has no record time, so it takes the failure time. $withRecords: the page already shows the

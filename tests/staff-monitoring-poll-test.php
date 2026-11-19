@@ -3,13 +3,16 @@
 declare(strict_types=1);
 require __DIR__.'/Support/staff-monitoring.php';
 use Illuminate\Support\Facades\{Auth,Crypt,DB,Route};
+use Filament\Notifications\Livewire\Notifications;
 use Livewire\Livewire;
 use Filament\Facades\Filament;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{WatchResource,RoutingProfileResource};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\{ListWatches,ViewWatch};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\{ListConfiguration as ListTemplates,ViewConfiguration as ViewTemplate};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,WatchFacts,WatchFindings};
-use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchProfile};
+use Paymenter\Extensions\Servers\Domains\Contracts\DnsReader;
+use Paymenter\Extensions\Servers\Domains\Dns\{DnsAnswer,DnsCollector,DnsContext,DnsQuery,DnsReading};
+use Paymenter\Extensions\Servers\Domains\Models\{WatchAudit,WatchName,WatchProfile};
 use Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites as Writes;
 extract($checked());
 // A queued check keeps feedback on the current page rather than losing the toast to a redirect.
@@ -99,6 +102,11 @@ $failRegistry = function(int $when) use ($id,$uid,$f,$expiryWork): void {
 };
 $failRegistry(time()-30);
 $clearCooldown = fn()=>DB::table('domains_watch_staff_claims')->where('subject_id',$id)->where('action','read')->update(['created_at'=>time()-301]);
+$notificationStatuses = static function (): array {
+    $inbox = new Notifications;
+    $inbox->mount();
+    return $inbox->notifications->map(fn ($notification) => $notification->getStatus())->values()->all();
+};
 $future = time()+86400;
 $dnsWork = DB::table('domains_watch_work')->where('watch_id',$id)->whereIn('kind',['delegation','points']);
 $dnsWork->update(['due_at'=>$future]);
@@ -116,14 +124,92 @@ noticeDns($f,time()+2);
 $retry=Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->call('pollCheck');
 expect((bool)$retry->get('pendingCheck'), 'A newer unrelated DNS result leaves the registry request pending');
 $failRegistry(time()+4);
-$retry->call('pollCheck')->assertNotified(\Filament\Notifications\Notification::make()->warning()->title('Registry lookup failed'));
+$retry->call('pollCheck');
+same(['warning'], $notificationStatuses(), 'A failed registry retry warns staff');
 same([], $retry->get('pendingCheck'), 'A failed retry finishes with a warning');
 $clearCooldown();
 $expiryWork->update(['backoff_until'=>time()-1]);
 $retry->callAction($read);
 noticeRegistry($f,time()+6);
-$retry->call('pollCheck')->assertNotified(\Filament\Notifications\Notification::make()->success()->title('Registry lookup finished'));
+$notificationStatuses(); // Drain the request notice before checking the result.
+$retry->call('pollCheck');
+same(['success'], $notificationStatuses(), 'A completed registry retry succeeds');
 same([], $retry->get('pendingCheck'), 'A new registry result completes its retry');
+
+// An extra CNAME hop on one of two mapped hosts puts the apex AAAA just beyond the ten-query cap on cursor 1.
+DB::transaction(function () use ($service,$source): void {
+    $sibling = $service->replicate();
+    $sibling->save();
+    $sibling->properties()->create(['key'=>'domain','name'=>'Domain','value'=>'shop.example.com']);
+    $source->replicate()->fill(['service_id'=>$sibling->id,'hostname'=>'shop.example.com'])->save();
+});
+$reader = new class implements DnsReader {
+    public function read(DnsQuery $query, DnsContext $context): DnsAnswer
+    {
+        if (!$context->reserve()) { return DnsAnswer::unknown($query, 'budget_exhausted'); }
+        [$host, $type] = [$query->name, $query->type];
+        $record = ['host'=>$host,'class'=>'IN','type'=>$type,'ttl'=>60];
+        return match ($query->key()) {
+            'www.example.com|CNAME' => DnsAnswer::rrset($query, [[...$record,'target'=>'edge.example.net']]),
+            'example.com|AAAA' => DnsAnswer::rrset($query, [[...$record,'ipv6'=>'2001:db8::8']]),
+            default => DnsAnswer::negative($query),
+        };
+    }
+};
+$collector = new DnsCollector($reader);
+$pointsWork = DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','points');
+$addressAt = time()-120;
+$pointsWork->update(['cursor'=>0,'due_at'=>$addressAt,'backoff_until'=>null]);
+$ticket = $dns->begin($id,$uid,'points',$addressAt);
+expect($ticket !== null, 'Initial points ticket');
+[$reading,$cursor,$sourceCursor] = $collector->collect($ticket, new DnsContext(static fn () => 0.0));
+expect($dns->finish($ticket,$reading,$addressAt+1,$cursor,$sourceCursor), 'First collection saves the IPv6 answer');
+$failedAt = $addressAt+60;
+$pointsWork->update(['due_at'=>$failedAt,'backoff_until'=>null]);
+$ticket = $dns->begin($id,$uid,'points',$failedAt);
+expect($ticket && $dns->finish($ticket,new DnsReading('points',queries:[
+    DnsAnswer::unknown(new DnsQuery('example.com','A'), 'resolver_failed'),
+]),$failedAt+1,$ticket->cursor,$ticket->sourceCursor), 'Points read fails and leaves the next rotation due');
+$pointsWork->update(['backoff_until'=>time()-1]);
+$clearCooldown();
+$retry = Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->callAction($read);
+$pending = $retry->get('pendingCheck');
+same('points', $pending[2] ?? null, 'Check now targets the failed DNS work');
+$requests = WatchAudit::where('subject_type','watch')->where('subject_id',$id)->where('event','staff_read_requested');
+$requestCount = $requests->count();
+$retry->callAction($read);
+same($pending, $retry->get('pendingCheck'), 'A duplicate DNS retry keeps its original wait');
+same($requestCount, $requests->count(), 'A duplicate DNS retry adds no request');
+$notificationStatuses();
+$retry->call('pollCheck');
+same($pending, $retry->get('pendingCheck'), 'The saved failure alone cannot acknowledge a new retry');
+same([], $notificationStatuses(), 'Polling without a newer result sends no feedback');
+
+$rotationAt = time()+2;
+$ticket = $dns->begin($id,$uid,'points',$rotationAt);
+expect($ticket && $ticket->cursor === 1, 'The retry claims the next collector rotation');
+$context = new DnsContext(static fn () => 0.0);
+[$reading,$cursor,$sourceCursor] = $collector->collect($ticket,$context);
+$apex = array_column(array_filter($reading->queries,fn ($q) => $q['name'] === 'example.com'),'state','type');
+same([DnsContext::MAX_QUERIES,'partial','rotation','negative',null],
+    [$context->used(),$reading->result(),$reading->safeCode(),$apex['A'] ?? null,$apex['AAAA'] ?? null],
+    'The full query budget leaves only a negative A answer for the apex addresses');
+$attempts = (int) $pointsWork->value('attempts');
+expect($dns->finish($ticket,$reading,$rotationAt+1,$cursor,$sourceCursor), 'The bounded points observation is saved');
+same([$attempts,null], [(int) $pointsWork->value('attempts'),$pointsWork->value('backoff_until')], 'Rotation incurs no new failure or backoff');
+$retry->call('pollCheck');
+$facts = WatchFacts::for(WatchName::findOrFail($id));
+$public = $facts['Evidence']['Public DNS'];
+$times = storefrontDom('<div id="rotation-time">'.$public['sub'].'</div>')->query('//*[@id="rotation-time"]//time');
+$actual = [panelRowValue($retry->html(),'Public DNS'),$times->item(0)?->getAttribute('datetime'),$notificationStatuses()];
+same(['AAAA @ → 2001:db8::8',gmdate('c',$addressAt),['info']], $actual,
+    'A rotation retains the earlier IPv6 answer and time and reports partial progress. Got '.json_encode($actual));
+same([], $retry->get('pendingCheck'), 'The matching rotation completes the requested attempt');
+$retry->call('pollCheck');
+same([], $notificationStatuses(), 'A completed rotation sends feedback only once');
+$reload = Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id]);
+same([], $reload->get('pendingCheck'), 'Reload does not reopen a completed rotation');
+same([], $notificationStatuses(), 'Reload does not resend rotation feedback');
 
 // Staff have no Stop: Pause is the supported way to halt checks, and the page then reads Paused.
 Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->assertActionDoesNotExist('retire')->callAction('pause')->assertNotified('Monitoring paused');same('paused',WatchName::find($id)->state,'Pause saves');

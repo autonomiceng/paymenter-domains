@@ -41,6 +41,7 @@ final class WatchRows
             is_array($value) => self::fact($value, $problem ? null : $sub),
             $value === 'On' => Value::plain(Plain::On, $sub),
             $value === 'Off' => Value::plain(Plain::Off, $sub),
+            $value === Plain::None->label() => Value::plain(Plain::None, $sub),
             $value === 'Unknown' => self::timed(State::NotReadYet, $fact['sub'] ?? null, $sub),
             $value === 'Checking now' => self::timed(State::Checking, $fact['sub'] ?? null, $sub),
             default => self::fact([(string) $value], $problem ? null : $sub),

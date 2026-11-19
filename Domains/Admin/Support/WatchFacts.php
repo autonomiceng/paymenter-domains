@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\User;
 use Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence;
-use Paymenter\Extensions\Servers\Domains\Presentation\State;
+use Paymenter\Extensions\Servers\Domains\Presentation\{Plain,State};
 use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault, ManagedDnsSetup, WatchTemplateAssignment};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
 use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchAudit,WatchProfile};
@@ -119,7 +119,7 @@ final class WatchFacts
                 $time=Sheet::moment(is_int($at)?$at:(int)strtotime($at),'Last tried')->toHtml();
             }
             $sub=$at?rtrim(($key==='public'&&$e['public_stale']?'Not current. ':'').(!$e[$key]&&$time!==null&&($key!=='public'||$e['public_read']!=='negative')?'No answers were saved. ':'').$time):'No saved observation.';
-            $evidence[$label]=[...self::fact($e[$key]?implode('; ',$e[$key]):($key==='public' && $e['public_read']==='negative' ? 'None' : 'Unknown'),$at?($sub===''?null:new \Illuminate\Support\HtmlString($sub)):$sub),
+            $evidence[$label]=[...self::fact($e[$key]?implode('; ',$e[$key]):($key==='public' && $e['public_read']==='negative' ? Plain::None->label() : 'Unknown'),$at?($sub===''?null:new \Illuminate\Support\HtmlString($sub)):$sub),
                 'state'=>$key==='public'&&!$e[$key]&&$e['public_read']==='unknown'?State::CouldntRead:null];}
         return array_filter(['Domain'=>$shown($domain),'Checks'=>$shown($checks),'Evidence'=>$evidence]);
     }
