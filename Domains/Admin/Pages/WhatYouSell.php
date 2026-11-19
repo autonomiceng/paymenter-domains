@@ -16,6 +16,7 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\{Filter,SelectFilter};
 use Filament\Tables\Table;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\{Auth,Blade,Log,Route};
 use Illuminate\Support\HtmlString;
 use Livewire\Attributes\{Locked,Url};
@@ -32,7 +33,10 @@ use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Both catalogue views use the same account price table and saved settings. */
 class WhatYouSell extends Page implements HasTable
 {
-    use InteractsWithTable {handleTableFilterUpdates as private filamentFilterUpdates;}
+    use InteractsWithTable {
+        handleTableFilterUpdates as private filamentFilterUpdates;
+        getFilteredTableQuery as private filteredOffers;
+    }
     private const KEEP='keep';
     protected \Filament\Support\Enums\Width|string|null $maxContentWidth = Sheet::WIDTH;
     /** One save reviews at most this many TLDs. */
@@ -151,7 +155,16 @@ class WhatYouSell extends Page implements HasTable
     {return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE);}
     private function reads(): SellTable
     {
-        return $this->reads??=new SellTable($this->bindings(),$this->years(),$this->canSeeCosts(),fn()=>$this->getTableRecords()->items(),$this->account===self::ALL,$this->catalogue(),fn()=>$this->warningQuery());
+        return $this->reads??=new SellTable(
+            $this->bindings(),$this->years(),$this->canSeeCosts(),fn()=>$this->getTableRecords()->items(),
+            $this->account===self::ALL,$this->catalogue(),fn()=>$this->warningQuery(),
+            queueRecovery:$this->account!==self::ALL&&$this->switchedOn('for_sale'),
+        );
+    }
+    public function getFilteredTableQuery(): ?Builder
+    {
+        $offers=$this->filteredOffers();
+        return $offers!==null&&$this->account===self::ALL?$this->reads()->onePerSuffix($offers):$offers;
     }
     /** Search and the other filters narrow pricing warnings with the table. For sale does not: it drops exactly the rows that can't be priced.
      * Show still narrows them, but keeps the TLDs it left out because their pricing can't be read. */
@@ -286,11 +299,12 @@ class WhatYouSell extends Page implements HasTable
             Action::make('csv')->label('Download CSV')->color('gray')->visible(fn()=>$this->canSeeCosts())->action(fn()=>$this->downloadCsv()),
         ];
     }
-    /** The list as the table holds it, on every page: same years, search, filters and focused TLD. Saved prices only, so an estimate row stays out. */
+    /** Export every account offer in the selected years, search, filters and exact focus. */
     public function downloadCsv(): \Symfony\Component\HttpFoundation\StreamedResponse
     {
         $years=$this->years();
-        $csv=app(PriceList::class)->csv($years,$this->show()??'all',$this->account===self::ALL?null:$this->account,$this->held());
+        $offers=$this->filteredOffers()->get(['server_id','tld'])->map(SellTable::key(...))->all();
+        $csv=app(PriceList::class)->csv($years,$this->show()??'all',$this->account===self::ALL?null:$this->account,$offers);
         return response()->streamDownload(static function()use($csv):void{echo $csv;},'domain-prices-'.$years.'-'.($years===1?'year':'years').'.csv',['Content-Type'=>'text/csv; charset=UTF-8']);
     }
     /** All accounts has no one rule to sum, so it says why the buttons are off. One account needs no head line: the table shows what is for sale. */
@@ -302,9 +316,7 @@ class WhatYouSell extends Page implements HasTable
     }
     /** The saved read the panel and the left-out warning show. Empty for staff without costs. */
     public function savedPrices(): array {return $this->reads()->saved();}
-    public function explanations(): array {return $this->canSeeCosts()?$this->reads()->explanations($this->held()):[];}
-    /** @return list<string> server:tld keys of every row the table holds, on every page */
-    private function held(): array {return $this->getFilteredTableQuery()->get(['server_id','tld'])->map(fn(OfferRow $row)=>SellTable::key($row))->all();}
+    public function explanations(): array {return $this->savedPrices()['explanations'];}
     private function show(): ?string {return $this->canSeeCosts()?self::showFilter($this->getTableFilterState('show')['value']??null):null;}
     /** A saved Show value this page no longer offers reads as no Show filter, so the page still opens. */
     private static function showFilter(mixed $value): ?string {return is_string($value)&&$value!=='all'&&isset(PriceList::FILTERS[$value])?$value:null;}

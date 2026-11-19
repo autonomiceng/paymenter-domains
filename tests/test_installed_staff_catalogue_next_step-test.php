@@ -201,6 +201,32 @@ $hints=[$table->cell($row,'register','price')['text'],$table->cell($row,'renew',
 same(['Checking','Checking'],$hints,'Register and Renew both wait on the account price read');
 same(1,$syncs,'One table build queues the account price read once across Register and Renew');
 } catch (Throwable $error) {$countSyncs=false;$failures[]='Shared account sync: '.$error->getMessage();}
+try {
+    $reset();
+    DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);
+    $beforeQueue=$queue->value('offer_work');
+    \Livewire\Livewire::actingAs($actor)->withQueryParams(['account'=>$binding->serverId])
+        ->test(NextStepStaffPage::class,['allTlds'=>true])->assertCountTableRecords(1);
+    same($beforeQueue,$queue->value('offer_work'),'Opening All TLDs for one account does not enqueue missing registrar terms');
+    \Livewire\Livewire::actingAs($actor)->withQueryParams([])->test(NextStepStaffPage::class,['allTlds'=>true])
+        ->assertSet('account',NextStepStaffPage::ALL);
+    same($beforeQueue,$queue->value('offer_work'),'Opening All TLDs does not enqueue missing registrar terms');
+
+    $reset();
+    DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','transfer')->update(['retail'=>null]);
+    $sales=\Livewire\Livewire::actingAs($actor)->withQueryParams(['account'=>$binding->serverId])
+        ->test(NextStepStaffPage::class,['allTlds'=>true])->assertCountTableRecords(1);
+    $transferPrice=static function(NextStepStaffPage $page): void {
+        $record=$page->getTableRecords()->items()[0];
+        $page->getTable()->getColumn('transfer_price')->record($record)->getState();
+    };
+    $beforeQueue=$queue->value('offer_work');
+    $transferPrice($sales->instance());
+    same($beforeQueue,$queue->value('offer_work'),'All TLDs does not queue a price read for a missing transfer price');
+    $sales->filterTable('for_sale',true)->assertCountTableRecords(1);
+    $transferPrice($sales->instance());
+    same($now->getTimestamp(),$work->status($binding)['due_at'],'Account-specific For sale still queues recovery for its missing transfer price');
+} catch (Throwable $error) {$failures[]='Catalogue read scope: '.$error->getMessage();}
 // Review probe A/B: an unreadable saved rule is a staff edit, never automatic recovery.
 foreach([false,true] as $pending){
 try {

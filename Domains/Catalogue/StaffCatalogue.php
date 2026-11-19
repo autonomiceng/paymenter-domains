@@ -27,13 +27,13 @@ final class StaffCatalogue
         Staff::requireView();
         return $this->work?->status(AccountBindings::binding(Account::where('server_id',$server)->sole()))??['state'=>'idle'];
     }
-    /** Staff-only recovery hints. Enqueue on the retained worker; never resolve a feed or change sale intent.
+    /** Staff-only recovery hints. Scoped sales views may also enqueue on the retained worker.
      * @param ?array $once account and settings reads (binding, readable, queue status and sync, pricing defaults) shared by
      * every action of one table build. The caller owns it for one request; this routed catalogue never keeps it. */
-    public function nextSteps(Collection $tlds,array $rows,string $action,int $term,?array &$once=null): array
+    public function nextSteps(Collection $tlds,array $rows,string $action,int $term,?array &$once=null,bool $queueRecovery=true): array
     {
         Staff::requireView();$out=[];$once??=[];
-        foreach($tlds as $t){$key=$t->server_id.':'.$t->tld;$out[$key]=$this->nextStep($t,$rows[$key]['offers']??[],$action,$term,$once);}
+        foreach($tlds as $t){$key=$t->server_id.':'.$t->tld;$out[$key]=$this->nextStep($t,$rows[$key]['offers']??[],$action,$term,$once,$queueRecovery);}
         return $out;
     }
     /** Derive safe recovery text before cost-bearing offers are removed from the public staff page DTO. */
@@ -52,7 +52,7 @@ final class StaffCatalogue
     /** When the queued read runs, in the viewer's time zone like the other staff times. */
     private static function nextCheck(int $at): HtmlString
     { return new HtmlString(Sheet::moment($at,'Next check')->toHtml().'.'); }
-    private function nextStep(Tld $t,array $offers,string $action,int $term,array &$once): array
+    private function nextStep(Tld $t,array $offers,string $action,int $term,array &$once,bool $queueRecovery): array
     {
         $offer=$offers[$action.':'.$term]??null;$reason=$offer?->decision->reason;$now=$this->clock->now();
         $names=['register'=>'registration','renew'=>'renewal','transfer'=>'transfer'];
@@ -76,19 +76,24 @@ final class StaffCatalogue
         $binding=static function()use($server,&$once){return $once['binding'][$server]??=AccountBindings::binding(Account::where('server_id',$server)->sole());};
         $readable=function($b)use($server,&$once):bool {return $once['readable'][$server]??=$this->readable($b);};
         if($reason==='publication_pending'&&$this->work){
-            if(!isset($once['woken'][$server])){
-                $this->work->wake($b=$binding());$status=$this->work->status($b);
+            if(!isset($once['publication'][$server])){
+                $b=$binding();
+                if($queueRecovery){$this->work->wake($b);}
+                $status=$this->work->status($b);
                 // Local publication is due on the next turn, independently of the feed date.
-                unset($status['due_at']);$once['woken'][$server]=$status;
+                unset($status['due_at']);$once['publication'][$server]=$status;
             }
-            return $waiting($once['woken'][$server]);
+            $status=$once['publication'][$server];
+            return $queueRecovery||!empty($status['local_failure'])?$waiting($status):$missing('Prices are waiting to be published.');
         }
         try{$facts=OfferState::facts($t->catalogue_facts);}catch(\Throwable){return $missing('Check saved settings on .'.$t->tld.'.');}
         $human=null;
         if(!$facts||!$facts->fresh($now)||$t->registrar_key==='namesilo'
             &&!OfferState::testFactsAccepted($binding(),$t->tld,$facts,$this->clock)){
             if(!$this->work||!$readable($b=$binding())){return $missing('Check account setup on Registrar account.','account');}
-            $this->work->requestFacts($b,$t->tld);$status=$this->work->status($b,$t->tld);
+            if($queueRecovery){$this->work->requestFacts($b,$t->tld);}
+            $status=$once['terms'][$server][$t->tld]??=$this->work->status($b,$t->tld);
+            if(!$queueRecovery&&$status['state']==='unknown'){return $missing('Use Sync prices on the TLD page.');}
             if($status['state']!=='unsupported'){return $waiting($status);}
             $human=$missing('Ask the registrar to confirm terms for .'.$t->tld.'.',null);
         }
@@ -115,6 +120,10 @@ final class StaffCatalogue
                 if(!$observation&&($status['succeeded_at']??0)>$now->getTimestamp()-86400&&empty($status['remaining'])){
                     [$needed,$years]=explode(':',$key);$name=$names[$needed];
                     return $missing('Ask the registrar for a '.$years.'-year '.$name.' cost for .'.$t->tld.'.',null);
+                }
+                if(!$queueRecovery){
+                    return isset($status['due_at'])||in_array($status['state'],['queued','running','retrying'],true)
+                        ?$waiting($status):$missing('Use Sync prices on the registrar account.','account');
                 }
                 if(!isset($once['synced'][$server])){$this->work->sync($b,RequestOrigin::Background);$once['synced'][$server]=$this->work->status($b);}
                 return $waiting($once['synced'][$server]);

@@ -82,7 +82,8 @@ foreach($cases as $case){
         $labels=array_values(array_unique(array_column($matrix['skipped'],'tld')));
         same(($cause==='card_fee'?"The card fee can't be read":$reason).', so prices are left out for: '.implode(', ',$labels).'. Fix it in Default pricing at the top of this page.',$warningText,'Warning names the cause, every grouped TLD and repair location');
         same(count($labels),(int)$xpath->evaluate('count(//*[@data-price-omission]//*[@data-omitted-tld])'),'Page identifies every omitted TLD once');
-        $page->assertCountTableRecords(count($matrix['rows'])+count($matrix['skipped']));
+        $suffixes=array_unique(array_column([...$matrix['rows'],...$matrix['skipped']],'tld'));
+        $page->assertCountTableRecords(count($suffixes));
         expect((int)$xpath->evaluate('count(//*[@data-price-omission]/ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-sc-callout ") and contains(@class,"fi-color-warning")])')===1,'Unreadable prices appear in an amber callout');
         expect((int)$xpath->evaluate('count(//*[@data-price-omission]/following::*[contains(concat(" ",normalize-space(@class)," ")," fi-ta-header-toolbar ")])')>0,'Omission alert is above the toolbar');
         expect(!str_contains($html,'Prices in USD for')&&!str_contains($html,'Saved prices in USD for'),'No repeated currency/years note between toolbar and rows');
@@ -92,8 +93,9 @@ foreach($cases as $case){
         $default=Livewire::actingAs($u)->test(WhatYouSell::class,['account'=>WhatYouSell::ALL])->assertSuccessful();
         expect($default->instance()->getTableFilterState('for_sale')['isActive']??false,'For sale starts on');
         same(1,substr_count(html_entity_decode($default->html(),ENT_QUOTES),'Fix it in Default pricing at the top of this page.'),'For sale on still gives the shared fix, once: '.$cause);
-        if($cause==='default_rule'){$default->assertSee('Prices left out for 3 TLDs')->assertSee("They are not shown on this page. Default pricing can't be read.");}
-        else{$default->assertCountTableRecords(0)->assertSee('Prices left out for 4 TLDs')->assertSee("The card fee can't be read.");}
+        $default->assertSee('Prices left out for '.count($labels).' TLDs');
+        if($cause==='default_rule'){$default->assertSee("They are not shown on this page. Default pricing can't be read.");}
+        else{$default->assertCountTableRecords(0)->assertSee("The card fee can't be read.");}
     }
     same($settingsBefore,$rawSettings(),'Service, page and CSV preserve raw settings bytes, including corrupt ciphertext');
     same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'Each corrupt case preserves saved prices and revisions');
