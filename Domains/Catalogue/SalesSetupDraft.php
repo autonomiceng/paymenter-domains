@@ -137,13 +137,24 @@ final readonly class SalesSetupDraft
                 $source = $prices[$this->serverId.':'.$name] ?? collect();
                 $before = $this->snapshot($binding, $t, $account, $policy, $source, $freshness[$this->serverId]);
                 $evidence[] = [$name, $before->facts?->fresh($now), array_map(static fn ($c) => $c->fresh($now), $before->costs)];
-                [$row, $command] = $this->propose($row, $t, $before, $rule, $defaultRule, $fee, $showCosts,
+                if ($before->hidden) { throw new \DomainException('This TLD is hidden.'); }
+                $intent = $before->intent->forSeller($this->actions, get_object_vars($before->intent));
+                if ($this->longest !== null) { $intent = new Intent(...[...get_object_vars($intent), 'longest' => $this->longest]); }
+                $facts = OfferState::facts($t->catalogue_facts);
+                $block = Writer::termsBlock($facts, $binding->registrarKey, $name, in_array('register', $this->actions, true),
+                    $intent->longest ?? $intent->defaultLongest, in_array('transfer', $this->actions, true), $now);
+                $row['reason'] = match ($block) {
+                    null => null,
+                    'unsupported_facts' => Writer::unsupportedCause($facts, $binding->registrarKey, $name),
+                    default => 'Requested registrar terms are unsupported.',
+                };
+                [$row, $command] = $this->propose($row, $t, $before, $intent, $block, $rule, $defaultRule, $fee, $showCosts,
                     $readiness[$this->serverId], $now, $native[$t->id] ?? []);
                 if ($command) { $entries[$name] = [$command, $before->revision]; }
             } catch (\DomainException|\InvalidArgumentException $error) {
-                $row['reason'] = $error->getMessage();
+                $row['reason'] ??= $error->getMessage();
             } catch (\JsonException|\TypeError|\ValueError $error) {
-                $row['reason'] = 'Saved TLD settings cannot be read.';
+                $row['reason'] ??= 'Saved TLD settings cannot be read.';
             }
             $rows[$name] = $row;
         }
@@ -161,21 +172,11 @@ final readonly class SalesSetupDraft
         return OfferState::snapshot($binding, $t, OfferState::decode($account->catalogue_defaults), $policy, $prices, true, freshness: $freshness);
     }
 
-    private function propose(array $row, Tld $t, Snapshot $before, ?array $rule, array $defaultRule, array $fee,
+    private function propose(array $row, Tld $t, Snapshot $before, Intent $intent, ?string $block, ?array $rule, array $defaultRule, array $fee,
         bool $showCosts, array $ready, \DateTimeImmutable $now, array $native): array
     {
         $binding = $before->feed->binding();
         $oldIntent = $before->intent;
-        $intent = $oldIntent->forSeller($this->actions, get_object_vars($oldIntent));
-        if ($this->longest !== null) { $intent = new Intent(...[...get_object_vars($intent), 'longest' => $this->longest]); }
-        $years = $intent->longest ?? $intent->defaultLongest;
-        $facts = OfferState::facts($t->catalogue_facts);
-        $block = Writer::termsBlock($facts, $binding->registrarKey, $t->tld, in_array('register', $this->actions, true),
-            $years, in_array('transfer', $this->actions, true), $now);
-        if ($before->hidden) { throw new \DomainException('This TLD is hidden.'); }
-        if ($block === 'unsupported_facts') { throw new \DomainException(Writer::unsupportedCause($facts, $binding->registrarKey, $t->tld)); }
-        if ($block !== null) { throw new \DomainException('Requested registrar terms are unsupported.'); }
-
         $changedSeller = !$before->seller || $before->sellerActions !== $this->actions;
         $changedRule = false;
         $proposed = clone $t;
@@ -191,7 +192,7 @@ final readonly class SalesSetupDraft
         $row['facts_state'] = $before->facts === null ? 'unknown' : ($before->facts->fresh($now) ? 'current' : 'stale');
         $row['pricing_after'] = Pricing::hasOwn($proposed) ? 'custom' : 'default';
         $row['pricing_before'] = Pricing::hasOwn($t) ? 'custom' : 'default';
-        $row['longest_after'] = $years;
+        $row['longest_after'] = $intent->longest ?? $intent->defaultLongest;
         $row['longest_before'] = $oldIntent->longest ?? $oldIntent->defaultLongest;
         $annual = $before->retainedAnnualRetail;
         $quotes = [];
@@ -203,10 +204,11 @@ final readonly class SalesSetupDraft
         $pendingPrice = $this->pricing !== 'keep' && (!$before->publishedRevision?->matches($before->revision)
             || !OfferState::equivalent($before->retail, $quotes));
         $needsWrite = $changedSeller || $intent != $oldIntent || $changedRule || $pendingPrice;
-        $row['retained_after'] = $changedRule ? $annual : $before->retainedAnnualRetail;
-        $after = $needsWrite ? new Snapshot($before->feed, $before->facts, $intent, $before->revision, $before->revision,
+        $row['retained_after'] = $block === null && $changedRule ? $annual : $before->retainedAnnualRetail;
+        $projected = $needsWrite || $block !== null;
+        $after = $projected ? new Snapshot($before->feed, $before->facts, $intent, $before->revision, $before->revision,
             $quotes, $binding, $this->actions, true, $before->hidden, $row['retained_after']) : $before;
-        $terms = $this->terms($after, $ready, $now, $needsWrite ? null : $native);
+        $terms = $this->terms($after, $ready, $now, $projected ? null : $native, $block);
         foreach ($terms as $key => $term) {
             if ($this->pricing !== 'keep' && $term['repairable']) {
                 $needsWrite = true;
@@ -221,6 +223,7 @@ final readonly class SalesSetupDraft
                 $row['prices'][$key]['profit'] = $cost === null || $term['retail'] === null ? null : CardFee::profit($term['retail'], $cost, $fee);
             }
         }
+        if ($block !== null) { return [$row, null]; }
         $row['status'] = $needsWrite ? 'ready' : 'unchanged';
         $command = $needsWrite ? Edit::setup($binding, $t->tld, $intent, $this->actions, $this->pricing, $rule, $changedSeller, $changedRule) : null;
         if ($command && ($reason = Writer::intentRefusal($command, $t, get_object_vars($oldIntent), $now)) !== null) {
@@ -230,7 +233,7 @@ final readonly class SalesSetupDraft
     }
 
     /** Same action and annual renewal gates as acquisition. A prospective publication supplies its own native plans. */
-    private function terms(Snapshot $s, array $ready, \DateTimeImmutable $now, ?array $native): array
+    private function terms(Snapshot $s, array $ready, \DateTimeImmutable $now, ?array $native, ?string $block = null): array
     {
         $terms = [];
         foreach (['renew','register','transfer'] as $action) {
@@ -238,7 +241,7 @@ final readonly class SalesSetupDraft
                 $key = $action.':'.$term;
                 $q = new Query($s->feed->binding(), [$s->feed->tld()], $action, $term);
                 $retail = $s->retail[$key] ?? null;
-                $reason = $ready[$action] ? (new Evaluator)->evaluate($s, $q, Context::Staff, $now)->reason : 'account_unavailable';
+                $reason = $block ?? ($ready[$action] ? (new Evaluator)->evaluate($s, $q, Context::Staff, $now)->reason : 'account_unavailable');
                 $repairable = false;
                 if ($action !== 'renew') {
                     $reason ??= $terms['renew:1']['reason'];

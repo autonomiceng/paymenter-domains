@@ -54,7 +54,7 @@ $role->update(['permissions' => array_values(array_diff($rights, [Review::permis
 commerceReject(fn () => $setup->save($id, $names, $custom, $key, $reason));
 $role->update(['permissions' => $rights]);
 $costRow = DB::table('domains_prices')->where(['server_id'=>$id,'tld'=>'com','action'=>'renew','term'=>1]);
-$costRevision = $costRow->value('revision');
+$costRevision = (clone $costRow)->value('revision');
 $costRow->increment('revision');
 commerceReject(fn () => $setup->save($id, $names, $custom, $key, $reason));
 $costRow->update(['revision'=>$costRevision]);
@@ -190,12 +190,52 @@ DB::table('domains_tlds')->where('id',$target->id)->update(['catalogue_facts'=>O
 $blocked = $setup->preview($id,['com','co.test'],$custom);
 same(['blocked','blocked'],array_column($blocked['rows'],'status'),'Known unsupported and missing offers are each refused');
 same(null,$blocked['review_key'],'No review is issued for all-refused rows');
+same([], $blocked['rows']['co.test']['prices'], 'Missing seller target supplies no draft prices');
+$keptPrices = $setup->preview($id, ['com'], $keep)['rows']['com']['prices'];
+same('8.00', $keptPrices['register:1']['after'] ?? null, 'Blocked Keep uses the saved fee and rounding rule');
+$quoted = $blocked['rows']['com']['prices'];
+foreach (['register:1'=>'7.50','renew:1'=>'9.50','transfer:1'=>'8.50','register:3'=>'26.50'] as $term => $amount) {
+    same($amount, $quoted[$term]['after'], 'Blocked Custom draft for '.$term);
+}
+same(null, $quoted['register:2']['after'], 'A missing term has no calculated amount');
+same('6.0000', $quoted['register:1']['cost'], 'The draft uses the bound cost');
+same('0.9825', $quoted['register:1']['profit'], 'The draft profit includes the card fee');
+same([false], array_values(array_unique(array_column($quoted, 'available'))), 'All terms of a refused setup are unavailable');
+same('35.00', $blocked['rows']['com']['retained_after'], 'A refused rule change preserves holder retail');
+
+$mixedNames = ['com','net'];
+$mixed = $setup->preview($id, $mixedNames, $default);
+same('10.40', $mixed['rows']['com']['prices']['renew:1']['after'], 'Blocked Default uses the shared rule');
+$costRow->update(['wholesale'=>'9.0000']);
+$changed = $setup->preview($id, $mixedNames, $default);
+same('11.70', $changed['rows']['com']['prices']['renew:1']['after'], 'Blocked draft follows the new cost');
+$before = $state();
+commerceReject(fn () => $setup->save($id, $mixedNames, $default, $mixed['review_key'], $reason));
+same($before, $state(), 'Stale blocked price prevents the whole batch');
+$blockedTld = $target->fresh()->getRawOriginal();
+$blockedCosts = $costRow->first();
+$result = $setup->save($id, $mixedNames, $default, $changed['review_key'], $reason);
+same(['net'], $result['rows'], 'Only the eligible sibling is saved');
+same($changed['rows']['com'], $result['outcomes']['com'], 'Receipt preserves the refused row and its draft amounts');
+same($blockedTld, $target->fresh()->getRawOriginal(), 'Blocked seller settings and retained retail are untouched');
+same((array) $blockedCosts, (array) $costRow->first(), 'Blocked renewal was not published');
+$published = $state();
+commerceReject(fn () => $setup->save($id, $mixedNames, $default, $changed['review_key'], $reason));
+same($published, $state(), 'Replaying the mixed review changes nothing');
+
+$costRow->update(['cost_source_unit'=>'invalid']);
+same([], $setup->preview($id, ['com'], $custom)['rows']['com']['prices'], 'Unreadable target supplies no draft prices');
+$costRow->update(['cost_source_unit'=>$blockedCosts->cost_source_unit]);
 $facts['observedAt'] = $now->modify('-2 days')->format(DATE_ATOM);
 $facts['freshUntil'] = $now->modify('-1 day')->format(DATE_ATOM);
 DB::table('domains_tlds')->where('id',$target->id)->update(['catalogue_facts'=>OfferState::json($facts)]);
 $blocked = $setup->preview($id, ['com'], [...$keep, 'transfer'=>false]);
 same('blocked', $blocked['rows']['com']['status'], 'Expired Enom facts retain the known nameserver requirement');
 same(null, $blocked['review_key'], 'Known unsupported Enom setup cannot change the sale actions');
+$clock->instant = $now->modify('+2 days');
+$stale = $setup->preview($id, ['com'], $custom)['rows']['com'];
+same('35.00', $stale['prices']['renew:1']['after'], 'Expired renewal cost uses the retained annual under the publication rule');
+$clock->instant = $now;
 $names25 = array_map(static fn ($letter) => 'test.'.$letter.$letter, range('a','y'));
 same(25,count($setup->preview($id,$names25,$keep)['rows']),'All 25 requested dispositions returned');
 foreach ([[],['com','com'],[...$names25,'test.zz']] as $invalid) {
