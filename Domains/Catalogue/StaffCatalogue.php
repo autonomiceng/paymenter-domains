@@ -163,13 +163,13 @@ final class StaffCatalogue
             if($d->action==='renew'&&$d->term===1&&($new===null||PricingRule::units($new,2)<1||!$cost->fresh($now))){$new=OfferState::money($t->catalogue_retained_annual_retail,2);}
             $quotes[$key]=$new;
         }
+        $published=array_filter($quotes,static fn($q)=>$q!==null&&PricingRule::units($q,2)>=1);
         foreach($offers as $key=>$offer){$d=$offer->decision;$cost=$offer->observation();if($cost===null){continue;}
             $new=$quotes[$key];$total=Retail::cost($cost,$costs);
-            $under=$new!==null&&$total!==null&&!PricingRule::covers($new,$total);
-            // Saving publishes these prices, so the row shows what stops the sale after that, not that it waits for publication.
-            try{$after=$offer->afterPublishing(array_filter($quotes,static fn($q)=>$q!==null&&PricingRule::units($q,2)>=1),$now);}catch(\Throwable){$after=$d->reason;}
+            $renewal=$d->action==='renew';
+            $renewalShortfall=$renewal&&$new!==null&&$total!==null&&!PricingRule::covers($new,$total);
             $out[]=['action'=>$d->action,'term'=>$d->term,'cost'=>$total,'current'=>$offer->staffRetail(),'new'=>$new,'synced'=>$cost->fresh($now),
-                'hold'=>$d->action==='renew'?null:($under?'below_cost':$after),'alert'=>$d->action==='renew'&&$under?'below_cost':null];
+                'hold'=>$renewal?null:$offer->afterPublishing($published,$now),'alert'=>$renewalShortfall?'below_cost':null];
         }
         return $out;
     }

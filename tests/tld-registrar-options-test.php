@@ -9,7 +9,9 @@ use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,Staff,TldFacts};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Facts,OfferState,UpgradeGate};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,Facts,OfferState,Query,StaffCatalogue,UpgradeGate};
+use Paymenter\Extensions\Servers\Domains\Models\Account;
+use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 use Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview as Review;
 
 extract(commerceFixture(ending:'abc'));staffSalesFixture();tldPanel();pinStaffClock($now);
@@ -38,6 +40,12 @@ $modal=static fn($page)=>$page->effects['partials']['action-modals.0']??'';
 $link='href="'.e(RegistrarAccount::getUrl(['account'=>$silo->server_id])).'"';
 $blocked=$open($actor)->assertActionHidden('start_selling');
 expect(str_contains($blocked->html(),$link),'Sales recovery opens the NameSilo account with Import rights and a price reader. '.TldFacts::salesState($enom->fresh())['reason']);
+$rule=PricingRule::validate(['mode'=>'fixed','round_up'=>'none','fixed'=>['register'=>'5','renew'=>'10','transfer'=>'5']]);
+$held=collect(StaffCatalogue::routed()->preview($enom->fresh(),$rule))->firstWhere('action','register');
+same(['5.00','unsupported_facts'],[$held['new'],$held['hold']],'Enom terms keep a below-cost registration off sale');
+$preview=(new ReflectionMethod(SettingsActions::class,'preview'))->invoke(null,$enom->id,$rule)->toHtml();
+expect(str_contains($preview,'needs nameservers at registration'),'Edit prices discloses the requirement that blocks registration');
+expect(!str_contains($preview,'Change registrar'),'Edit prices does not recommend a removal-only registrar action');
 $page=$picker($blocked);
 $schema=$page->instance()->getSchema($page->instance()->getMountedActionSchemaName());
 $select=$schema->getComponentByStatePath('seller');$options=$select->getOptions();
@@ -73,7 +81,9 @@ $open($actor)->assertDontSeeHtml($link)->assertSee('queued for this account');
 $feed(['tries'=>1],['offer_feed_failure'=>'read_deadline','offer_feed_failed_at'=>$now->getTimestamp()]);
 $open($actor)->assertDontSeeHtml($link)->assertSee("Registrar didn't answer in time");
 $feed([],['offer_feed_succeeded_at'=>$now->getTimestamp()]);
-$open($actor)->assertDontSeeHtml($link)->assertSee('last price sync finished')->assertSee('prices for .abc')->assertActionHidden('start_selling');
+$completed=$open($actor)->assertSeeHtml($link)->assertSee('last price sync finished')->assertSee('prices for .abc')->assertActionHidden('start_selling');
+expect(str_contains($modal($picker($completed)),$link),'A completed account sync still offers a manual recheck in the dialog');
+$open(staffUser([Staff::VIEW,Staff::POLICY,Review::permission('seller')]))->assertDontSeeHtml($link);
 
 // A stale or forged selection reaches the command guard, not ModelNotFoundException or a generic toast.
 $commands=new Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands(
@@ -94,6 +104,40 @@ foreach([new DomainException('Unrecognized private seller detail'),new RuntimeEx
         expect(!str_contains($text,'private'),'Unknown seller refusal hides its private text');
     }
 }
+// Known terms must support the proposed actions on the alternate's saved term limit.
+$renameSilo('net','abc');
+$savedSilo=$silo->fresh();
+$account=Account::where('server_id',$silo->server_id)->sole();
+$siloDefaults=$account->catalogue_defaults;
+DB::table('domains_accounts')->where('id',$account->id)->update(['catalogue_defaults'=>OfferState::json(['defaultSell'=>false,'defaultLongest'=>1])]);
+DB::table('domains_tlds')->where('id',$silo->id)->update(['catalogue_intent'=>OfferState::json([
+    ...OfferState::decode($savedSilo->catalogue_intent),'sell'=>null,'longest'=>null,
+])]);
+$terms=static function(int $firstYear)use($silo,$now):void{
+    DB::table('domains_tlds')->where('id',$silo->id)->update(['catalogue_facts'=>OfferState::encodeFacts(
+        new Facts(['register'=>[$firstYear],'renew'=>[1],'transfer'=>[]],[],true,false,false,'synthetic',$now,$now->modify('+1 day')))]);
+};
+$option=static function($page)use($silo):bool{
+    $livewire=$page->instance();
+    $select=$livewire->getSchema($livewire->getMountedActionSchemaName())->getComponentByStatePath('seller');
+    return $select->isOptionDisabled($silo->server_id,$select->getOptions()[$silo->server_id]);
+};
+$terms(2);
+$ineligible=$open($actor);
+expect(!collect($ineligible->instance()->getCachedHeaderActions())->contains(fn($action)=>$action instanceof \Filament\Actions\Action&&$action->getName()==='seller'),
+    'Terms outside the alternate’s saved limit do not promote Change registrar to the header');
+expect($option($picker($ineligible)),'A two-year minimum cannot be selected with a one-year limit and no transfer path');
+$terms(1);
+$registrationOnly=$picker($open($actor));
+expect($option($registrationOnly),'A registration-only registrar cannot take the proposed transfers');
+$registrationOnly->set('mountedActions.0.data.transfer',false);
+expect(!$option($registrationOnly),'Turning off transfers makes the one-year registration path selectable');
+DB::table('domains_accounts')->where('id',$account->id)->update(['catalogue_defaults'=>$siloDefaults]);
+DB::table('domains_tlds')->where('id',$silo->id)->update([
+    'catalogue_facts'=>$savedSilo->catalogue_facts,'catalogue_intent'=>$savedSilo->catalogue_intent,
+]);
+$renameSilo('abc','net');
+
 // The blocked dialog only allows an explicit choice of None to clear the existing policy.
 $remove=$picker($open($actor))->set('mountedActions.0.data.seller',null)->set('mountedActions.0.data.reason','Remove the blocked seller');
 expect(!$remove->instance()->getMountedAction()->getModalSubmitAction()->isDisabled(),'Selecting None allows the seller to be cleared');
@@ -102,8 +146,9 @@ same(null,TldFacts::sellerId('abc'),'The removal clears the seller policy for ne
 $noSeller=$picker($open($actor)->assertActionDisabled('start_selling'));
 same(null,$noSeller->instance()->getMountedAction()->getModalSubmitAction(),'No seller and no eligible account leaves an informational dialog');
 
-// A valid alternate is selectable and runs the same reviewed writer and redirect.
+// A valid price path with pending terms can still record a reviewed choice.
 $renameSilo('net','abc');
+DB::table('domains_tlds')->where('id',$silo->id)->update(['catalogue_facts'=>null]);
 $pick=$picker($open($actor)->assertActionVisible('seller'));
 $schema=$pick->instance()->getSchema($pick->instance()->getMountedActionSchemaName());
 $select=$schema->getComponentByStatePath('seller');
@@ -113,5 +158,8 @@ $pick->set('mountedActions.0.data.seller',(string)$silo->server_id)
     ->set('mountedActions.0.data.reason','Select the alternate registrar')->callMountedAction()->assertHasNoActionErrors()
     ->assertRedirect(TldResource::getUrl('view',['record'=>$silo->id]));
 same($silo->server_id,TldFacts::sellerId('abc'),'The alternate becomes the seller for new orders');
+$binding=Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
+$decision=$ports->readOffers(new Query($binding,['abc'],'register'),Context::Staff)[0];
+same([false,'unknown_facts'],[$decision->available,$decision->reason],'Choosing a registrar with saved prices leaves registration pending independent terms');
 same(0,$reads->calls,'Viewing the picker and changing the seller make no provider calls');
 echo "TLD registrar options passed.\n";$nativeSuccessful=true;

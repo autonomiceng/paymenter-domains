@@ -4,10 +4,10 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\Server;
 use Illuminate\Support\{Facades\Blade,HtmlString};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,SellerAvailability,StaffCatalogue,Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Facts,OfferState,SellerAvailability,StaffCatalogue,TermSupport,Writer};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
-use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,SalesPolicy,Tld};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{AdmittedTransport,NameSiloLiveReservationPolicy,TestReservationPolicy};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,TestCatalogue};
 /** Registrar-choice wording lives here so the TLD page and dialog use the same causes. */
@@ -20,17 +20,22 @@ final class TldRegistrar
     {return 'The saved '.self::name($registrar).' price for .'.$ending." can't be read.";}
 
     /** @return array<int,array{label:string,reason:?string,disabled:bool,price_issue:bool}> */
-    public static function choices(int $id): array
+    public static function choices(int $id, ?bool $register=null, ?bool $transfer=null): array
     {
         $ending=Tld::findOrFail($id)->tld;$out=[];
+        $policy=SalesPolicy::where('tld',$ending)->first();
+        $register??=$policy?->register_enabled??false;
+        $transfer??=$policy?->transfer_enabled??false;
         $rows=Tld::where('tld',$ending)->get()->keyBy('server_id');
         $servers=Server::whereIn('id',Account::pluck('server_id'))->orderBy('id')->get()->keyBy('id');
+        $clock=app(Clock::class);
         foreach(Account::whereIn('server_id',$servers->keys())->orderBy('server_id')->get() as $account){
             $server=$servers[$account->server_id];
             $row=$rows[$account->server_id]??null;
             $prices=SellerAvailability::state($account,$row);
             $off=!$server->enabled||$server->extension!=='Domains';
-            $unsupported=self::unsupported($account,$row,$ending);
+            $facts=self::facts($account,$row);
+            $unsupported=self::termsReason($account,$row,$facts,$clock->now(),$policy,$register,$transfer);
             $priceIssue=!$off&&$unsupported===null&&$prices!==SellerAvailability::READY;
             $reason=match(true){
                 $off=>'This registrar account is off.',
@@ -38,6 +43,7 @@ final class TldRegistrar
                 $prices===SellerAvailability::UNREADABLE=>self::unreadablePrice($account->registrar_key,$ending),
                 $priceIssue=>self::missingPrice($account->registrar_key,$ending),
                 !$account->processing_enabled=>'Orders are paused on this account.',
+                !self::termsChecked($account,$ending,$facts,$clock)=>'Registrar terms still need checking.',
                 default=>null,
             };
             $out[(int)$account->server_id]=['label'=>(string)$server->name,'reason'=>$reason,'disabled'=>$off||$unsupported!==null||$priceIssue,'price_issue'=>$priceIssue];
@@ -76,7 +82,7 @@ final class TldRegistrar
                 default=>$choice['reason'],
             };
             $url=null;
-            if($failure===null&&!$queued&&$state!=='running'&&!$completed&&self::canRecheck($id)){
+            if(self::canRecheck($id,$status)){
                 $url=RegistrarFacts::accountUrl($id);
                 if($url!==null){$reason.=' Use Sync prices on this account to check for new prices.';}
             }
@@ -85,11 +91,14 @@ final class TldRegistrar
         return $out;
     }
 
-    private static function canRecheck(int $id): bool
+    public static function canRecheck(int $id,?array $status=null): bool
     {
         // The account action also needs a converted TLD to enter the existing import writer.
         if(!SettingsActions::syncAll($id)->isVisible()){return false;}
         try{
+            $status??=StaffCatalogue::routed()?->progress($id)??[];
+            if(isset($status['failure'])||in_array($status['state']??null,['running','retrying'],true)
+                ||($status['state']??null)==='queued'&&(isset($status['due_at'])||!empty($status['remaining']))){return false;}
             $binding=AccountBindings::binding(Account::where('server_id',$id)->sole());
             $first=Tld::where('server_id',$id)->where('catalogue_converted',true)->orderBy('id')->first();
             if($first===null||$first->account_fingerprint!==$binding->fingerprint||$first->registrar_key!==$binding->registrarKey){return false;}
@@ -119,27 +128,64 @@ final class TldRegistrar
         return new HtmlString(implode('<br><br>',$lines));
     }
 
-    /** A requirement in this account's current registrar terms that checkout can't meet, named as the TLD page names it.
-     * The save refuses it too, so a retry with this registrar can't work. Null when its terms allow a sale or are not current. */
-    private static function unsupported(Account $account,?Tld $row,string $ending): ?string
+    private static function facts(Account $account,?Tld $row): ?Facts
     {
         if($row===null||!$row->catalogue_converted||$row->account_fingerprint!==$account->account_fingerprint||$row->registrar_key!==$account->registrar_key){return null;}
-        try{$facts=OfferState::facts($row->catalogue_facts);}catch(\Throwable){return null;}
-        if(Writer::termsBlock($facts,(string)$account->registrar_key,$ending,false,1,false,app(Clock::class)->now())!=='unsupported_facts'){return null;}
-        return 'This registrar '.Writer::unsupportedCause($facts,(string)$account->registrar_key,$ending).' for .'.$ending.'.';
+        try{return OfferState::facts($row->catalogue_facts);}catch(\Throwable){return null;}
+    }
+    private static function termsChecked(Account $account,string $ending,?Facts $facts,Clock $clock): bool
+    {
+        if(!$facts||!$facts->fresh($clock->now())){return false;}
+        try{
+            $binding=AccountBindings::binding($account);
+            return TermSupport::currentFacts($binding,$ending,$facts)&&OfferState::testFactsAccepted($binding,$ending,$facts,$clock);
+        }catch(\Throwable){return false;}
+    }
+    /** Known terms must fit the proposed sale. The writer can record intent while independent terms are pending. */
+    private static function termsReason(Account $account,?Tld $row,?Facts $facts,\DateTimeImmutable $now,?SalesPolicy $policy,bool $register,bool $transfer): ?string
+    {
+        if(!$row||!$facts||!$facts->fresh($now)){return null;}
+        $ending=$row->tld;$registrar=(string)$account->registrar_key;
+        $base=Writer::termsBlock($facts,$registrar,$ending,false,1,false,$now);
+        if($base==='unsupported_facts'){
+            return 'This registrar '.Writer::unsupportedCause($facts,$registrar,$ending).' for .'.$ending.'.';
+        }
+        if($base==='unsupported_term'){return 'This registrar does not offer annual renewals for .'.$ending.'.';}
+        try{
+            $intent=OfferState::decode($row->catalogue_intent);
+            $defaults=OfferState::decode($account->catalogue_defaults);
+        }catch(\Throwable){return "Saved sales settings can't be read for .".$ending.'.';}
+        $longest=(int)($intent['longest']??$defaults['defaultLongest']??1);
+        // Widening transfers also requires a compatible registration limit in the writer.
+        $widensTransfers=$transfer&&($policy?->server_id!==(int)$account->server_id||!$policy->transfer_enabled
+            ||!($intent['sell']??$defaults['defaultSell']??true)||!($intent['transfers']??$defaults['defaultTransfers']??false)
+            ||($intent['salesPaused']??false)||array_intersect(['renew','transfer'],$intent['stops']??[])!==[]);
+        if(($register||!$transfer||$widensTransfers)&&Writer::termsBlock($facts,$registrar,$ending,true,$longest,false,$now)!==null){
+            return 'This registrar has no registration term within the saved limit for .'.$ending.'.';
+        }
+        if($transfer&&Writer::termsBlock($facts,$registrar,$ending,false,$longest,true,$now)!==null){
+            return 'This registrar does not offer transfers for .'.$ending.'.';
+        }
+        return null;
     }
     public static function refusal(\Throwable $error,array $data,?int $id): ?string
     {
         $ending=$id?Tld::whereKey($id)->value('tld'):null;
         if($ending===null){return 'This TLD changed. Reload the page and choose its registrar again.';}
         $account=Account::where('server_id',(int)($data['seller']??0))->first();
+        $terms=null;
+        if($error->getMessage()==='Explicit verified widening required.'&&$account!==null){
+            $row=Tld::where('server_id',$account->server_id)->where('tld',$ending)->first();
+            $policy=SalesPolicy::where('tld',$ending)->first();
+            $terms=self::termsReason($account,$row,self::facts($account,$row),app(Clock::class)->now(),$policy,
+                (bool)($data['register']??false),(bool)($data['transfer']??false));
+        }
         return match($error->getMessage()){
             'Seller offer missing.','Seller price missing.'=>self::missingPrice($account?->registrar_key??'',$ending),
             'Seller price unreadable.'=>self::unreadablePrice($account?->registrar_key??'',$ending),
             'Seller account missing.'=>'This registrar account was removed. Choose another registrar.',
             'Seller account off.'=>'This registrar account is off. Turn it on in Servers.',
-            'Explicit verified widening required.'=>$account&&($row=Tld::where('server_id',$account->server_id)->where('tld',$ending)->first())&&($unsupported=self::unsupported($account,$row,$ending))!==null
-                ?$unsupported.' Nothing was saved.':null,
+            'Explicit verified widening required.'=>$terms===null?null:$terms.' Nothing was saved.',
             'Offer binding or conversion changed.','Price binding changed.','Seller offer group changed; retry.','Offer disappeared.'=>'Saved registrar prices changed. Reopen Change registrar and try again.',
             default=>null,
         };

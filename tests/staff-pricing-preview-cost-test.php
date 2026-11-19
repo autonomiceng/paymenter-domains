@@ -13,9 +13,9 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,Staff};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting,Context,Edit,Intent,OfferState,Projection,Query,StaffCatalogue,StaffCommands,Writer};
 use Paymenter\Extensions\Servers\Domains\Models\Price;
 use Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview as Review;
-extract(offerCommerceFixture());tldPanel();pinStaffClock($now);
+extract(offerCommerceFixture());staffSalesFixture();tldPanel();pinStaffClock($now);
 $actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);
-$source=new StaffCatalogue($ports,$clock);$t=$tlds[0]->fresh();
+$source=new StaffCatalogue($ports,$clock,readable:static fn()=>true);$t=$tlds[0]->fresh();
 
 $rule=Paymenter\Extensions\Servers\Domains\Services\PricingRule::validate(['mode'=>'markup_percent','markup'=>'25','round_up'=>'ending_99']);
 $query=new Query($binding,['com'],'register');
@@ -35,6 +35,28 @@ $amount=static fn(string $row):string=>trim($xpath->evaluate('string(//tr[td[1]=
 same('$8.99',$amount('Transfer, 1 year'),'Show the calculated price with transfers turned off');
 same('$29.97',$amount('Register, 3 years'),'Show the calculated price when the exact term cost is stale');
 same('$7.99',$amount('Register, 1 year'),'Show the price that saving will publish for the fresh term');
+
+$fixed=Paymenter\Extensions\Servers\Domains\Services\PricingRule::validate([
+    'mode'=>'fixed','round_up'=>'none','fixed'=>['register'=>'5','renew'=>'10','transfer'=>'5'],
+]);
+$held=collect($source->preview($t->fresh(),$fixed))->firstWhere('action','transfer');
+same(['5.00','staff_term_stopped'],[$held['new'],$held['hold']],'Transfers remain off even if the calculated price is below cost');
+
+// Price editing and publishing do not grant the account-wide price refresh.
+$pricingOnly=staffUser([Staff::VIEW,Staff::POLICY,Review::permission('override'),Review::permission('publish')]);
+$preview=new ReflectionMethod(SettingsActions::class,'preview');
+$probe->setValue(null,[StaffCatalogue::class=>$source]);
+try {
+    expect(SettingsActions::syncAll($binding->serverId)->isVisible(),'Import grants expose Sync prices');
+    expect(str_contains($preview->invoke(null,$t->id,$rule)->toHtml(),'Use Sync prices'),'The stale cost points to the available retry');
+    Auth::setUser($pricingOnly);
+    expect(!SettingsActions::syncAll($binding->serverId)->isVisible(),'Price editing and publishing do not expose Sync prices');
+    $limited=$preview->invoke(null,$t->id,$rule)->toHtml();
+    expect(str_contains($limited,'$29.97')&&!str_contains($limited,'Sync prices'),'With no Import grant the stale price stays visible without directing staff to Sync prices');
+} finally {
+    Auth::setUser($actor);
+    $probe->setValue(null,null);
+}
 $commands=new StaffCommands(new Writer(new Projection($native),$clock,static fn()=>null,static fn()=>true),$bindings,static fn()=>null);
 $r=new Review($actor->id,$binding->serverId,$t->id,'override',Review::ticket($actor->id,$binding->serverId,$t->id,'override',StaffCommands::stamp($binding->serverId,$t->id)),'Save supported terms');
 $commands->run($r,['mode'=>$rule['mode'],'markup'=>$rule['markup'],'round_up'=>$rule['round_up']]);
