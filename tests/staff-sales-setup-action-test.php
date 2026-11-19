@@ -4,16 +4,17 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-tlds.php';
 
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\{Auth, DB};
 use Filament\Actions\Testing\TestAction;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{SetUpSales,ViewTld};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{SalesSetupReview, Staff};
-use Paymenter\Extensions\Servers\Domains\Catalogue\OfferState;
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts, Context, Edit, OfferState, Query};
+use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Presentation\State;
-use Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview as Review;
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, RenewalBillingSettings, StaffSettingsReview as Review};
 
 extract(commerceFixture(true));
 staffSalesFixture();
@@ -136,23 +137,42 @@ same('26.50', $setup->get('outcome.outcomes.com.prices.register:3.after'), 'The 
 same('10.50', $setup->get('outcome.outcomes.com.prices.transfer:1.after'), 'Confirmation publishes the refreshed amount');
 same([], $setup->get('previousReview'), 'Confirmation clears the comparison');
 same($initialKeys + 1, $reviewKeyCount(), 'The confirmed review is used once');
-$facts = OfferState::decode($other->fresh()->catalogue_facts);
+// Use a real Enom terms refusal and keep the other account's working sale.
+Auth::setUser($staff);
+DB::transaction(static fn() => RenewalBillingSettings::setSwitch((int) $other->server_id, true));
+$otherBinding = AccountBindings::binding(Account::where('server_id', $other->server_id)->sole());
+$ports = CallerPorts::routed();
+$otherOffer = new Query($otherBinding, ['com'], 'register');
+$ports->apply(Edit::seller($otherBinding, 'com', ['register', 'transfer']), $ports->readOffers($otherOffer, Context::Staff)[0]->revision);
+expect($ports->readOffers($otherOffer, Context::Staff)[0]->available, 'The alternate registrar has a working registration offer');
+$draft = [...$custom, 'server' => $target->server_id, 'markup' => '3.20'];
+$allowed = $singlePage();
+$allowed->set('draft', [...$allowed->get('draft'), ...$draft])->call('reviewChanges')->assertHasNoErrors();
+$planned = $allowed->get('review.rows.com');
+same((int) $other->server_id, $planned['seller_before'], 'The alternate registrar takes new orders');
+same('ready', $planned['status'], 'The same pricing proposal is initially eligible');
+
+$facts = OfferState::decode($target->fresh()->catalogue_facts);
 $facts['requiresNameservers'] = true;
-DB::table('domains_tlds')->where('id', $other->id)->update(['catalogue_facts' => OfferState::json($facts)]);
+DB::table('domains_tlds')->where('id', $target->id)->update(['catalogue_facts' => OfferState::json($facts)]);
 $refusal = $singlePage();
-$refusal->set('draft', [...$refusal->get('draft'), ...$custom, 'server' => $other->server_id, 'markup' => '3.20'])
-    ->call('reviewChanges')->assertHasNoErrors();
-same('blocked', $refusal->get('review.rows.com.status'), 'Known required nameservers refuse sales setup');
-same('9.50', $refusal->get('review.rows.com.prices.register:1.after'), 'The refused account has a distinct calculated draft');
-same('7.50', $refusal->get('review.rows.com.previous_sales.register:1'), 'The current account keeps its live price');
-$refusal->assertSeeHtml('aria-label="Draft prices for .com"')->assertSee('$7.80')->assertSee('$9.50')->assertSee('$7.50')
-    ->assertDontSeeHtml('wire:click="save"');
+$refusal->set('draft', [...$refusal->get('draft'), ...$draft])->call('reviewChanges')->assertHasNoErrors();
+$refused = $refusal->get('review.rows.com');
+same('blocked', $refused['status'], 'Known required nameservers refuse sales setup');
+$term = $refused['prices']['register:1'];
+same($planned['prices']['register:1']['after'], $term['after'], 'Refusal does not hide the calculated draft');
+same(false, $term['available'], 'The blocked draft price cannot be purchased');
+same($planned['previous_sales'], $refused['previous_sales'], 'The current account keeps its live offers');
+$refusal->assertSeeHtml('aria-label="Draft prices for .com"')
+    ->assertSee('$'.$term['before'])->assertSee('$'.$term['after'])
+    ->assertSee('$'.$refused['previous_sales']['register:1'])->assertDontSeeHtml('wire:click="save"');
 $refusal->set('confirmation', $reason)->call('save')->assertSet('outcome', null);
 same($initialKeys + 1, $reviewKeyCount(), 'The refused draft cannot be confirmed');
 
 DB::table('domains_tlds')->where('id', $target->id)->update(['catalogue_facts' => null]);
 $checking = $singlePage();
-$checking->set('draft', [...$checking->get('draft'), ...$custom, 'markup' => '2.20'])->call('reviewChanges')->assertHasNoErrors();
+$checking->set('draft', [...$checking->get('draft'), ...$custom, 'server' => $target->server_id, 'markup' => '2.20'])
+    ->call('reviewChanges')->assertHasNoErrors();
 same(State::Checking, SalesSetupReview::saleState($checking->get('review.rows.com')), 'Unread terms hold the planned sale');
 $checking->set('confirmation', $reason)->call('save')->assertHasNoErrors();
 same(['com'], $checking->get('outcome.rows'), 'The writer saves intent while terms need checking');
