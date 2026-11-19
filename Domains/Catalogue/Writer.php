@@ -216,7 +216,7 @@ final class Writer implements Catalogue
                 $t = Tld::where('server_id', $command->binding()->serverId)->where('tld', $command->tld())->sole();
                 $d = $this->defaults($command, $t);
                 OfferState::revision($t, $d, DB::table('domains_sales_policies')->where('tld', $t->tld)->first())->requireMatch($expected);
-                $reason = $this->intentRefusal($command, $t, $d);
+                $reason = self::intentRefusal($command, $t, $d, $this->clock->now());
                 if ($command->kind === 'override' && in_array('renew', $command->intent->stops, true)
                     && \Paymenter\Extensions\Servers\Domains\Models\Domain::where('server_id', $t->server_id)->where('tld', $t->tld)
                         ->where('account_fingerprint', $t->account_fingerprint)->whereNotNull('reservation_name')->lockForUpdate()->exists()) {
@@ -295,9 +295,9 @@ final class Writer implements Catalogue
     }
 
     /** Staff may record pending intent; the evaluator still requires independent evidence before selling. */
-    private function intentRefusal(Edit $edit, Tld $t, array $defaults): ?string
+    public static function intentRefusal(Edit $edit, Tld $t, array $defaults, \DateTimeImmutable $now): ?string
     {
-        if ($edit->kind !== 'override' && !($edit->kind === 'seller' && $edit->intent !== null)) { return null; }
+        if ($edit->kind !== 'override' && !(in_array($edit->kind, ['seller','sales_setup'], true) && $edit->intent !== null)) { return null; }
         $old = OfferState::decode($t->catalogue_intent); $new = $edit->intent;
         $sell = $new->sell ?? ($defaults['defaultSell'] ?? true);
         $longest = $new->longest ?? ($defaults['defaultLongest'] ?? 1);
@@ -306,7 +306,7 @@ final class Writer implements Catalogue
         // Seller row transfers for this offer's account, before and after the edit.
         $policy = DB::table('domains_sales_policies')->where('tld', $t->tld)->first();
         $sellerBefore = $policy && (int) $policy->server_id === (int) $t->server_id && (bool) $policy->transfer_enabled;
-        $sellerTransfers = $edit->kind === 'seller' ? in_array('transfer', $edit->actions, true)
+        $sellerTransfers = in_array($edit->kind, ['seller','sales_setup'], true) ? in_array('transfer', $edit->actions, true)
             : $policy && (int) $policy->server_id === (int) $t->server_id && ($edit->sellerTransfers ?? (bool) $policy->transfer_enabled);
         // A transfer intent is checked on its own, so a seller row that is off can't hide it. Turning the seller row
         // on later is checked against current terms too, though the intent was already saved.
@@ -319,7 +319,7 @@ final class Writer implements Catalogue
             || ($old['salesPaused'] ?? false) && !$new->salesPaused;
         if ($sell && \Paymenter\Extensions\Servers\Domains\Services\EndingChoices::hidden($t->tld)) { return 'This TLD is hidden.'; }
         if (!$widen) { return null; }
-        return self::termsBlock(OfferState::facts($t->catalogue_facts), $edit->binding()->registrarKey, $t->tld, $sell, $longest, $transfer, $this->clock->now()) === null
+        return self::termsBlock(OfferState::facts($t->catalogue_facts), $edit->binding()->registrarKey, $t->tld, $sell, $longest, $transfer, $now) === null
             ? null : 'Explicit verified widening required.';
     }
 

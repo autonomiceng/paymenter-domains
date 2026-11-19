@@ -209,6 +209,9 @@ final readonly class SalesSetupDraft
             }
         }
         $command = $needsWrite ? Edit::setup($binding, $t->tld, $intent, $this->actions, $this->pricing, $rule, $changedSeller, $changedRule) : null;
+        if ($command && ($reason = Writer::intentRefusal($command, $t, get_object_vars($oldIntent), $now)) !== null) {
+            throw new \DomainException($reason);
+        }
         return [$row, $command];
     }
 
