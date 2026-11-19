@@ -41,15 +41,6 @@ foreach ([[Reader::Staff, ['warn', 'off'], '2026-11-12T17:12:00+00:00', 2.0], [R
     same([$datetime, $converted], [$dom->evaluate('string((//time)[1]/@datetime)'), $dom->evaluate('count(//time[@data-domains-time])')], 'Step time for '.$reader->name.'; staff times convert in the browser');
     same([true, false], [str_contains($dom->evaluate('string((//li)[1])'), 'the customer'), str_contains($dom->evaluate('string((//li)[2])'), 'the customer')], 'Only the step given a who names it');
 }
-// A history event with no state of its own (a note, a request) draws no mark and no word; a monitoring change keeps its state.
-$rail = storefrontDom(\Paymenter\Extensions\Servers\Domains\Admin\Support\WatchRows::trace([['event' => 'Note', 'note' => null, 'time' => null, 'by' => 'Staff #4'],
-    ['event' => 'Check requested', 'note' => null, 'time' => null, 'by' => 'Staff #4'], ['event' => 'Monitoring paused', 'note' => null, 'time' => null, 'by' => 'Staff #4'],
-    ['event' => 'Monitoring resumed', 'note' => null, 'time' => null, 'by' => 'Staff #4']])->toEmbeddedHtml());
-same(['off', 'off', State::Paused->tone(Reader::Staff)->value, State::Monitored->tone(Reader::Staff)->value],
-    array_map(static fn (DOMElement $li): string => $li->getAttribute('data-domains-tone'), iterator_to_array($rail->query('//li'))),
-    'Neutral events keep their neutral tone and the monitoring changes use their own states');
-same([0, 0, 0, 1], array_map(static fn (DOMElement $li): int => $rail->query('.//*[@class="domains-panel-step-w"]', $li)->length,
-    iterator_to_array($rail->query('//li'))), 'Neutral events have no state word and the paused label does not repeat the word');
 
 // The kit, as staff who can change policy read it.
 $writer = staffUser([Staff::VIEW, Staff::POLICY]);

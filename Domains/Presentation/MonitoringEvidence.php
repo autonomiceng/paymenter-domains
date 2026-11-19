@@ -14,14 +14,15 @@ final class MonitoringEvidence
     {
         return $w->managed_domain_id===null?null:Domain::whereKey($w->managed_domain_id)->where('user_id',$w->user_id)->where('domain',$w->canonical_name)->first();
     }
-    /** An inconclusive family keeps its last definitive observation for the attempted target. */
+    /** An inconclusive read can retain evidence for the attempted target up to an owner alias. */
     public static function forWatch(WatchName $watch): array
     {
         $attempt = $watch->points;
         $name = $watch->canonical_name;
         $evidence = self::read(self::domain($watch), $attempt, $name);
-        $families = $evidence['public_families'];
-        if (!$attempt?->id || count($families) === count(self::ADDRESS_TYPES)) { return $evidence; }
+        $records = $evidence['public_families'];
+        if ($evidence['public_cname'] !== null) { $records['CNAME'] = $evidence['public_cname']; }
+        if (!$attempt?->id || !empty($records['CNAME']['answers']) || isset($records['A'], $records['AAAA'], $records['CNAME'])) { return $evidence; }
         try { $stamp = $attempt->facts['presentation_stamp'] ?? null; }
         catch (\Illuminate\Contracts\Encryption\DecryptException) { return $evidence; }
         // Compare with the attempted read. A later pause does not erase the history of that target.
@@ -38,41 +39,60 @@ final class MonitoringEvidence
                 ? $stamp === $priorStamp
                 : $attempt->source_digest && $attempt->source_digest === $prior->source_digest;
             if (!$sameTarget) { continue; }
-            $families += self::addressFamilies($facts['queries'] ?? [], $name, $prior->started_at, retained:true);
-            if (count($families) === count(self::ADDRESS_TYPES)) { break; }
+            $priorRecords = self::ownerRecords($facts['queries'] ?? [], $name, $prior->started_at, retained:true);
+            $records += $priorRecords;
+            // A confirmed alias superseded direct answers even if a newer read ruled that alias out.
+            if (!empty($priorRecords['CNAME']['answers']) || isset($records['A'], $records['AAAA'], $records['CNAME'])) { break; }
         }
-        return [...$evidence, ...self::publicEvidence($families, $attempt->started_at, $evidence['public_stale'])];
+        return [...$evidence, ...self::publicEvidence($records, $attempt->started_at, $evidence['public_stale'])];
     }
 
-    /** An empty answer list means a confirmed absence. An omitted family has no definitive result. */
-    private static function addressFamilies(array $queries, ?string $name, ?int $at, bool $retained = false): array
+    /** An empty answer list means a confirmed absence. An omitted type has no definitive result. */
+    private static function ownerRecords(array $queries, ?string $name, ?int $at, bool $retained = false): array
     {
-        $families = [];
+        $records = [];
         $nameAbsent = false;
         foreach ($queries as $query) {
             if (($query['name'] ?? null) !== $name) { continue; }
             $type = $query['type'] ?? null;
             $state = $query['state'] ?? null;
             $nameAbsent = $nameAbsent || ($state === 'negative' && ($query['code'] ?? null) === 'nxdomain');
+            if ($type === 'CNAME') {
+                $target = $query['records'][0]['value'] ?? null;
+                if ($state === 'rrset' && is_string($target) && $target !== '') {
+                    // This owner is an alias. Addresses from its target are separate evidence.
+                    $records = ['CNAME'=>['CNAME @ → '.$target]];
+                    break;
+                }
+                if ($state === 'negative') { $records['CNAME'] ??= []; }
+                continue;
+            }
             if (!isset(self::ADDRESS_TYPES[$type])) { continue; }
-            if ($state === 'negative') { $families[$type] ??= []; }
+            if ($state === 'negative') { $records[$type] ??= []; }
             // Older stored answer lists may lack a state field.
             if ($state !== null && $state !== 'rrset') { continue; }
             foreach ($query['records'] ?? [] as $record) {
                 $value = $record['value'] ?? null;
                 if (is_string($value) && filter_var($value, FILTER_VALIDATE_IP, self::ADDRESS_TYPES[$type])) {
-                    $families[$type][] = $type.' @ → '.$value;
+                    $records[$type][] = $type.' @ → '.$value;
+                    $records['CNAME'] ??= [];
                 }
             }
         }
-        if ($nameAbsent) { $families += array_fill_keys(array_keys(self::ADDRESS_TYPES), []); }
-        return array_map(static fn (array $answers): array => ['answers'=>$answers, 'at'=>$at, 'retained'=>$retained], $families);
+        if ($nameAbsent && empty($records['CNAME'])) { $records += ['A'=>[], 'AAAA'=>[], 'CNAME'=>[]]; }
+        return array_map(static fn (array $answers): array => ['answers'=>$answers, 'at'=>$at, 'retained'=>$retained], $records);
     }
 
-    private static function publicEvidence(array $families, ?int $attemptAt, bool $stale): array
+    private static function publicEvidence(array $records, ?int $attemptAt, bool $stale): array
     {
+        $cname = $records['CNAME'] ?? null;
+        unset($records['CNAME']);
+        $families = $records;
         ksort($families);
-        $answers = array_merge(...array_column($families, 'answers'));
+        $answered = empty($cname['answers'])
+            ? array_filter($families, static fn (array $family): bool => $family['answers'] !== [])
+            : ['CNAME'=>$cname];
+        $answers = array_merge(...array_column($answered, 'answers'));
         $read = match (true) {
             $answers !== [] => 'answered',
             count($families) === count(self::ADDRESS_TYPES) => 'negative',
@@ -80,7 +100,7 @@ final class MonitoringEvidence
             default => null,
         };
         $shown = match ($read) {
-            'answered' => array_filter($families, static fn (array $family): bool => $family['answers'] !== []),
+            'answered' => $answered,
             'negative' => $families,
             default => [],
         };
@@ -90,7 +110,7 @@ final class MonitoringEvidence
         $at = match (count($times)) { 0 => $attemptAt, 1 => $times[0], default => null };
         $families = array_map(static fn (array $family): array => [...$family, 'stale'=>$stale || $family['retained']], $families);
         return ['public_stale'=>$stale || $retained,'public'=>$answers,'public_at'=>$at,'public_read'=>$read,
-            'public_retained'=>$retained,'public_families'=>$families];
+            'public_retained'=>$retained,'public_families'=>$families,'public_cname'=>$cname];
     }
 
     public static function read(?Domain $d,?PublicDnsObservation $public=null,?string $name=null): array
@@ -104,14 +124,14 @@ final class MonitoringEvidence
         foreach($families['families']['dns']['records']??[] as $r){if(in_array($r['type']??null,['A','AAAA'],true)){$registrar[]=$r['type'].' '.($r['name']?:'@').' → '.$r['address'];}}
         try { $queries = $public?->facts['queries'] ?? []; }
         catch (\Illuminate\Contracts\Encryption\DecryptException) { $queries = []; }
-        $familiesByType = self::addressFamilies($queries, $name, $public?->started_at);
+        $ownerRecords = self::ownerRecords($queries, $name, $public?->started_at);
         $registrarAt=$families['families']['dns']['at']??null;$failedAt=$families['read_failed_at']??null;
         if($failedAt!==null&&($registrarAt===null||strtotime($failedAt)>strtotime($registrarAt))){$registrarAt=$failedAt;}
         // Retained family values do not turn a failed registrar attempt into a complete read.
         $absent=false;$failed=false;
         try { $absent=$d&&\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($d); $failed=$d&&($d->observation['record_failure']['identity']??null)===\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d); }
         catch (\Illuminate\Contracts\Encryption\DecryptException) {}
-        return ['state'=>$state,...self::publicEvidence($familiesByType, $public?->started_at, self::publicStale($d,$public,$name)),
+        return ['state'=>$state,...self::publicEvidence($ownerRecords, $public?->started_at, self::publicStale($d,$public,$name)),
             'registrar'=>$registrar,'registrar_absent'=>$absent,'registrar_at'=>$registrarAt,'registrar_read'=>$failed?'unknown':($families['families']['dns']['state']??null),'at'=>$families['at']??null,'families'=>$families,
             'separation'=>RecordFamilies::EVIDENCE];
     }
