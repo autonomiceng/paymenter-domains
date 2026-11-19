@@ -290,17 +290,20 @@ final readonly class SalesSetupDraft
             if ($published['status'] !== 'unchanged' || $row['retained_after'] !== $published['retained_before']) {
                 throw new \DomainException('Published sales setup differs from the review.');
             }
+            $changes[$name] = array_intersect_key($row, array_flip(['seller_before','server_id','actions_before','actions_after',
+                'longest_before','longest_after','pricing_before','pricing_after','retained_before','retained_after']));
             foreach ($row['prices'] as $key => $term) {
                 if ($published['prices'][$key] !== [...$term, 'before' => $term['after']]) {
                     throw new \DomainException('Published term or price differs from the review.');
+                }
+                if ($term['before'] !== $term['after']) {
+                    $changes[$name]['prices'][$key] = ['before' => $term['before'], 'after' => $term['after']];
                 }
             }
             if ($row['seller_before'] !== null && $row['seller_before'] !== $this->serverId) {
                 $outgoing[$row['seller_before']][] = $name;
             }
             $outcomes[$name]['status'] = 'saved';
-            $changes[$name] = array_intersect_key($row, array_flip(['seller_before','server_id','actions_before','actions_after',
-                'longest_before','longest_after','pricing_before','pricing_after','retained_before','retained_after']));
         }
         $review->input(['rows' => $changes]);
         $review->record('completed', ['rows' => $saved, 'failures' => $failures, 'unchanged' => $unchanged], $outgoing);

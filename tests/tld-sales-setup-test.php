@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-tlds.php';
 
-use App\Models\{Invoice, InvoiceItem, Order, Product, Service};
+use App\Models\{Invoice, InvoiceItem, Order, Product, Server, Service};
 use Illuminate\Support\Facades\{Auth, DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff, TldFacts};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState, Pricing, SalesSetup};
@@ -96,6 +96,10 @@ same('below_cost',$quoted['register:1']['reason'],'Below-cost registration stays
 same('5.00',$quoted['register:1']['after'],'The held retail remains visible');
 same(true,$quoted['transfer:1']['available'],'Above-cost transfer keeps its own eligible annual path');
 $setup->save($id, ['com'], $fixed, $draft['review_key'], $reason);
+$audit = collect(Review::historyRows(Server::findOrFail($id)))->where('action', Review::ACTIONS['sales_setup'])->last();
+$auditedPrices = $audit['input']['rows']['com']['prices'] ?? [];
+same(['before'=>'7.50','after'=>'5.00'], $auditedPrices['register:1'] ?? null, 'Custom price changes retain only the reviewed retail amounts');
+same(false, array_key_exists('register:2', $auditedPrices), 'Unchanged terms are omitted from the price audit');
 same('7.00',$target->fresh()->catalogue_retained_annual_retail,'Below-cost annual renewal uses the ordinary positive price');
 $default = [...$keep, 'pricing'=>'default'];
 $draft = $setup->preview($id, ['com'], $default);
