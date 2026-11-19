@@ -259,7 +259,7 @@ final class AcquisitionOffers
         }
     }
 
-    private static function nativePriceMismatch(?\App\Models\Product $product, ?\App\Models\Plan $plan, string $retail): ?string
+    public static function nativePriceMismatch(?\App\Models\Product $product, ?\App\Models\Plan $plan, string $retail): ?string
     {
         if (!$product || !$plan) { return 'Missing, duplicate or invalid native product/annual plan.'; }
         if ($product->stock !== null) { return 'Native product has limited stock.'; }

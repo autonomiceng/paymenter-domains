@@ -88,19 +88,24 @@ $other=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$silo->id])->asser
 same('.com on OFFLINE DEMO NameSilo (synthetic)',$named($other),'Two pages for one TLD never share a title');
 // Each price shows the cost for the same action, so a price never reads against another action's cost.
 expect(substr_count($text($page->html()),'Cost $')>=2,'Registration and renewal each show their own cost');
-// Change registrar says what it does to sales before it is saved.
+// A choice with usable current terms describes the charge that is available when the change saves.
 $dialog=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->mountAction('seller')->call('$refresh');
-expect(str_contains($text($dialog->effects['partials']['action-modals.0']??''),'new orders for .com stop until that account\'s terms and prices are checked, and open carts drop .com'),'Change registrar warns that sales stop and carts drop the TLD');
+$sellerModal=$text($dialog->effects['partials']['action-modals.0']??'');
+$registerPrice='$'.PriceCatalogue::retail(Price::where(['server_id'=>$enom->server_id,'tld'=>'com','action'=>'register','term'=>1])->value('retail'));
+expect(str_contains($sellerModal,State::ForSale->label())&&str_contains($sellerModal,$registerPrice),'Change registrar previews the available one-year charge');
 foreach(['For sale','Change registrar','More','Sales','Registrar for new orders','Existing domains stay with their registrar','Terms','1 to 3 years',
     'Price sync','Last updated','Oct 18, 2026','No update scheduled. Check Site setup on the Registrar account page, and the background worker.',
     'Edit prices','Pricing','Registration','Renewal','Transfer','Default pricing','New orders','History'] as $see){$page->assertSee($see);}
 // Current fixture publication leaves real history; separately arrange an empty retained window.
 expect(TldFacts::history((int)$enom->server_id,(int)$enom->id)!==[],'Published fixture has catalogue history');
-// The History tab lists those events under the same head and sales actions as the Overview tab.
+// Staff can inspect history and open the same record's existing sales actions.
 $events=TldFacts::history((int)$enom->server_id,(int)$enom->id);
 $history=Livewire::actingAs($u)->test(TldHistory::class,['record'=>$enom->id])->assertSuccessful()->assertSee($events[0]['change']);
-$names=static fn($c)=>[$named($c),array_map(static fn($a)=>$a instanceof Filament\Actions\Action?$a->getName():'More',array_values($c->instance()->getCachedHeaderActions()))];
-same($names($page),$names($history),'History keeps the TLD head and its actions');
+same($named($page),$named($history),'History names the same TLD and account as Overview');
+foreach([$page,$history] as $tab){
+    $tab->assertActionVisible('override')->assertActionVisible('seller');
+    $tab->mountAction('seller')->assertActionMounted('seller')->unmountAction();
+}
 $auditQuery=DB::table('domains_audit_archives')->where('server_id',$enom->server_id);
 $auditBytes=(clone $auditQuery)->get()->map(fn($r)=>(array)$r)->all();
 try{

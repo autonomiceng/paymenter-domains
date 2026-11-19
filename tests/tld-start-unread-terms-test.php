@@ -51,7 +51,7 @@ same(TldFacts::ASK_SELLER,TldFacts::fixText(TldFacts::salesState($t->fresh())['r
 $change=collect($page->instance()->getCachedHeaderActions())->first(fn($a)=>$a instanceof \Filament\Actions\Action&&$a->getName()==='seller');
 same(['Change registrar','primary'],[$change?->getLabel(),$change?->getColor()],'Change registrar is the one action for a requirement this registrar fails');
 // Change registrar names that requirement on this account's choice, and a refused save says it instead of asking for a retry.
-$needs='This registrar needs nameservers at registration for .com. Choose another registrar.';
+$needs='This registrar needs nameservers at registration for .com.';
 same(['reason'=>$needs,'disabled'=>true],array_intersect_key(Paymenter\Extensions\Servers\Domains\Admin\Support\TldRegistrar::choices($t->id)[$t->server_id],['reason'=>1,'disabled'=>1]),'The registrar choice names the requirement and is not offered');
 same($needs.' Nothing was saved.',Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::refusal(new DomainException('Explicit verified widening required.'),'seller',['seller'=>$t->server_id],$t->server_id,$t->id),'The refused registrar change names the requirement');
 // Stopped by staff with the same terms: Start selling can't lift the block, and the words drop "Set to sell".

@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
 
 use App\Models\{Category, Plan, Product};
-use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Eloquent\Builder;
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Services\{NativeActivationInformation, NativeCatalogue, PricingRule};
 
@@ -13,16 +13,40 @@ final class Projection
 {
     public function __construct(private readonly NativeCatalogue $native, private readonly ?\Closure $feature = null) {}
 
+    private static function productsFor(array $seeds): Builder
+    {
+        $slugs = [];
+        foreach ($seeds as $seed) { foreach (['register', 'transfer'] as $a) { $slugs[] = NativeCatalogue::slug($seed, $a); } }
+        return Product::where(static function ($q) use ($seeds, $slugs): void {
+            $q->whereIn('slug', $slugs)->orWhereHas('settings', static fn ($s) => $s->where('key', 'domains_tld_id')->whereIn('value', array_map(static fn ($t) => (string) $t->id, $seeds)));
+        });
+    }
+
+    /** displayBatch omits invalid or duplicate identities from its sellable plans. A write cannot replace them. */
+    public static function requirePublishable(Tld $tld, ?array $actions, array $prices): void
+    {
+        if ($actions === null || count($actions) !== self::productsFor([$tld])->count()) {
+            throw new \DomainException('Invalid domain product mapping.');
+        }
+        $retailUpgrade = $tld->catalogue_published_revision !== null && !OfferState::currentPublication($tld->catalogue_published_revision);
+        foreach ($actions as $name => $action) {
+            if ($action['product']->plans->count() !== count($action['plans'])) {
+                throw new \DomainException('Invalid or duplicate domain plan.');
+            }
+            foreach ($action['plans'] as $years => $plan) {
+                $term = $prices[$name.':'.$years] ?? null;
+                $publishesPrice = $retailUpgrade || $term && ($term['available'] || $term['reason'] === 'native_price_mismatch');
+                if ($publishesPrice && $plan->prices->count() > 1) { throw new \DomainException('Duplicate domain price.'); }
+            }
+        }
+    }
+
     public function lock(array $seeds): array
     {
         $category = Category::where('slug', 'domains')->lockForUpdate()->first();
         $category ??= Category::create(['name' => 'Domains', 'slug' => 'domains', 'description' => 'Domain names.']);
-        $slugs = [];
-        foreach ($seeds as $seed) { foreach (['register', 'transfer'] as $a) { $slugs[] = NativeCatalogue::slug($seed, $a); } }
-        $ids = Product::where(static function ($q) use ($seeds, $slugs): void {
-            $q->whereIn('slug', $slugs)->orWhereHas('settings', static fn ($s) => $s->where('key', 'domains_tld_id')->whereIn('value', array_map(static fn ($t) => (string) $t->id, $seeds)));
-        })->pluck('id');
-        $products = Product::whereKey($ids)->orderBy('id')->lockForUpdate()->get();
+        $ids = self::productsFor($seeds)->pluck('id');
+        $products = Product::whereKey($ids)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
         $plans = Plan::where('priceable_type', (new Product)->getMorphClass())->whereIn('priceable_id', $ids)->orderBy('id')->lockForUpdate()->get();
         \App\Models\Price::whereIn('plan_id', $plans->modelKeys())->orderBy('id')->lockForUpdate()->get();
         return [$category, $products];
@@ -31,9 +55,11 @@ final class Projection
     public function write(Tld $tld, Snapshot $snapshot, \DateTimeImmutable $now, array $locked, bool $retailUpgrade = false): void
     {
         [$category, $products] = $locked; $byAction = [];
-        foreach ($products as $product) {
+        // The batch locks all suffixes together. Publish only identities claimed by this offer's slug or marker.
+        foreach (self::productsFor([$tld])->pluck('id') as $id) {
+            $product = $products->get($id) ?? throw new \DomainException('Domain product group changed; retry.');
             $map = $this->native->mapping($product) ?? throw new \DomainException('Reserved domain slug collision.');
-            if ($map['tld']->id !== $tld->id) { continue; }
+            if ($map['tld']->id !== $tld->id) { throw new \DomainException('Domain product identity changed.'); }
             if (isset($byAction[$map['action']])) { throw new \DomainException('Duplicate domain product.'); }
             $byAction[$map['action']] = $product;
         }
@@ -52,6 +78,7 @@ final class Projection
                 $product = Product::create(['name' => ($action === 'register' ? 'Register .' : 'Transfer .').$tld->tld,
                     'slug' => NativeCatalogue::slug($tld, $action), 'category_id' => $category->id, 'server_id' => $tld->server_id,
                     'hidden' => true, 'stock' => null, 'per_user_limit' => 0, 'allow_quantity' => 'separated']);
+                $products->put($product->id, $product);
                 foreach (['domains_catalogue' => '1', 'domains_tld_id' => (string) $tld->id,
                     'domains_action' => $action, 'domains_registrar' => $tld->registrar_key] as $key => $value) {
                     $product->settings()->create(['key' => $key, 'value' => $value, 'type' => 'string', 'encrypted' => false]);

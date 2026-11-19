@@ -7,7 +7,7 @@ require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts,Context,Edit,Facts,FactsObserved,Intent,OfferState,Query,StaffCatalogue};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,StaffSettingsWrites};
@@ -45,4 +45,37 @@ $cycle();
 same(null,$intent()['transfers']??null,'Stop then Start saves no transfer choice');
 $defaults(true);
 same(true,StaffCatalogue::routed()->setting($t->fresh(),'transfer'),'.com follows the account’s transfers again');
+
+// (c) The chosen registrar sells transfers and renewals, with no registration terms.
+$terms = static function (array $transfer) use ($t, $now): void {
+    $facts = new Facts(['register'=>[],'renew'=>[1],'transfer'=>$transfer],[],true,false,false,'synthetic',$now,$now->modify('+1 day'));
+    DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::encodeFacts($facts)]);
+};
+$terms([1]);
+$ports->apply(Edit::seller($binding,'com',['transfer'],new Intent(sell:true,longest:3,transfers:true,stops:['register'])), $offer('transfer')->revision);
+$policy = static fn() => (array) DB::table('domains_sales_policies')->where('tld','com')->sole();
+$before = $policy();
+$transferPrice = $offer('transfer')->retail;
+$renewalPrice = $offer('renew')->retail;
+expect($transferPrice !== null && $renewalPrice !== null, 'The selected offer sells transfers and renewals before the pause');
+$page = Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertActionVisible('stop_selling');
+$page->mountAction('stop_selling')->callMountedAction()->assertHasNoActionErrors();
+same([false,false,true], array_map(fn($action) => $offer($action)->available, ['register','transfer','renew']),
+    'The pause closes transfers and keeps renewals available');
+$terms([]);
+Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertActionHidden('start_selling');
+$terms([1]);
+$page->assertActionVisible('start_selling')->mountAction('start_selling')->assertActionMounted('start_selling');
+$description = (string) $page->instance()->getMountedAction()->getModalDescription();
+expect(str_contains($description, 'Transfer '.TldFacts::money($transferPrice))
+    && str_contains($description, 'Renew '.TldFacts::money($renewalPrice))
+    && !str_contains($description, 'Register $'), 'Confirmation quotes only transfer and renewal prices');
+$page->callMountedAction()->assertHasNoActionErrors()
+    ->assertActionHidden('start_selling')->assertActionVisible('stop_selling');
+same([false,true,true], array_map(fn($action) => $offer($action)->available, ['register','transfer','renew']),
+    'The reviewed confirmation resumes transfers with registration still closed');
+same([['register'],3,false], [$intent()['stops'],$intent()['longest'],$intent()['salesPaused']],
+    'Resume preserves the registration stop and saved term, and clears the pause');
+same($before, $policy(), 'Neither Stop nor Start changes the bound seller or its acquisition flags');
+same(0,$reads->calls,'Stopping and starting use saved registrar evidence');
 echo "TLD stop keeps transfers passed.\n";$nativeSuccessful=true;

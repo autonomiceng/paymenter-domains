@@ -8,7 +8,7 @@ use Filament\Navigation\NavigationItem;
 use Filament\Forms\Components\Hidden;
 use Filament\Notifications\Notification;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{RegistrarFacts,Staff,TldFacts,SettingsActions};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{RegistrarFacts,Staff,TldFacts,TldRegistrar,SettingsActions};
 use Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue;
 use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview as Review,StaffSettingsWrites};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Head;
@@ -31,7 +31,7 @@ trait TldSalesPage
         }
         // Writers load their own models. Rebuild the page so the next change needs no reload.
         $t=$this->getRecord()->refresh();$this->reviewStamp=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::stamp((int)$t->server_id,(int)$t->id);
-        unset($this->cachedSchemas['infolist'],$this->cachedSchemas['content']);$this->sales=null;$this->snap=null;$this->start=null;$this->cachedActions=[];$this->cachedHeaderActions=[];
+        unset($this->cachedSchemas['infolist'],$this->cachedSchemas['content']);$this->sales=null;$this->snap=null;$this->start=null;$this->registrarChoices=null;$this->cachedActions=[];$this->cachedHeaderActions=[];
         $this->cacheInteractsWithHeaderActions();$this->forceRender();
     }
     /** @return array<string,Action> */
@@ -48,6 +48,9 @@ trait TldSalesPage
     private function tldActions(): array
     {
         $actions=$this->settings();$fix=$this->headFix();
+        if($this->registrarBlocked()&&$this->snap()['seller']===null){
+            $actions['seller']->label('Registrar choices')->modalHeading('Registrar choices');
+        }
         // The dialog keeps the button's verb.
         $verb=$this->sales()['reason']==='No registrar selected'?'Choose registrar':'Change registrar';
         $seller=$fix==='seller'?$actions['seller']->label($verb)->modalHeading($verb)->color('primary'):null;
@@ -64,7 +67,22 @@ trait TldSalesPage
     private ?array $sales=null;private ?array $snap=null;
     private function snap(): array {return $this->snap??=TldFacts::snapshot($this->getRecord(),Staff::requireView());}
     /** The fix that holds the primary spot: none while Start selling lifts a staff stop. */
-    private function headFix(): ?string {return $this->staffStop()?null:$this->fix();}
+    private function headFix(): ?string
+    {
+        if($this->staffStop()){return null;}
+        $fix=$this->fix();
+        if($fix==='seller'&&(!$this->registrarAlternative()||!TldFacts::canChangeSeller())){return null;}
+        return $fix;
+    }
+    private ?array $registrarChoices=null;
+    private function registrarChoices(): array
+    {return $this->registrarChoices??=TldRegistrar::choices((int)$this->getRecord()->id);}
+    private function registrarAlternative(): bool
+    {
+        return TldRegistrar::selectable($this->registrarChoices(),$this->snap()['seller']??null);
+    }
+    private function registrarBlocked(): bool
+    {return $this->fix()==='seller'&&!$this->registrarAlternative();}
     /** Which head button fixes the reason a TLD is not for sale, when it is on this page. */
     private function fix(): ?string
     {
@@ -84,7 +102,7 @@ trait TldSalesPage
         $t=$this->getRecord();$s=$this->sales();$reason=(string)$s['reason'];$a=$this->account();
         // Only the account for new orders is named: on another account's row the name would read as the registrar.
         $head=Head::make('.'.$t->tld.($a!==null&&($this->snap()['seller']??null)===(int)$t->server_id?' on '.$a:''),Reader::Staff)->tag((bool)($this->snap()['demo']??false),false)
-            ->state($s['label']==='For sale'?State::ForSale:State::NotForSale,'tld-'.$t->id);
+            ->state($this->saleState(),'tld-'.$t->id);
         if($s['label']==='For sale'||$this->staffStop()){return $head;}
         $url=match(true){
             in_array($reason,['Check registrar account',TldFacts::RENEWALS_OFF],true)=>RegistrarFacts::accountUrl((int)$t->server_id),
@@ -92,12 +110,29 @@ trait TldSalesPage
             default=>null};
         return $url===null?$head:$head->link($reason==='Over the cost limit'?'Change it in What you sell':'Open the registrar account',$url);
     }
+    private function saleState(): State
+    {
+        $sales = $this->sales();
+
+        return match (true) {
+            $sales['label'] === 'For sale' => State::ForSale,
+            $this->snap()['checking_sales'] ?? false => State::Checking,
+            default => State::NotForSale,
+        };
+    }
+
     /** Why the TLD is not for sale, as the sentence the Sales notice says. Null while it is for sale. */
     private function saleReason(): ?string
     {
         $s=$this->sales();$reason=(string)$s['reason'];
         if($s['label']==='For sale'){return null;}
         if($this->staffStop()){return rtrim($reason,'.').'.';}
+        if($this->registrarBlocked()){
+            return rtrim($reason,'.').'. '.TldRegistrar::none($this->getRecord()->tld,TldRegistrar::selectable($this->registrarChoices()));
+        }
+        if($this->fix()==='seller'&&$reason!=='No registrar selected'&&!TldFacts::canChangeSeller()){
+            return rtrim($reason,'.').'. '.TldFacts::ASK_SELLER;
+        }
         if(($this->snap()['selected']??false)&&!\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::read($this->getRecord())&&!str_contains($reason,'registrar terms')){
             // Expired terms were read; they are out of date, and Sync prices refreshes them.
             return ($reason===''?'':rtrim($reason,'.').'. ').(\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::stale($this->getRecord())
@@ -128,24 +163,21 @@ trait TldSalesPage
             try{
                 $catalogue=StaffCatalogue::routed()??throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE);
                 $start=$catalogue->start($t);$on=static fn(string $key):bool=>(bool)$catalogue->setting($t,$key);
-                $stopped=!$on('enabled')||!$on('renew')||!$on('register')||$start['transfers']&&!$on('transfer');
-                $start['can']=$stopped&&$start['block']===null;
-            }catch(\Throwable){$start=['can'=>false,'transfers'=>false,'checking'=>false];}
+                $stopped=!$on('enabled')||!$on('renew')||array_filter($start['actions'],static fn(string $action):bool=>!$on($action))!==[];
+                $start['can']=$stopped&&$start['actions']!==[]&&$start['block']===null;
+            }catch(\Throwable){$start=['can'=>false,'actions'=>[]];}
             $this->start=[$key,$start];
         }
         return $this->start[1];
     }
     private ?array $start=null;
-    /** Starts new registrations, and transfers when the TLD sells them. A deliberate stop is never undone by price or
-     * term changes. The TLD's own renewal stop clears too, since a TLD can't be sold without renewals. Account renewal
-     * settings stay. When the account sells only TLDs set to Sell, this sets the TLD to Sell. */
+    /** Resume new orders admitted by the selected registrar. The TLD's own renewal stop clears too. */
     public function startSellingAction(): Action
     {
         $t=$this->getRecord();$server=(int)$t->server_id;$id=(int)$t->id;
         return Action::make('start_selling')->label('Start selling')->color('primary')->requiresConfirmation()->icon(null)->modalIcon('heroicon-o-play-circle')
             ->modalHeading('Start selling .'.$t->tld.'?')->modalSubmitActionLabel('Start selling')
-            ->modalDescription(fn()=>'New '.($this->opensTransfers()?'registrations and transfers':'registrations')
-                .' are set to sell once all availability checks pass, including registrar terms.'.$this->salePricesText())
+            ->modalDescription(fn()=>$this->startDescription())
             // A saved price account is not a registrar choice. Staff must choose where new orders go.
             ->disabled(fn():bool=>$this->sales()['reason']==='No registrar selected')
             ->extraAttributes(fn():array=>$this->sales()['reason']==='No registrar selected'?['aria-disabled'=>'true']:[])
@@ -157,6 +189,7 @@ trait TldSalesPage
                     $t=$this->getRecord()->fresh();
                     if((TldFacts::snapshot($t)['seller']??null)===null){Notification::make()->warning()->title('Choose a registrar for new orders.')->send();return;}
                     $start=(StaffCatalogue::routed()??throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE))->start($t);
+                    if($start['actions']===[]){throw new \DomainException('No acquisition actions to resume.');}
                     if($start['block']!==null){throw new \DomainException('Explicit verified widening required.');}
                     $input=['min_years'=>1,'max_years'=>$start['years'],'sales'=>'start','verified'=>true];
                     app(StaffSettingsWrites::class)->run(new Review((int)auth()->id(),$server,$id,'tld_settings',(string)($data['review_key']??''),'Started selling from the TLD page.'),$input);
@@ -172,19 +205,28 @@ trait TldSalesPage
         if(!is_array($stops)||!in_array('transfer',$stops,true)){return null;}
         return 'Transfers stay off. '.($this->settings()['seller']->isVisible()?'Allow them in More → Change registrar.':'Ask staff who can change the registrar.');
     }
-    /** Retail prices that go live, one year each. */
-    private function salePrices(): array
+    private function startDescription(): ?string
     {
-        $prices=collect(TldFacts::snapshot($this->getRecord())['prices']??[]);
-        $price=static fn(string $action)=>$prices->first(fn($p)=>$p['action']===$action&&$p['term']===1)['retail']??null;
-        return array_filter(['Register'=>($r=$price('register'))?$r.' a year':null,'Transfer'=>$this->opensTransfers()?$price('transfer'):null,'Renew'=>($r=$price('renew'))?$r.' a year':null]);
+        $actions=$this->start()['actions'];
+        $orders=match($actions){
+            ['register','transfer']=>'registrations and transfers',
+            ['register']=>'registrations',
+            ['transfer']=>'transfers',
+            default=>null,
+        };
+        return $orders===null?null:'New '.$orders.' are set to sell once all availability checks pass, including registrar terms.'
+            .$this->salePricesText($actions);
     }
-    private function opensTransfers(): bool {return (bool)$this->start()['transfers'];}
-    /** " Prices: Register $12.00 a year, Renew $14.00 a year.", or nothing when no price is saved. */
-    private function salePricesText(): string
+    /** Annual retail prices for the actions this confirmation restores. */
+    private function salePricesText(array $actions): string
     {
-        $rows=$this->salePrices();
-        return $rows?' Prices: '.implode(', ',array_map(fn($k,$v)=>$k.' '.$v,array_keys($rows),$rows)).'.':'';
+        $prices=collect($this->snap()['prices']??[]);
+        $rows=[];
+        foreach([...$actions,'renew'] as $action){
+            $retail=$prices->first(fn($p)=>$p['action']===$action&&$p['term']===1)['retail']??null;
+            if($retail!==null){$rows[]=ucfirst($action).' '.$retail.($action==='transfer'?'':' a year');}
+        }
+        return $rows?' Prices: '.implode(', ',$rows).'.':'';
     }
     /** Stops new registrations and transfers. Domains customers already have keep renewing. Only the acquisition pause changes,
      * so the TLD's transfer and term choices wait for Start selling. */

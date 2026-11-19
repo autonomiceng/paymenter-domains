@@ -13,8 +13,8 @@ $actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);
 $query=fn()=>DB::table('domains_prices')->where('server_id',$bad->server_id)->where('action','renew')->where('term',1);
 $saved=costEvidence($query()->first());$errors=[];
 // A damaged saved cost and an absent one are different problems with different fixes.
-$unreadable=["Seller price unreadable.","The saved NameSilo price for .com can't be read. Sync prices to replace it."];
-foreach(['{'=>$unreadable,'{"action":"renew","term":"bad"}'=>$unreadable,'"invalid"'=>$unreadable,'null'=>['Seller price missing.','No NameSilo price for .com yet. Sync prices first.']] as $broken=>[$refusal,$reason]){
+$unreadable=["Seller price unreadable.","The saved NameSilo price for .com can't be read."];
+foreach(['{'=>$unreadable,'{"action":"renew","term":"bad"}'=>$unreadable,'"invalid"'=>$unreadable,'null'=>['Seller price missing.','No eligible NameSilo prices for .com are saved.']] as $broken=>[$refusal,$reason]){
     if($broken==='null'){$broken=null;}
     $query()->update([...costColumns($broken)]);
     try{
@@ -27,7 +27,7 @@ foreach(['{'=>$unreadable,'{"action":"renew","term":"bad"}'=>$unreadable,'"inval
         try{(new $commands(new Paymenter\Extensions\Servers\Domains\Catalogue\Writer(new Paymenter\Extensions\Servers\Domains\Catalogue\Projection($native),$clock,static fn()=>null,static fn()=>true),$bindings,static fn()=>null))->run($r,['seller'=>$bad->server_id,'register'=>true]);expect(false,'Malformed renewal evidence cannot be selected');}
         catch(DomainException $e){same($refusal,$e->getMessage(),'Staff dispatch names the price problem');}
         same($reason,Paymenter\Extensions\Servers\Domains\Admin\Support\TldRegistrar::choices($good->id)[$bad->server_id]['reason'],'Registrar choice names the price problem');
-        expect(str_contains(html_entity_decode($page->effects['partials']['action-modals.0']??'',ENT_QUOTES),$reason),'Dialog gives the price problem and its fix');
+        expect(str_contains(html_entity_decode($page->effects['partials']['action-modals.0']??'',ENT_QUOTES),$reason),'Dialog gives the price problem');
         same($reason,Paymenter\Extensions\Servers\Domains\Admin\Support\TldRegistrar::refusal($e,['seller'=>$bad->server_id],$good->id),'Refused save gives the same reason');
     }catch(Throwable $e){$errors[]=$e::class.': '.$e->getMessage();}
 }
@@ -46,7 +46,7 @@ expect(SellerAvailability::hasPrices(Account::where('server_id',$bad->server_id)
 $row=fn(object $t,string $action,int $term)=>DB::table('domains_prices')->where('server_id',$t->server_id)->where('action',$action)->where('term',$term);
 $transfer=costEvidence($row($bad,'transfer',1)->first());$row($bad,'transfer',1)->update([...costColumns('{')]);
 same(SellerAvailability::UNREADABLE,SellerAvailability::state(Account::where('server_id',$bad->server_id)->sole(),$bad->fresh()),'A damaged annual transfer is named even beside healthy registration and renewal');
-same(['reason'=>$unreadable[1],'disabled'=>true],array_intersect_key(Paymenter\Extensions\Servers\Domains\Admin\Support\TldRegistrar::choices($good->id)[$bad->server_id],['reason'=>1,'disabled'=>1]),'Registrar choice gives the sync step for the damaged transfer');
+same(['reason'=>$unreadable[1],'disabled'=>true],array_intersect_key(Paymenter\Extensions\Servers\Domains\Admin\Support\TldRegistrar::choices($good->id)[$bad->server_id],['reason'=>1,'disabled'=>1]),'Registrar choice distinguishes the damaged transfer from an absent price');
 expect(SellerAvailability::hasPrices(Account::where('server_id',$good->server_id)->sole(),$good->fresh()),'The healthy sibling account stays selectable');
 $row($bad,'transfer',1)->update([...costColumns($transfer)]);
 // A feed that repairs the renewal persists although a different saved cost it leaves out is damaged. That one stays closed.

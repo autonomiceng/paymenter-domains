@@ -68,6 +68,7 @@ final class CallerRouting
         return [CallerPorts::class => $ports, Writer::class => $writer, OfferWork::class => $work,
             OfferScheduler::class => $scheduler, Capabilities::class => $caps,
             AcquisitionOffers::class => new AcquisitionOffers($ports, $bindings, app(NativeCatalogue::class)),
+            SalesSetup::class => new SalesSetup($writer, $clock, $bindings, $feature, $work->requestSoldFacts(...)),
             StaffCommands::class => new StaffCommands($writer, $bindings, $work->wake(...), $work->sync(...)),
             StaffCatalogue::class => new StaffCatalogue($ports, $clock, $work, static function (AccountBinding $b) use ($bindings, $current): bool {
                 $current(); try { $bindings->offerCredentialRevision($b); return true; } catch (\DomainException) { return false; }

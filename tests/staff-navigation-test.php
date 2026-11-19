@@ -37,12 +37,19 @@ $moved=static function(string $old):array{$page=app('request');$r=app()->handle(
 foreach(['/admin/dns-routing-profiles'=>'/admin/dns-templates','/admin/dns-routing-profiles/4?tab=x'=>'/admin/dns-templates/4?tab=x','/admin/domain-tlds/7/history'=>'/admin/tlds/7/history',
     '/admin/domain-watch/settings'=>'/admin/monitored-domains/monitoring-settings','/admin/domain-watch/dns-setup'=>'/admin/monitored-domains/dns-monitoring-setup','/admin/domain-watch/dns-failures'=>'/admin/monitored-domains/affected-dns-checks',
     '/admin/domain-watch/12/history'=>'/admin/monitored-domains/12/history','/admin/registrar-setup'=>'/admin/registrars','/admin/adoption-pending/3'=>'/admin/import-pending/3','/admin/domains/9/adoption'=>'/admin/domains/9/import-preview',
-    '/admin/domains/adopt?q=1'=>'/admin/domains/import?q=1','/admin/tlds/price-list'=>'/admin/what-you-sell'] as $old=>$new){
+    '/admin/domains/adopt?q=1'=>'/admin/domains/import?q=1'] as $old=>$new){
     same([301,$new],$moved($old),'Old address redirects: '.$old);
+}
+foreach (['/admin/tlds/price-list','/admin/domain-tlds/price-list'] as $old) {
+    [$status,$url]=$moved($old.'?account=0&tableSearch=.ab&years=3&tableFilters[country][isActive]=1');
+    parse_str((string)parse_url($url,PHP_URL_QUERY),$query);
+    same([301,'/admin/tlds'],[$status,parse_url($url,PHP_URL_PATH)],'Price bookmark goes straight to the catalogue');
+    same(['0','3','.ab',['country'=>['isActive'=>'1'],'for_sale'=>['isActive'=>'1']]],
+        [$query['account']??null,$query['years']??null,$query['search']??null,$query['filters']??null],'Price bookmark keeps its scope');
 }
 
 Auth::setUser(staffUser([Staff::VIEW,Staff::COSTS]));
-same(2,count(\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::tlds('All TLDs')),'Pricing has two views');
+same(2,count(\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::tldCatalogue('All TLDs',[])),'Pricing has two views');
 
 app()->forgetInstance(WatchWork::class);
 

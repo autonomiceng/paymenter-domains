@@ -3,11 +3,15 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\User;
-use Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value;
+use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,SalesSetup,StaffCatalogue,Writer};
+use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Reader,State};
 use Paymenter\Extensions\Servers\Domains\Services\StaffReason;
 use Filament\Actions\{Action,ActionGroup};
 use Filament\Forms\Components\{Checkbox,Hidden,Radio,Select,Textarea,TextInput};
+use Filament\Schemas\Components\{Text,View};
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Utilities\{Get,Set};
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit,EnomTestSendLimit,EnomTestTransfer,CardFee,PriceCatalogue,PricingRule,PricingRules,StaffSettingsReview as Review,StaffSettingsWrites};
@@ -81,13 +85,60 @@ final class SettingsActions
             'probe'=>'Reads the balance once and shows it on this page.',
         };
     }
-    /** Change registrar on a TLD that already has one says what the change does to its sales before it is saved. */
-    private static function sellerDescription(int $tld): string
+    /** The chooser shows the sales effect once staff select a registrar and the orders it should take. */
+    private static function sellerDescription(int $tld, ?int $seller, bool $selectable): string
     {
-        $t=\Paymenter\Extensions\Servers\Domains\Models\Tld::find($tld);
-        $p=$t?\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',$t->tld)->first():null;
-        if($p===null||$p->server_id===null){return self::description('seller');}
-        return 'Choose the registrar for new orders. If you pick another account, new orders for .'.$t->tld.' stop until that account\'s terms and prices are checked, and open carts drop .'.$t->tld.'. Existing domains stay where they are.';
+        if ($selectable) {
+            return self::description('seller');
+        }
+        return $seller === null ? '' : 'Removing the registrar stops new orders for .'.Tld::findOrFail($tld)->tld
+            .'. Existing domains stay with their registrar.';
+    }
+
+    private static function sellerSalePreview(string $ending, ?int $current, array $choices, Get $get): ?Value
+    {
+        $selected = (int) $get('seller');
+        $register = (bool) $get('register');
+        $transfer = (bool) $get('transfer');
+        $carts = $current === null || $current === $selected ? '' :
+            ' Checkout removes .'.$ending.' from carts that used the previous registrar.';
+        if (!$selected || !$register && !$transfer) {
+            return $current === null ? null : Value::state(State::NotForSale, Reader::Staff,
+                'New orders stop after saving. Checkout removes .'.$ending.' from open carts.');
+        }
+        if ($choices[$selected]['disabled'] ?? true) {
+            return null;
+        }
+        try {
+            $preview = SalesSetup::routed()?->preview($selected, [$ending], [
+                'register' => $register, 'transfer' => $transfer, 'longest' => null, 'pricing' => 'keep',
+            ]);
+        } catch (\DomainException|\InvalidArgumentException) {
+            $preview = null;
+        }
+        $row = $preview['rows'][$ending] ?? null;
+        if ($row === null || $row['status'] === 'blocked') {
+            return Value::state(State::NeedsReview, Reader::Staff, $row === null
+                ? 'Check the registrar account and its saved prices.'
+                : SalesSetupReview::blocked($row['reason']));
+        }
+        $state = SalesSetupReview::saleState($row);
+        $note = match ($state) {
+            State::ForSale => self::sellerPriceOnSave($row['prices']),
+            State::Checking => SalesSetupReview::termsCheck($row),
+            default => $row['orders_paused'] ? 'Sales stay off while orders are paused on this account.'
+                : 'Check the registrar account and its prices before selling.',
+        };
+        return Value::state($state, Reader::Staff, $note.$carts);
+    }
+
+    private static function sellerPriceOnSave(array $prices): string
+    {
+        $term = SalesSetupReview::firstSale($prices);
+        [$action, $years] = explode(':', $term);
+        $price = Fact::money($prices[$term]['after'], code: true);
+        $order = $action === 'register' ? 'a '.$years.'-year registration' : 'a transfer';
+        return 'Sales are available immediately after saving. The price for '.$order.' is '.$price->text.'.';
     }
     /** The rest of what staff may want to know, behind the dialog's "?" helper. Null when the sentence says it all. */
     public static function details(string $name): ?string
@@ -102,6 +153,41 @@ final class SettingsActions
             'probe'=>'For NameSilo, a successful balance read confirms the key works. It does not confirm who owns the account. Orders and sales stay unchanged.',
             default=>null,
         };
+    }
+    /** Shared pricing inputs, including margin validation and reset when its unit changes. */
+    public static function pricingRuleFields(\Closure $rule, \Closure $own, bool $allowFixed = true,
+        string $methodLabel = 'Pricing', bool $requireFixed = false): array
+    {
+        $fields = [];
+        $markupUnit = static fn(mixed $mode): ?string => match ($mode) {
+            'markup_percent', 'markup_fee_percent' => 'percent',
+            'markup_amount' => 'usd',
+            default => null,
+        };
+        // Remember the markup's unit while fixed pricing hides the input.
+        $fields[]=Hidden::make('last_markup_unit')->default(fn()=>$markupUnit($rule()['mode']??null))->dehydrated(false);
+        $fields[]=Select::make('mode')->label($methodLabel)->options(['markup_percent'=>'Add a percentage to cost','markup_fee_percent'=>'Add a percentage to cost and card fee','markup_amount'=>'Add an amount to cost',
+            // One own price for every TLD ignores each TLD's cost, so own prices are set per TLD only.
+            ...($allowFixed?['fixed'=>'Set my own price']:[])])->required()->live()->default(fn()=>$rule()['mode']??null)->visible($own)
+            ->afterStateUpdated(static function (mixed $state, Get $get, Set $set) use ($markupUnit): void {
+                $unit = $markupUnit($state);
+                if ($unit === null) {
+                    return;
+                }
+                $previous = $get('last_markup_unit');
+                if ($previous !== null && $previous !== $unit) {
+                    $set('markup', null);
+                }
+                $set('last_markup_unit', $unit);
+            });
+        $fields[]=TextInput::make('markup')->label(fn($get)=>$get('mode')==='markup_amount'?'Amount to add (USD)':'Percentage to add')->default(fn()=>$rule()['markup']??null)->required()->maxLength(12)->live(debounce:500)
+            ->rule(static fn($get):\Closure=>static function(string $attribute,mixed $value,\Closure $fail)use($rule,$get):void{if(($error=self::margin($value,$rule()['markup']??null,$get('mode'),$rule()['mode']??null))!==null){$fail($error);}})
+            ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
+        $fields[]=Select::make('round_up')->label('Round up')->options(PricingRule::ROUNDING_LABELS)->default(fn()=>$rule()['round_up']??null)->required()->live()
+            ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
+        foreach(['register'=>'Register','renew'=>'Renew','transfer'=>'Transfer'] as $key=>$label){$fields[]=TextInput::make('fixed_'.$key)->label($key==='register'?'First registration year (USD)':$label.' price per year (USD)')->default(fn()=>$rule()['fixed'][$key]??null)->maxLength(14)->required($requireFixed)->live(debounce:500)
+            ->visible(fn($get)=>$own($get)&&$get('mode')==='fixed');}
+        return $fields;
     }
     /** One account setup action, keyed by its name (e.g. "processing"). */
     public static function setup(int $server,string $stamp,string $name): Action
@@ -141,16 +227,7 @@ final class SettingsActions
                             fn($key)=>self::canSee(Review::permission($key==='default'?'remove_override':'override')),ARRAY_FILTER_USE_KEY))
                         ->default(fn()=>((StaffCatalogue::routed()!==null?!StaffCatalogue::routed()->own(Tld::findOrFail($tld)):(Tld::find($tld)?->use_default_rule??true))&&self::canSee(Review::permission('remove_override')))||!self::canSee(Review::permission('override'))?'default':'custom');
                 }
-                $fields[]=Select::make('mode')->label('Pricing')->options(['markup_percent'=>'Add a percentage to cost','markup_fee_percent'=>'Add a percentage to cost and card fee','markup_amount'=>'Add an amount to cost',
-                    // One own price for every TLD ignores each TLD's cost, so own prices are set per TLD only.
-                    ...($name==='default_pricing'?[]:['fixed'=>'Set my own price'])])->required()->live()->default(fn()=>$rule()['mode']??null)->visible($own);
-                $fields[]=TextInput::make('markup')->label(fn($get)=>$get('mode')==='markup_amount'?'Amount to add (USD)':'Percentage to add')->default(fn()=>$rule()['markup']??null)->required()->maxLength(12)->live(debounce:500)
-                    ->rule(static fn($get):\Closure=>static function(string $attribute,mixed $value,\Closure $fail)use($rule,$get):void{if(($error=self::margin($value,$rule()['markup']??null,$get('mode'),$rule()['mode']??null))!==null){$fail($error);}})
-                    ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
-                $fields[]=Select::make('round_up')->label('Round up')->options(PricingRule::ROUNDING_LABELS)->default(fn()=>$rule()['round_up']??null)->required()->live()
-                    ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
-                foreach(['register'=>'Register','renew'=>'Renew','transfer'=>'Transfer'] as $key=>$label){$fields[]=TextInput::make('fixed_'.$key)->label($key==='register'?'First registration year (USD)':$label.' price per year (USD)')->default(fn()=>$rule()['fixed'][$key]??null)->maxLength(14)->live(debounce:500)
-                    ->visible(fn($get)=>$own($get)&&$get('mode')==='fixed');}
+                array_push($fields,...self::pricingRuleFields($rule,$own,allowFixed:$name!=='default_pricing'));
                 $saved=self::cached(static function():?array{try{return CardFee::read();}catch(\Throwable){return null;}});
                 if($name==='default_pricing'){
                     $fields[]=TextInput::make('fee_percent')->label('Card fee (%)')->default(fn()=>$saved()['percent']??null)->required()->maxLength(6)->live(debounce:500);
@@ -203,15 +280,38 @@ final class SettingsActions
                 $fields[]=\Filament\Schemas\Components\Text::make('These switches control new sales here. They do not renew domains at the registrar.');
                 $fields[]=Checkbox::make('verified')->label('I checked these against this account’s setup');
             }
+            $sellerSubmit=true;$submitLabel='Confirm';$cancelLabel=null;$submitAction=null;
             if($name==='seller'){
                 $policy=self::cached(static fn()=>\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',Tld::findOrFail($tld)->tld)->first());
-                $choices=self::cached(static fn()=>TldRegistrar::choices($tld));
+                $choices=static function(bool $register,bool $transfer)use($tld):array {
+                    static $results=[];
+                    $key=(int)$register.':'.(int)$transfer;
+                    return $results[$key]??=TldRegistrar::choices($tld,$register,$transfer);
+                };
+                $proposed=fn(Get $get)=>$choices((bool)$get('register'),(bool)$get('transfer'));
+                $selectable=fn()=>TldRegistrar::selectable($choices(false,false))
+                    ||TldRegistrar::selectable($choices(false,true));
+                $hasSeller=fn()=>$policy()?->server_id!==null;
+                $sellerSubmit=fn()=>$selectable()||$hasSeller();
+                $submitLabel=fn()=>$selectable()?'Confirm':'Remove registrar';
+                $cancelLabel=fn()=>$sellerSubmit()?'Cancel':'Close';
+                $submitAction=static function(Action $action,$livewire)use($sellerSubmit,$choices): Action|false {
+                    if(!$sellerSubmit()){return false;}
+                    $data=$livewire->getMountedAction()?->getRawData()??[];
+                    $selected=$data['seller']??null;
+                    return $action->disabled(filled($selected)
+                        &&($choices((bool)($data['register']??false),(bool)($data['transfer']??false))[(int)$selected]['disabled']??true));
+                };
+                $fields[]=Text::make(fn(Get $get)=>TldRegistrar::choiceSummary($proposed($get),Tld::findOrFail($tld)->tld));
                 $fields[]=Select::make('seller')->label('Registrar for new orders')
-                    ->options(fn()=>array_map(static fn($row)=>$row['label'],$choices()))
-                    ->disableOptionWhen(fn($value)=>$choices()[(int)$value]['disabled']??true)
-                    ->helperText(fn()=>new \Illuminate\Support\HtmlString(implode('<br>',array_map(static fn($row)=>e($row['label'].': '.$row['reason']),array_filter($choices(),static fn($row)=>$row['reason']!==null)))))
-                    ->placeholder('None')->default(fn()=>$policy()?->server_id);
-                $fields[]=Checkbox::make('register')->label('Allow registrations')->default(fn()=>$policy()?->register_enabled??false);$fields[]=Checkbox::make('transfer')->label('Allow transfers')->default(fn()=>$policy()?->transfer_enabled??false);
+                    ->options(fn(Get $get)=>array_map(static fn($row)=>$row['label'],$proposed($get)))
+                    ->disableOptionWhen(fn($value,Get $get)=>$proposed($get)[(int)$value]['disabled']??true)
+                    ->placeholder('None')->default(fn()=>$policy()?->server_id)->live()->visible($sellerSubmit)->dehydratedWhenHidden();
+                $fields[]=Checkbox::make('register')->label('Allow registrations')->default(fn()=>$policy()?->register_enabled??false)->live()->visible($selectable)->dehydratedWhenHidden();
+                $fields[]=Checkbox::make('transfer')->label('Allow transfers')->default(fn()=>$policy()?->transfer_enabled??false)->live()->visible($selectable)->dehydratedWhenHidden();
+                $fields[]=View::make('domains::admin.seller-sale-preview')->visible($selectable)
+                    ->viewData(fn (Get $get) => ['preview' => self::sellerSalePreview(
+                        Tld::findOrFail($tld)->tld, $policy()?->server_id, $proposed($get), $get)]);
             }
             if($name==='renewal_billing'){
                 $billing=static fn()=>\Paymenter\Extensions\Servers\Domains\Services\RenewalBillingSettings::read($server);
@@ -234,7 +334,7 @@ final class SettingsActions
                 $fields[]=Select::make('environment')->label('Account type')->options(['test'=>'Test','live'=>'Live'])->default(fn()=>Account::where('server_id',$server)->value('environment')??'test')->required();
                 foreach(['uid'=>'Enom user ID','token'=>'Enom API token','api_key'=>'NameSilo API key'] as $key=>$label){$fields[]=TextInput::make($key)->label($label)->password()->autocomplete('new-password')->maxLength(4096)->visible(fn($get)=>$get('registrar')===($key==='api_key'?'namesilo':'enom'))->required();}
             }
-            if(!in_array($name,Review::NO_REASON,true)){$fields[]=Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(2)->rules(['regex:'.StaffReason::SINGLE_LINE])->helperText('Use one line. Do not include credentials.');}
+            if(!in_array($name,Review::NO_REASON,true)){$fields[]=Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(2)->rules(['regex:'.StaffReason::SINGLE_LINE])->helperText('Use one line. Do not include credentials.')->visible($sellerSubmit);}
             if(($help=self::details($name))!==null){(collect($fields)->last(fn($f)=>$f instanceof Checkbox&&in_array($f->getName(),['verified','confirmed'],true))
                 ??collect($fields)->first(fn($f)=>$f instanceof Select||$f instanceof Textarea))?->hintAction(HelpHint::make($help));}
             $processing=fn()=>(bool)Account::where('server_id',$server)->value('processing_enabled');
@@ -248,8 +348,9 @@ final class SettingsActions
             $out[]=Action::make($id.($setup&&$server!==Review::ALL_ACCOUNTS?'_'.$server:''))->label($label)->color(fn()=>$name==='processing'&&$processing()?'danger':'gray')->modalWidth('lg')
                 ->visible(fn()=>!($setup&&$blocked())&&(!in_array($name,Review::PUBLISHES,true)||self::canSee(Review::permission('publish')))&&self::canSee(Staff::POLICY)&&(collect(Review::rights($name))->every(fn($right)=>self::canSee($right))||($name==='override'&&self::canSee(Review::permission('remove_override'))))&&self::featureVisible($server,$name))
                 ->requiresConfirmation(!$switch||$popup)->modalIcon($name==='probe'?self::READ_ICON:null)->modalIconColor($name==='probe'?'gray':null)->modalHidden($switch&&!$popup)->modalHeading($setup?fn()=>$popup?$turn().' '.self::POPUPS[$id].'?':self::setupHeading($name,$registrar()!==null):$label)
-                ->modalDescription($popup?fn()=>self::switchWarning($id,$server):($switch?null:($name==='probe'?fn()=>self::description($name).($registrar()==='namesilo'?' '.self::details($name):''):($name==='configure'?fn(Action $action)=>($action->getRawData()['registrar']??null)==='namesilo'?'Checks the key with one balance read, then saves it. Orders stay paused. This does not confirm who owns the account.':self::description($name):($name==='seller'&&$tld!==null?fn()=>self::sellerDescription((int)$tld):self::description($name))))))
-                ->modalSubmitActionLabel($setup?fn()=>$popup?$turn():self::submitLabel($name,$registrar()!==null):($name==='override'?'Save and publish':'Confirm'))->schema($switch?[]:$fields)
+                ->modalDescription($popup?fn()=>self::switchWarning($id,$server):($switch?null:($name==='probe'?fn()=>self::description($name).($registrar()==='namesilo'?' '.self::details($name):''):($name==='configure'?fn(Action $action)=>($action->getRawData()['registrar']??null)==='namesilo'?'Checks the key with one balance read, then saves it. Orders stay paused. This does not confirm who owns the account.':self::description($name):($name==='seller'&&$tld!==null?fn()=>self::sellerDescription((int)$tld,$policy()?->server_id,$selectable()):self::description($name))))))
+                ->modalSubmitActionLabel($setup?fn()=>$popup?$turn():self::submitLabel($name,$registrar()!==null):($name==='override'?'Save and publish':$submitLabel))->modalCancelActionLabel($cancelLabel)
+                ->modalSubmitAction($submitAction)->schema($switch?[]:$fields)
                 ->action(function(#[\SensitiveParameter] array $data,$livewire)use($id,$name,$server,$tld,$setup,$stamp,$switch){
                     try{$data=[...$data,...self::saved($id,$server)];
                         if($switch){$data+=['review_key'=>Review::ticket((int)Auth::id(),$server,$tld,$name,value($stamp)),'reason'=>self::switchOn($id,$server)?'Turned off':'Turned on'];}
@@ -333,25 +434,60 @@ final class SettingsActions
     {
         $t=$tld?Tld::find($tld):null;
         if($t===null||$rule===null){return new \Illuminate\Support\HtmlString('');}
-        $now=now()->toDateTimeImmutable();
         try{$rows=(StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE))->preview($t,$rule);}catch(\Throwable){$rows=[];}
-        if($rows===[]){return new \Illuminate\Support\HtmlString('<p>Exact registrar costs missing. '.e(TldFacts::refreshText(TldFacts::snapshot($t)['refresh']??[])).'</p>');}
+        $canSync=self::cached(fn()=>TldRegistrar::canRecheck((int)$t->server_id));
+        if($rows===[]){return new \Illuminate\Support\HtmlString('<p>Exact registrar costs missing. '.e(TldFacts::refreshText(TldFacts::snapshot($t)['refresh']??[],$canSync())).'</p>');}
+        $registrarRequirement=self::cached(fn()=>self::previewRegistrarRequirement($t));
+        $canEditTerms=self::canSee(Staff::POLICY)&&self::canSee(Review::permission('acceptance'));
         $costs=Staff::can(Staff::COSTS);$money=static fn(?string $v)=>$v===null?'None':'$'.preg_replace('/(\.\d{2}\d*?)0+$/D','$1',$v);
         $cell=static fn(string $html)=>'<td>'.$html.'</td>';
         $html='<div class="domains-preview"><table cellpadding="6"><thead><tr>';
         foreach(['Price',...($costs?['Cost']:[]),'Now','After saving'] as $label){$html.='<th scope="col">'.e($label).'</th>';}
-        $html.='</tr></thead><tbody>';$outdated=false;
+        $html.='</tr></thead><tbody>';
         foreach($rows as $row){
-            $outdated=$outdated||(!$row['synced']&&$row['cost']!==null);
-            $note=match(true){$row['cost']===null=>TldFacts::NOT_OFFERED,!$row['synced']=>'Cost out of date',$row['hold']==='below_cost'=>'Below cost: not sold',
-                $row['alert']==='below_cost'=>'Below cost: still billed',$row['hold']!==null=>'Not sold',default=>null};
+            $note=self::previewNote($row,$canSync,$registrarRequirement,$canEditTerms);
             $html.='<tr>'.$cell(e(ucfirst($row['action']).', '.$row['term'].' '.($row['term']===1?'year':'years')))
                 .($costs?$cell(e($money($row['cost']))):'').$cell(e($money($row['current'])))
-                .$cell(e(in_array($row['hold'],[null,'below_cost'],true)?$money($row['new']):'Not sold').($note===null?'':'<div class="domains-warn">'.e($note).'</div>')).'</tr>';
+                .$cell(e($money($row['new'])).($note===null?'':'<div class="domains-warn">'.e($note).'</div>')).'</tr>';
         }
         $html.='</tbody></table></div>';
-        if($outdated){$html.='<p class="domains-warn">Saving publishes prices using saved costs. New sales with out-of-date costs stay off sale until Sync prices completes.</p>';}
         return new \Illuminate\Support\HtmlString($html);
+    }
+    private static function previewNote(array $row,\Closure $canSync,\Closure $registrarRequirement,bool $canEditTerms): ?string
+    {
+        if($row['hold']===null&&$row['synced']&&$row['cost']===null){return TldFacts::NOT_OFFERED.' by this registrar for this term.';}
+        if($row['hold']==='stale_price'||(!$row['synced']&&$row['action']==='renew')){
+            return 'Cost out of date.'.($canSync()?' Use Sync prices on the TLD page.':' See the next refresh on the TLD page.');
+        }
+        if($row['alert']==='below_cost'){return TldFacts::BELOW_COST.': still billed';}
+        return match($row['hold']){
+            'below_cost'=>TldFacts::BELOW_COST.': not sold. '.TldFacts::FIXES[TldFacts::BELOW_COST],
+            'staff_stopped'=>'Sales are off. Check the sales settings on the TLD page.',
+            'staff_term_stopped'=>$row['action']==='transfer'
+                ?'Transfers are off.'.($canEditTerms?' Check Edit terms in What you sell.':'')
+                :'This term is off.'.($canEditTerms?' Check the longest registration term in Edit terms.':''),
+            'renewal_stopped'=>'Renewals are off for this TLD. Check its sales settings.',
+            'seller_changed'=>'This account is not set to sell this action.',
+            'account_unavailable'=>'Check setup on Registrar account.',
+            'unknown_facts'=>'Registrar terms are missing. Check them on the TLD page.',
+            'stale_facts'=>'Registrar terms are out of date. Check them on the TLD page.',
+            'unsupported_facts'=>$registrarRequirement(),
+            'unsupported_term','provider_disabled'=>'A required term is not offered by this registrar. Check the TLD terms.',
+            'unknown_price'=>'A required cost is missing.'.($canSync()?' Use Sync prices on the TLD page.':' The registrar price feed must supply it.'),
+            'unpublished_price'=>'A required price is missing. Check the prices for this term and annual renewal.',
+            'cost_limit'=>'Over the cost limit.'.($canEditTerms?' Check Default for new TLDs in What you sell.':''),
+            null=>$row['new']===null?'Price missing. Check the costs and pricing for this term.':null,
+            default=>'Check why sales are off on the TLD page.',
+        };
+    }
+    private static function previewRegistrarRequirement(Tld $t): string
+    {
+        $reason='This registrar '.Writer::unsupportedCause(OfferState::facts($t->catalogue_facts),(string)$t->registrar_key,(string)$t->tld);
+        $seller=TldFacts::sellerId($t->tld);
+        if(!TldRegistrar::selectable(TldRegistrar::choices((int)$t->id),$seller)){
+            return $reason.'. '.TldRegistrar::none($t->tld,$seller!==null);
+        }
+        return $reason.'. '.TldFacts::fixText($reason);
     }
     /** What saving Default pricing publishes: TLDs on enabled accounts, and who waits for a price sync. */
     private static function reach(): array

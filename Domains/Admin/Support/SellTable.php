@@ -29,7 +29,7 @@ final class SellTable
     /** @param array<int,AccountBinding> $bindings by server
      * @param \Closure():array<OfferRow> $page the rows on screen
      * @param ?\Closure():Builder $warningRows rows kept by search and every filter except For sale, which drops exactly the rows that can't be priced */
-    public function __construct(private readonly array $bindings,private readonly int $years,private readonly bool $costs,private readonly \Closure $page,private readonly bool $projected=false,private readonly ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $catalogue=null,private readonly ?\Closure $warningRows=null) {}
+    public function __construct(private readonly array $bindings,private readonly int $years,private readonly bool $costs,private readonly \Closure $page,private readonly bool $projected=false,private readonly ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $catalogue=null,private readonly ?\Closure $warningRows=null,private readonly bool $queueRecovery=true) {}
     /** The registrar's list plus saved TLDs it no longer has, so a price with no sales row still shows.
      * Those rows stay read-only and carry the negated TLD id: a write here would add a sales row. Hidden TLDs show only when already saved.
      * The cast gives the id number affinity, so SQLite matches Filament's string keys. */
@@ -37,6 +37,23 @@ final class SellTable
     { return $this->catalogue ?? \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()
         ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE); }
     public function rows(?string $focus): Builder { return $this->source()->rows($this->bindings,$focus); }
+    /** Rank only matching offers, so each displayed row keeps its own account, prices and record links. */
+    public function onePerSuffix(Builder $offers): Builder
+    {
+        $ranked=$offers->getQuery()->getConnection()->query()->fromSub($offers->toBase(),'candidate')
+            ->leftJoin('domains_sales_policies as seller',fn($join)=>$join
+                ->on('seller.tld','=','candidate.tld')
+                ->on('seller.server_id','=','candidate.server_id')
+                ->on('seller.registrar_key','=','candidate.registrar_key')
+                ->on('seller.account_fingerprint','=','candidate.account_fingerprint'));
+        $wrap=$ranked->getGrammar()->wrap(...);
+        $partition=$wrap('candidate.tld');
+        $seller=$wrap('seller.id');
+        $account=$wrap('candidate.server_id');
+        $id=$wrap('candidate.id');
+        $ranked->select('candidate.*')->selectRaw("row_number() over (partition by $partition order by case when $seller is null then 1 else 0 end, $account, $id) as suffix_rank");
+        return $offers->getModel()->newModelQuery()->fromSub($ranked,'domains_offer_rows')->where('suffix_rank',1);
+    }
     /** Use the same sale decision as the TLD status, in bounded pages, before table pagination. */
     public function forSale(Builder $query): Builder
     {
@@ -127,6 +144,13 @@ final class SellTable
         $this->facts();$tld=$this->rowTlds[self::key($row)]??null;
         return $tld===null?null:(int)$tld->id;
     }
+    public function holders(OfferRow $row): int {return $this->facts()[self::key($row)]['holders']??0;}
+    public function isDemo(OfferRow $row): bool {return $this->facts()[self::key($row)]['demo']??false;}
+    public function renewal(OfferRow $row): ?string
+    {
+        $fact=$this->facts()[self::key($row)]??null;
+        return $fact===null?null:TldFacts::priceState($fact,refresh:false)['value'];
+    }
     /** @return array{0:?string,1:?string,2?:?string} estimated price, profit and why the price is a loss, from the saved rule. Only for a row with no saved price. */
 
     /** The saved prices for this view. Staff without costs never read them. */
@@ -172,14 +196,7 @@ final class SellTable
         return $this->savedRows[self::key($row)]??null;
     }
     private function kept(string $filter): array {return $this->filtered[$filter]??=app(PriceList::class)->read($this->years,$filter,$this->scope());}
-    /** The formulas behind the current page's rows: search and filters narrow these along with the table.
-     * @param list<string> $held server:tld keys the table holds */
-    public function explanations(array $held): array
-    {
-        $keep=array_flip($held);
-        return PriceList::explain(array_filter($this->saved()['rows'],static fn(array $row):bool=>isset($keep[$row['server_id'].':'.ltrim($row['tld'],'.')])));
-    }
-    /** Narrows the table to the TLDs a price filter keeps. The same read as the CSV, so both list the same rows.
+    /** Applies the same price filter to each offer in the table and CSV.
      * Warning candidates also keep the TLDs the filter left out, so their warning stays when other rows match. */
     public function only(Builder $query,string $filter,bool $leftOut=false): Builder
     {
@@ -234,7 +251,7 @@ final class SellTable
         $key=self::key($row);$facts=$this->facts()[$key]??[];
         // The account setting or a site admin is the one repair; offer hints would point at Edit prices instead.
         if(in_array($facts['invalid_rule_kind']??null,['account_defaults','unreadable'],true)){return ['state'=>'missing','next'=>TldFacts::ruleProblem($facts),'open'=>null];}
-        $this->steps[$action]??=$this->source()->nextSteps(collect($this->rowTlds),$this->facts(),$action,$this->years,$this->hintReads);
+        $this->steps[$action]??=$this->source()->nextSteps(collect($this->rowTlds),$this->facts(),$action,$this->years,$this->hintReads,$this->queueRecovery);
         return $this->steps[$action][$key];
     }
     /** Sale intent controls absent cells; saved values still win in savedCell(). */

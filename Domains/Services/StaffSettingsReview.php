@@ -17,7 +17,7 @@ final class StaffSettingsReview
     public const ALL_ACCOUNTS=0;
     public const ACTIONS=['price_freshness'=>'Edit price freshness','call_limits'=>'Edit call limits','late_renewal'=>'Change late renewal','activate'=>'Activate live sales','enom_answer'=>'Enter Enom’s answer','live_transfer'=>'Change live transfers','live_management'=>'Change live DNS, nameservers and contacts','live_renewal'=>'Change live renewals','test_management'=>'Change test DNS, nameservers and contacts','test_renewal'=>'Change test renewals','test_transfer'=>'Change test transfers','renewal_billing'=>'Edit renewal schedule','unpaid_hold'=>'Edit unpaid hold','default_pricing'=>'Edit default pricing','card_fee'=>'Edit card fee','default_rule'=>'Edit default rule','override'=>'Save TLD override','remove_override'=>'Use default rule',
 
-        'tld_settings'=>'Review TLD availability','seller'=>'Change registrar for new orders','publish'=>'Publish prices','import'=>'Sync TLD prices','acceptance'=>'Edit what you sell','history'=>'Check Enom order history','enroll_sandbox'=>'Connect NameSilo test account','configure'=>'Edit API credentials','probe'=>'Test connection','processing'=>'Pause or resume orders','delivery_review'=>'Review notification outcome','alert_review'=>'Review notification check'];
+        'sales_setup'=>'Set up TLD sales','tld_settings'=>'Review TLD availability','seller'=>'Change registrar for new orders','publish'=>'Publish prices','import'=>'Sync TLD prices','acceptance'=>'Edit what you sell','history'=>'Check Enom order history','enroll_sandbox'=>'Connect NameSilo test account','configure'=>'Edit API credentials','probe'=>'Test connection','processing'=>'Pause or resume orders','delivery_review'=>'Review notification outcome','alert_review'=>'Review notification check'];
     private array $verified=[];
     private bool $activating=false;
     private array $before=[];
@@ -37,7 +37,7 @@ final class StaffSettingsReview
     /** Saving these publishes prices, so they also need the publish permission. */
     public const PUBLISHES=['override','remove_override','default_pricing'];
     /** Rights an action needs instead of its own. Staff who could edit the rule and the fee keep Default pricing, with no role changes. */
-    public const NEEDS=['default_pricing'=>['default_rule','card_fee']];
+    public const NEEDS=['sales_setup'=>['seller'],'default_pricing'=>['default_rule','card_fee']];
     public static function permission(string $action): string
     {if(!isset(self::ACTIONS[$action])){throw new \DomainException('Unknown settings action.');}return in_array($action,['call_limits','price_freshness'],true)?'admin.domains.settings.configure':'admin.domains.settings.'.$action;}
     public static function rights(string $action): array
@@ -128,13 +128,19 @@ final class StaffSettingsReview
     {
         return AuditEvents::recent((int)$s->id,$family,self::HISTORY_LIMIT,$lock);
     }
-    public function record(string $phase='completed',?array $outcome=null): void
+    public function record(string $phase='completed',?array $outcome=null,array $outgoing=[]): void
     {
         if(!$this->verified||DB::transactionLevel()!==1){throw new \LogicException('Locked review required.');}
         $entry=['key'=>$this->verified['key'],'actor_id'=>$this->actorId,'at'=>gmdate(DATE_ATOM),'action'=>self::ACTIONS[$this->action],
             'reason'=>$this->reason,'phase'=>$phase,...($outcome===null?[]:['outcome'=>$outcome]),'input'=>$this->input,'tld_id'=>$this->tldId,'before'=>$this->before,'after'=>$this->catalogueStamp!==null&&$this->action!=='default_pricing'?['snapshot'=>($this->catalogueStamp)()]:$this->state($this->serverId,$this->tldId)];
         // History is read per account, so a business-wide change is written to each one, disabled accounts too.
         foreach($this->serverId===self::ALL_ACCOUNTS?self::domainServers():[$this->serverId] as $id){self::append(Server::whereKey($id)->lockForUpdate()->firstOrFail(),$entry);}
+        foreach ($outgoing as $server => $endings) {
+            if ($this->action !== 'sales_setup') { throw new \LogicException('Seller switch review required.'); }
+            $changes = array_intersect_key($this->input['rows'], array_flip($endings));
+            self::append(Server::whereKey($server)->lockForUpdate()->firstOrFail(),
+                [...$entry, 'input' => ['rows' => $changes], 'outcome' => ['rows' => $endings]]);
+        }
         // One sync writes TLD after TLD under one review: the next TLD checks against this run's own last write.
         if($phase==='catalogue_imported'){$this->synced=self::stamp($this->serverId,$this->tldId,true);}
     }

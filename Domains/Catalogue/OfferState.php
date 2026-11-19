@@ -131,6 +131,13 @@ final class OfferState
             || TestCatalogueFacts::current($binding, $tld, $facts, $clock);
     }
 
+    /** Ordinary acquisition terms use the account's accepted observation. Longer renewal approvals are separate. */
+    public static function acquisitionFacts(AccountBinding $binding, object $tld, Clock $clock): ?Facts
+    {
+        $facts = self::facts($tld->catalogue_facts);
+        return self::testFactsAccepted($binding, $tld->tld, $facts, $clock) ? $facts : null;
+    }
+
     /** Optional expansion evidence is read separately; this does not change current supported terms. */
     public static function termEvidence(?string $json, string $action, int $year, \DateTimeImmutable $now): ?array
     {
@@ -211,8 +218,7 @@ final class OfferState
             && $policy->registrar_key === $binding->registrarKey && $policy->account_fingerprint === $binding->fingerprint;
         $actions = [];
         foreach (['register', 'transfer'] as $action) { if ($policy?->{$action.'_enabled'}) { $actions[] = $action; } }
-        $facts = self::facts($tld->catalogue_facts);
-        if (!self::testFactsAccepted($binding, $tld->tld, $facts, app(Clock::class))) { $facts = null; }
+        $facts = self::acquisitionFacts($binding, $tld, app(Clock::class));
         return new Snapshot(new FeedObserved($binding, $tld->tld, $costs), $facts, new Intent(...$intent),
             $revision, $publishing ? $revision : $published, $retail, $selected ? $binding : null, $actions,
             $ready, hidden: EndingChoices::hidden($tld->tld),

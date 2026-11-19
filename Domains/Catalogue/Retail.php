@@ -33,6 +33,18 @@ final class Retail
         return PricingRule::decimal(max(PricingRule::units($cost->total), $built), 4);
     }
 
+    /** The exact published quote and the resulting retained annual renewal price. */
+    public static function publication(Cost $cost, array $rule, array $costs, \DateTimeImmutable $now, ?string $annual): array
+    {
+        try { $retail = self::quote($cost, $rule, $costs); }
+        catch (\InvalidArgumentException) { $retail = null; }
+        if ($cost->key() === 'renew:1') {
+            if ($retail !== null && PricingRule::units($retail, 2) > 0 && $cost->fresh($now)) { $annual = $retail; }
+            else { $retail = $annual; }
+        }
+        return [$retail, $annual];
+    }
+
     public static function quote(Cost $cost, array $rule, array $costs = []): ?string
     {
         if (!$cost->enabled) { return null; }

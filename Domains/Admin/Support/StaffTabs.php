@@ -28,6 +28,15 @@ final class StaffTabs
     /** @return list<NavigationItem> */
     public static function tlds(string $active): array
     { return self::items($active,['All TLDs'=>[TldResource::canViewAny(),fn()=>TldResource::getUrl('index')],'What you sell'=>[WhatYouSell::canAccess(),fn()=>WhatYouSell::getUrl()]]); }
+    /** @return list<NavigationItem> */
+    public static function tldCatalogue(string $active,array $scope): array
+    {
+        $allowed=TldResource::canViewAny();
+        return self::items($active,[
+            'All TLDs'=>[$allowed,fn()=>TldResource::getUrl('index',$scope)],
+            'For sale'=>[$allowed,fn()=>TldResource::getUrl('index',[...$scope,'filters'=>[...($scope['filters']??[]),'for_sale'=>['isActive'=>1]]])],
+        ]);
+    }
     /** One tab left is no choice, so it draws no row. A page the panel never registered drops out. A tab may carry a count. */
     private static function items(string $active, array $tabs): array
     {
