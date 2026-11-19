@@ -181,7 +181,7 @@ $collisionBefore = $collision->fresh()->getAttributes();
 $rebind = $setup->preview($other->server_id, ['com','net'], $keep);
 $result = $setup->save($other->server_id, ['com','net'], $keep, $rebind['review_key'], $reason);
 same($collisionBefore, $collision->fresh()->getAttributes(), 'The refused sibling retains its native product');
-$collision->delete();
+DB::table('products')->where('id', $collision->id)->delete();
 $outgoing->update(['cost_source_unit'=>$unit]);
 same(['com'], $result['rows'], 'Seller-only actor switches the one reviewed suffix');
 same(false, array_key_exists('pricing_rule',OfferState::decode($other->fresh()->catalogue_intent)), 'Keep preserves legacy rule representation');
