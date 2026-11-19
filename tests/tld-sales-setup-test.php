@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-tlds.php';
 
-use App\Models\{Invoice, InvoiceItem, Order, Service};
+use App\Models\{Invoice, InvoiceItem, Order, Product, Service};
 use Illuminate\Support\Facades\{Auth, DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff, TldFacts};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState, Pricing, SalesSetup};
@@ -131,6 +131,19 @@ foreach ([1=>$annualPlan, 3=>$longPlan] as $years=>$plan) {
 }
 same('12.00', RetailLine::decimal($item->fresh()->price), 'Issued registration keeps the billed amount');
 
+// A projected rule can repair one USD row but cannot choose between two charges on the same plan.
+$draft = $setup->preview($id, ['com'], $custom);
+$extra = $annualPlan->prices()->where('currency_code', 'USD')->sole()->replicate();
+$extra->save();
+$before = $state();
+$duplicate = $setup->preview($id, ['com'], $custom);
+same('blocked', $duplicate['rows']['com']['status'], 'Duplicate native charges refuse the pricing change');
+same(false, $duplicate['rows']['com']['prices']['register:1']['available'], 'Conflicting charge cannot be offered for sale');
+same(null, $duplicate['review_key'], 'No confirmation for an ambiguous charge');
+commerceReject(fn () => $setup->save($id, ['com'], $custom, $draft['review_key'], $reason));
+same($before, $state(), 'A native conflict appearing after review prevents the old confirmation');
+$extra->delete();
+
 // Changing registrar with Keep preserves the native legacy own rule and both holder prices.
 $raw = OfferState::decode($other->fresh()->catalogue_intent);
 unset($raw['pricing_rule']);
@@ -153,7 +166,22 @@ same([], $rebind['rows']['com']['previous_sales'], 'Unreadable outgoing offer ha
 same('ready', $rebind['rows']['com']['status'], 'Healthy replacement can take over');
 same('blocked', $rebind['rows']['net']['status'], 'Missing target for sibling remains refused');
 expect(!empty($rebind['rows']['net']['previous_sales']), 'Healthy outgoing sibling keeps its public terms');
+// The seller change would republish both .com offers. A binding mismatch on the outgoing price refuses .com.
+$outgoing->update(['account_fingerprint'=>str_repeat('f', 64)]);
+$rebound = $setup->preview($other->server_id, ['com'], $keep);
+same('blocked', $rebound['rows']['com']['status'], 'The proposed seller cannot displace a mismatched account group');
+same(null, $rebound['review_key'], 'The mismatched group has no confirmation');
+$outgoing->update(['account_fingerprint'=>$target->account_fingerprint]);
+
+// The missing target for .net leaves its reserved-slug collision outside the .com publication.
+$netProduct = $native->product($net, 'register');
+$collision = Product::withoutEvents(fn () => Product::create(['name'=>'Hosting', 'slug'=>$netProduct->slug,
+    'category_id'=>$netProduct->category_id, 'hidden'=>false, 'allow_quantity'=>'combined', 'stock'=>7]));
+$collisionBefore = $collision->fresh()->getAttributes();
+$rebind = $setup->preview($other->server_id, ['com','net'], $keep);
 $result = $setup->save($other->server_id, ['com','net'], $keep, $rebind['review_key'], $reason);
+same($collisionBefore, $collision->fresh()->getAttributes(), 'The refused sibling retains its native product');
+$collision->delete();
 $outgoing->update(['cost_source_unit'=>$unit]);
 same(['com'], $result['rows'], 'Seller-only actor switches the one reviewed suffix');
 same(false, array_key_exists('pricing_rule',OfferState::decode($other->fresh()->catalogue_intent)), 'Keep preserves legacy rule representation');

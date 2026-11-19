@@ -305,21 +305,28 @@ final class Writer implements Catalogue
             && !in_array('transfer', (is_array($i) ? $i['stops'] ?? [] : $i->stops), true);
         // Seller row transfers for this offer's account, before and after the edit.
         $policy = DB::table('domains_sales_policies')->where('tld', $t->tld)->first();
-        $sellerBefore = $policy && (int) $policy->server_id === (int) $t->server_id && (bool) $policy->transfer_enabled;
-        $sellerTransfers = in_array($edit->kind, ['seller','sales_setup'], true) ? in_array('transfer', $edit->actions, true)
-            : $policy && (int) $policy->server_id === (int) $t->server_id && ($edit->sellerTransfers ?? (bool) $policy->transfer_enabled);
+        $selected = $policy && (int) $policy->server_id === (int) $t->server_id
+            && $policy->account_fingerprint === $t->account_fingerprint && $policy->registrar_key === $t->registrar_key;
+        $sellerBefore = $selected && (bool) $policy->transfer_enabled;
+        $sellerEdit = in_array($edit->kind, ['seller','sales_setup'], true);
+        $sellerTransfers = $sellerEdit ? in_array('transfer', $edit->actions, true)
+            : $selected && ($edit->sellerTransfers ?? (bool) $policy->transfer_enabled);
         // A transfer intent is checked on its own, so a seller row that is off can't hide it. Turning the seller row
         // on later is checked against current terms too, though the intent was already saved.
         $intentWidens = $intended($new) && !$intended($old);
         $transfer = $intended($new) && $sellerTransfers || $intentWidens;
-        $widen = $sell && !($old['sell'] ?? $defaults['defaultSell'] ?? true)
+        $startsRegistration = $edit->publishesSeller() && in_array('register', $edit->actions, true)
+            && (!$selected || !$policy->register_enabled);
+        $widen = $startsRegistration || $sell && !($old['sell'] ?? $defaults['defaultSell'] ?? true)
             || $longest > ($old['longest'] ?? $defaults['defaultLongest'] ?? 1)
             || $intentWidens || $transfer && !($intended($old) && $sellerBefore)
             || array_diff($old['stops'] ?? [], $new->stops) !== []
             || ($old['salesPaused'] ?? false) && !$new->salesPaused;
         if ($sell && \Paymenter\Extensions\Servers\Domains\Services\EndingChoices::hidden($t->tld)) { return 'This TLD is hidden.'; }
         if (!$widen) { return null; }
-        return self::termsBlock(OfferState::facts($t->catalogue_facts), $edit->binding()->registrarKey, $t->tld, $sell, $longest, $transfer, $now) === null
+        $register = $sellerEdit ? in_array('register', $edit->actions, true) : $sell;
+        $facts = $sellerEdit ? OfferState::acquisitionFacts($edit->binding(), $t, app(Clock::class)) : OfferState::facts($t->catalogue_facts);
+        return self::termsBlock($facts, $edit->binding()->registrarKey, $t->tld, $register, $longest, $transfer, $now) === null
             ? null : 'Explicit verified widening required.';
     }
 
@@ -349,6 +356,25 @@ final class Writer implements Catalogue
             || $sell && !array_filter($facts->terms['register'] ?? [], static fn ($term) => $term <= $longest)
             || $transfer && !in_array(1, $facts->terms['transfer'] ?? [], true)) { return 'unsupported_term'; }
         return null;
+    }
+
+    /** Both review and publication require every offer and price being written to match its account. */
+    public static function validateGroup(iterable $offers, iterable $prices, array|\ArrayAccess $servers, array|\ArrayAccess $accounts): void
+    {
+        foreach ($offers as $offer) {
+            $account = $accounts[$offer->server_id] ?? null;
+            $server = $servers[$offer->server_id] ?? null;
+            if (!$account || $server?->extension !== 'Domains' || !$offer->catalogue_converted
+                || $offer->account_fingerprint !== $account->account_fingerprint || $offer->registrar_key !== $account->registrar_key) {
+                throw new \DomainException('Offer binding or conversion changed.');
+            }
+        }
+        foreach ($prices as $price) {
+            $account = $accounts[$price->server_id] ?? null;
+            if (!$account || $price->account_fingerprint !== $account->account_fingerprint || $price->registrar_key !== $account->registrar_key) {
+                throw new \DomainException('Price binding changed.');
+            }
+        }
     }
 
     private function write(Command $command, Revision $expectedRevision, array $seeds, ?array $native, bool $reviewed = false): Revision
@@ -383,18 +409,7 @@ final class Writer implements Catalogue
             $defaults = $defaultsEdit ? OfferState::replaceableDefaults($accounts[$binding->serverId]->catalogue_defaults, $binding->serverId)
                 : OfferState::decode($accounts[$binding->serverId]->catalogue_defaults);
             $revision = OfferState::revision($target, $defaults, $policy); $revision->requireMatch($expectedRevision);
-            foreach ($offers as $offer) {
-                $account = $accounts[$offer->server_id]; $server = $servers[$offer->server_id];
-                if ($server->extension !== 'Domains' || !$offer->catalogue_converted
-                    || $offer->account_fingerprint !== $account->account_fingerprint || $offer->registrar_key !== $account->registrar_key) {
-                    throw new \DomainException('Offer binding or conversion changed.');
-                }
-            }
-            foreach ($rows as $p) {
-                if ($p->account_fingerprint !== $accounts[$p->server_id]->account_fingerprint || $p->registrar_key !== $accounts[$p->server_id]->registrar_key) {
-                    throw new \DomainException('Price binding changed.');
-                }
-            }
+            self::validateGroup($offers, $rows, $servers, $accounts);
             // Reauthorize after taking mutexes, before any command mutation.
             ($this->authorize)($command, null); $now = $this->clock->now();
             if ($this->current) { ($this->current)(); }

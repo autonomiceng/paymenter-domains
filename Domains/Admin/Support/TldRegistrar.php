@@ -34,8 +34,8 @@ final class TldRegistrar
             $row=$rows[$account->server_id]??null;
             $prices=SellerAvailability::state($account,$row);
             $off=!$server->enabled||$server->extension!=='Domains';
-            $facts=self::facts($account,$row);
-            $unsupported=self::termsReason($account,$row,$facts,$clock->now(),$policy,$register,$transfer);
+            $facts=self::facts($account,$row,$clock);
+            $unsupported=self::termsReason($account,$row,$facts,$clock->now(),$register,$transfer);
             $priceIssue=!$off&&$unsupported===null&&$prices!==SellerAvailability::READY;
             $reason=match(true){
                 $off=>'This registrar account is off.',
@@ -128,39 +128,36 @@ final class TldRegistrar
         return new HtmlString(implode('<br><br>',$lines));
     }
 
-    private static function facts(Account $account,?Tld $row): ?Facts
+    private static function facts(Account $account,?Tld $row,Clock $clock): ?Facts
     {
         if($row===null||!$row->catalogue_converted||$row->account_fingerprint!==$account->account_fingerprint||$row->registrar_key!==$account->registrar_key){return null;}
-        try{return OfferState::facts($row->catalogue_facts);}catch(\Throwable){return null;}
+        try{return OfferState::acquisitionFacts(AccountBindings::binding($account),$row,$clock);}catch(\Throwable){return null;}
     }
     private static function termsChecked(Account $account,string $ending,?Facts $facts,Clock $clock): bool
     {
         if(!$facts||!$facts->fresh($clock->now())){return false;}
         try{
             $binding=AccountBindings::binding($account);
-            return TermSupport::currentFacts($binding,$ending,$facts)&&OfferState::testFactsAccepted($binding,$ending,$facts,$clock);
+            return TermSupport::currentFacts($binding,$ending,$facts);
         }catch(\Throwable){return false;}
     }
     /** Known terms must fit the proposed sale. The writer can record intent while independent terms are pending. */
-    private static function termsReason(Account $account,?Tld $row,?Facts $facts,\DateTimeImmutable $now,?SalesPolicy $policy,bool $register,bool $transfer): ?string
+    private static function termsReason(Account $account,?Tld $row,?Facts $facts,\DateTimeImmutable $now,bool $register,bool $transfer): ?string
     {
-        if(!$row||!$facts||!$facts->fresh($now)){return null;}
+        if(!$row||!$facts){return null;}
         $ending=$row->tld;$registrar=(string)$account->registrar_key;
         $base=Writer::termsBlock($facts,$registrar,$ending,false,1,false,$now);
         if($base==='unsupported_facts'){
             return 'This registrar '.Writer::unsupportedCause($facts,$registrar,$ending).' for .'.$ending.'.';
         }
         if($base==='unsupported_term'){return 'This registrar does not offer annual renewals for .'.$ending.'.';}
+        if(!$facts->fresh($now)){return null;}
         try{
             $intent=OfferState::decode($row->catalogue_intent);
             $defaults=OfferState::decode($account->catalogue_defaults);
         }catch(\Throwable){return "Saved sales settings can't be read for .".$ending.'.';}
         $longest=(int)($intent['longest']??$defaults['defaultLongest']??1);
-        // Widening transfers also requires a compatible registration limit in the writer.
-        $widensTransfers=$transfer&&($policy?->server_id!==(int)$account->server_id||!$policy->transfer_enabled
-            ||!($intent['sell']??$defaults['defaultSell']??true)||!($intent['transfers']??$defaults['defaultTransfers']??false)
-            ||($intent['salesPaused']??false)||array_intersect(['renew','transfer'],$intent['stops']??[])!==[]);
-        if(($register||!$transfer||$widensTransfers)&&Writer::termsBlock($facts,$registrar,$ending,true,$longest,false,$now)!==null){
+        if(($register||!$transfer)&&Writer::termsBlock($facts,$registrar,$ending,true,$longest,false,$now)!==null){
             return 'This registrar has no registration term within the saved limit for .'.$ending.'.';
         }
         if($transfer&&Writer::termsBlock($facts,$registrar,$ending,false,$longest,true,$now)!==null){
@@ -176,8 +173,8 @@ final class TldRegistrar
         $terms=null;
         if($error->getMessage()==='Explicit verified widening required.'&&$account!==null){
             $row=Tld::where('server_id',$account->server_id)->where('tld',$ending)->first();
-            $policy=SalesPolicy::where('tld',$ending)->first();
-            $terms=self::termsReason($account,$row,self::facts($account,$row),app(Clock::class)->now(),$policy,
+            $clock=app(Clock::class);
+            $terms=self::termsReason($account,$row,self::facts($account,$row,$clock),$clock->now(),
                 (bool)($data['register']??false),(bool)($data['transfer']??false));
         }
         return match($error->getMessage()){

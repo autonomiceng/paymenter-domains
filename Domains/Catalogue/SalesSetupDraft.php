@@ -140,7 +140,7 @@ final readonly class SalesSetupDraft
                 if ($before->hidden) { throw new \DomainException('This TLD is hidden.'); }
                 $intent = $before->intent->forSeller($this->actions, get_object_vars($before->intent));
                 if ($this->longest !== null) { $intent = new Intent(...[...get_object_vars($intent), 'longest' => $this->longest]); }
-                $facts = OfferState::facts($t->catalogue_facts);
+                $facts = $before->facts;
                 $block = Writer::termsBlock($facts, $binding->registrarKey, $name, in_array('register', $this->actions, true),
                     $intent->longest ?? $intent->defaultLongest, in_array('transfer', $this->actions, true), $now);
                 $row['reason'] = match ($block) {
@@ -150,9 +150,24 @@ final readonly class SalesSetupDraft
                 };
                 [$row, $command] = $this->propose($row, $t, $before, $intent, $block, $rule, $defaultRule, $fee, $showCosts,
                     $readiness[$this->serverId], $now, $native[$t->id] ?? []);
+                if ($command || $row['status'] === 'unchanged' && $this->pricing !== 'keep') {
+                    // Seller changes also republish this suffix's other accounts. Price-only edits touch the target.
+                    $publishing = $command?->publishesSeller() ? $group : [$t];
+                    foreach ($publishing as $offer) {
+                        Writer::validateGroup([$offer], $prices[$offer->server_id.':'.$name] ?? [], $servers, $accounts);
+                        Projection::requirePublishable($offer, $native[$offer->id] ?? null, $offer->id === $t->id ? $row['prices'] : []);
+                    }
+                }
                 if ($command) { $entries[$name] = [$command, $before->revision]; }
             } catch (\DomainException|\InvalidArgumentException $error) {
+                $row['status'] = 'blocked';
                 $row['reason'] ??= $error->getMessage();
+                $row['retained_after'] = $row['retained_before'];
+                foreach ($row['prices'] as &$term) {
+                    $term['available'] = false;
+                    $term['reason'] ??= 'publication_pending';
+                }
+                unset($term);
             } catch (\JsonException|\TypeError|\ValueError $error) {
                 $row['reason'] ??= 'Saved TLD settings cannot be read.';
             }
