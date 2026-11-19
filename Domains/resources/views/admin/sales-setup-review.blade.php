@@ -1,7 +1,7 @@
 {{-- MIT, Copyright (c) 2026 Autonomic Engineering. --}}
 @php
     use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
-    use Paymenter\Extensions\Servers\Domains\Admin\Support\{RegistrarFacts, SalesSetupReview, SettingsActions, Staff};
+    use Paymenter\Extensions\Servers\Domains\Admin\Support\{RegistrarFacts, SalesSetupReview, SettingsActions, Staff, TldFacts};
     use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value;
     use Paymenter\Extensions\Servers\Domains\Presentation\{Fact, Reader, State};
     [$review, $result, $problem, $previous] = [$page->review, $page->outcome, $page->problem, $page->previousReview];
@@ -81,8 +81,12 @@
                             <div class="domains-sub">{{ SalesSetupReview::termLabel($term) }} {{ $money($amount) }}</div>
                         @endforeach
                     @endif
+                @elseif (($row['facts_state'] ?? null) === 'waiting_for_evidence')
+                    {{ Value::state(State::NotForSale, Reader::Staff, TldFacts::TERMS_EVIDENCE_MISSING.'.') }}
                 @elseif ($state === State::Checking)
-                    {{ Value::state($state, Reader::Staff, SalesSetupReview::termsCheck($row)) }}
+                    {{ $result
+                        ? Value::state($state, Reader::Staff, SalesSetupReview::termsCheck($row, true))
+                        : Value::fact(Fact::entered('Checks after saving'), SalesSetupReview::termsCheck($row, false)) }}
                 @else
                     {{ Value::state($state, Reader::Staff, match (true) {
                         $result !== null => null,

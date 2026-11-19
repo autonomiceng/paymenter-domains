@@ -74,7 +74,7 @@ final class SettingsActions
             'renewal_billing'=>'Set when renewal invoices go out.',
             'unpaid_hold'=>'Set how long an unpaid new domain order keeps its name.',
             'default_pricing'=>'Sets the pricing every TLD uses unless it has its own, and the estimated card fee. Saving publishes new prices at once. Issued invoices keep their prices.',
-            'override'=>'Saving publishes these prices at once. Registrations and transfers below cost are not sold, and Edit prices and the price list show why for each term. Renewals below cost are still billed, and each one adds an alert to its domain. Issued invoices keep their prices.',
+            'override'=>'Saving publishes the prices below. Issued invoices keep their prices.',
             'remove_override'=>'Uses Default pricing. Saving publishes the new prices at once. Issued invoices keep their prices.',
             'publish'=>'Publishes prices from saved costs and the current pricing. It does not refresh costs or change issued invoices.',
             'tld_settings'=>'Choose the years customers can buy and what is for sale.',
@@ -123,11 +123,16 @@ final class SettingsActions
                 : SalesSetupReview::blocked($row['reason']));
         }
         $state = SalesSetupReview::saleState($row);
+        if ($state === State::Checking) {
+            return Value::fact(Fact::entered('Checks after saving'), 'Confirm to queue the registrar check. Sales start when the checks pass.'.$carts);
+        }
         $note = match ($state) {
             State::ForSale => self::sellerPriceOnSave($row['prices']),
-            State::Checking => SalesSetupReview::termsCheck($row),
-            default => $row['orders_paused'] ? 'Sales stay off while orders are paused on this account.'
-                : 'Check the registrar account and its prices before selling.',
+            default => match (true) {
+                $row['orders_paused'] => 'Sales stay off while orders are paused on this account.',
+                ($row['facts_state'] ?? null) === 'waiting_for_evidence' => TldFacts::TERMS_EVIDENCE_MISSING.'.',
+                default => 'Check the registrar account and its prices before selling.',
+            },
         };
         return Value::state($state, Reader::Staff, $note.$carts);
     }
@@ -441,17 +446,28 @@ final class SettingsActions
         $canEditTerms=self::canSee(Staff::POLICY)&&self::canSee(Review::permission('acceptance'));
         $costs=Staff::can(Staff::COSTS);$money=static fn(?string $v)=>$v===null?'None':'$'.preg_replace('/(\.\d{2}\d*?)0+$/D','$1',$v);
         $cell=static fn(string $html)=>'<td>'.$html.'</td>';
-        $html='<div class="domains-preview"><table cellpadding="6"><thead><tr>';
+        $html='<div class="domains-preview domains-price-preview"><table cellpadding="6"><thead><tr>';
         foreach(['Price',...($costs?['Cost']:[]),'Now','After saving'] as $label){$html.='<th scope="col">'.e($label).'</th>';}
         $html.='</tr></thead><tbody>';
+        $notices=[];
         foreach($rows as $row){
             $note=self::previewNote($row,$canSync,$registrarRequirement,$canEditTerms);
-            $html.='<tr>'.$cell(e(ucfirst($row['action']).', '.$row['term'].' '.($row['term']===1?'year':'years')))
+            if($note!==null){$notices[$note][$row['action']][]=$row['term'];}
+            $html.='<tr><th scope="row">'.e(ucfirst($row['action']).', '.self::years([$row['term']])).'</th>'
                 .($costs?$cell(e($money($row['cost']))):'').$cell(e($money($row['current'])))
-                .$cell(e($money($row['new'])).($note===null?'':'<div class="domains-warn">'.e($note).'</div>')).'</tr>';
+                .$cell(e($money($row['new']))).'</tr>';
         }
         $html.='</tbody></table></div>';
-        return new \Illuminate\Support\HtmlString($html);
+        $summary='';
+        foreach($notices as $note=>$actions){
+            $affected=[];
+            foreach($actions as $action=>$terms){
+                $label=match($action){'register'=>'Registration','renew'=>'Renewal','transfer'=>'Transfer'};
+                $affected[]=$label.' ('.self::years($terms).')';
+            }
+            $summary.='<li><strong>'.e(implode(', ',$affected)).'</strong><br>'.e($note).'</li>';
+        }
+        return new \Illuminate\Support\HtmlString(($summary===''?'':'<ul class="domains-price-notices domains-warn">'.$summary.'</ul>').$html);
     }
     private static function previewNote(array $row,\Closure $canSync,\Closure $registrarRequirement,bool $canEditTerms): ?string
     {
@@ -459,10 +475,10 @@ final class SettingsActions
         if($row['hold']==='stale_price'||(!$row['synced']&&$row['action']==='renew')){
             return 'Cost out of date.'.($canSync()?' Use Sync prices on the TLD page.':' See the next refresh on the TLD page.');
         }
-        if($row['alert']==='below_cost'){return TldFacts::BELOW_COST.': still billed';}
+        if($row['alert']==='below_cost'){return 'Below cost. Renewals are still billed and affected domains get an alert.';}
         return match($row['hold']){
             'below_cost'=>TldFacts::BELOW_COST.': not sold. '.TldFacts::FIXES[TldFacts::BELOW_COST],
-            'staff_stopped'=>'Sales are off. Check the sales settings on the TLD page.',
+            'staff_stopped'=>'Sales are off.',
             'staff_term_stopped'=>$row['action']==='transfer'
                 ?'Transfers are off.'.($canEditTerms?' Check Edit terms in What you sell.':'')
                 :'This term is off.'.($canEditTerms?' Check the longest registration term in Edit terms.':''),

@@ -57,6 +57,16 @@ $revision=static fn()=>$ports->readOffers(new Query($binding,['com'],'register')
 $ports->apply(Edit::override($binding,'com',new Intent(sell:true,longest:1,transfers:true)),$revision());
 $ports->apply(Edit::seller($binding,'com',['register','transfer']),$revision());
 same([],$storefront->endings(),'Account prices alone cannot authorize a sale');
+$scheduler->requestFacts($binding,'com');$scheduler->tick(1);
+$waiting=$scheduler->status($binding,'com');
+same('waiting_for_evidence',$waiting['state'],'Unverified OTE terms wait for local evidence');
+same(null,$waiting['due_at'],'A provider retry cannot supply the independent evidence');
+same(['getPrices'],$GLOBALS['nsCatalogueCalls'],'Missing evidence does not start another price read');
+$waitingAt=$clock->now();$clock->instant=$waitingAt->modify('+6 hours +1 second');
+$scheduler->tick(1);
+same($waiting,$scheduler->status($binding,'com'),'Waiting remains stable beyond the longest retry interval');
+same(['getPrices'],$GLOBALS['nsCatalogueCalls'],'Waiting does not use provider capacity');
+$clock->instant=$waitingAt;
 $proof=['terms'=>['register'=>[1],'renew'=>[1],'transfer'=>[1]],'registry_fields'=>[],
     'renewal_safe'=>true,'requires_nameservers'=>false,'auto_renew_only'=>false,
     'observed_at'=>$now->format(DATE_ATOM),'fresh_until'=>$now->modify('+1 day')->format(DATE_ATOM)];
@@ -90,7 +100,10 @@ foreach([
 }
 config(['domains.namesilo_test.accounts'=>[$account->stable_identity=>$evidence]]);
 
-$scheduler->requestFacts($binding,'com');$scheduler->tick(1);
+$scheduler->tick(1);
+$after=$scheduler->status($binding,'com');
+same('ready',$after['state'],'The worker resumes automatically when current evidence is added');
+same(['getPrices','getPrices'],$GLOBALS['nsCatalogueCalls'],'Recovery confirms the saved suffix in the account feed once');
 $storedFacts=static fn()=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::facts(Tld::where('server_id',$binding->serverId)->where('tld','com')->sole()->catalogue_facts);
 same($proof['term_evidence'],$storedFacts()->expansion['term_evidence']??null,'Facts writer preserves TEST expansion evidence');
 expect(TestCatalogueFacts::current($binding,'com',$storedFacts(),$clock),'Stored expansion passes current TEST protocol equality');

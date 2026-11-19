@@ -19,7 +19,10 @@ final class OfferPorts
     public function worker(Writer $writer): OfferWork
     {
         return new OfferWork($writer, $this->clock, new AccountReadBudget($this->clock, 25, 25), $this->feed(...),
-            $this->allowance(...), $this->revision(...), $this->generation, $this->current);
+            $this->allowance(...), $this->revision(...), $this->generation, $this->current,
+            fn (AccountBinding $binding, string $revision): ?\Closure =>
+                $binding->registrarKey === 'namesilo' && $binding->environment === Environment::Test
+                    ? NameSilo\TestCatalogueFacts::checks($binding, $revision, $this->clock) : null);
     }
     public function feed(AccountBinding $binding): PricedFeed
     {

@@ -97,6 +97,7 @@ final class StaffCatalogue
             if(!$this->work||!$readable($b=$binding())){return $missing('Check account setup on Registrar account.','account');}
             if($queueRecovery){$this->work->requestFacts($b,$t->tld);}
             $status=$once['terms'][$server][$t->tld]??=$this->work->status($b,$t->tld);
+            if($status['state']==='waiting_for_evidence'){return $missing(TldFacts::TERMS_EVIDENCE_MISSING.'.');}
             if(!$queueRecovery&&$status['state']==='unknown'){return $missing('Use Sync prices on the TLD page.');}
             if($status['state']!=='unsupported'){return $waiting($status);}
             $human=$missing('Ask the registrar to confirm terms for .'.$t->tld.'.',null);
@@ -382,8 +383,11 @@ final class StaffCatalogue
             if($queue&&$queue->account_fingerprint!==$t->account_fingerprint){$queue=null;}
             $work=$queue?OfferState::decode($queue->offer_work):[];
             // A terms read that failed says so, instead of checking with no end. The next try is in the row's refresh.
-            if(!$unreadable&&in_array($reason,['unknown_facts','stale_facts'],true)&&!empty($work['facts'][$t->tld]['failure'])
-                &&$label===TldFacts::TERMS_CHECKING){$label=TldFacts::TERMS_FAILED;}
+            if(!$unreadable&&in_array($reason,['unknown_facts','stale_facts'],true)&&$label===TldFacts::TERMS_CHECKING){
+                $check=$work['facts'][$t->tld]??[];
+                if(!empty($check['waiting_for_evidence'])){$label=TldFacts::TERMS_EVIDENCE_MISSING;}
+                elseif(!empty($check['failure'])){$label=TldFacts::TERMS_FAILED;}
+            }
             // Only seller-policy writes establish selection time; pricing revisions do not.
             $selectedAt=$policy?->updated_at;
             try{$selectedAt=$selectedAt?\Carbon\CarbonImmutable::parse($selectedAt)->getTimestamp():null;}catch(\Throwable){$selectedAt=null;}

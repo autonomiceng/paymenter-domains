@@ -31,7 +31,7 @@ $probe=new ReflectionProperty(CallerRouting::class,'probe');$probe->setValue(nul
 try{$html=(new ReflectionMethod(SettingsActions::class,'preview'))->invoke(null,$t->id,$rule)->toHtml();}finally{$probe->setValue(null,null);}
 $dom=new DOMDocument();$dom->loadHTML($html);
 $xpath=new DOMXPath($dom);
-$amount=static fn(string $row):string=>trim($xpath->evaluate('string(//tr[td[1]="'.$row.'"]/td[last()]/text()[1])'));
+$amount=static fn(string $row):string=>trim($xpath->evaluate('string(//tr[th="'.$row.'"]/td[last()])'));
 same('$8.99',$amount('Transfer, 1 year'),'Show the calculated price with transfers turned off');
 same('$29.97',$amount('Register, 3 years'),'Show the calculated price when the exact term cost is stale');
 same('$7.99',$amount('Register, 1 year'),'Show the price that saving will publish for the fresh term');
@@ -72,7 +72,7 @@ try {
         $modal=$page->call('$refresh')->effects['partials']['action-modals.0']??'';
         $dom=new DOMDocument();
         $dom->loadHTML('<div>'.$modal.'</div>',LIBXML_NOERROR|LIBXML_NOWARNING);
-        return (int)(new DOMXPath($dom))->evaluate('count(//div[@class="domains-preview"]//tbody/tr)');
+        return (int)(new DOMXPath($dom))->evaluate('count(//table[thead//th[@scope="col"]]//tbody/tr)');
     };
     $page->assertActionDataSet(['pricing'=>'custom','mode'=>'markup_percent','markup'=>'25.00']);
     expect($previewRows($page)>0,'The saved percentage has a retail preview');

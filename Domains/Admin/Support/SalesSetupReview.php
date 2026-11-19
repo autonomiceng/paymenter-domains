@@ -89,6 +89,9 @@ final class SalesSetupReview
         if (self::firstSale($row['prices']) !== null) {
             return State::ForSale;
         }
+        if (($row['facts_state'] ?? null) === 'waiting_for_evidence') {
+            return State::NotForSale;
+        }
         foreach (array_diff_key($row['prices'], ['renew:1' => true]) as $price) {
             if (in_array($price['reason'], ['unknown_facts', 'stale_facts'], true)) {
                 return State::Checking;
@@ -97,11 +100,12 @@ final class SalesSetupReview
         return State::NotForSale;
     }
 
-    public static function termsCheck(array $row): string
+    public static function termsCheck(array $row, bool $saved): string
     {
+        if (!$saved) { return 'The registrar check is queued after saving. Sales start when the checks pass.'; }
         return ($row['facts_state'] ?? null) === 'stale'
             ? 'The registrar’s terms expired. Sales wait for a new check.'
-            : 'The registrar’s terms have yet to be read. Sales wait for that check.';
+            : 'Sales wait for the registrar check.';
     }
 
     public static function firstSale(array $prices): ?string

@@ -133,6 +133,7 @@ trait TldSalesPage
         if($this->fix()==='seller'&&$reason!=='No registrar selected'&&!TldFacts::canChangeSeller()){
             return rtrim($reason,'.').'. '.TldFacts::ASK_SELLER;
         }
+        if($reason===TldFacts::TERMS_EVIDENCE_MISSING){return $reason.'.';}
         if(($this->snap()['selected']??false)&&!\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::read($this->getRecord())&&!str_contains($reason,'registrar terms')){
             // Expired terms were read; they are out of date, and Sync prices refreshes them.
             return ($reason===''?'':rtrim($reason,'.').'. ').(\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::stale($this->getRecord())
