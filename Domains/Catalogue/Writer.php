@@ -324,7 +324,9 @@ final class Writer implements Catalogue
             || ($old['salesPaused'] ?? false) && !$new->salesPaused;
         if ($sell && \Paymenter\Extensions\Servers\Domains\Services\EndingChoices::hidden($t->tld)) { return 'This TLD is hidden.'; }
         if (!$widen) { return null; }
-        $register = $sellerEdit ? in_array('register', $edit->actions, true) : $sell;
+        // An override keeps the current seller's registration flag. Unbound edits retain their registration check.
+        $register = $sellerEdit ? in_array('register', $edit->actions, true)
+            : $sell && (!$selected || (bool) $policy->register_enabled);
         $facts = $sellerEdit ? OfferState::acquisitionFacts($edit->binding(), $t, app(Clock::class)) : OfferState::facts($t->catalogue_facts);
         return self::termsBlock($facts, $edit->binding()->registrarKey, $t->tld, $register, $longest, $transfer, $now) === null
             ? null : 'Explicit verified widening required.';
@@ -346,14 +348,14 @@ final class Writer implements Catalogue
 
     /** Staff may record intent while terms await refresh. A known Enom nameserver requirement
      * continues to block setup until a later observation supersedes it. */
-    public static function termsBlock(?Facts $facts, string $registrarKey, string $tld, bool $sell, int $longest, bool $transfer, \DateTimeImmutable $now): ?string
+    public static function termsBlock(?Facts $facts, string $registrarKey, string $tld, bool $register, int $longest, bool $transfer, \DateTimeImmutable $now): ?string
     {
         if ($registrarKey === 'enom' && $facts?->requiresNameservers === true) { return 'unsupported_facts'; }
         if (!$facts || !$facts->fresh($now)) { return null; }
         if (!\Paymenter\Extensions\Servers\Domains\Services\RegistryInputs::supported($registrarKey, $tld, $facts->registryFields) || $facts->renewalSafe !== true
             || $facts->requiresNameservers !== false || $facts->autoRenewOnly !== false) { return 'unsupported_facts'; }
         if (!in_array(1, $facts->terms['renew'] ?? [], true)
-            || $sell && !array_filter($facts->terms['register'] ?? [], static fn ($term) => $term <= $longest)
+            || $register && !array_filter($facts->terms['register'] ?? [], static fn ($term) => $term <= $longest)
             || $transfer && !in_array(1, $facts->terms['transfer'] ?? [], true)) { return 'unsupported_term'; }
         return null;
     }

@@ -40,7 +40,11 @@ final readonly class SalesSetup
             try { ($this->requestFacts)($binding, $name); }
             catch (\Throwable $error) {
                 $result['facts_hint_failed'][] = $name;
-                Log::warning('Domains sales setup facts request deferred.', ['server_id' => $serverId, 'tld' => $name, 'exception_class' => $error::class]);
+                try {
+                    Log::warning('Domains sales setup facts request deferred.', ['server_id' => $serverId, 'tld' => $name, 'exception_class' => $error::class]);
+                } catch (\Throwable) {
+                    // The save and its audit have committed. Keep the receipt if diagnostics fail.
+                }
             }
         }
         return $result;

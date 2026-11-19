@@ -186,9 +186,8 @@ final class StaffCommands
         // A verified checkbox is administrative intent only; this command never creates or ages Facts.
         return Edit::override($binding,$t->tld,$this->intent($raw),$rule,array_key_exists('transfer',$data)?$raw['transfers']&&!in_array('transfer',$raw['stops'],true):null);
     }
-    /** The TLD page pauses and resumes sales. The acquisition pause and sell choice change, so the TLD's own transfer
-     * and term choices survive a Stop, and Start preserves independent transfer restrictions. Start also lifts the TLD's
-     * renewal stop, and sets Sell only when the TLD doesn't sell already. */
+    /** Pause new orders or resume the selected seller's actions. Keep term choices and independent stops for
+     * actions that stay off. Start clears the renewal stop and sets Sell when needed. */
     private function sales($binding,Tld $t,array $raw,array $data,?array $rule): Edit
     {
         $stops=$raw['stops']??[];
@@ -197,8 +196,11 @@ final class StaffCommands
             return Edit::override($binding,$t->tld,$this->intent($raw),$rule);
         }
         $d=OfferState::decode(Account::where('server_id',$binding->serverId)->sole()->catalogue_defaults);
+        $policy=DB::table('domains_sales_policies')->where('tld',$t->tld)->first();
+        $actions=StaffCatalogue::startActions($t,$raw,$d,$policy);
+        if($actions===[]){throw new \DomainException('No acquisition actions to resume.');}
         $raw['salesPaused']=false;
-        $raw['stops']=array_values(array_diff($stops,['register','renew']));
+        $raw['stops']=array_values(array_diff($stops,['renew',...$actions]));
         if(!($raw['sell']??$d['defaultSell']??true)){$raw['sell']=($d['defaultSell']??true)?null:true;}
         return Edit::override($binding,$t->tld,$this->intent($raw),$rule);
     }

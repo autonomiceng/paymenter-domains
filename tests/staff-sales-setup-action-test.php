@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-tlds.php';
 
-use Illuminate\Support\Facades\{Auth, DB};
+use Illuminate\Support\Facades\{Auth, DB, Log};
 use Filament\Actions\Testing\TestAction;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
@@ -175,8 +175,30 @@ $checking->set('draft', [...$checking->get('draft'), ...$custom, 'server' => $ta
     ->set('draft.register', false)->set('draft.transfer', true)
     ->call('reviewChanges')->assertHasNoErrors();
 same(State::Checking, SalesSetupReview::saleState($checking->get('review.rows.com')), 'Unread terms hold the planned sale');
-$checking->set('confirmation', $reason)->call('save')->assertHasNoErrors();
+$receiptReason = 'Save transfer pricing pending registrar terms.';
+$checking->set('confirmation', ['reason' => $receiptReason]);
+$log = Log::getFacadeRoot();
+$diagnostics = Mockery::mock(Psr\Log\LoggerInterface::class);
+$hintWarning = static fn ($message, $context) => ($context['tld'] ?? null) === 'com'
+    && ($context['exception_class'] ?? null) === Illuminate\Database\QueryException::class;
+$diagnostics->shouldReceive('warning')->byDefault();
+$diagnostics->shouldReceive('warning')->withArgs($hintWarning)->once()
+    ->andThrow(new RuntimeException('Synthetic warning logger failure.'));
+DB::statement("CREATE TRIGGER reject_sales_terms_hint BEFORE INSERT ON domains_observation_queues
+    BEGIN SELECT RAISE(ABORT, 'fixture facts queue unavailable'); END");
+Log::swap($diagnostics);
+try {
+    $checking->call('save')->assertHasNoErrors();
+} finally {
+    Log::swap($log);
+    DB::statement('DROP TRIGGER reject_sales_terms_hint');
+}
+$diagnostics->shouldHaveReceived('warning')->withArgs($hintWarning)->once();
+$audit = collect(Review::historyRows(\App\Models\Server::findOrFail($target->server_id)))->where('reason', $receiptReason)->sole();
+same(['com'], $audit['outcome']['rows'], 'The sale committed and recorded history despite the diagnostic failure');
 same(['com'], $checking->get('outcome.rows'), 'The writer saves intent while terms need checking');
+same(['com'], $checking->get('outcome.facts_hint_failed'), 'The result retains the failed hint for the saved suffix');
+$checking->assertSet('problem', null);
 $checking->assertSee(State::Checking->label());
 $overview = StaffCatalogue::routed()->page(collect([$target->fresh()]))[$target->id];
 same(true, $overview['checking_sales'], 'A saved transfer-only choice keeps the same pending sales state on Overview');

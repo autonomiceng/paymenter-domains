@@ -66,8 +66,12 @@ final class StaffCatalogue
         if($reason==='staff_term_stopped'&&$action==='register'){return $step('off','Use Edit terms in What you sell to change the longest registration term.','tld');}
         if($reason==='staff_term_stopped'&&$action==='transfer'){return $step('off','Transfers are off. Use Edit terms in What you sell to change that choice.','tld');}
         if(in_array($reason,self::STARTS,true)){
-            try{$block=$this->start($t)['block'];}catch(\Throwable){return $missing('Check saved settings on .'.$t->tld.'.');}
-            return match($block){null=>$step('off','Use Start selling on .'.$t->tld.'.','tld'),
+            try{$start=$this->start($t);}catch(\Throwable){return $missing('Check saved settings on .'.$t->tld.'.');}
+            if($start['actions']===[]||$action!=='renew'&&!in_array($action,$start['actions'],true)){
+                return ($once['seller_rights']??=TldFacts::canChangeSeller())
+                    ?$step('off',$this->sellerStep($t,$action),'tld'):$step('off',TldFacts::ASK_SELLER);
+            }
+            return match($start['block']){null=>$step('off','Use Start selling on .'.$t->tld.'.','tld'),
                 'unsupported_facts'=>$missing(self::unsupportedNext($t),'tld'),
                 default=>$step('off','Not offered by this registrar for this term.')};
         }
@@ -206,8 +210,7 @@ final class StaffCatalogue
         $safe=$facts&&$facts->fresh($this->clock->now())&&\Paymenter\Extensions\Servers\Domains\Services\RegistryInputs::supported($t->registrar_key,$t->tld,$facts->registryFields)&&$facts->renewalSafe===true&&$facts->requiresNameservers===false&&$facts->autoRenewOnly===false&&in_array(1,$facts->terms['renew']??[],true);
         return ['register'=>$safe&&!empty($facts->terms['register']),'transfer'=>$safe&&in_array(1,$facts->terms['transfer']??[],true)];
     }
-    /** Desired term limit stays saved, including inheritance. Current support only gates availability.
-     * Transfers describe the intersection of TLD preference, independent stop and selected seller policy. */
+    /** Desired term limit stays saved, including inheritance. Current support only gates availability. */
     public function start(Tld $t): array
     {
         Staff::requireView();
@@ -216,11 +219,21 @@ final class StaffCatalogue
     }
     private static function startFor(Tld $t,array $raw,array $d,?Facts $facts,\DateTimeImmutable $now,?object $policy): array
     {
-        $longest=(int)($raw['longest']??$d['defaultLongest']??1);$transfers=(bool)($raw['transfers']??$d['defaultTransfers']??false);
-        $transfers=$transfers&&!in_array('transfer',$raw['stops']??[],true)&&$policy
-            &&(int)$policy->server_id===(int)$t->server_id&&$policy->account_fingerprint===$t->account_fingerprint&&$policy->registrar_key===$t->registrar_key&&(bool)$policy->transfer_enabled;
-        $checking=!$facts||!$facts->fresh($now);$years=$longest;
-        return ['years'=>$years,'transfers'=>$transfers,'checking'=>$checking,'block'=>Writer::termsBlock($facts,(string)$t->registrar_key,$t->tld,true,$years,$transfers,$now)];
+        $years=(int)($raw['longest']??$d['defaultLongest']??1);
+        $actions=self::startActions($t,$raw,$d,$policy);
+        return ['years'=>$years,'actions'=>$actions,'checking'=>!$facts||!$facts->fresh($now),
+            'block'=>$actions===[]?null:Writer::termsBlock($facts,(string)$t->registrar_key,$t->tld,
+                in_array('register',$actions,true),$years,in_array('transfer',$actions,true),$now)];
+    }
+    /** Resume the selected seller's actions with its independent transfer restrictions. */
+    public static function startActions(Tld $t,array $raw,array $d,?object $policy): array
+    {
+        if($policy===null||!TldTerms::matches($t,(array)$policy)){return [];}
+        return array_keys(array_filter([
+            'register'=>(bool)$policy->register_enabled,
+            'transfer'=>$policy->transfer_enabled&&($raw['transfers']??$d['defaultTransfers']??false)
+                &&!in_array('transfer',$raw['stops']??[],true),
+        ]));
     }
     public function setting(Tld $t,string $key): bool|int
     {
