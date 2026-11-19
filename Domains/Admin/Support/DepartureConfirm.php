@@ -120,17 +120,21 @@ final class DepartureConfirm
             default=>null};
         return $evidence===null?$radio:$radio->belowLabel(Text::make($evidence));
     }
-    /** What the transfer does to this domain's DNS records, by where they are served. Null for other nameservers, which
-     * a transfer does not touch. */
-    private static function dnsOutcome(Domain $d): ?string
+    /** What the departure means for this domain's DNS records, by where they are served and the reason staff picked.
+     * Until a reason is picked, and on the page, the words hold for every reason: a transfer, a move to another account
+     * and a deletion end differently. Null when there is nothing to add, as for other nameservers. */
+    private static function dnsOutcome(Domain $d,?string $reason=null): ?string
     {
         return match(DepartureChecks::dnsCase($d)){
-            'registrar'=>DepartureChecks::registryListsOther($d)?'Its records stopped working when the transfer completed.':'Its records stop working when it leaves our registrar.',
-            'hosting'=>'Its records keep working while the plan is active.',
+            'registrar'=>match($reason){
+                'other_registrar'=>DepartureChecks::registryListsOther($d)?'Its records stopped working when the transfer completed.':'Its records stop working when the transfer completes.',
+                'deleted'=>'Its records stopped working when the domain was deleted.',
+                default=>'Its records work only while the domain is with our registrar.'},
+            'hosting'=>in_array($reason,['other_registrar','other_account'],true)?'Its records keep working while the plan is active.':null,
             default=>null};
     }
     /** What confirmation changes, from the read-only preview: one short list, each item also on the page, then the
-     * one warning. */
+     * one warning. The DNS item and the email subject follow the reason once staff pick one. */
     private static function outcome(Domain $d,?string $reason=null): HtmlString
     {
         $p=self::preview($d);$items=[];$b=fn(string $s)=>'<strong>'.e($s).'</strong>';
@@ -141,7 +145,7 @@ final class DepartureConfirm
         foreach($p['credit_minor'] as $invoice=>$minor){$items[]=$b(self::invoice((int)$invoice)).e(' is cancelled, with '.self::money($minor).' to account credit.');}
         $items[]=$b('Service #'.$d->service_id).e(' is cancelled.');
         $items[]=e('The name becomes available to order.');
-        $items[]=e(implode(' ',array_filter(["Confirm doesn't change DNS.",DepartureChecks::staffDnsCase($d)[1]??null,self::dnsOutcome($d)])));
+        $items[]=e(implode(' ',array_filter(["Confirm doesn't change DNS.",DepartureChecks::staffDnsCase($d)[1]??null,self::dnsOutcome($d,$reason)])));
         $owner=self::owner($d);
         $watch=match(WatchDiscovery::departurePreview($d)){'active'=>'as an external domain','paused'=>'paused','hosting','retired'=>'not monitored',default=>null};
         if($watch!==null){$items[]=e($owner."'s monitored domain stays, {$watch}.");}

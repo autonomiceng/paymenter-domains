@@ -314,12 +314,22 @@ class ViewDomain extends RecordDetailPage
         $absent='Not in our registrar account';$where=$registrar.($d->server?->name?', '.$d->server->name:'');
         $first=$at?Value::fact($fact::entered($absent),$where.'. Read',$fact::date((int)$at,Reader::Staff)):Value::fact($fact::entered($absent),$where.'.');
         $rechecked=isset($check['at'])&&($check['rechecked']??false);$readAt=isset($read['at'])?strtotime((string)$read['at']):false;
-        $unclear=Value::state(State::UnderReview,Reader::Staff,'The latest read got no clear answer.');
+        // A recheck is an answer only when a read after the first itself found the domain missing. A recheck that failed
+        // before saving a read leaves the first read as the saved one, so this row never dates that read as its own.
+        $gone=($read['code']??null)==='domain_not_in_account';$found=$gone&&$readAt&&$readAt>(int)($check['at']??PHP_INT_MAX)?$readAt:null;
+        foreach (is_array($d->observation['departure_reads']??null)?$d->observation['departure_reads']:[] as $saved) {
+            if (is_array($saved)&&($saved['recheck']??false)&&is_int($saved['at']??null)&&$saved['at']>=(int)($check['at']??PHP_INT_MAX)) { $found=max((int)$found,$saved['at']); }
+        }
+        // A later try that got no answer: a saved failed read, or a failure the scheduler kept before any read was saved.
+        $retried=is_string($d->observation['read_retry']['at']??null)?(int)strtotime($d->observation['read_retry']['at']):0;
+        $tried=max($gone?0:(int)$readAt,$retried);$tried=$tried>($found??(int)($check['at']??0))?$tried:null;
+        $unclear=Value::state(State::UnderReview,Reader::Staff,$found===null?'The recheck got no answer. The first read is still the latest answer.':'The latest read got no answer.');
+        $times=[...($tried?[$fact::date($tried,Reader::Staff,'Last tried')]:[]),...($found?[$fact::date($found,Reader::Staff,'Last found missing')]:[])];
         $recheck=match(true){
             !isset($check['at'])=>Value::fact($fact::entered('Not scheduled'),'No automatic recheck scheduled.'),
-            $rechecked&&($read['code']??null)==='domain_not_in_account'=>$readAt?Value::fact($fact::entered($absent),'Last read',$fact::date($readAt,Reader::Staff)):Value::fact($fact::entered($absent)),
-            $rechecked=>$readAt?$unclear->when($readAt):$unclear,
-            default=>Value::state(State::Queued,Reader::Staff,'Automatic recheck scheduled',at:$fact::date((int)$check['at']+86400,Reader::Staff))};
+            !$rechecked=>Value::state(State::Queued,Reader::Staff,'Automatic recheck scheduled',at:$fact::date((int)$check['at']+86400,Reader::Staff)),
+            $found!==null&&$tried===null=>Value::fact($fact::entered($absent),'Last read',$fact::date($found,Reader::Staff)),
+            default=>$times?$unclear->detail(...$times):$unclear};
         $statuses=array_values(array_unique(array_map(fn($status)=>match(strtolower(str_replace(' ','',$status))){'ok'=>'No registry restriction reported.','clienttransferprohibited','servertransferprohibited'=>'Transfers prohibited.','pendingtransfer'=>'Transfer pending.',default=>'Registry status is not recognized.'},$registry['status']??[])));
         // The row says whose registrar the registry lists. Staff compare names only when we can't name this holding's registrar.
         $listed=is_string($registry['registrar']??null)?trim($registry['registrar']):'';$other=DepartureChecks::registryListsOther($d);$ours=DepartureChecks::registryListsOurs($d);
