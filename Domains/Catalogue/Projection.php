@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
 
-use App\Models\{Category, Plan, Product};
+use App\Models\{Category, Plan, Price, Product};
 use Illuminate\Database\Eloquent\Builder;
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Services\{NativeActivationInformation, NativeCatalogue, PricingRule};
@@ -23,21 +23,42 @@ final class Projection
     }
 
     /** displayBatch omits invalid or duplicate identities from its sellable plans. A write cannot replace them. */
-    public static function requirePublishable(Tld $tld, ?array $actions, array $prices): void
+    public static function publicationEvidence(Tld $tld, ?array $actions, array $prices): array
     {
         if ($actions === null || count($actions) !== self::productsFor([$tld])->count()) {
             throw new \DomainException('Invalid domain product mapping.');
         }
         $retailUpgrade = $tld->catalogue_published_revision !== null && !OfferState::currentPublication($tld->catalogue_published_revision);
+        $evidence = [];
         foreach ($actions as $name => $action) {
+            $product = $action['product'];
+            $evidence[$name] = ['product' => $product->id, 'stock' => $product->stock, 'plans' => []];
             if ($action['product']->plans->count() !== count($action['plans'])) {
                 throw new \DomainException('Invalid or duplicate domain plan.');
             }
             foreach ($action['plans'] as $years => $plan) {
                 $term = $prices[$name.':'.$years] ?? null;
-                $publishesPrice = $retailUpgrade || $term && ($term['available'] || $term['reason'] === 'native_price_mismatch');
-                if ($publishesPrice && $plan->prices->count() > 1) { throw new \DomainException('Duplicate domain price.'); }
+                if (!isset($term['after'])) { continue; }
+                if (!$retailUpgrade && !$term['available'] && ($term['reason'] ?? null) !== 'native_mapping_unavailable') { continue; }
+                if ($plan->prices->count() > 1) { throw new \DomainException('Duplicate domain price.'); }
+                $usd = $plan->prices->first();
+                if ($usd !== null) { self::priceDiffers($usd, $term['after']); }
+                $evidence[$name]['plans'][$years] = [$plan->id, $usd?->id, $usd?->getRawOriginal('price'), $usd?->getRawOriginal('setup_fee')];
             }
+            ksort($evidence[$name]['plans'], SORT_NUMERIC);
+        }
+        ksort($evidence, SORT_STRING);
+        return $evidence;
+    }
+
+    /** Match the native writer's exact-cent comparison, including a newly created USD row. */
+    public static function priceDiffers(Price $price, string $retail): bool
+    {
+        try {
+            return !$price->exists || PricingRule::minor($price->getRawOriginal('price')) !== PricingRule::units($retail, 2)
+                || PricingRule::minor($price->getRawOriginal('setup_fee')) !== 0;
+        } catch (\RuntimeException) {
+            throw new \DomainException('Invalid checkout price.');
         }
     }
 
@@ -103,8 +124,7 @@ final class Projection
                 if ($rows->count() > 1) { throw new \DomainException('Duplicate domain price.'); }
                 $price = $rows->first() ?? $plan->prices()->make(['currency_code' => 'USD']);
                 // Native decimal casts may have different scale. Compare exact cents before assigning.
-                if (!$price->exists || PricingRule::minor($price->getRawOriginal('price')) !== PricingRule::units($retail, 2)
-                    || PricingRule::minor($price->getRawOriginal('setup_fee')) !== 0) {
+                if (self::priceDiffers($price, $retail)) {
                     $price->fill(['price' => $retail, 'setup_fee' => '0.00'])->save();
                 }
             }

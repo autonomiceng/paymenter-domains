@@ -4,6 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-tlds.php';
 
+use App\Models\Server;
 use Illuminate\Support\Facades\{Auth, DB, Log};
 use Filament\Actions\Testing\TestAction;
 use Livewire\Livewire;
@@ -35,6 +36,14 @@ $detail = Livewire::actingAs($staff)->test(ViewTld::class, ['record' => $target-
 expect(str_contains($detail->html(), $detailUrl), 'The numeric TLD links to the dedicated setup page');
 Livewire::actingAs($viewer)->withQueryParams(['record' => $target->id])->test(SetUpSales::class)->assertForbidden();
 $singlePage = static fn() => Livewire::actingAs($staff)->withQueryParams(['record' => $target->id])->test(SetUpSales::class);
+Server::whereKey($target->server_id)->update(['enabled'=>false]);
+$disabled = $singlePage();
+same((int) $other->server_id, (int) $disabled->get('draft.server'), 'Setup starts with an enabled registrar');
+$accountDom = new DOMDocument();
+$accountDom->loadHTML($disabled->html(), LIBXML_NOERROR | LIBXML_NOWARNING);
+same(1, (new DOMXPath($accountDom))->query('//input[@type="radio" and @disabled and @value="'.$target->server_id.'"]')->length,
+    'The disabled registrar cannot be selected');
+Server::whereKey($target->server_id)->update(['enabled'=>true]);
 $detail = $singlePage()->call('mountAction', 'cancel')
     ->assertRedirect(TldResource::getUrl('view', ['record' => $target->id]).'#set-up-sales');
 $detail = $singlePage()->assertSeeHtml('wire:model.live="draft.server"')
@@ -137,6 +146,7 @@ same('26.50', $setup->get('outcome.outcomes.com.prices.register:3.after'), 'The 
 same('10.50', $setup->get('outcome.outcomes.com.prices.transfer:1.after'), 'Confirmation publishes the refreshed amount');
 same([], $setup->get('previousReview'), 'Confirmation clears the comparison');
 same($initialKeys + 1, $reviewKeyCount(), 'The confirmed review is used once');
+$setup->assertDontSeeHtml('wire:click="reviewChanges"')->assertDontSeeHtml('wire:click="save"');
 // Use a real Enom terms refusal and keep the other account's working sale.
 Auth::setUser($staff);
 DB::transaction(static fn() => RenewalBillingSettings::setSwitch((int) $other->server_id, true));
@@ -170,6 +180,9 @@ $refusal->set('confirmation', $reason)->call('save')->assertSet('outcome', null)
 same($initialKeys + 1, $reviewKeyCount(), 'The refused draft cannot be confirmed');
 
 DB::table('domains_tlds')->where('id', $target->id)->update(['catalogue_facts' => null]);
+$refusal->assertSeeHtml('wire:click="reviewChanges"')->call('reviewChanges')->assertHasNoErrors();
+same('ready', $refusal->get('review.rows.com.status'), 'The same refused draft can be reviewed after the account is fixed');
+expect($refusal->get('review.review_key') !== null, 'Recovery gives the draft a new confirmation');
 $checking = $singlePage();
 $checking->set('draft', [...$checking->get('draft'), ...$custom, 'server' => $target->server_id, 'markup' => '2.20'])
     ->set('draft.register', false)->set('draft.transfer', true)

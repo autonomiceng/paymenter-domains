@@ -27,6 +27,9 @@ $nativeId=$plan->prices()->where('currency_code','USD')->sole()->id;
 same('7.80',\Paymenter\Extensions\Servers\Domains\Services\RetailLine::decimal($plan->prices()->whereKey($nativeId)->sole()->price),'Stale publication retains the previous native amount');
 $worker=new OfferWork($ports->writer(),$clock,new AccountReadBudget($clock,25),static fn()=>throw new LogicException('Freshness repair must stay local'),static fn()=>0);
 $worker->wake($binding);$worker->accountTurn($binding->serverId);
+$setting=\App\Models\Server::findOrFail($binding->serverId)->settings()->create(['key'=>CatalogueFreshness::KEY,'type'=>'integer','value'=>48,'encrypted'=>false]);
+DB::table('settings')->where('id',$setting->id)->update(['value'=>'48broken']);
+same(null,CatalogueFreshness::readableForAccount($binding->serverId),'The age editor cannot prefill malformed hours');
 $review=new Review($actor->id,$binding->serverId,null,'price_freshness',Review::ticket($actor->id,$binding->serverId,null,'price_freshness',Review::stamp($binding->serverId,null)),'Synthetic freshness recovery');
 // The save republishes what the account sells at once, through the same writer as this fixture's storefront.
 $writes=new class($native,$sellers,$bindings) extends StaffSettingsWrites {public StaffCommands $commands;protected function catalogue():?StaffCommands{return $this->commands;}};
@@ -37,5 +40,8 @@ $worker->accountTurn($binding->serverId);
 same('$20.00',$storefront->offer('com','register',1)['price'],'The background turn keeps the republished native offer');
 same($nativeId,$plan->prices()->where('currency_code','USD')->sole()->id,'Freshness recovery retains the native price identity');
 same(72,CatalogueFreshness::forAccount($binding->serverId)->hours,'Reviewed account policy remains saved');
+$audit=collect(Review::historyRows(\App\Models\Server::findOrFail($binding->serverId)))->firstWhere('reason','Synthetic freshness recovery');
+same('unavailable',$audit['before']['price_freshness'],'Audit records the previous policy as unreadable');
+same(72,$audit['after']['price_freshness'],'Audit records the repaired age');
 $nativeSuccessful=true;
 echo "Reviewed freshness republication: ok\n";

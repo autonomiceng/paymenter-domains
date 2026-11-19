@@ -96,8 +96,9 @@ final class WatchActions
     public static function changeTemplate(WatchName $w, int $revision): Action
     {
         return self::action('watch',(int)$w->id,$revision,'profile','Change')
+            ->color('gray')->outlined()
             ->modalHeading('Change DNS template')->modalWidth('domains-template-dialog')
-            ->modalFooterActionsAlignment(Alignment::End)
+            ->modalFooterActionsAlignment(Alignment::Start)
             ->modalDescription('Checks compare '.$w->canonical_name.' with this template. Saving leaves live nameservers and DNS records unchanged.')
             ->modalSubmitActionLabel('Save')->schema(fn () => self::assignmentFields($w))
             ->visible(fn()=>in_array($w->state,['active','paused'],true) && Staff::can(Writes::VIEW) && Staff::can(Writes::MANAGE));
@@ -157,7 +158,7 @@ final class WatchActions
     }
     /** "Check now" for Missing check-time hints; hidden unless the domain is monitored. */
     public static function check(WatchName $w,int $revision,?string $retryKind=null): Action
-    {return self::action('watch',(int)$w->id,$revision,'read','Check now')->arguments($retryKind ? ['retryKind'=>$retryKind] : [])->visible(fn()=>$w->state==='active' && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));}
+    {return self::action('watch',(int)$w->id,$revision,'read','Check now')->color('gray')->outlined()->arguments($retryKind ? ['retryKind'=>$retryKind] : [])->visible(fn()=>$w->state==='active' && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));}
     public static function enable(WatchProfile $row,int $revision): Action
     {
         return self::templateGuard(self::action('profile',(int)$row->id,$revision,'enable','Turn on')->view('domains::admin.template-switch')

@@ -92,6 +92,7 @@ $migrator->run(array_values($earlyFiles), ['force' => true]);
 Schema::drop('domains_watch_audit');
 Schema::create('domains_watch_audit', static function (Blueprint $t): void {
     (new ReflectionMethod(PslReviewSchema::class, 'audit'))->invoke(null, $t, true);
+    $t->removeColumn('time_zone');
 });
 DB::table('domains_watch_audit')->insert(['subject_type' => 'synthetic', 'subject_id' => 800, 'event' => 'review',
     'after_revision' => str_repeat('e', 64), 'data' => 'retained ciphertext', 'created_at' => '2026-10-18 01:02:03']);

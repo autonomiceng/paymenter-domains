@@ -4,18 +4,24 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 
 use Paymenter\Extensions\Servers\Domains\Presentation\{Fact, State};
+use Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview as Review;
 
 final class SalesSetupReview
 {
     public const ANNUAL = ['register:1' => 'Register, 1 year', 'renew:1' => 'Renew, 1 year', 'transfer:1' => 'Transfer, 1 year'];
 
-    public static function blocked(?string $reason): string
+    public static function blocked(?string $reason, string $account = 'the registrar account'): string
     {
         if (in_array($reason, TldFacts::UNSUPPORTED, true)) {
             return 'This registrar '.$reason.'.';
         }
         return match ($reason) {
             'Seller account off.' => 'This registrar account is off. Turn it on in Servers or choose another account.',
+            'Registrar price freshness unreadable.' => 'Check the price freshness setting on '.$account.'.',
+            'Registrar account identity unreadable.' => 'Ask a site admin to check the registrar identity on '.$account.'.',
+            'Registrar sales settings unreadable.' => 'Check the saved sales settings for this TLD on '.$account.'.',
+            'Invalid domain product mapping.', 'Invalid or duplicate domain plan.', 'Duplicate domain price.', 'Invalid checkout price.' =>
+                'Ask a site admin to check the checkout product, its plans and their USD prices.',
             'Seller price missing.' => 'No eligible prices are saved on this account.',
             'Seller price unreadable.' => 'The saved prices on this account cannot be read.',
             'Requested registrar terms are unsupported.', 'Explicit verified widening required.' =>
@@ -31,6 +37,8 @@ final class SalesSetupReview
         return match ($reason) {
             null => null,
             'account_unavailable' => $ordersPaused ? 'Orders are paused' : 'Check registrar account',
+            'native_price_mismatch' => 'Checkout price differs. '.self::priceRecovery(),
+            'native_mapping_unavailable' => 'Ask a site admin to check the checkout product, its plan and its USD price.',
             'staff_stopped' => 'Sales are off',
             'renewal_stopped' => 'Renewals are off',
             'seller_changed' => 'Off for this registrar',
@@ -46,6 +54,17 @@ final class SalesSetupReview
             'unpublished_price' => 'Price missing',
             default => 'Check TLD settings',
         };
+    }
+
+    private static function priceRecovery(): string
+    {
+        $options = [];
+        if (Staff::can(Review::permission('publish'))) {
+            if (Staff::can(Review::permission('remove_override'))) { $options[] = 'Default pricing'; }
+            if (Staff::can(Review::permission('override'))) { $options[] = 'Custom pricing'; }
+        }
+        return $options ? 'Review '.implode(' or ', $options).' to publish the checkout price.'
+            : 'Ask staff with pricing access to publish the checkout price.';
     }
 
     public static function summary(array $rows): array

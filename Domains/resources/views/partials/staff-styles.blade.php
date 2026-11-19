@@ -197,10 +197,12 @@ td.domains-history-detail{min-width:20rem}
 .domains-hp-dlg input[type=search]::-webkit-search-cancel-button,.domains-hp-dlg input[type=search]::-webkit-search-decoration{-webkit-appearance:none;appearance:none;display:none}
 .domains-hp-clr{display:grid;place-items:center;min-width:44px;min-height:44px}.domains-hp-none{padding:12px 0}
 .fi-modal-window.domains-template-dialog{width:100%;max-width:30rem}
+.fi-modal-window.domains-template-dialog .fi-modal-footer-actions{justify-content:flex-end}
 .domains-template-editor{padding:clamp(1rem,2vw,1.5rem)}
 .domains-template-editor-footer{justify-content:flex-end;padding:1rem}
 /* The shared table pins its first cell. Leave room on a phone for the cells scrolling past it. */
 @media(max-width:39.99rem){
+  .domains-dialog.domains-template-dialog .fi-modal-footer .fi-modal-footer-actions{flex-direction:column;align-items:stretch}
   .domains-template-list .fi-ta-row>td:first-child .domains-panel-val{max-width:9rem;white-space:normal;overflow-wrap:anywhere}
 }
 /* Template usage and save effects have full sentences within a narrow rail. */

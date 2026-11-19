@@ -5,7 +5,7 @@ if (!($evidenceDatesBootstrapped ?? false)) { require __DIR__.'/native-app.php';
 use Illuminate\Database\MySqlConnection;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\{DB,Schema};
-use Paymenter\Extensions\Servers\Domains\Services\{AdoptionSchema,EvidenceDatesSchema,HistoryLinkSchema,Installation,NativeIntentSchema,PslReviewSchema,UserDeletionSchema};
+use Paymenter\Extensions\Servers\Domains\Services\{AdoptionSchema,EvidenceDatesSchema,HistoryLinkSchema,Installation,NativeIntentSchema,PslReviewSchema,UserDeletionSchema,WatchAuditTimeSchema};
 
 $dateDefinitions = [
     ['domains_adoptions', AdoptionSchema::class, 'definition', ['observed_at', 'valid_until']],
@@ -31,7 +31,10 @@ foreach ($dateDefinitions as [$table, $schema, $method, $dates]) {
 
 $installation = new Installation; $installation->install();
 $migration = EvidenceDatesSchema::MIGRATION;
-$record = (array) DB::table('migrations')->where('migration', $migration)->sole();
+$replayedMigrations = [$migration, WatchAuditTimeSchema::MIGRATION];
+$retainedMigrationHistory = static fn () => DB::table('migrations')->whereNotIn('migration', $replayedMigrations)
+    ->orderBy('id')->get()->toJson();
+$history = $retainedMigrationHistory();
 $when = '2026-10-18 01:02:03';
 $rows = [
     'domains_adoptions' => ['request_key' => 'date-upgrade', 'request_digest' => str_repeat('a', 64),
@@ -54,7 +57,7 @@ $snapshot = static function () use ($rows): array {
     return $out;
 };
 $before = $snapshot();
-$assertDates = static function () use ($dateDefinitions): void {
+$assertUpgradedSchema = static function () use ($dateDefinitions): void {
     foreach ($dateDefinitions as [$table, $_, $method, $dates]) {
         $columns = array_column(Schema::getColumns($table), null, 'name');
         foreach ($dates as $date) {
@@ -67,21 +70,31 @@ $assertDates = static function () use ($dateDefinitions): void {
             }
         }
     }
+    $auditColumns = array_column(Schema::getColumns('domains_watch_audit'), 'nullable', 'name');
+    expect($auditColumns['time_zone'] ?? false, 'Watch audit time zone is present and nullable');
+    same(null, DB::table('domains_watch_audit')->sole()->time_zone, 'Retained watch audit row has no time zone');
+    DB::table('migrations')->where('migration', WatchAuditTimeSchema::MIGRATION)->sole();
 };
-$assertDates();
+$assertUpgradedSchema();
 // Reproduce the shipped timestamp definitions, including MariaDB's implicit attributes.
-DB::table('migrations')->where('migration', $migration)->delete();
 if (DB::connection()->getDriverName() === 'mysql') {
     $sqlModeBefore = DB::selectOne('SELECT @@session.sql_mode AS value')->value;
     $legacyMode = implode(',', array_diff(explode(',', $sqlModeBefore), ['NO_ZERO_DATE', 'NO_ZERO_IN_DATE']));
     DB::statement('SET SESSION sql_mode = ?', [$legacyMode]);
 }
-$recreateLegacy = static function () use ($dateDefinitions): void {
+$recreateLegacy = static function () use ($dateDefinitions, $replayedMigrations): void {
+    DB::table('migrations')->whereIn('migration', $replayedMigrations)->delete();
     foreach ($dateDefinitions as [$table, $schema, $method]) {
-        $saved = array_map(static fn ($row) => (array) $row, DB::table($table)->get()->all());
+        $watchAudit = $table === 'domains_watch_audit';
+        $saved = array_map(static function ($row) use ($watchAudit): array {
+            $row = (array) $row;
+            if ($watchAudit) { unset($row['time_zone']); }
+            return $row;
+        }, DB::table($table)->get()->all());
         Schema::drop($table);
-        Schema::create($table, static function (Blueprint $t) use ($schema, $method): void {
+        Schema::create($table, static function (Blueprint $t) use ($schema, $method, $watchAudit): void {
             (new ReflectionMethod($schema, $method))->invoke(null, $t, true);
+            if ($watchAudit) { $t->removeColumn('time_zone'); }
         });
         if ($saved !== []) { DB::table($table)->insert($saved); }
     }
@@ -97,15 +110,14 @@ if (DB::connection()->getDriverName() === 'mysql') {
     DB::statement('SET SESSION sql_mode = ?', [$sqlModeBefore]);
     DB::statement('SET SESSION explicit_defaults_for_timestamp = ON');
 }
-$history = DB::table('migrations')->orderBy('id')->get()->toJson();
-$installation->install(); $assertDates();
+$installation->install(); $assertUpgradedSchema();
 if (DB::connection()->getDriverName() === 'mysql') {
     same(1, (int) DB::selectOne('SELECT @@session.explicit_defaults_for_timestamp AS value')->value, 'OFF to ON upgrade restores session setting');
     same($sqlModeBefore, DB::selectOne('SELECT @@session.sql_mode AS value')->value, 'Legacy verification restores SQL mode');
 }
 same($before, $snapshot(), 'Additive upgrade preserves every evidence value and index');
 $record = (array) DB::table('migrations')->where('migration', $migration)->sole();
-same($history, DB::table('migrations')->where('migration', '!=', $migration)->orderBy('id')->get()->toJson(), 'Prior migration records retained');
+same($history, $retainedMigrationHistory(), 'Prior migration records retained');
 $installation->install(); $installation->verify();
 same($record, (array) DB::table('migrations')->where('migration', $migration)->sole(), 'Repeated upgrade preserves migration record');
 same($before, $snapshot(), 'Repeated upgrade preserves retained evidence');
@@ -113,11 +125,11 @@ same($before, $snapshot(), 'Repeated upgrade preserves retained evidence');
 same($before, $snapshot(), 'Rollback retains evidence dates');
 if (DB::connection()->getDriverName() === 'mysql') {
     // Also retain tables created under ON when the upgrade session uses OFF.
-    DB::table('migrations')->where('migration', $migration)->delete();
     $recreateLegacy();
     DB::statement('SET SESSION explicit_defaults_for_timestamp = OFF');
-    $installation->install(); $assertDates();
+    $installation->install(); $assertUpgradedSchema();
     same($before, $snapshot(), 'ON to OFF upgrade retains all evidence');
+    same($history, $retainedMigrationHistory(), 'ON to OFF upgrade retains prior migration records');
     same(0, (int) DB::selectOne('SELECT @@session.explicit_defaults_for_timestamp AS value')->value, 'ON to OFF upgrade restores session setting');
     $record = (array) DB::table('migrations')->where('migration', $migration)->sole();
 }

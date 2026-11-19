@@ -21,7 +21,7 @@ final class PriceFreshnessAction
             ->visible(fn()=>Staff::can(Staff::POLICY)&&Staff::can(Review::permission('price_freshness')))
             ->modalHeading(self::LABEL)->modalSubmitActionLabel('Save')
             ->schema([Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,null,'price_freshness',$stamp)),
-                TextInput::make('hours')->label('Hours')->default(CatalogueFreshness::forAccount($server)->hours)->required()->integer()->minValue(24)->maxValue(168)
+                TextInput::make('hours')->label('Hours')->default(fn()=>CatalogueFreshness::readableForAccount($server)?->hours)->required()->integer()->minValue(24)->maxValue(168)
                     ->dehydrateStateUsing(static fn($state):int=>(int)$state),
                 Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(2)->rules(['regex:'.StaffReason::SINGLE_LINE])->helperText('Use one line. Do not include credentials.')])
             ->action(static function(array $data)use($server):void {

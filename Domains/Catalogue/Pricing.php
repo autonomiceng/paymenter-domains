@@ -28,4 +28,13 @@ final class Pricing
         if($rule['mode']==='markup_fee_percent'){$rule['card_fee']=$fee??CardFee::read();}
         return \Paymenter\Extensions\Servers\Domains\Services\PricingRule::validate($rule);
     }
+    /** An unreadable own rule keeps this offer unpublished. Shared settings must be readable. */
+    public static function publicationRule(Tld $tld, array $default, array $fee): ?array
+    {
+        try { return self::rule($tld, $default, $fee); }
+        catch (\DomainException|\InvalidArgumentException $error) {
+            if (!self::hasOwn($tld)) { throw $error; }
+            return null;
+        }
+    }
 }

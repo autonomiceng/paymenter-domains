@@ -221,7 +221,9 @@ class RegistrarAccount extends DetailPage
     }
     private function freshness(Server $s, Account $a): array
     {
-        return [...self::fact(PriceFreshnessAction::LABEL, CatalogueFreshness::forAccount((int) $s->id)->hours.' hours', 'Older prices stop new orders until the next successful sync.', 'Prices sync daily.'),
+        $freshness=CatalogueFreshness::readableForAccount((int) $s->id);
+        return [...self::fact(PriceFreshnessAction::LABEL, $freshness ? $freshness->hours.' hours' : State::CouldntRead->label(),
+            $freshness ? 'Older prices stop new orders until the next successful sync.' : 'Edit the price age limit before selling this account’s TLDs.', 'Prices sync daily.'),
             'edit' => true, 'buttons' => [PriceFreshnessAction::make($a, $this->reviewStamp)]];
     }
     /** Live sales, for staff who can activate: what activation does, its open causes, and Activate. The full summary is in its dialog. @return list<Row> */

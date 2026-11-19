@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head, Partial, Row
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{RecordDetailPage, Section};
 use Paymenter\Extensions\Servers\Domains\Presentation\{Reader, StaffTime, State};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,ManagedDnsSetup,OwnedDomains,StaffWatchWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,HoldingDeparture,HoldingReadRetry,ManagedDnsSetup,ObservationRecords,OwnedDomains,StaffWatchWrites};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** One domain: its own state in the head, then its sections as rows, with Activity beside them and History as a tab.
  * Each notice sits first in the section it concerns, one per section. The page follows a change at its own cadence. */
@@ -89,13 +89,7 @@ class ViewDomain extends RecordDetailPage
         $at=$this->absenceReadAt();
         return $head->note('Not in our registrar account.')->detail(\Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::registrar($d).($d->server?->name?', '.$d->server->name:'').'.'.($at?' Read '.StaffTime::at($at).'.':''));
     }
-    /** When the registrar last answered that this holding is absent: the identity-bound ownership read, else the review's first read. */
-    private function absenceReadAt(): ?int
-    {
-        $d=$this->getRecord();$proof=$d->observation['renewal_ownership']??[];
-        if (($proof['identity']??null)===\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d)&&($proof['owned']??null)===false&&is_string($proof['at']??null)&&($at=strtotime($proof['at']))!==false) { return $at; }
-        return isset($d->observation['departure_check']['at'])?(int)$d->observation['departure_check']['at']:null;
-    }
+    private function absenceReadAt(): ?int { return HoldingDeparture::absenceAt($this->getRecord()); }
     private function headLine(): array { return $this->head??=DomainFacts::head($this->getRecord(),$this->status(),$this->facts(),$this->edits()['request'],$this->notice()); }
     /** The head's step as plain text, so rows and Activity can leave out what it already says. */
     private function said(): ?string
@@ -303,22 +297,58 @@ class ViewDomain extends RecordDetailPage
             ...(($suspected&&\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::allowed()&&($watch=\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::rows($d)['watch']))?[$watch]:[])],\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::EVIDENCE);
         return [...($d->status==='active'?[...$records,...$sections]:[...$sections,...$records]),$monitoring];
     }
+    /** @return array{0: ?int, 1: ?int} First definite absence and last definite recheck. */
+    private static function departureReadTimes(Domain $d, ?int $latest): array
+    {
+        if ($latest===null) { return [null,null]; }
+        $history=$d->observation['departure_reads']??null;
+        $reads=is_array($history)?array_filter($history,fn($read)=>is_int($read['at']??null)&&is_bool($read['recheck']??null)):[];
+        $last=end($reads);
+        // Capture follows the native save, so its history timestamp can fall in the next second.
+        if (!$last || !$last['recheck'] || $last['at']<$latest) { return [$latest,null]; }
+        foreach (array_reverse($reads) as $read) {
+            if (!$read['recheck'] && $read['at']<=$latest && !HoldingReadRetry::ownedAfter($d,$read['at'])) {
+                return [$read['at'],$latest];
+            }
+        }
+        // A legacy or truncated history can retain a recheck after the first answer's date is gone.
+        return [null,$latest];
+    }
     private function departureCheck(): array
     {
         $d=$this->getRecord();$check=$d->observation['departure_check']??[];$registry=$check['registry']??[];$read=$d->observation['record_failure']??[];
         $fact=\Paymenter\Extensions\Servers\Domains\Presentation\Fact::class;
         $registrar=\Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::registrar($d);
-        // Absence saved before departure checks existed has no marker: no automatic recheck was scheduled, so staff use Check again.
-        $at=isset($check['at'])?(int)$check['at']:(isset($read['at'])&&($read['code']??null)==='domain_not_in_account'?strtotime($read['at']):null);
-        $first=Value::state(State::UnderReview,Reader::Staff,'Not in our registrar account. '.$registrar.($d->server?->name?', '.$d->server->name:'').'.');
-        if($at){$first=$first->when($at);}
+        $latest=$this->absenceReadAt(); [$at,$found]=self::departureReadTimes($d,$latest);
+        // The head carries the review state once; each read row says what that read found and when.
+        $absent='Not in our registrar account';$where=$registrar.($d->server?->name?', '.$d->server->name:'');
+        $first=$at?Value::fact($fact::entered($absent),$where.'. Read',$fact::date((int)$at,Reader::Staff)):Value::fact($fact::entered($absent),$where.'.');
+        $rechecked=isset($check['at'])&&($check['rechecked']??false);
+        $readAt=($read['identity']??null)===ObservationRecords::identity($d)
+            &&($read['code']??null)!=='domain_not_in_account'&&is_string($read['at']??null)?(int)strtotime($read['at']):0;
+        // A later try that got no answer: a saved failure or an attempt that stopped before saving any read.
+        $retried=is_string($d->observation['read_retry']['at']??null)?(int)strtotime($d->observation['read_retry']['at']):0;
+        $manual=\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::latestFailedReadAt($d);
+        $tried=max($readAt,$retried,$manual);$tried=$tried>($latest??0)?$tried:null;
+        $unclear=Value::state(State::UnderReview,Reader::Staff,$found===null?'The recheck got no answer. The first read is still the latest answer.':'The latest read got no answer.');
+        $times=[...($tried?[$fact::date($tried,Reader::Staff,'Last tried')]:[]),...($found?[$fact::date($found,Reader::Staff,'Last found missing')]:[])];
+        $scheduled=isset($check['at'])?(int)$check['at']+86400:null;
         $recheck=match(true){
-            !isset($check['at'])=>Value::fact($fact::entered('Not scheduled'),'No automatic recheck scheduled.'),
-            (bool)($check['rechecked']??false)=>Value::state(State::UnderReview,Reader::Staff,($read['code']??null)==='domain_not_in_account'?'Not in our registrar account.':'The latest read got no clear answer.'),
-            default=>Value::state(State::Queued,Reader::Staff,'Automatic recheck scheduled',at:$fact::date((int)$check['at']+86400,Reader::Staff))};
-        if(isset($check['at'])&&($check['rechecked']??false)&&isset($read['at'])){$recheck=$recheck->when(strtotime($read['at']));}
+            $scheduled===null&&$tried!==null=>Value::stateAt(State::CouldntRead,Reader::Staff,'Last tried',$fact::date($tried,Reader::Staff))
+                ->note('No automatic recheck is scheduled.'),
+            $scheduled===null=>Value::fact($fact::entered('Not scheduled'),'No automatic recheck scheduled.'),
+            !$rechecked&&$tried!==null=>Value::state(State::Queued,Reader::Staff,'The latest read got no answer.')
+                ->detail(...[...$times,$fact::date($scheduled,Reader::Staff,'Next automatic check')]),
+            !$rechecked=>Value::state(State::Queued,Reader::Staff,'Automatic recheck scheduled',at:$fact::date($scheduled,Reader::Staff)),
+            $found!==null&&$tried===null=>Value::fact($fact::entered($absent),'Last read',$fact::date($found,Reader::Staff)),
+            default=>$times?$unclear->detail(...$times):$unclear};
         $statuses=array_values(array_unique(array_map(fn($status)=>match(strtolower(str_replace(' ','',$status))){'ok'=>'No registry restriction reported.','clienttransferprohibited','servertransferprohibited'=>'Transfers prohibited.','pendingtransfer'=>'Transfer pending.',default=>'Registry status is not recognized.'},$registry['status']??[])));
-        $registryValue=match($registry['result']??null){'facts'=>Value::fact($fact::entered(isset($registry['registrar'])?'Lists '.$registry['registrar']:'No registrar listed'),trim(implode(' ',$statuses).' Compare with '.$registrar.'. Read'),isset($registry['at'])?$fact::date($registry['at'],Reader::Staff):null),'not_registered'=>Value::fact($fact::entered('Not registered')),null=>Value::state(State::NotReadYet,Reader::Staff),default=>Value::state(State::CouldntRead,Reader::Staff,'The public registry got no clear answer.')};
+        // The row says whose registrar the registry lists. Staff compare names only when we can't name this holding's registrar.
+        $listed=is_string($registry['registrar']??null)?trim($registry['registrar']):'';$other=DepartureChecks::registryListsOther($d);$ours=DepartureChecks::registryListsOurs($d);
+        $lists=match(true){$listed===''=>'No registrar listed',$other=>'Lists another registrar, '.$listed,$ours=>'Lists '.$listed.', our registrar',default=>'Lists '.$listed};
+        $found=implode(' ',[...$statuses,...($listed!==''&&!$other&&!$ours?['Compare with '.$registrar.'.']:[])]);
+        $registryValue=match($registry['result']??null){'facts'=>isset($registry['at'])?Value::fact($fact::entered($lists),trim($found.' Read'),$fact::date($registry['at'],Reader::Staff)):Value::fact($fact::entered($lists),$found!==''?$found:null),
+            'not_registered'=>Value::fact($fact::entered('Not registered')),null=>Value::state(State::NotReadYet,Reader::Staff),default=>Value::state(State::CouldntRead,Reader::Staff,'The public registry got no clear answer.')};
         // The next step stays after the automatic recheck: only a person can look at the registrar and settle it (phase B).
         $step=Row::make('Departure check',Value::fact($fact::entered('Next step: look for the domain at '.$registrar),'Then use Check again on the Recheck row.'))
             ->actions(Sheet::link('departure_registrar','Open registrar',\Paymenter\Extensions\Servers\Domains\Admin\Support\Facts::url(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::accountUrl((int)$d->server_id))));
@@ -335,7 +365,7 @@ class ViewDomain extends RecordDetailPage
         }
         // Name carries the re-entry fact, so it stays on the page when a block replaces the step.
         $outcome=\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::allowed()?array_values(array_filter(array_intersect_key(\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::rows($d),['name'=>1,'email'=>1]))):[];
-        return [$step,Row::make('First read',$first),Row::make('Recheck',$recheck)->actions($this->cachedActions['check_departure']??$this->check_departureAction()),Row::make('Public registry',$registryValue),...$outcome];
+        return [$step->key('row-departure-next-step'),Row::make('First read',$first)->key('row-first-read'),Row::make('Recheck',$recheck)->actions($this->cachedActions['check_departure']??$this->check_departureAction()),Row::make('Public registry',$registryValue),...$outcome];
     }
     /** The rail: the newest history, with the History tab holding the rest. */
     protected function rail(): array
