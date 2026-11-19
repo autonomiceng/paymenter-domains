@@ -201,6 +201,7 @@ td.domains-history-detail{min-width:20rem}
 .domains-template-editor-footer{justify-content:flex-end;padding:1rem}
 /* The shared table pins its first cell. Leave room on a phone for the cells scrolling past it. */
 @media(max-width:39.99rem){
+  .fi-modal-window.domains-template-dialog .fi-modal-footer-actions{flex-direction:column}
   .domains-template-list .fi-ta-row>td:first-child .domains-panel-val{max-width:9rem;white-space:normal;overflow-wrap:anywhere}
 }
 /* Template usage and save effects have full sentences within a narrow rail. */
