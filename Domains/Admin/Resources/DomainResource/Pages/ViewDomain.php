@@ -310,15 +310,23 @@ class ViewDomain extends RecordDetailPage
         $registrar=\Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::registrar($d);
         // Absence saved before departure checks existed has no marker: no automatic recheck was scheduled, so staff use Check again.
         $at=isset($check['at'])?(int)$check['at']:(isset($read['at'])&&($read['code']??null)==='domain_not_in_account'?strtotime($read['at']):null);
-        $first=Value::state(State::UnderReview,Reader::Staff,'Not in our registrar account. '.$registrar.($d->server?->name?', '.$d->server->name:'').'.');
-        if($at){$first=$first->when($at);}
+        // The head carries the review state once; each read row says what that read found and when.
+        $absent='Not in our registrar account';$where=$registrar.($d->server?->name?', '.$d->server->name:'');
+        $first=$at?Value::fact($fact::entered($absent),$where.'. Read',$fact::date((int)$at,Reader::Staff)):Value::fact($fact::entered($absent),$where.'.');
+        $rechecked=isset($check['at'])&&($check['rechecked']??false);$readAt=isset($read['at'])?strtotime((string)$read['at']):false;
+        $unclear=Value::state(State::UnderReview,Reader::Staff,'The latest read got no clear answer.');
         $recheck=match(true){
             !isset($check['at'])=>Value::fact($fact::entered('Not scheduled'),'No automatic recheck scheduled.'),
-            (bool)($check['rechecked']??false)=>Value::state(State::UnderReview,Reader::Staff,($read['code']??null)==='domain_not_in_account'?'Not in our registrar account.':'The latest read got no clear answer.'),
+            $rechecked&&($read['code']??null)==='domain_not_in_account'=>$readAt?Value::fact($fact::entered($absent),'Last read',$fact::date($readAt,Reader::Staff)):Value::fact($fact::entered($absent)),
+            $rechecked=>$readAt?$unclear->when($readAt):$unclear,
             default=>Value::state(State::Queued,Reader::Staff,'Automatic recheck scheduled',at:$fact::date((int)$check['at']+86400,Reader::Staff))};
-        if(isset($check['at'])&&($check['rechecked']??false)&&isset($read['at'])){$recheck=$recheck->when(strtotime($read['at']));}
         $statuses=array_values(array_unique(array_map(fn($status)=>match(strtolower(str_replace(' ','',$status))){'ok'=>'No registry restriction reported.','clienttransferprohibited','servertransferprohibited'=>'Transfers prohibited.','pendingtransfer'=>'Transfer pending.',default=>'Registry status is not recognized.'},$registry['status']??[])));
-        $registryValue=match($registry['result']??null){'facts'=>Value::fact($fact::entered(isset($registry['registrar'])?'Lists '.$registry['registrar']:'No registrar listed'),trim(implode(' ',$statuses).' Compare with '.$registrar.'. Read'),isset($registry['at'])?$fact::date($registry['at'],Reader::Staff):null),'not_registered'=>Value::fact($fact::entered('Not registered')),null=>Value::state(State::NotReadYet,Reader::Staff),default=>Value::state(State::CouldntRead,Reader::Staff,'The public registry got no clear answer.')};
+        // The row says whose registrar the registry lists. Staff compare names only when we can't name this holding's registrar.
+        $listed=is_string($registry['registrar']??null)?trim($registry['registrar']):'';$other=DepartureChecks::registryListsOther($d);$ours=DepartureChecks::registryListsOurs($d);
+        $lists=match(true){$listed===''=>'No registrar listed',$other=>'Lists another registrar, '.$listed,$ours=>'Lists '.$listed.', our registrar',default=>'Lists '.$listed};
+        $found=implode(' ',[...$statuses,...($listed!==''&&!$other&&!$ours?['Compare with '.$registrar.'.']:[])]);
+        $registryValue=match($registry['result']??null){'facts'=>isset($registry['at'])?Value::fact($fact::entered($lists),trim($found.' Read'),$fact::date($registry['at'],Reader::Staff)):Value::fact($fact::entered($lists),$found!==''?$found:null),
+            'not_registered'=>Value::fact($fact::entered('Not registered')),null=>Value::state(State::NotReadYet,Reader::Staff),default=>Value::state(State::CouldntRead,Reader::Staff,'The public registry got no clear answer.')};
         // The next step stays after the automatic recheck: only a person can look at the registrar and settle it (phase B).
         $step=Row::make('Departure check',Value::fact($fact::entered('Next step: look for the domain at '.$registrar),'Then use Check again on the Recheck row.'))
             ->actions(Sheet::link('departure_registrar','Open registrar',\Paymenter\Extensions\Servers\Domains\Admin\Support\Facts::url(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::accountUrl((int)$d->server_id))));

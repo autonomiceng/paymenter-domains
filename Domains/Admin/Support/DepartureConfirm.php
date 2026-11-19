@@ -81,7 +81,7 @@ final class DepartureConfirm
             ->schema(fn()=>[
                 Hidden::make('review_key')->default(fn()=>StaffHoldingReview::ticket((int)Auth::id(),(int)$d->id,HoldingDeparture::ACTION,
                     StaffHoldingReview::stamp(HoldingLocks::take($d,advisory:true)),app(Clock::class))),
-                Radio::make('reason')->label('Reason')->required()->markAsRequired(false)->live()->options(array_map(fn($r)=>rtrim($r,'.'),HoldingDeparture::REASONS)),
+                self::reason($d),
                 // The helper sits under the label, before the field, so it is read before typing (mock 06).
                 Textarea::make('note')->label('Staff note (required)')->required()->markAsRequired(false)->minLength(5)->maxLength(500)->rows(2)
                     ->extraInputAttributes(['aria-describedby'=>'domains-departure-note-help-'.$d->id])
@@ -108,6 +108,27 @@ final class DepartureConfirm
                 $action->halt();
             });
     }
+    /** The reason choice. The public registry's answer, already on the page, sits under the label so staff read it
+     * before choosing; nothing is picked for them. */
+    private static function reason(Domain $d): Radio
+    {
+        $radio=Radio::make('reason')->label('Reason')->required()->markAsRequired(false)->live()->options(array_map(fn($r)=>rtrim($r,'.'),HoldingDeparture::REASONS));
+        $listed=trim((string)($d->observation['departure_check']['registry']['registrar']??''));
+        $evidence=match(true){
+            DepartureChecks::registryListsOther($d)=>'The public registry lists another registrar, '.rtrim($listed,'.').'.',
+            DepartureChecks::registryListsOurs($d)=>'The public registry still lists our registrar. Check our registrar account before confirming.',
+            default=>null};
+        return $evidence===null?$radio:$radio->belowLabel(Text::make($evidence));
+    }
+    /** What the transfer does to this domain's DNS records, by where they are served. Null for other nameservers, which
+     * a transfer does not touch. */
+    private static function dnsOutcome(Domain $d): ?string
+    {
+        return match(DepartureChecks::dnsCase($d)){
+            'registrar'=>DepartureChecks::registryListsOther($d)?'Its records stopped working when the transfer completed.':'Its records stop working when it leaves our registrar.',
+            'hosting'=>'Its records keep working while the plan is active.',
+            default=>null};
+    }
     /** What confirmation changes, from the read-only preview: one short list, each item also on the page, then the
      * one warning. */
     private static function outcome(Domain $d,?string $reason=null): HtmlString
@@ -120,7 +141,7 @@ final class DepartureConfirm
         foreach($p['credit_minor'] as $invoice=>$minor){$items[]=$b(self::invoice((int)$invoice)).e(' is cancelled, with '.self::money($minor).' to account credit.');}
         $items[]=$b('Service #'.$d->service_id).e(' is cancelled.');
         $items[]=e('The name becomes available to order.');
-        $items[]=e(trim("Confirm doesn't change DNS. ".(DepartureChecks::staffDnsCase($d)[1]??'')));
+        $items[]=e(implode(' ',array_filter(["Confirm doesn't change DNS.",DepartureChecks::staffDnsCase($d)[1]??null,self::dnsOutcome($d)])));
         $owner=self::owner($d);
         $watch=match(WatchDiscovery::departurePreview($d)){'active'=>'as an external domain','paused'=>'paused','hosting','retired'=>'not monitored',default=>null};
         if($watch!==null){$items[]=e($owner."'s monitored domain stays, {$watch}.");}
@@ -173,7 +194,7 @@ final class DepartureConfirm
         }
         if(isset($facts['Service'])&&($facts['Service']['value']??null)!==null){$facts['Service']['sub']='Service #'.$d->service_id.'. Cancelled on confirm.';}
         // Muted DNS records say it in their reason instead (ViewDomain::row).
-        if(isset($facts['DNS records'])&&DepartureChecks::dnsStopped($d)===null){$sub=$facts['DNS records']['sub']??null;$add="Confirm doesn't change DNS.";
+        if(isset($facts['DNS records'])&&DepartureChecks::dnsStopped($d)===null){$sub=$facts['DNS records']['sub']??null;$add=trim((string)self::dnsOutcome($d)." Confirm doesn't change DNS.");
             $facts['DNS records']['sub']=$sub instanceof Htmlable?new HtmlString($sub->toHtml().' '.e($add)):trim((string)$sub.' '.$add);}
         return $facts;
     }

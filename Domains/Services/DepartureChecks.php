@@ -83,12 +83,18 @@ final class DepartureChecks
      * registrar no longer serves its DNS. No answer, no registrar listed (including a blank name) or a registrar we can't
      * name reads as false. */
     public static function registryListsOther(Domain $d): bool
+    { return self::registryOther($d)===true; }
+    /** The public registry's last answer still lists this holding's registrar, so no transfer shows there yet. */
+    public static function registryListsOurs(Domain $d): bool
+    { return self::registryOther($d)===false; }
+    /** True when the registry's last answer lists another registrar, false when it lists ours, null when it can't say. */
+    private static function registryOther(Domain $d): ?bool
     {
         $registry=$d->observation['departure_check']['registry']??null;
         $ours=match($d->registrar_key){'enom'=>'enom','namesilo'=>'namesilo',default=>null};
-        if(!is_array($registry)||($registry['result']??null)!=='facts'||!is_string($registry['registrar']??null)||$ours===null){return false;}
+        if(!is_array($registry)||($registry['result']??null)!=='facts'||!is_string($registry['registrar']??null)||$ours===null){return null;}
         $listed=(string)preg_replace('/[^a-z0-9]/','',strtolower($registry['registrar']));
-        return $listed!==''&&!str_contains($listed,$ours);
+        return $listed===''?null:!str_contains($listed,$ours);
     }
     /** Why DNS records can't be edited: the domain used our registrar's DNS and the registry lists another registrar, so
      * nothing serves those records (mock Decision 1). Null while they may still be served. */
