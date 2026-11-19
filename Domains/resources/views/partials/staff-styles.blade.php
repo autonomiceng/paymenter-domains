@@ -69,6 +69,11 @@ td.domains-history-detail{min-width:20rem}
 .domains-money{font-variant-numeric:tabular-nums;white-space:nowrap}.fi-ta-cell .domains-money{text-align:end}
 .domains-panel-page-head .fi-ac{flex-wrap:wrap}
 @media (min-width:40rem){.domains-panel-page-head{flex-wrap:wrap!important}.domains-panel-page-head>div:first-child{min-width:0}}
+/* Keep the parent link available before the title on phones. */
+@media (max-width:39.99rem){.domains-panel-page-head .fi-breadcrumbs{display:block}}
+@media (pointer:coarse), (max-width:39.99rem){
+    .domains-panel-page-head .fi-breadcrumbs a{display:inline-flex;align-items:center;min-width:44px;min-height:44px}
+}
 .domains-small{font-size:.75rem;opacity:.75}
 .domains-quiet{opacity:.75}
 .domains-strong{font-weight:500}
@@ -138,6 +143,11 @@ td.domains-history-detail{min-width:20rem}
 .domains-panel-row-v .domains-demo-tag{display:inline-block;margin-inline-start:8px;padding:0 5px;border-radius:4px;font-size:11px;font-weight:500;line-height:16px;white-space:nowrap;vertical-align:1px}
 :where(.domains-panel-row-a,.domains-panel-row-a .fi-ac){display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:12px}
 :where(.domains-panel-row-a:empty){display:none}
+:where(.domains-panel-row-a a.fi-ac-link-action){min-width:24px;min-height:24px}
+:where(.domains-panel-row-a a.fi-ac-link-action>.fi-link-label){align-self:center}
+@media (pointer:coarse), (max-width:39.99rem){
+    :where(.domains-panel-row-a a.fi-ac-link-action){min-width:44px;min-height:44px}
+}
 /* Two actions on a phone: their own line under the value, from the left. Real specificity, so a skin's end alignment can't put them back beside the value. */
 @media(max-width:39.99rem){.domains-panel-row[data-domains-actions]>.domains-panel-row-a,.domains-panel-row[data-domains-actions]>.domains-panel-row-a .fi-ac{grid-column:1/-1;justify-content:flex-start}}
 :where(.domains-panel-nw){white-space:nowrap}:where(.domains-panel-nw .domains-help){display:inline-flex;vertical-align:middle}
