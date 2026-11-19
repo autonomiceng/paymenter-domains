@@ -42,7 +42,7 @@
     <x-filament::button type="button" wire:click="reviewChanges" wire:loading.attr="disabled">Review changes</x-filament::button>
 @else
     @php
-        $names = \App\Models\Server::whereIn('id', [$server, ...array_filter(array_column($rows, 'seller_before'))])->pluck('name', 'id');
+        $names = \App\Models\Server::whereIn('id', [$server, ...array_filter(array_column($rows, 'seller_before')), ...array_column($rows, 'problem_account')])->pluck('name', 'id');
         $account = $names[$server] ?? 'Selected registrar account';
         $accountLink = RegistrarFacts::accountLink($server, 'Open '.$account);
         $canSync = in_array('Seller price missing.', array_column($rows, 'reason'), true) && SettingsActions::syncAll($server)->isVisible();
@@ -99,7 +99,7 @@
                         Draft prices for {{ $account }}.
                     @endif
                     @if ($blocked)
-                        {{ SalesSetupReview::blocked($row['reason']) }}
+                        {{ SalesSetupReview::blocked($row['reason'], $names[$row['problem_account'] ?? $server] ?? 'the registrar account') }}
                         @if ($canSync && $row['reason'] === 'Seller price missing.')
                             Use Sync prices on this account to check for new prices. Registrar terms are checked separately.
                         @endif
@@ -184,6 +184,9 @@
                 @endif
             </section>
         @endforeach
+        @if ($result === null && !isset($review['review_key']) && in_array('blocked', array_column($rows, 'status'), true))
+            <x-filament::button type="button" wire:click="reviewChanges" wire:loading.attr="disabled">Review again</x-filament::button>
+        @endif
         @if ($result)<x-filament::link :href="$page->catalogueUrl()">Back to TLDs &amp; pricing</x-filament::link>@endif
     </div>
 @endif

@@ -6,7 +6,8 @@ require __DIR__.'/Support/staff-tlds.php';
 
 use App\Models\{Invoice, InvoiceItem, Order, Product, Server, Service};
 use Illuminate\Support\Facades\{Auth, DB};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff, TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
+use Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState, Pricing, SalesSetup};
 use Paymenter\Extensions\Servers\Domains\Services\{RetailLine, StaffSettingsReview as Review};
 
@@ -34,6 +35,24 @@ $missing = array_map(static fn ($letter) => $letter.$letter.'.test', range('a','
 $names = ['com','net','co.test', ...$missing];
 $state = static fn () => array_map(static fn ($table) => DB::table($table)->orderBy('id')->get()->toJson(),
     ['domains_tlds','domains_prices','domains_sales_policies','products','plans','prices']);
+// Only the alternate registrar has this suffix. Its unreadable settings cannot prevent a .net review.
+$absent = $other->replicate();
+$absent->tld = 'co.test';
+$absent->save();
+$alternate = Server::findOrFail($other->server_id);
+$freshness = $alternate->settings()->create(['key'=>CatalogueFreshness::KEY, 'type'=>'integer', 'value'=>48, 'encrypted'=>false]);
+DB::table('settings')->where('id', $freshness->id)->update(['value'=>'48broken']);
+$isolated = $setup->preview($id, ['co.test','net'], $custom);
+same(['blocked','ready'], array_column($isolated['rows'], 'status'), 'Invalid freshness is isolated to the unused account');
+same(null, $setup->preview($other->server_id, ['com'], $custom)['review_key'], 'Unreadable freshness cannot publish a target');
+$freshness->delete();
+$alternateAccount = DB::table('domains_accounts')->where('server_id', $other->server_id);
+$identity = $alternateAccount->value('stable_identity');
+$alternateAccount->update(['stable_identity'=>'different-test-identity']);
+$isolated = $setup->preview($id, ['co.test','net'], $custom);
+same(['blocked','ready'], array_column($isolated['rows'], 'status'), 'Unbound account cannot abort a healthy suffix');
+same(null, $setup->preview($other->server_id, ['com'], $custom)['review_key'], 'Unbound seller cannot be chosen');
+$alternateAccount->update(['stable_identity'=>$identity]);
 $before = $state();
 $draft = $setup->preview($id, $names, $custom);
 same($before, $state(), 'Preview leaves financial and seller state unchanged');
@@ -55,6 +74,9 @@ commerceReject(fn () => $setup->save($id, $names, $custom, $key, $reason));
 $role->update(['permissions' => $rights]);
 $costRow = DB::table('domains_prices')->where(['server_id'=>$id,'tld'=>'com','action'=>'renew','term'=>1]);
 $costRevision = (clone $costRow)->value('revision');
+DB::table('servers')->where('id', $id)->update(['enabled'=>false]);
+commerceReject(fn () => $setup->save($id, $names, $custom, $key, $reason));
+DB::table('servers')->where('id', $id)->update(['enabled'=>true]);
 $costRow->increment('revision');
 commerceReject(fn () => $setup->save($id, $names, $custom, $key, $reason));
 $costRow->update(['revision'=>$costRevision]);
@@ -126,7 +148,18 @@ same(null, $held['review_key'], 'Keep leaves native price repairs pending');
 foreach (['register:1','register:3'] as $term) {
     same('native_price_mismatch', $held['rows']['com']['prices'][$term]['reason'], 'Damaged native term is unavailable');
 }
+$transferProduct = $native->product($target, 'transfer');
+$transferProduct->plans()->where('billing_period', 1)->delete();
 $repair = $setup->preview($id, ['com'], $default);
+same(true, $repair['rows']['com']['prices']['transfer:1']['available'], 'Registration repair also publishes the missing eligible transfer plan');
+$annualUsd = $annualPlan->prices()->where('currency_code', 'USD');
+foreach (['price'=>'13.00','setup_fee'=>'2.00'] as $field => $drift) {
+    $annualUsd->update([$field => $drift]);
+    $before = $state();
+    commerceReject(fn () => $setup->save($id, ['com'], $default, $repair['review_key'], $reason));
+    same($before, $state(), 'A changed native '.$field.' invalidates the repair without writing');
+    $repair = $setup->preview($id, ['com'], $default);
+}
 same('ready', $repair['rows']['com']['status'], 'Matching Default can republish native USD');
 $result = $setup->save($id, ['com'], $default, $repair['review_key'], $reason);
 foreach ([1=>$annualPlan, 3=>$longPlan] as $years=>$plan) {
@@ -135,6 +168,9 @@ foreach ([1=>$annualPlan, 3=>$longPlan] as $years=>$plan) {
     same(true, $quote['available'], 'Repaired term is eligible');
     same([$quote['after'],'0.00'], [RetailLine::decimal($usd->price),RetailLine::decimal($usd->setup_fee)], 'Native charge matches publication');
 }
+$transferUsd = $transferProduct->plans()->where('billing_period', 1)->sole()->prices()->where('currency_code','USD')->sole();
+same($result['outcomes']['com']['prices']['transfer:1']['after'], RetailLine::decimal($transferUsd->price), 'New transfer plan charges its reviewed amount');
+same('pending', $invoice->fresh()->status, 'The existing unpaid invoice stays pending');
 same('12.00', RetailLine::decimal($item->fresh()->price), 'Issued registration keeps the billed amount');
 
 // A projected rule can repair one USD row but cannot choose between two charges on the same plan.
@@ -150,6 +186,20 @@ commerceReject(fn () => $setup->save($id, ['com'], $custom, $draft['review_key']
 same($before, $state(), 'A native conflict appearing after review prevents the old confirmation');
 $extra->delete();
 
+// A retained plan without a quote receives no USD write during a rule upgrade.
+$unused = $annualPlan->replicate();
+$unused->billing_period = 2;
+$unused->save();
+foreach (['21.00','22.00'] as $amount) {
+    $unused->prices()->create(['currency_code'=>'USD','price'=>$amount,'setup_fee'=>'0.00']);
+}
+$marker = OfferState::decode($target->fresh()->catalogue_published_revision);
+unset($marker['retailRule']);
+DB::table('domains_tlds')->where('id', $target->id)->update(['catalogue_published_revision'=>OfferState::json($marker)]);
+$upgrade = $setup->preview($id, ['com'], $default);
+same('ready', $upgrade['rows']['com']['status'], 'An unquoted retained term cannot block the rule upgrade');
+$setup->save($id, ['com'], $default, $upgrade['review_key'], $reason);
+same(2, $unused->prices()->count(), 'Both unused native rows are untouched');
 // Changing registrar with Keep preserves the native legacy own rule and both holder prices.
 $raw = OfferState::decode($other->fresh()->catalogue_intent);
 unset($raw['pricing_rule']);
@@ -164,6 +214,22 @@ $oldAnnual = $target->fresh()->catalogue_retained_annual_retail;
 $rebind = $setup->preview($other->server_id, ['com'], $keep);
 expect(!array_key_exists('cost',$rebind['rows']['com']['prices']['renew:1']), 'Seller-only preview omits costs');
 expect(!empty($rebind['rows']['com']['previous_sales']), 'Review includes displaced public terms');
+$oldAccount = DB::table('domains_accounts')->where('server_id', $id);
+$defaults = $oldAccount->value('catalogue_defaults');
+$oldAccount->update(['catalogue_defaults'=>OfferState::json([...OfferState::decode($defaults), 'defaultLongest'=>'invalid'])]);
+$invalidOld = $setup->preview($other->server_id, ['com'], $keep);
+same('blocked', $invalidOld['rows']['com']['status'], 'A real seller switch requires readable outgoing defaults');
+same(null, $invalidOld['review_key'], 'The switch cannot confirm an unpublishable outgoing account');
+$oldAccount->update(['catalogue_defaults'=>$defaults]);
+// The outgoing registrar no longer sells this term, but its retained annual plan has a real upgrade quote.
+$oldMarker = $target->fresh()->catalogue_published_revision;
+DB::table('domains_tlds')->where('id', $target->id)->update(['catalogue_published_revision'=>OfferState::json($marker)]);
+$extra = $annualUsd->sole()->replicate();
+$extra->save();
+$ambiguous = $setup->preview($other->server_id, ['com'], $keep);
+same('blocked', $ambiguous['rows']['com']['status'], 'Outgoing rule upgrade cannot choose between two annual USD charges');
+$extra->delete();
+DB::table('domains_tlds')->where('id', $target->id)->update(['catalogue_published_revision'=>$oldMarker]);
 $outgoing = DB::table('domains_prices')->where(['server_id'=>$id,'tld'=>'com','action'=>'register','term'=>3]);
 $unit = $outgoing->value('cost_source_unit');
 $outgoing->update(['cost_source_unit'=>'invalid']);
@@ -185,7 +251,8 @@ $collision = Product::withoutEvents(fn () => Product::create(['name'=>'Hosting',
     'category_id'=>$netProduct->category_id, 'hidden'=>false, 'allow_quantity'=>'combined', 'stock'=>7]));
 $collisionBefore = $collision->fresh()->getAttributes();
 $rebind = $setup->preview($other->server_id, ['com','net'], $keep);
-$result = $setup->save($other->server_id, ['com','net'], $keep, $rebind['review_key'], $reason);
+$switchReason = 'Move new registrations and transfers to the alternate registrar.';
+$result = $setup->save($other->server_id, ['com','net'], $keep, $rebind['review_key'], $switchReason);
 same($collisionBefore, $collision->fresh()->getAttributes(), 'The refused sibling retains its native product');
 DB::table('products')->where('id', $collision->id)->delete();
 $outgoing->update(['cost_source_unit'=>$unit]);
@@ -193,7 +260,10 @@ same(['com'], $result['rows'], 'Seller-only actor switches the one reviewed suff
 same(false, array_key_exists('pricing_rule',OfferState::decode($other->fresh()->catalogue_intent)), 'Keep preserves legacy rule representation');
 same('35.00', $other->fresh()->catalogue_retained_annual_retail, 'New seller retains holder annual');
 same($oldAnnual, $target->fresh()->catalogue_retained_annual_retail, 'Outgoing seller retains holder annual');
-same($reason,TldFacts::history($id,$target->id)[0]['reason'],'Outgoing registrar history includes switch');
+$switch = collect(Review::historyRows(Server::findOrFail($id)))->where('reason', $switchReason)->sole();
+same(['com'], $switch['outcome']['rows'], 'Outgoing history records only the switched suffix');
+same([$id, (int) $other->server_id], [$switch['input']['rows']['com']['seller_before'], $switch['input']['rows']['com']['server_id']],
+    'Outgoing history identifies both accounts in this seller switch');
 Auth::setUser($actor);
 
 $combined = $setup->preview($id,['com'],$custom);

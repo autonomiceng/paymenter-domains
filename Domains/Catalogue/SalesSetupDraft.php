@@ -69,7 +69,6 @@ final readonly class SalesSetupDraft
     {
         $this->authorize();
         $account = Account::where('server_id', $this->serverId)->sole();
-        $binding = AccountBindings::binding($account);
         $server = Server::findOrFail($this->serverId);
         $staffStamp = StaffCommands::stamp($this->serverId);
         $fee = CardFee::read();
@@ -87,9 +86,21 @@ final readonly class SalesSetupDraft
         $rows = $entries = $readiness = [];
         $accounts = Account::whereIn('server_id', $groups->pluck('server_id')->push($this->serverId))->get()->keyBy('server_id');
         $servers = Server::whereIn('id', $accounts->keys())->get()->keyBy('id');
-        $freshness = CatalogueFreshness::forAccounts($accounts->keys()->all());
+        $freshness = CatalogueFreshness::forAccounts($accounts->keys()->all(), omitInvalid: true);
+        $bindings = $accountErrors = [];
         foreach ($accounts as $id => $a) {
-            $b = AccountBindings::binding($a);
+            try {
+                $bindings[$id] = AccountBindings::binding($a);
+            } catch (\DomainException|\InvalidArgumentException|\TypeError|\ValueError) {
+                $accountErrors[$id] = 'Registrar account identity unreadable.';
+                continue;
+            }
+            if (!isset($freshness[$id])) {
+                $accountErrors[$id] = 'Registrar price freshness unreadable.';
+                continue;
+            }
+            $b = $bindings[$id];
+            $credential = null;
             try {
                 $credential = $this->bindings->offerCredentialRevision($b);
                 $this->bindings->requireOfferAccount($b, $servers[$id], $a);
@@ -98,9 +109,9 @@ final readonly class SalesSetupDraft
             foreach (['register','renew','transfer'] as $action) {
                 $readiness[$id][$action] = $ready && ($this->feature)($b, $action);
             }
-            $evidence[] = [$id, $b->fingerprint, $credential ?? null, $readiness[$id], $freshness[$id]->hours];
-            unset($credential);
+            $evidence[] = [$id, $b->fingerprint, $credential, $readiness[$id], $freshness[$id]->hours];
         }
+        $binding = $bindings[$this->serverId] ?? null;
         $groups = $groups->groupBy('tld');
         $prices = $prices->groupBy(fn ($p) => $p->server_id.':'.$p->tld);
         foreach ($this->suffixes as $name) {
@@ -115,10 +126,9 @@ final readonly class SalesSetupDraft
                 'actions_after' => $this->actions, 'status' => 'blocked', 'reason' => null, 'prices' => [],
                 'previous_sales' => [], 'retained_before' => $t?->catalogue_retained_annual_retail,
                 'retained_after' => $t?->catalogue_retained_annual_retail];
-            if ($old && isset($accounts[$oldId])) {
+            if ($old && isset($readiness[$oldId])) {
                 try {
-                    $oldBinding = AccountBindings::binding($accounts[$oldId]);
-                    $oldSnapshot = $this->snapshot($oldBinding, $old, $accounts[$oldId], $policy,
+                    $oldSnapshot = $this->snapshot($bindings[$oldId], $old, $accounts[$oldId], $policy,
                         $prices[$oldId.':'.$name] ?? collect(), $freshness[$oldId]);
                     foreach ($this->terms($oldSnapshot, $readiness[$oldId], $now, $native[$old->id] ?? []) as $key => $term) {
                         if ($key !== 'renew:1' && $term['available']) { $row['previous_sales'][$key] = $term['retail']; }
@@ -130,6 +140,9 @@ final readonly class SalesSetupDraft
             }
             try {
                 if (!$server->enabled || $server->extension !== 'Domains') { throw new \DomainException('Seller account off.'); }
+                if (isset($accountErrors[$this->serverId])) {
+                    throw new \DomainException($accountErrors[$this->serverId]);
+                }
                 $availability = SellerAvailability::state($account, $t);
                 if ($availability !== SellerAvailability::READY) {
                     throw new \DomainException($availability === SellerAvailability::UNREADABLE ? 'Seller price unreadable.' : 'Seller price missing.');
@@ -154,22 +167,33 @@ final readonly class SalesSetupDraft
                     // Seller changes also republish this suffix's other accounts. Price-only edits touch the target.
                     $publishing = $command?->publishesSeller() ? $group : [$t];
                     foreach ($publishing as $offer) {
-                        Writer::validateGroup([$offer], $prices[$offer->server_id.':'.$name] ?? [], $servers, $accounts);
-                        Projection::requirePublishable($offer, $native[$offer->id] ?? null, $offer->id === $t->id ? $row['prices'] : []);
+                        $id = (int) $offer->server_id;
+                        $source = $prices[$id.':'.$name] ?? collect();
+                        $row['problem_account'] = $id;
+                        Writer::validateGroup([$offer], $source, $servers, $accounts);
+                        if (isset($accountErrors[$id])) {
+                            throw new \DomainException($accountErrors[$id]);
+                        }
+                        $publishes = $row['prices'];
+                        if ($id !== $this->serverId) {
+                            $publishes = $this->outgoingPrices($offer, $accounts[$id], $source, $policy,
+                                $freshness[$id], $defaultRule, $fee, $now);
+                        }
+                        $evidence[] = Projection::publicationEvidence($offer, $native[$offer->id] ?? null, $publishes);
+                        unset($row['problem_account']);
                     }
                 }
                 if ($command) { $entries[$name] = [$command, $before->revision]; }
-            } catch (\DomainException|\InvalidArgumentException $error) {
+            } catch (\DomainException|\InvalidArgumentException|\JsonException|\TypeError|\ValueError $error) {
                 $row['status'] = 'blocked';
-                $row['reason'] ??= $error->getMessage();
+                $row['reason'] ??= $error instanceof \DomainException || $error instanceof \InvalidArgumentException
+                    ? $error->getMessage() : 'Saved TLD settings cannot be read.';
                 $row['retained_after'] = $row['retained_before'];
                 foreach ($row['prices'] as &$term) {
                     $term['available'] = false;
                     $term['reason'] ??= 'publication_pending';
                 }
                 unset($term);
-            } catch (\JsonException|\TypeError|\ValueError $error) {
-                $row['reason'] ??= 'Saved TLD settings cannot be read.';
             }
             $rows[$name] = $row;
         }
@@ -184,7 +208,43 @@ final readonly class SalesSetupDraft
                 throw new \DomainException('Offer or price binding changed.');
             }
         }
-        return OfferState::snapshot($binding, $t, OfferState::decode($account->catalogue_defaults), $policy, $prices, true, freshness: $freshness);
+        return OfferState::snapshot($binding, $t, self::defaults($account, $t, $policy), $policy, $prices, true, freshness: $freshness);
+    }
+
+    private static function defaults(Account $account, Tld $offer, ?object $policy): array
+    {
+        try {
+            $defaults = OfferState::decode($account->catalogue_defaults);
+            OfferState::intent($offer, $defaults);
+            OfferState::revision($offer, $defaults, $policy);
+            return $defaults;
+        } catch (\JsonException|\DomainException|\InvalidArgumentException|\ValueError|\TypeError) {
+            throw new \DomainException('Registrar sales settings unreadable.');
+        }
+    }
+
+    /** A displaced seller writes a native price only for a retained plan during a rule upgrade. */
+    private function outgoingPrices(Tld $offer, Account $account, Collection $source, ?object $policy,
+        CatalogueFreshness $freshness, array $defaultRule, array $fee, \DateTimeImmutable $now): array
+    {
+        self::defaults($account, $offer, $policy);
+        if ($offer->catalogue_published_revision === null || OfferState::currentPublication($offer->catalogue_published_revision)) {
+            return [];
+        }
+        $rule = Pricing::publicationRule($offer, $defaultRule, $fee);
+        if ($rule === null) { return []; }
+        $costs = [];
+        foreach ($source as $price) {
+            if (($cost = OfferState::savedCost($price)) !== null && $price->currency === 'USD') {
+                $costs[$cost->key()] = $freshness->cost($cost);
+            }
+        }
+        $terms = [];
+        foreach ($costs as $key => $cost) {
+            [$retail] = Retail::publication($cost, $rule, $costs, $now, $offer->catalogue_retained_annual_retail);
+            $terms[$key] = ['after' => $retail, 'available' => false];
+        }
+        return $terms;
     }
 
     private function propose(array $row, Tld $t, Snapshot $before, Intent $intent, ?string $block, ?array $rule, array $defaultRule, array $fee,
@@ -220,16 +280,15 @@ final readonly class SalesSetupDraft
             || !OfferState::equivalent($before->retail, $quotes));
         $needsWrite = $changedSeller || $intent != $oldIntent || $changedRule || $pendingPrice;
         $row['retained_after'] = $block === null && $changedRule ? $annual : $before->retainedAnnualRetail;
+        if (!$needsWrite && $block === null && $this->pricing !== 'keep') {
+            $existing = $this->terms($before, $ready, $now, $native);
+            $needsWrite = in_array('native_price_mismatch', array_column($existing, 'reason'), true);
+        }
         $projected = $needsWrite || $block !== null;
         $after = $projected ? new Snapshot($before->feed, $before->facts, $intent, $before->revision, $before->revision,
             $quotes, $binding, $this->actions, true, $before->hidden, $row['retained_after']) : $before;
-        $terms = $this->terms($after, $ready, $now, $projected ? null : $native, $block);
+        $terms = !$projected && isset($existing) ? $existing : $this->terms($after, $ready, $now, $projected ? null : $native, $block);
         foreach ($terms as $key => $term) {
-            if ($this->pricing !== 'keep' && $term['repairable']) {
-                $needsWrite = true;
-                $term['available'] = true;
-                $term['reason'] = null;
-            }
             $row['prices'][$key] = ['before' => $before->retail[$key] ?? null, 'after' => $term['retail'],
                 'available' => $term['available'], 'reason' => $term['reason']];
             if ($showCosts) {
@@ -257,20 +316,22 @@ final readonly class SalesSetupDraft
                 $q = new Query($s->feed->binding(), [$s->feed->tld()], $action, $term);
                 $retail = $s->retail[$key] ?? null;
                 $reason = $block ?? ($ready[$action] ? (new Evaluator)->evaluate($s, $q, Context::Staff, $now)->reason : 'account_unavailable');
-                $repairable = false;
                 if ($action !== 'renew') {
                     $reason ??= $terms['renew:1']['reason'];
                     if ($native !== null && $reason === null) {
                         $product = $native[$action]['product'] ?? null;
                         $plan = $native[$action]['plans'][$term] ?? null;
                         if (AcquisitionOffers::nativePriceMismatch($product, $plan, $retail) !== null) {
-                            $reason = 'native_price_mismatch';
-                            // displayBatch returns validated plans with only their USD prices loaded.
-                            $repairable = $plan !== null && $product->stock === null && $plan->prices->count() <= 1;
+                            $reason = $plan !== null && $product->stock === null && $plan->prices->count() <= 1
+                                ? 'native_price_mismatch' : 'native_mapping_unavailable';
+                            if ($reason === 'native_price_mismatch' && ($usd = $plan->prices->first())) {
+                                try { Projection::priceDiffers($usd, $retail); }
+                                catch (\DomainException) { $reason = 'native_mapping_unavailable'; }
+                            }
                         }
                     }
                 }
-                $terms[$key] = ['retail' => $retail, 'available' => $reason === null, 'reason' => $reason, 'repairable' => $repairable];
+                $terms[$key] = ['retail' => $retail, 'available' => $reason === null, 'reason' => $reason];
             }
         }
         return $terms;

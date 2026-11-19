@@ -9,7 +9,7 @@ use Filament\Forms\Components\{Checkbox, Radio, Select, TextInput};
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
-use Illuminate\Support\{Arr, Facades\Auth, Facades\Crypt, Facades\Log};
+use Illuminate\Support\{Arr, Collection, Facades\Auth, Facades\Crypt, Facades\Log};
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
@@ -93,10 +93,10 @@ class SetUpSales extends RecordDetailPage
         $this->selected = array_values(array_unique(array_map(static fn($row) => $row->tld, $records)));
         sort($this->selected, SORT_STRING);
         $policy = count($this->selected) === 1 ? SalesPolicy::where('tld', $this->selected[0])->first() : null;
-        $accounts = self::setupAccounts();
-        $preferred = $policy?->server_id ?? $this->origin['preferred'];
+        $enabled = self::setupAccounts()->where('enabled', true);
+        $preferred = $enabled->get($policy?->server_id) ?? $enabled->get($this->origin['preferred']) ?? $enabled->first();
         $this->form->fill([
-            'server' => isset($accounts[$preferred]) ? $preferred : array_key_first($accounts),
+            'server' => $preferred?->id,
             'register' => $policy?->register_enabled ?? true,
             'transfer' => $policy?->transfer_enabled ?? true,
             'longest' => 'keep',
@@ -182,14 +182,15 @@ class SetUpSales extends RecordDetailPage
             : [];
     }
 
-    private static function setupAccounts(): array
+    private static function setupAccounts(): Collection
     {
         return Server::where('extension', 'Domains')->where('type', 'server')
-            ->whereIn('id', Account::query()->select('server_id'))->orderBy('id')->pluck('name', 'id')->all();
+            ->whereIn('id', Account::query()->select('server_id'))->orderBy('id')->get(['id', 'name', 'enabled'])->keyBy('id');
     }
 
     public function form(Schema $schema): Schema
     {
+        $accounts = self::setupAccounts();
         $canSetTerm = Staff::can(Review::permission('acceptance'));
         $canPublish = Staff::can(Review::permission('publish'));
         $pricing = ['keep' => "Keep each TLD's pricing"];
@@ -207,7 +208,9 @@ class SetUpSales extends RecordDetailPage
 
         return $schema->statePath('draft')->components([
             Group::make([
-                Radio::make('server')->label('Registrar for new orders')->hiddenLabel()->options(self::setupAccounts())->required()->live(),
+                Radio::make('server')->label('Registrar for new orders')->hiddenLabel()
+                    ->options($accounts->map(fn(Server $server) => $server->name.($server->enabled ? '' : ' (off)'))->all())
+                    ->disableOptionWhen(fn($value) => !$accounts->get($value)?->enabled)->required()->live(),
             ])->key('registrar')->extraAttributes(['x-data' => '', 'x-init' => <<<'JS'
                 $nextTick(() => {
                     const heading = $el.closest('[wire\\:id]')?.querySelector('h1')

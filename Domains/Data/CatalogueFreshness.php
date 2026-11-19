@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Data;
 
 use App\Models\Server;
+use Illuminate\Support\Collection;
 use Paymenter\Extensions\Servers\Domains\Catalogue\Cost;
 use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview,StorefrontCatalogueCache};
 
@@ -18,22 +19,31 @@ final readonly class CatalogueFreshness
     {
         return self::forAccounts([$server])[$server];
     }
-    /** One settings query for a complete display/admission batch. */
-    public static function forAccounts(array $servers, bool $lock = false): array
+    /** A review may omit invalid accounts to refuse just the rows that use them. */
+    public static function forAccounts(array $servers, bool $lock = false, bool $omitInvalid = false): array
     {
         $rows = \App\Models\Setting::where('settingable_type', (new Server)->getMorphClass())
             ->whereIn('settingable_id', $servers)->where('key', self::KEY)
             ->when($lock, static fn ($q) => $q->orderBy('id')->lockForUpdate())->get()->groupBy('settingable_id');
         $out = [];
         foreach ($servers as $server) {
-            $saved = $rows[$server] ?? collect();
-            if ($saved->count() > 1) { throw new \DomainException('Duplicate price freshness setting.'); }
-            $value = $saved->first()?->value;
-            $hours = $value === null ? 48 : filter_var($value, FILTER_VALIDATE_INT);
-            if ($hours === false) { throw new \DomainException('Invalid price freshness setting.'); }
-            $out[$server] = new self($hours);
+            try { $out[$server] = self::fromRows($rows[$server] ?? collect()); }
+            catch (\DomainException|\InvalidArgumentException $error) {
+                if (!$omitInvalid) { throw $error; }
+            }
         }
         return $out;
+    }
+    private static function fromRows(Collection $rows): self
+    {
+        if ($rows->isEmpty()) { return new self; }
+        if ($rows->count() > 1) { throw new \DomainException('Duplicate price freshness setting.'); }
+        $setting = $rows->first();
+        // The native integer cast can turn a malformed saved value into an apparently valid age.
+        $value = $setting->encrypted ? $setting->value : $setting->getRawOriginal('value');
+        $hours = filter_var($value, FILTER_VALIDATE_INT);
+        if ($hours === false) { throw new \DomainException('Invalid price freshness setting.'); }
+        return new self($hours);
     }
     /** Re-evaluate the saved observation with today's staff policy without redating its source. */
     public function cost(Cost $cost): Cost

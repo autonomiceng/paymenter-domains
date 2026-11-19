@@ -560,12 +560,7 @@ final class Writer implements Catalogue
         // Shared settings fail the account. Only an unreadable TLD override is isolated.
         $fee = \Paymenter\Extensions\Servers\Domains\Services\CardFee::read();
         $default = (new PricingRules)->defaultRule(false, $fee);
-        try { $rule = Pricing::rule($tld, $default, $fee); }
-        catch (\DomainException|\InvalidArgumentException $error) {
-            if (!Pricing::hasOwn($tld)) { throw $error; }
-            return null;
-        }
-        return $rule;
+        return Pricing::publicationRule($tld, $default, $fee);
     }
 
     private function publishPrices(Tld $tld, \DateTimeImmutable $now): bool

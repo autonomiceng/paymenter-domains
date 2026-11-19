@@ -26,10 +26,10 @@
     @endif
 </div>
 <div class="fi-ac domains-actions">
+    {{ $page->cancelAction }}
     @if (isset($page->review['review_key']))
         <x-filament::button type="button" wire:click="save" wire:loading.attr="disabled">
             Save {{ $save }} {{ $save === 1 ? 'TLD' : 'TLDs' }}
         </x-filament::button>
     @endif
-    {{ $page->cancelAction }}
 </div>
