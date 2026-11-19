@@ -20,6 +20,14 @@ final readonly class Intent
             array_values(array_diff($this->stops, ['renew', ...$actions])));
     }
 
+    /** Keep inherited Sell when the account already sells by default. */
+    public function forSeller(array $actions, array $defaults): self
+    {
+        $intent = $this->allowSales($actions);
+        return new self(...[...get_object_vars($intent),
+            'sell' => $this->sell === true || !($defaults['defaultSell'] ?? true) ? true : null]);
+    }
+
     /** Translate the existing staff form without storing a second policy. */
     public static function fromRule(array $rule): self
     {

@@ -12,7 +12,8 @@ final readonly class Edit implements Command
 {
     private function __construct(private AccountBinding $account, private string $ending,
         public string $kind, public ?Intent $intent = null, public ?array $rule = null,
-        public ?string $retail = null, public array $actions = [], public ?bool $sellerTransfers = null)
+        public ?string $retail = null, public array $actions = [], public ?bool $sellerTransfers = null,
+        public string $pricing = 'keep', public bool $sellerChanged = false, public bool $ruleChanged = false)
     { CanonicalName::parse('example.'.$ending, [$ending]); }
 
     public static function defaults(AccountBinding $b, string $tld, Intent $intent): self
@@ -34,6 +35,17 @@ final readonly class Edit implements Command
         }
         return new self($b, $tld, 'seller', intent: $intent, actions: $actions);
     }
+    /** Only the reviewed sales setup can publish a seller and its target pricing together. */
+    public static function setup(AccountBinding $b, string $tld, Intent $intent, array $actions,
+        string $pricing, ?array $rule, bool $sellerChanged, bool $ruleChanged): self
+    {
+        return new self($b, $tld, 'sales_setup', $intent, $rule, actions: $actions,
+            pricing: $pricing, sellerChanged: $sellerChanged, ruleChanged: $ruleChanged);
+    }
+
+    public function publishesSeller(): bool
+    { return $this->kind === 'seller' || $this->kind === 'sales_setup' && $this->sellerChanged; }
+
     public static function retainRenewal(AccountBinding $b, string $tld, string $retail): self
     {
         if (PricingRule::units($retail, 2) < 1) { throw new \InvalidArgumentException('Positive renewal retail required.'); }

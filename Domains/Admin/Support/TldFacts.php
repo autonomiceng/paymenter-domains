@@ -219,6 +219,7 @@ final class TldFacts
                     if($r['tld_id']??null){return $r['tld_id']===$tldId;}
                     if(isset($r['tld'])){return $r['tld']===$ending;}
                     if($r['action']==='Sync TLD prices'){return is_string($ending)&&(($r['input']['ending']??null)===$ending||in_array($ending,(array)($r['input']['endings']??[]),true));}
+                    if($r['action']==='Set up TLD sales'){return isset($r['input']['rows'][$ending]);}
                     if($r['action']==='Edit what you sell'){return is_string($ending)&&(self::unknownSalesScope($r['input'])||isset($r['input']['rows'][$ending])||array_key_exists($ending,(array)($r['input']['changes']??[]))||($r['input']['rule_changed']??false));}
                     return in_array($r['action'],['Edit card fee','Edit default rule','Edit default pricing','Publish prices'],true);
                 });

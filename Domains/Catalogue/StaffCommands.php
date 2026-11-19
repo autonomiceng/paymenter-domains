@@ -87,7 +87,7 @@ final class StaffCommands
         if($review->action==='default_pricing'){
             try{$fee=CardFee::validate(['percent'=>$data['fee_percent']??'', 'fixed'=>$data['fee_fixed']??'']);}
             catch(\InvalidArgumentException){throw new \InvalidArgumentException(CardFee::INVALID);}
-            $review->input($data);return $this->writer->defaultPricing($review,$this->rule($data,$fee),$fee);
+            $review->input($data);return $this->writer->defaultPricing($review,self::rule($data,$fee),$fee);
         }
         $account=Account::where('server_id',$review->serverId)->sole();$binding=AccountBindings::binding($account);
         $query=Tld::where('server_id',$review->serverId)->where('catalogue_converted',true);
@@ -119,7 +119,7 @@ final class StaffCommands
                 $command=match($review->action){
                     'publish'=>Edit::republish($binding,$t->tld),
                     'import'=>Edit::requestSync($binding,$t->tld),
-                    'override','remove_override'=>Edit::override($binding,$t->tld,$intent,$review->action==='override'?$this->rule($data,CardFee::read()):null),
+                    'override','remove_override'=>Edit::override($binding,$t->tld,$intent,$review->action==='override'?self::rule($data,CardFee::read()):null),
                     'seller'=>$this->seller($t,$data),
                     'acceptance'=>$this->row($binding,$t,$raw,$sell,$rule),
                     'tld_settings'=>isset($data['retained_annual_retail'])?Edit::retainRenewal($binding,$t->tld,$data['retained_annual_retail']):$this->settings($binding,$t,$raw,$data,$rule),
@@ -148,7 +148,7 @@ final class StaffCommands
     {return OfferState::revision($t,$d,DB::table('domains_sales_policies')->where('tld',$t->tld)->first());}
     private function intent(array $raw): Intent
     {return new Intent(...array_intersect_key($raw,get_object_vars(new Intent)));}
-    private function rule(array $data,array $fee): array
+    public static function rule(array $data,array $fee): array
     {return PricingRule::validate(['mode'=>$data['mode']??null,'markup'=>$data['markup']??'0','round_up'=>$data['round_up']??'none',
         'fixed'=>['register'=>$data['fixed_register']??null,'renew'=>$data['fixed_renew']??null,'transfer'=>$data['fixed_transfer']??null],
         ...(($data['mode']??null)==='markup_fee_percent'?['card_fee'=>$fee]:[])]);}
@@ -212,9 +212,9 @@ final class StaffCommands
         if($actions!==[]&&($prices=SellerAvailability::state($account,$target))!==SellerAvailability::READY){throw new \DomainException($prices===SellerAvailability::UNREADABLE?'Seller price unreadable.':'Seller price missing.');}
         $intent=null;
         if($actions!==[]){
-            $raw=OfferState::decode($target->catalogue_intent);$intent=$this->intent($raw)->allowSales($actions);
+            $raw=OfferState::decode($target->catalogue_intent);$intent=$this->intent($raw);
             $defaults=OfferState::decode($account->catalogue_defaults);
-            $intent=new Intent(...[...get_object_vars($intent),'sell'=>($raw['sell']??null)===true?true:(($defaults['defaultSell']??true)?null:true)]);
+            $intent=$intent->forSeller($actions,$defaults);
         }
         return Edit::seller($b,$t->tld,$actions,$intent);
     }

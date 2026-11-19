@@ -29,6 +29,7 @@ final class Writer implements Catalogue
     public function apply(Command $command, Revision $expectedRevision): Revision
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Offer writer owns its native-first transaction.'); }
+        if ($command instanceof Edit && $command->kind === 'sales_setup') { throw new \DomainException('Sales setup requires a staff review.'); }
         if (!$command instanceof FeedObserved && !$command instanceof FactsObserved && !$command instanceof Edit) {
             throw new \InvalidArgumentException('Unknown offer command.');
         }
@@ -161,8 +162,31 @@ final class Writer implements Catalogue
 
     /** One reviewed batch, with the complete shared prefix locked before any row mutation.
      * @return array{rows:array<string,Revision>,failures:array<string,string>} */
-    public function reviewed(StaffSettingsReview $review, array $entries, \Closure $stamp): array
+    public function reviewed(StaffSettingsReview $review, array|SalesSetupDraft $entries, ?\Closure $stamp = null): array
     {
+        if ($entries instanceof SalesSetupDraft) {
+            if ($review->action !== 'sales_setup' || $review->serverId !== $entries->serverId || $review->tldId !== null
+                || $review->actorId !== (int) \Illuminate\Support\Facades\Auth::id() || DB::transactionLevel() !== 0) { throw new \LogicException('Target account sales review required.'); }
+            $seeds = Tld::whereIn('tld', $entries->suffixes)->orderBy('id')->get()->groupBy('tld');
+            foreach ($seeds as $group) { if ($group->count() > 500) { throw new \DomainException('Oversized offer group.'); } }
+            return \Paymenter\Extensions\Servers\Domains\Services\FreshTransaction::run(function () use ($review, $entries, $seeds): array {
+                $native = $this->reviewLocks($review, $seeds->collapse()->all(), $entries->suffixes);
+                $plan = $entries->plan();
+                $stamp = $plan['stamp'];
+                $review->check(false, static function () use (&$stamp): string { return $stamp; });
+                $saved = [];
+                foreach ($plan['entries'] as $name => [$command, $revision]) {
+                    $group = $seeds[$name] ?? throw new \DomainException('Offer group changed.');
+                    if (!$command->publishesSeller()) {
+                        $group = $group->where('server_id', $command->binding()->serverId);
+                    }
+                    $this->write($command, $revision, $group->values()->all(), $native, true);
+                    $saved[] = $name;
+                }
+                return $entries->receipt($review, $plan, $saved, $stamp);
+            });
+        }
+        if ($stamp === null) { throw new \LogicException('Catalogue review stamp required.'); }
         if (DB::transactionLevel() !== 0 || count($entries) < 1 || count($entries) > 25) { throw new \LogicException('Reviewed batches require 1 to 25 commands and an outer transaction.'); }
         $groups = []; $all = [];
         foreach ($entries as [$command, $revision]) {
@@ -184,18 +208,7 @@ final class Writer implements Catalogue
             if ($command->kind !== 'defaults') { foreach ($seeds as $seed) { $all[$seed->id] = $seed; } }
         }
         return DB::transaction(function () use ($review, $entries, $stamp, $groups, $all): array {
-            $review->lockActor();
-            $native = $all ? $this->projection->lock(array_values($all)) : null;
-            // Legacy reviewed publication takes this same native -> all servers/accounts prefix.
-            $review->lockAccounts();
-            if ($this->current) { ($this->current)(); } else { UpgradeGate::active(UpgradeGate::generation()); }
-            $names = Tld::where('server_id', $review->serverId)->when($review->tldId !== null, fn ($q) => $q->whereKey($review->tldId))->pluck('tld')->all();
-            $names = array_values(array_unique([...$names, ...array_map(static fn ($e) => $e[0]->tld(), $entries)])); sort($names, SORT_STRING);
-            DB::table('domains_sales_policies')->whereIn('tld', $names)->orderBy('tld')->lockForUpdate()->get();
-            Tld::whereIn('tld', $names)->orderBy('id')->lockForUpdate()->get();
-            DB::table('domains_prices')->whereIn('tld', $names)->orderBy('id')->lockForUpdate()->get();
-            DB::table('settings')->where('settingable_type', (new Server)->getMorphClass())
-                ->whereIn('settingable_id', Server::where('extension', 'Domains')->pluck('id'))->orderBy('id')->lockForUpdate()->get();
+            $native = $this->reviewLocks($review, array_values($all), array_map(static fn ($e) => $e[0]->tld(), $entries));
             $review->check(false, $stamp);
             // Every revision must match, even on rows whose business intent is refused.
             $accepted = $refused = [];
@@ -255,6 +268,23 @@ final class Writer implements Catalogue
             $review->record('completed', ['rows' => array_keys($results), 'failures' => $refused]);
             return ['rows' => $results, 'failures' => $refused];
         });
+    }
+
+    private function reviewLocks(StaffSettingsReview $review, array $seeds, array $endings): ?array
+    {
+        $review->lockActor();
+        $native = $seeds ? $this->projection->lock($seeds) : null;
+        // Legacy reviewed publication takes this same native -> all servers/accounts prefix.
+        $review->lockAccounts();
+        if ($this->current) { ($this->current)(); } else { UpgradeGate::active(UpgradeGate::generation()); }
+        $names = $review->action === 'sales_setup' ? [] : Tld::where('server_id', $review->serverId)->when($review->tldId !== null, fn ($q) => $q->whereKey($review->tldId))->pluck('tld')->all();
+        $names = array_values(array_unique([...$names, ...$endings])); sort($names, SORT_STRING);
+        DB::table('domains_sales_policies')->whereIn('tld', $names)->orderBy('tld')->lockForUpdate()->get();
+        Tld::whereIn('tld', $names)->orderBy('id')->lockForUpdate()->get();
+        DB::table('domains_prices')->whereIn('tld', $names)->orderBy('id')->lockForUpdate()->get();
+        DB::table('settings')->where('settingable_type', (new Server)->getMorphClass())
+            ->whereIn('settingable_id', Server::where('extension', 'Domains')->pluck('id'))->orderBy('id')->lockForUpdate()->get();
+        return $native;
     }
 
     /** A defaults save replaces defaults that can't be read; every other command still needs them readable. */
@@ -324,7 +354,7 @@ final class Writer implements Catalogue
     private function write(Command $command, Revision $expectedRevision, array $seeds, ?array $native, bool $reviewed = false): Revision
     {
         $binding = $command->binding(); $name = $command->tld();
-        $seller = $command instanceof Edit && $command->kind === 'seller';
+        $seller = $command instanceof Edit && $command->publishesSeller();
         $defaultsEdit = $command instanceof Edit && $command->kind === 'defaults';
             if ($seller && Tld::where('tld', $name)->orderBy('id')->pluck('id')->all() !== array_map(static fn ($s) => $s->id, $seeds)) {
                 throw new \DomainException('Seller offer group changed; retry.');
@@ -379,7 +409,7 @@ final class Writer implements Catalogue
                 return new Revision($revision->offer, $revision->defaults + 1, $revision->selection);
             }
             if ($command instanceof Edit && $command->kind === 'sync') { return $revision; }
-            $preserveRetained = $command instanceof Edit && ($seller || $command->kind === 'override'
+            $preserveRetained = $command instanceof Edit && ($command->kind === 'seller' || $command->kind === 'override'
                 && ($command->rule === (OfferState::decode($target->catalogue_intent)['pricing_rule'] ?? null)));
             $changed = $this->mutate($command, $target, $rows->where('server_id', $binding->serverId), $now) || $created;
             if (!$changed) { return $revision; }
@@ -412,7 +442,8 @@ final class Writer implements Catalogue
                     ? $this->pricingRule($offer) !== null : $this->publishPrices($offer, $now);
                 // Keep unreadable own pricing closed, including when the feed/facts change.
                 if (!$published) { $offer->catalogue_published_revision = null; }
-                if ($preserveRetained) { $offer->catalogue_retained_annual_retail = $annual; }
+                if ($preserveRetained || $command instanceof Edit && $command->kind === 'sales_setup'
+                    && ($id !== $binding->serverId || !$command->ruleChanged)) { $offer->catalogue_retained_annual_retail = $annual; }
                 // A damaged saved cost stays out of the snapshot, so only its own offer stays closed.
                 $prices = OfferState::query('domains_prices')->where('server_id', $id)->where('tld', $name)->get()
                     ->filter(static fn ($p) => OfferState::savedCost($p) !== null);
@@ -441,10 +472,10 @@ final class Writer implements Catalogue
     private function mutate(Command $command, Tld $target, $prices, \DateTimeImmutable $now): bool
     {
         if ($command instanceof Edit) {
-            if ($command->kind === 'override' || $command->kind === 'seller' && $command->intent !== null) {
+            if ($command->kind === 'override' || in_array($command->kind, ['seller', 'sales_setup'], true) && $command->intent !== null) {
                 $old = OfferState::decode($target->catalogue_intent);
                 foreach (['sell', 'longest', 'transfers', 'stops', 'salesPaused'] as $key) { $old[$key] = $command->intent->{$key}; }
-                $target->catalogue_intent = OfferState::json($command->kind === 'override' ? [...$old, 'pricing_rule' => $command->rule] : $old);
+                $target->catalogue_intent = OfferState::json(($command->kind === 'override' || $command->kind === 'sales_setup' && $command->pricing !== 'keep') ? [...$old, 'pricing_rule' => $command->rule] : $old);
             }
             if ($command->kind === 'retail') { $target->catalogue_retained_annual_retail = $command->retail; }
             return true;
@@ -536,13 +567,8 @@ final class Writer implements Catalogue
             // A damaged cost keeps its row unchanged and its offer closed until a price sync replaces it.
             if (!isset($readable[$p->id])) { continue; }
             $cost = $costs[$p->action.':'.$p->term];
-            try { $retail = Retail::quote($cost, $rule, $costs); }
-            catch (\InvalidArgumentException) { $retail = null; }
-            // Only the annual renewal feeds retained holder retail; an exact longer renewal keeps its own price.
-            if ($cost->action === 'renew' && $cost->term === 1) {
-                if ($retail !== null && PricingRule::units($retail, 2) > 0 && $cost->fresh($now)) { $tld->catalogue_retained_annual_retail = $retail; }
-                else { $retail = OfferState::money($tld->catalogue_retained_annual_retail, 2); }
-            }
+            [$retail, $annual] = Retail::publication($cost, $rule, $costs, $now, OfferState::money($tld->catalogue_retained_annual_retail, 2));
+            if ($cost->key() === 'renew:1') { $tld->catalogue_retained_annual_retail = $annual; }
             $values = ['retail' => $retail, 'revision' => (int) $p->revision + 1];
             DB::table('domains_prices')->where('id', $p->id)->update($values);
         }
