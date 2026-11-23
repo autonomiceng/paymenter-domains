@@ -45,7 +45,7 @@ foreach ($owned as $table) {
     expect(str_starts_with($table, $prefix.'domains_'), 'Fresh install left no reference table: '.$table);
     expect(isset($verified[substr($table, strlen($prefix))]), 'Fresh install verified every retained definition: '.$table);
 }
-DB::table('domains_psl_status')->where('id', 1)->update(['consecutive_failures' => 3]);
+DB::table('domains_public_dns_pool')->insert(['id'=>1,'active'=>'[]','used'=>3,'window_at'=>100]);
 $snapshot = static function () use ($owned, $prefix): array {
     $result = [];
     foreach ($owned as $physical) {

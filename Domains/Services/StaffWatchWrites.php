@@ -6,12 +6,11 @@ use App\Models\User;
 use Paymenter\Extensions\Servers\Domains\Dns\RoutingProfile;
 use Illuminate\Support\Facades\{Crypt,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchAudit,WatchProfile,WatchProductMap};
+use Paymenter\Extensions\Servers\Domains\Models\{WatchAudit,WatchProfile};
 /** Local staff edits only. A request advances ordinary work without overriding leases/backoff or feature gates. */
 final class StaffWatchWrites
 {
     public const VIEW='admin.domains.watch.view',MANAGE='admin.domains.watch.manage';
-    public const BUSY='Every check for this domain is running or waiting to retry. Try again in a few minutes.';
     public const UNREADABLE='Saved DNS records cannot be read. Restore the template before changing it.';
     public static function ticket(int $actor,string $kind,int $id,int $revision,string $action,?int $defaultId=null): string
     { return Crypt::encryptString(json_encode(compact('actor','kind','id','revision','action','defaultId')+['until'=>time()+600,'key'=>bin2hex(random_bytes(16))],JSON_THROW_ON_ERROR)); }
@@ -27,61 +26,21 @@ final class StaffWatchWrites
             self::authorize($actor);
             $claim=hash('sha256',$ticket);
             if(!DB::table('domains_watch_staff_claims')->insertOrIgnore(['claim'=>$claim,'subject_type'=>$kind,'subject_id'=>$id,'action'=>$action,'created_at'=>time()])){throw new \DomainException('Reload and try again.');}
-            if($kind==='profile'){BusinessSetting::singleton(true);}
-            if($kind==='mapping'){$product=$id?WatchProductMap::findOrFail($id)->product_id:(int)($input['product_id']??0);\App\Models\Product::whereKey($product)->lockForUpdate()->firstOrFail();}
-            $class=match($kind){'watch'=>WatchName::class,'profile'=>WatchProfile::class,'mapping'=>WatchProductMap::class,default=>throw new \DomainException('Reload and try again.')};
-            if($kind==='watch'){BusinessSetting::singleton(true);}
-            $row=$id?$class::whereKey($id)->lockForUpdate()->firstOrFail():new $class;
+            if($kind!=='profile'){throw new \DomainException('Reload and try again.');}
+            BusinessSetting::singleton(true);
+            $row=$id?WatchProfile::whereKey($id)->lockForUpdate()->firstOrFail():new WatchProfile;
             if(($row->exists?(int)$row->revision:0)!==($t['revision']??null)){throw new \DomainException('The saved details changed. Reload and try again.');}
-            if($kind==='profile' && $action==='save'){
+            if($action==='save'){
                 if(($t['defaultId']??null)!==null && (SiteDnsDefault::uses($id,true) ? $id : 0) !== $t['defaultId']){throw new \DomainException('The default nameservers changed. Reload the page and try again.');}
                 if(SiteDnsDefault::uses($id,true)){SiteDnsDefault::authorize($actor);}
             }
-            if($kind==='profile'&&$row->exists&&$row->readProfile()===null&&$action!=='delete'){throw new \DomainException(self::UNREADABLE);}
-            $before=$row->exists?$row->revision:0;$data=[];
-            if($kind==='watch'){
-                // Staff pause and resume; a watch ends only with its hosting service, never by a staff write.
-                if(!in_array($action,['pause','resume','profile','read','note'],true) || $row->managed_domain_id!==null || $row->state==='linked'){throw new \DomainException('This watch cannot be changed.');}
-                if($action==='pause' && $row->state==='active'){$row->state='paused';}
-                elseif($action==='resume' && WatchDiscovery::canResume($row)){
-                    // Resume saves staff intent; a suspended hosting service keeps the watch paused until it is active again.
-                    if(WatchDiscovery::hostingActive($id)){$row->state='active';}else{$data=['hosting'=>'suspended'];}
-                }
-                elseif($action==='profile' && in_array($row->state,['active','paused'],true)){
-                    if (array_key_exists('assignment', $input)) {
-                        WatchTemplateAssignment::apply($row, (string) $input['assignment'], $input['expected_dns'] ?? null);
-                    } else {
-                        $profile = WatchProfile::whereKey((int) ($input['profile'] ?? 0))->lockForUpdate()->first();
-                        if (!ManagedDnsSetup::usable($profile)) { throw new \DomainException('Choose an enabled DNS template.'); }
-                        $row->ns_profile_id = $profile->id;
-                        $row->profile_revision = $profile->revision;
-                        $row->expected_dns = in_array($input['expected_dns'] ?? null, ['platform', 'external'], true) ? $input['expected_dns'] : null;
-                    }
-                    if (!$row->isDirty(['ns_profile_id', 'profile_revision', 'expected_dns'])) { return; }
-                }elseif($action==='read' && $row->state==='active'){
-                    $latest=DB::table('domains_watch_staff_claims')->where('subject_type','watch')->where('subject_id',$id)->where('action','read')->where('claim','<>',$claim)->orderByDesc('created_at')->lockForUpdate()->first()?->created_at;
-                    if($latest && $latest>time()-300){throw new \DomainException('A check was recently requested. Try again later.');}
-                    if(!app(WatchWork::class)->active() || !app(WatchWork::class)->queueReady()){throw new \DomainException('Public checks are disabled or the asynchronous queue is unavailable.');}
-                    // Enqueue eligibility only: ordinary dispatcher performs the read outside this transaction. A missing-nameserver answer is a successful check.
-                    $q=DB::table('domains_watch_work')->where('watch_id',$id);
-                    if(!(clone$q)->exists()){throw new \DomainException('This watch has no scheduled checks yet.');}
-                    if (isset($input['retryKind'])) {
-                        $data = self::requestRetry($row, $input['retryKind']);
-                    } else {
-                        $count=$q->whereNull('claim')->where(fn($q)=>$q->whereNull('backoff_until')->orWhere('backoff_until','<=',time()))->where(fn($q)=>$q->whereNull('safe_code')->orWhereIn('safe_code',['ready','rotation','nameservers_missing']))->update(['due_at'=>time()]);
-                        // Refusing rolls back the claim and leaves the cooldown free.
-                        if($count===0){throw new \DomainException(self::BUSY);}$data=['eligible_rows'=>$count];
-                    }
-                }elseif($action!=='note'){throw new \DomainException('The watch state changed. Reload and try again.');}
-            }elseif($kind==='mapping' && $action==='enable'){
-                $row=(new WatchMappings())->enable($actor,$id,$before,$reason);
-            }elseif($kind==='mapping' && $action==='disable'){
-                $row=(new WatchMappings())->save($actor,(int)$row->product_id,$row->property_key,$before,$reason);
-            }elseif($kind==='profile' && $action==='enable'){
+            if($row->exists&&$row->readProfile()===null&&$action!=='delete'){throw new \DomainException(self::UNREADABLE);}
+            $before=$row->exists?$row->revision:0;
+            if($action==='enable'){
                 if(!$row->exists || $row->enabled){throw new \DomainException('Reload the disabled profile first.');}$row->enabled=true;$row->edited_by=$actor->id;$row->reason=$reason;
-            }elseif($kind==='profile' && in_array($action,['disable','delete'],true)){
+            }elseif(in_array($action,['disable','delete'],true)){
                 if(!$row->exists){throw new \DomainException('Reload and try again.');}
-                if($reasonBlocked=DnsTemplateUsage::refusal((int)$row->id,true)){throw new \DomainException($reasonBlocked);}
+                if($reasonBlocked=SiteDnsDefault::usesRefusal((int)$row->id,true)){throw new \DomainException($reasonBlocked);}
                 if($action==='delete'){
                     // Delete only an unreferenced template here; watch history remains append-only.
                     WatchAudit::create(['subject_type'=>'dns_profile','subject_id'=>$row->id,'actor_id'=>$actor->id,
@@ -91,19 +50,15 @@ final class StaffWatchWrites
                 }
                 if(!$row->enabled){throw new \DomainException('The saved details changed. Reload and try again.');}
                 $row->enabled=false;$row->edited_by=$actor->id;$row->reason=$reason;
-            }elseif($kind==='profile' && $action==='save'){
-                // Hosting products have no field to save: the field is always the order's domain, else hostname.
+            }elseif($action==='save'){
                 $row->edited_by=$actor->id;$row->reason=$reason;
                 $row->name=(string)($input['name']??'');self::requireUniqueName($row->name,$row->exists?(int)$row->id:null);
                 $records = self::routingProfile($input);
                 $row->nameservers = $records->nameservers;
-                $row->website_endpoints = $records->website;
-                $row->email_endpoints = $records->email;
             }else{throw new \DomainException('Reload and try again.');}
-            if(!($kind==='watch' && in_array($action,['read','note'],true)) && !($kind==='mapping' && in_array($action,['enable','disable'],true))){$row->revision=$before+1;$row->save();}self::authorize($actor);
-            if($kind==='watch'){WatchAudit::create(['subject_type'=>$kind,'subject_id'=>$row->id,'user_id'=>$kind==='watch'?$row->user_id:null,'actor_id'=>$actor->id,
-                'event'=>$action==='read'?'staff_read_requested':'staff_'.$action,'reason'=>$reason,'before_revision'=>(string)$before,'after_revision'=>(string)$row->revision,'data'=>$data,'created_at'=>now()]);}
-
+            $row->revision=$before+1;
+            $row->save();
+            self::authorize($actor);
         });
     }
     /** Templates are told apart by name in every list and choice, so two may not share one that looks the same: ignoring
@@ -121,35 +76,9 @@ final class StaffWatchWrites
         $visible=preg_replace('/\p{Cf}+/u','',$folded)??$folded;
         return mb_strtolower(trim(preg_replace('/\s+/u',' ',$visible)??$visible));
     }
-    private static function requestRetry(WatchName $watch, mixed $kind): array
-    {
-        $label = self::checkLabel($kind);
-        $query = DB::table('domains_watch_work')->where('watch_id',$watch->id)->where('kind',$kind);
-        $work = $query->lockForUpdate()->first();
-        $now = time();
-        if (!$work || $work->claim !== null || $work->lease_until > $now || $work->backoff_until > $now) {
-            throw new \DomainException($label.' is running or waiting for its automatic retry.');
-        }
-        $observation = $watch->{$kind === 'expiry' ? 'registry' : $kind};
-        $failed = in_array($work->safe_code, ['expiry_unknown','resolver_failed','invalid_answer','ambiguous_empty','read_unavailable','deadline','clock_reversal'], true);
-        $partial = $observation?->partial && in_array($work->safe_code, [null,'ready'], true);
-        if (!$failed && !$partial) { throw new \DomainException($label.' changed. Refresh the page to see its latest result.'); }
-        $query->update(['due_at'=>$now]);
-        return ['retry_kind'=>$kind, 'after_id'=>(int)$observation?->id, 'backoff_until'=>(int)$work->backoff_until];
-    }
-
-    public static function checkLabel(mixed $kind): string
-    {
-        return match ($kind) {
-            'expiry'=>'Registry lookup', 'points'=>'DNS records check', 'delegation'=>'Nameserver check',
-            default=>throw new \DomainException('Unknown check. Reload the page and try again.'),
-        };
-    }
     public static function routingProfile(array $input): RoutingProfile
     {
-        $rules = static fn(string $key): array => ['exact'=>self::lines($input[$key] ?? ''),
-            'suffix'=>self::lines($input[$key.'_suffix'] ?? ''), 'ips'=>self::lines($input[$key.'_ips'] ?? '')];
-        return new RoutingProfile(self::lines($input['nameservers'] ?? ''), $rules('website_endpoints'), $rules('email_endpoints'));
+        return new RoutingProfile(self::lines($input['nameservers'] ?? ''));
     }
     private static function lines(mixed $value): array
     { if(!is_string($value) || strlen($value)>8192){throw new \DomainException('Enter one DNS target per line.');}return array_values(array_filter(array_map('trim',preg_split('/\R/',$value)))); }

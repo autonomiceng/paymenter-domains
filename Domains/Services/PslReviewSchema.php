@@ -11,15 +11,6 @@ final class PslReviewSchema extends TableSchema
     protected static function definitions(): array
     {
         return [
-            'domains_psl_candidates' => static function (Blueprint $t): void {
-                $t->unsignedInteger('id')->primary();
-                $t->string('revision', 64);
-                $t->string('baseline_revision', 64);
-                $t->string('source_url', 2048);
-                $t->longText('compressed_body');
-                $t->string('safe_code', 40);
-                $t->unsignedBigInteger('fetched_at');
-            },
             'domains_watch_audit' => static function (Blueprint $t): void {
                 $t->id();
                 $t->string('subject_type', 40);

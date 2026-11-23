@@ -99,31 +99,22 @@ final class HoldingDeparture
             $d->update(['status'=>'departed','renewal_policy'=>[...($d->renewal_policy??[]),'departure'=>$record,'staff_holdings'=>$history]]);
             NativeDomainGuard::departed($l);
             DomainReservations::releaseDeparted($l);
-            $watch=app(WatchDiscovery::class)->departed($d,$now->getTimestamp());
             // The customer email is reserved here and handed off only after commit, so a rollback sends nothing.
-            $email=self::notice($l,$record,$watch,$now,$claim);
-            // The frozen record is written once; the watch outcome and the email join this confirmation's history entry.
-            if($watch!==null){$history[array_key_last($history)]['watch']=$watch;}
+            $email=self::notice($l,$record,$now,$claim);
             if($email!==null){$history[array_key_last($history)]['email']=$email;}
-            if($watch!==null||$email!==null){$d->update(['renewal_policy'=>[...$d->renewal_policy,'staff_holdings'=>$history]]);}
+            if($email!==null){$d->update(['renewal_policy'=>[...$d->renewal_policy,'staff_holdings'=>$history]]);}
             // Only this holding's departure review and its stopped-sync alert: a departed domain never syncs again, so Resume
             // sync has nothing to resume. Money, dispute, delivery and loss alerts stay open.
             DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->whereIn('code',[RenewalOwnership::REVIEW,'observation_review'])->whereNull('resolved_at')->update(['resolved_at'=>$now->getTimestamp()]);
-            return [...$record,'watch'=>$watch];
+            return $record;
         });
-        // Monitoring work, discovery hints and the email start only after the decision committed.
         if($result->outcome===MoneyOutcome::Applied){
             $at=$this->clock->now()->getTimestamp();
             if($claim&&!self::followUp($domainId,'email',fn()=>ReminderDelivery::handoff($claim,$at))){self::alert($domainId,'delivery_uncertain',$at);}
-            self::followUp($domainId,'discovery',fn()=>WatchDiscoveryHints::names([[(int)$seed->user_id,(string)$seed->domain]]));
-            if(($result->value['watch']['state']??null)==='active'){
-                self::followUp($domainId,'monitoring',fn()=>app(WatchWork::class)->enrollWatch((int)$result->value['watch']['id'],(int)$seed->user_id));
-            }
         }
         return $result;
     }
 
-    /** The decision is committed. Isolate each handoff; the discovery and watch scheduler sweeps retain recovery. */
     private static function followUp(int $domainId,string $stage,\Closure $run): bool
     {
         try{return $run()!==false;}
@@ -136,7 +127,7 @@ final class HoldingDeparture
     /** Reserves the one departure email (mocks 08, 08b, 08c) under the decision's locks. Returns the Email sent fact for
      * the history entry: delivery key, subject and recipient. Building the email data or a template or channel failure
      * leaves the staff alert and never blocks the confirmation; database errors pass through to the decision. */
-    private static function notice(array $l,array $record,?array $watch,\DateTimeImmutable $now,?array &$claim): ?array
+    private static function notice(array $l,array $record,\DateTimeImmutable $now,?array &$claim): ?array
     {
         $d=$l['domain'];$user=$l['user'];$identity='departure:'.$record['identity']['service_id'].':'.$record['identity']['authority_generation'];
         try{
@@ -150,7 +141,7 @@ final class HoldingDeparture
             $zone=new \DateTimeZone(config('domains.time_zone')?:config('app.timezone'));
             $data=['domain'=>$d->domain,'deleted'=>$record['reason']==='deleted','same_registrar'=>$record['reason']==='other_account',
                 'date'=>$now->setTimezone($zone)->format('M j, Y'),'renewals'=>$renewals,'dns'=>$record['dns_case'],
-                'monitored'=>($watch['state']??null)==='active','domain_url'=>url('/domains/'.$d->id),
+                'domain_url'=>url('/domains/'.$d->id),
                 'support_url'=>\Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl()??'','company'=>\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company()];
             $claim=ReminderDelivery::reserve((int)$d->id,$identity,'domains_domain_departed',$data,$user,$now->getTimestamp());
             if(!$claim){return null;}

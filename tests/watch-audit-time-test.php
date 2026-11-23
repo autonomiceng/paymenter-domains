@@ -6,10 +6,10 @@ require __DIR__.'/native-app.php';
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Models\WatchAudit;
-use Paymenter\Extensions\Servers\Domains\Services\{Installation,WatchNoticeHealth};
+use Paymenter\Extensions\Servers\Domains\Services\{Installation};
 $install=new Installation;$install->install();
 $prior=date_default_timezone_get();date_default_timezone_set('America/Los_Angeles');
-$attrs=['subject_type'=>'watch','subject_id'=>7,'event'=>'staff_pause','after_revision'=>'1','data'=>[]];
+$attrs=['subject_type'=>'dns_profile','subject_id'=>7,'event'=>'dns_profile_saved','after_revision'=>'1','data'=>[]];
 try{
     foreach(['2026-11-01T08:30:00Z','2026-11-01T09:30:00Z','2026-03-08T09:59:59Z','2026-03-08T10:00:00Z'] as $value){
         $at=new DateTimeImmutable($value);$local=CarbonImmutable::instance($at)->setTimezone('America/Los_Angeles');
@@ -21,7 +21,5 @@ try{
         same($at->getTimestamp(),$a->fresh()->created_at->getTimestamp(),'A later site zone cannot reinterpret UTC');
         date_default_timezone_set('America/Los_Angeles');
     }
-    WatchNoticeHealth::record(7,7,'watch','clock_reversal',1793525400);
-    same(1793525400,WatchAudit::where('event','notice_health')->sole()->created_at->timestamp,'Health elapsed-time input retains its instant');
 }finally{date_default_timezone_set($prior);}
 $nativeSuccessful=true;echo "Watch audit UTC instants, DST, mixed rows and conservative retained upgrade.\n";

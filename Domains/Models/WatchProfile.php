@@ -10,7 +10,7 @@ final class WatchProfile extends WatchRecord
     protected $attributes = ['revision' => 1, 'enabled' => false];
     protected array $identity = ['id'];
     protected $hidden = ['reason'];
-    protected $casts = ['reason' => \Paymenter\Extensions\Servers\Domains\Casts\LegacyEncryptedString::class, 'revision' => 'integer', 'enabled' => 'boolean', 'nameservers' => 'array', 'website_endpoints' => 'array', 'email_endpoints' => 'array'];
+    protected $casts = ['reason' => \Paymenter\Extensions\Servers\Domains\Casts\LegacyEncryptedString::class, 'revision' => 'integer', 'enabled' => 'boolean', 'nameservers' => 'array'];
     protected function validateRecord(): void
     {
         if (!is_string($this->name) || trim($this->name) === '' || strlen($this->name) > 128 ||
@@ -19,14 +19,14 @@ final class WatchProfile extends WatchRecord
         }
         $profile = $this->profile();
         if($this->exists && $this->isDirty('enabled') && !$this->enabled
-            && ($refusal=\Paymenter\Extensions\Servers\Domains\Services\DnsTemplateUsage::refusal((int)$this->id,true))){throw new \DomainException($refusal);}
+            && ($refusal=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::usesRefusal((int)$this->id,true))){throw new \DomainException($refusal);}
         if($saved=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::usesRefusal((int)$this->id)){
             if(!$this->enabled){throw new \DomainException($saved===\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::REPLACE?'Choose another template for the default nameservers before turning this one off.':$saved);}
             \Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::validateRegistrars($profile->nameservers);
         }
-        $this->nameservers = $profile->nameservers; $this->website_endpoints = $profile->website; $this->email_endpoints = $profile->email;
+        $this->nameservers = $profile->nameservers;
     }
-    public function profile(): RoutingProfile { return new RoutingProfile($this->nameservers, $this->website_endpoints, $this->email_endpoints); }
+    public function profile(): RoutingProfile { return new RoutingProfile($this->nameservers); }
     /** Unreadable retained records cannot supply editable defaults. */
     public function readProfile(): ?RoutingProfile
     {
@@ -42,12 +42,10 @@ final class WatchProfile extends WatchRecord
         });
         parent::booted();
         static::saved(static function (self $row): void {
-            \Illuminate\Support\Facades\DB::afterCommit(static fn()=>\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::reconcile(
-                (int)$row->id,\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::uses((int)$row->id)));
             WatchAudit::create(['subject_type' => 'dns_profile', 'subject_id' => $row->id, 'actor_id' => $row->edited_by,
                 'event' => 'dns_profile_saved', 'reason' => $row->reason, 'before_revision' => (string) ($row->revision - 1),
-                'after_revision' => (string) $row->revision, 'data' => ['nameservers' => $row->nameservers, 'website' => $row->website_endpoints,
-                    'email' => $row->email_endpoints, 'enabled' => $row->enabled], 'created_at' => now()]);
+                'after_revision' => (string) $row->revision, 'data' => ['nameservers' => $row->nameservers,
+                    'enabled' => $row->enabled], 'created_at' => now()]);
         });
     }
 }

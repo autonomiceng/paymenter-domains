@@ -16,18 +16,14 @@ final class Installation
         ObservationSchema::class,
         ReminderSchema::class,
         RuntimeSchema::class,
-        PslSchema::class,
         PslReviewSchema::class,
-        WatchSchema::class,
         AdoptionSchema::class,
         HistoryLinkSchema::class,
         WatchDnsSchema::class,
         NativeIntentSchema::class,
         BalanceSchema::class,
-        ManagedPublicWorkSchema::class,
         ManagedPublicSchema::class,
         WatchScheduleSchema::class,
-        WatchNoticeSchema::class,
         StaffWatchSchema::class,
         StaffAuditSchema::class,
         EnomTestSendLimitSchema::class,
@@ -131,7 +127,7 @@ final class Installation
                 throw new \DomainException('Retained Domains data has no installation record.');
             }
             $this->verify();
-            ReminderTemplates::ensure();WatchNoticeTemplates::ensure();
+            ReminderTemplates::ensure();
         });
         SiteDnsDefault::ensure();
         \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(\Paymenter\Extensions\Servers\Domains\Catalogue\Writer::class)?->republishRetailRule();

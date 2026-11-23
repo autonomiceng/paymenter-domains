@@ -6,8 +6,8 @@ use Illuminate\Support\Facades\{Crypt,DB};
 use Paymenter\Extensions\Servers\Domains\Models\WatchAudit;
 use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,AuditEvents,HistoryRetention,RetentionSchema};
 extract(dnsFixture());$now=1800000000;
-$a=WatchAudit::create(['subject_type'=>'watch','subject_id'=>$watch->id,'user_id'=>$owner->id,'event'=>'staff_note','after_revision'=>'1','data'=>[],'created_at'=>'2020-01-01 00:00:00']);
-$legacy=WatchAudit::create(['subject_type'=>'watch','subject_id'=>$watch->id,'user_id'=>$owner->id,'event'=>'staff_note','after_revision'=>'1','data'=>[],'created_at'=>'2020-01-01 00:00:00']);
+$a=WatchAudit::create(['subject_type'=>'dns_profile','subject_id'=>$profile->id,'user_id'=>$owner->id,'event'=>'dns_profile_saved','after_revision'=>'1','data'=>[],'created_at'=>'2020-01-01 00:00:00']);
+$legacy=WatchAudit::create(['subject_type'=>'dns_profile','subject_id'=>$profile->id,'user_id'=>$owner->id,'event'=>'dns_profile_saved','after_revision'=>'1','data'=>[],'created_at'=>'2020-01-01 00:00:00']);
 if(is_file(dirname(__DIR__).'/Domains/Services/RetentionSchema.php')){
     DB::table(RetentionSchema::MARKS)->where('family','watch_audit')->where('source_id',$a->id)->update(['recorded_at'=>$now]);
     DB::table(RetentionSchema::MARKS)->where('family','watch_audit')->where('source_id',$legacy->id)->delete();
@@ -18,15 +18,11 @@ $key=hash('sha256','synthetic-catalogue-retention');
 DB::transaction(fn()=>AuditEvents::append($server->id,'catalogue_sync',$entry,$key));
 $event=DB::table(AuditArchives::TABLE)->where('event_key',$key)->value('id');
 // UTC rows written before retention have a proven instant without a recording mark.
-$utc=WatchAudit::create(['subject_type'=>'watch','subject_id'=>$watch->id,'user_id'=>$owner->id,'event'=>'staff_note','after_revision'=>'1','data'=>[],'created_at'=>gmdate('Y-m-d H:i:s',$now)]);
+$utc=WatchAudit::create(['subject_type'=>'dns_profile','subject_id'=>$profile->id,'user_id'=>$owner->id,'event'=>'dns_profile_saved','after_revision'=>'1','data'=>[],'created_at'=>gmdate('Y-m-d H:i:s',$now)]);
 DB::table(RetentionSchema::MARKS)->where('family','watch_audit')->where('source_id',$utc->id)->delete();
-$pause=WatchAudit::create(['subject_type'=>'watch','subject_id'=>$watch->id,'user_id'=>$owner->id,'event'=>'staff_pause','after_revision'=>'1','data'=>[],'created_at'=>'2020-01-01 00:00:00']);
-if(is_file(dirname(__DIR__).'/Domains/Services/RetentionSchema.php')){DB::table(RetentionSchema::MARKS)->where('family','watch_audit')->where('source_id',$pause->id)->update(['recorded_at'=>$now]);}
-DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>'paused']);
 $at=Carbon\CarbonImmutable::createFromTimestampUTC($now)->addMonthsNoOverflow(13)->getTimestamp()+1;
 if(is_file(dirname(__DIR__).'/Domains/Services/HistoryRetention.php')){HistoryRetention::tick($at);}
 expect(!WatchAudit::whereKey($a->id)->exists(),'Marked ordinary audit leaves active history after thirteen months');
-expect(\Paymenter\Extensions\Servers\Domains\Services\WatchDiscovery::staffPaused($watch->fresh()),'Current staff pause remains authority after thirteen months');
 expect(WatchAudit::whereKey($legacy->id)->exists(),'Unmarked mixed-zone audit stays active');
 same('unmarked_audit_time',DB::table(RetentionSchema::MARKS)->where('family','watch_audit')->where('source_id',$legacy->id)->value('reason'),'Ambiguous audit is listed explicitly');
 expect(!DB::table('domains_audit_archives')->where('id',$event)->exists(),'Explicitly dated completed audit event moves to cold storage');
