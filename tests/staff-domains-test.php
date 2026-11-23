@@ -321,6 +321,7 @@ $excluded=[
     'OwnerFormValidation.php'=>['mx_pref','priority','weight'], // Owner form field names in grouped match arms.
     'RefundProof.php'=>['unsent'], // Driver execution disposition.
     'NativeCatalogue.php'=>['registration','transfer'], // Product slug suffixes.
+    'RenewalDecision.php'=>['admit','quarantine','advanced','unconfirmed'], // Internal admission and registrar-read decisions.
     'RenewalStop.php'=>['cancellation','staff','adopted','unreadable'], // Renewal intent/read state; the domain policy notice presents unreadable data.
     // Shared workers also emit phase names and audit events without a request reason.
     'ObservationWork.php'=>['holding'], // Work phase identity.

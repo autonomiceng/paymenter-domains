@@ -129,8 +129,15 @@ $descriptor = new \Paymenter\Extensions\Servers\Domains\Data\AdmittedOperation($
     new \Paymenter\Extensions\Servers\Domains\Data\DateEvidence($d->provider_expires_at->format('Y-m-d'), \Paymenter\Extensions\Servers\Domains\Data\ExpiryPrecision::Date, 'renewal_base'));
 $ctx = new \Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding, \Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background,
     $clock->now()->modify('+60 seconds'), new \Paymenter\Extensions\Servers\Domains\Data\RequestBudget(1), $clock);
-$grantMap = (new ReflectionProperty($engine, 'grants'))->getValue($engine); $grantMap[$descriptor] = [$ctx, $l['stamp'], $op->id, 'ordinary', $writer];
-$refuse(fn () => $engine->consume($descriptor, $ctx, $writer), 'Last local consume boundary refuses DNR even with injected live grant');
+$grantMap = (new ReflectionProperty($engine, 'grants'))->getValue($engine);
+$grantMap[$descriptor] = ['context' => $ctx, 'stamp' => $l['stamp'], 'id' => $op->id,
+    'revision' => $op->fresh()->transition_revision, 'mode' => 'ordinary', 'writer' => $writer];
+try {
+    $engine->consume($descriptor, $ctx, $writer);
+    throw new LogicException('Last local consume boundary admitted a stopped renewal');
+} catch (\Paymenter\Extensions\Servers\Domains\Services\RenewalUnsent $refusal) {
+    expect($refusal->getPrevious()?->getMessage() === 'Renewal obligation authority changed.', 'Final consume rechecks renewal authority');
+}
 same(0, $writes, 'Final consume never reaches writer');
 // Sent original attempts still need outcome reconciliation; no second execution is authorized.
 foreach (['pending', 'uncertain', 'running'] as $sentState) {
