@@ -4,6 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/Support/reminders.php';
 use App\Models\{NotificationTemplate,ServiceCancellation};
 use Illuminate\Support\Facades\{Auth,DB,Mail};
+use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Mail\DomainNotice;
 use Paymenter\Extensions\Servers\Domains\Services\{ReminderSchedules,ReminderSchema};
 // Expiry-day zero and an empty schedule have distinct staff-facing labels.
@@ -56,9 +57,10 @@ config(['settings.mail_disable'=>true]);$count=\App\Models\Notification::where('
 expect($reminders->remind($appOnly->id),'Mail-disable preserves in-app notice');
 same($count+1,\App\Models\Notification::where('user_id',$appOnly->user_id)->count(),'Native app channel delivered');
 same($before,Mail::queued(DomainNotice::class)->count(),'Global mail-disable queues no mail');config(['settings.mail_disable'=>false]);
-// Deliberately customized schedules and templates survive retained migration rollback/reinstall.
-$m=require dirname(__DIR__).'/Domains/database/migrations/2026_11_23_000001_create_domains_schema.php';$m->down();ReminderSchema::install();
-$row=DB::table('domains_reminder_schedules')->where('server_id',$d->server_id)->sole();same(true,(bool)$row->enabled,'Downgrade retains customized schedule');
+// Customized schedules survive uninstall and schema reinstallation.
+(new Domains([]))->uninstalled();
+ReminderSchema::install();
+$row=DB::table('domains_reminder_schedules')->where('server_id',$d->server_id)->sole();same(true,(bool)$row->enabled,'Reinstall retains customized schedule');
 $enable(1);$staff->role->update(['permissions'=>[\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW]]);
 commerceReject(fn()=>ReminderSchedules::save($staff,$d->server_id,$row->revision,true,'1','3','revoked_role'));
 // A durable bounded cursor progresses; repeated fixed-time invocation cannot storm an account.

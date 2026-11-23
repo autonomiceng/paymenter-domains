@@ -186,7 +186,7 @@ foreach([$map->fresh(),$audit->fresh(),$profile]as$row){
 $entry->upgraded('0.1.0');$entry->uninstalled();WatchSchema::verify();
 DB::table('migrations')->where('migration','2026_11_23_000001_create_domains_schema')->delete();
 $refused=false;try{$entry->installed();}catch(DomainException){$refused=true;}expect($refused,'Missing watch migration history refuses reinstall');
-$m=require dirname(__DIR__).'/Domains/database/migrations/2026_11_23_000001_create_domains_schema.php';$m->down();WatchSchema::verify();
-same(8,WatchSource::count(),'Down retains all sources');same(2,WatchName::count(),'Down retains owner names');
+WatchSchema::verify();
+same(8,WatchSource::count(),'Uninstall and refused reinstall retain all sources');same(2,WatchName::count(),'Uninstall and refused reinstall retain owner names');
 Schema::drop('domains_watch_sources');$refused=false;try{WatchSchema::install();}catch(RuntimeException $e){$refused=str_contains($e->getMessage(),'Partial');}expect($refused,'Partial retained schema refuses repair');
 echo "Watch storage owner identities, source target invariants, revisions, disabled mappings, encrypted evidence and retained history passed.\n";$nativeSuccessful=true;

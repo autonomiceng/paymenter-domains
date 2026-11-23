@@ -129,7 +129,7 @@ dnsRefused(fn()=>$first->fill(['dns'=>'external'])->save(),'Observations immutab
 dnsRefused(fn()=>$first->increment('started_at'),'Numeric observation updates refused');
 $stale = $profile->fresh(); DB::transaction(fn()=>$profile->fill(['revision'=>4,'reason'=>'Edit again'])->save());
 dnsRefused(fn()=>$stale->fill(['revision'=>4,'reason'=>'Stale write'])->save(),'Profile optimistic revision');
-$m = require dirname(__DIR__).'/Domains/database/migrations/2026_11_23_000001_create_domains_schema.php';$m->down();WatchDnsSchema::verify();
+WatchDnsSchema::verify();
 $raw = DB::table('domains_watch_observations')->pluck('facts')->all();$entry->upgraded('0.1.0');$entry->uninstalled();
 same($raw,DB::table('domains_watch_observations')->pluck('facts')->all(),'Upgrade/uninstall retain ciphertext');
 DB::table('migrations')->where('migration','2026_11_23_000001_create_domains_schema')->delete();

@@ -4,6 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/adoption-holding.php';
 use Illuminate\Support\Facades\{DB, Schema};
+use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Services\{HoldingIdentityLock};
 $f = adoptionHoldingFixture(); $d = $f['domain']; $a = $f['adoption'];
 $guard = new \Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard(new \Paymenter\Extensions\Servers\Domains\Services\HolderPricing($f['prices']), $f['clock']); $guard->boot();
@@ -76,8 +77,8 @@ $d->update(['confirmed_revision' => 3, 'provider_expires_at' => '2028-10-20', 'o
 same($holding, $d->fresh()->snapshot['holding'], 'Evolution retains original holding identity');
 same($a->id, $d->fresh()->adoption_id, 'Evolution retains original pointer');
  \Paymenter\Extensions\Servers\Domains\Services\FoundationSchema::verify();
-$m = require dirname(__DIR__).'/Domains/database/migrations/2026_11_23_000001_create_domains_schema.php'; $m->down();
-same($holding, $d->fresh()->snapshot['holding'], 'Retained migration preserves original proof');
+(new Domains([]))->uninstalled();
+same($holding, $d->fresh()->snapshot['holding'], 'Uninstall preserves original proof');
 Schema::table('domains_domains', fn ($t) => $t->dropColumn('adoption_id'));
 $failed = false; try { \Paymenter\Extensions\Servers\Domains\Services\FoundationSchema::verify(); } catch (RuntimeException) { $failed = true; }
 expect($failed, 'Recorded missing pointer refuses verification');

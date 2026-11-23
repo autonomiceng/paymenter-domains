@@ -15,6 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,Registrar
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier,Clock};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Capabilities,Disposition,DriverResult,Environment,Evidence,Money,RequestBudget,RequestContext,RequestOrigin,ResultReason,SendState};
+use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation,Price};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, BalanceForecast, BalanceReads, BalanceSchema, ObservationSchema, RegistrarBalances, RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
@@ -442,5 +443,6 @@ same($midnightReads+2,$readState->calls,'Next due daily read still happens after
 same($midnightStart->getTimestamp()+172800,(int)$row($a)->daily_due_at,'Next daily read retains full provider spacing');
 $role=$staff->role;$role->update(['permissions'=>[]]);try{$balances->refresh($a->server_id);expect(false,'Permission revoked between renders must refuse');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Current permission reloaded');}
 BalanceSchema::install();same('6.00',$row($a)->amount,'Schema reinstall retains balance');
-$migration=require dirname(__DIR__).'/Domains/database/migrations/2026_11_23_000001_create_domains_schema.php';$migration->down();expect(Schema::hasTable(BalanceSchema::TABLE),'Rollback retains ledger');
+(new Domains([]))->uninstalled();
+expect(Schema::hasTable(BalanceSchema::TABLE),'Uninstall retains ledger');
 echo "Registrar balances, forecast, exact money, permissions, daily spacing and Filament rendering passed\n";$nativeSuccessful=true;

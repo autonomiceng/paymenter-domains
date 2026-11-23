@@ -49,7 +49,6 @@ DB::transaction(fn()=>WatchName::create([...$attrs,'user_id'=>$other->id]));
 DB::table('domains_domains')->where('domain','managed.test')->update(['provenance'=>'adoption_pending']);
 DB::transaction(fn()=>WatchName::create($attrs));
 $original=DB::table('domains_managed_public_observations')->value('facts');
-$m=require dirname(__DIR__).'/Domains/database/migrations/2026_11_23_000001_create_domains_schema.php';$m->down();
 $entry->upgraded('0.1.0');$entry->uninstalled();
 same($original,DB::table('domains_managed_public_observations')->value('facts'),'Lifecycle retains ciphertext');
 expect(in_array(ManagedPublicSchema::class,Installation::SCHEMAS,true),'Combined verifier includes managed signals');

@@ -5,6 +5,7 @@ require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 use App\Models\{Server,Setting};
 use Illuminate\Support\Facades\{Auth,Crypt,DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Staff,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,StaffAuditSchema,StaffSettingsReview as Review};
 extract(commerceFixture());Carbon\Carbon::setTestNow($now);$t=$tlds[0];
 $u=staffUser([Staff::VIEW,Staff::POLICY,Review::permission('default_rule'),Review::permission('publish')]);Auth::setUser($u);
@@ -80,10 +81,10 @@ expect(count(Review::historyRows($server))<=2*Review::HISTORY_LIMIT,'Both histor
 same($stamp,Review::stamp($t->server_id,$t->id),'Audit growth leaves the reviewed state unchanged');
 tldRefusal(fn()=>$first->local(static fn()=>null),'Review key used.');
 $keyRows=DB::table(Review::KEYS)->get()->toJson();$archiveRows=DB::table(AuditArchives::TABLE)->orderBy('id')->get()->toJson();
-$migration=require dirname(__DIR__).'/Domains/database/migrations/2026_11_23_000001_create_domains_schema.php';
-$migration->down();StaffAuditSchema::verify();
-same($keyRows,DB::table(Review::KEYS)->get()->toJson(),'Reinstall retains used keys');
-same($archiveRows,DB::table(AuditArchives::TABLE)->orderBy('id')->get()->toJson(),'Reinstall retains encrypted archive bytes');
+(new Domains([]))->uninstalled();
+StaffAuditSchema::verify();
+same($keyRows,DB::table(Review::KEYS)->get()->toJson(),'Uninstall retains used keys');
+same($archiveRows,DB::table(AuditArchives::TABLE)->orderBy('id')->get()->toJson(),'Uninstall retains encrypted archive bytes');
 foreach([Review::KEYS,AuditArchives::TABLE] as $table){
     Schema::rename($table,'retained_audit_fixture');
     try{StaffAuditSchema::install();expect(false,'Missing retained audit table accepted');}

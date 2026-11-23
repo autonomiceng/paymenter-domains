@@ -16,5 +16,8 @@ return new class extends Migration {
         }
     }
 
-    public function down(): void {} // Uninstall preserves ownership, operations and billing history.
+    public function down(): void
+    {
+        throw new \DomainException('The Domains schema cannot be rolled back because it retains ownership, operations and billing history.');
+    }
 };

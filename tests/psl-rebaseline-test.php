@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php'; require __DIR__.'/Support/psl.php'; require __DIR__.'/Support/staff-panel.php';
 use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Services\{PslSchema,PslReviewSchema,PslValidator,PslRebaseline,PslTransport,PublicSuffixList as Lists,PslFailure};
 use Paymenter\Extensions\Servers\Domains\Models\WatchAudit;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
@@ -58,5 +59,6 @@ $body=str_replace("\ncom\n","\n",pslFixture(6,6));$clock->at+=86400;same('sentin
 DB::table('domains_psl_snapshots')->where('state','current')->update(['compressed_body'=>'damaged']);$body=pslFixture(40,40);$clock->at+=86400;
 same('Saved list damaged',\Paymenter\Extensions\Servers\Domains\Admin\Support\PslFacts::state($lists),'Damaged bytes have distinct recovery state');
 same('stored_copy_invalid',$lists->update(),'Damaged saved copy is not parser recovery');same(null,$reviews->pending(),'Damaged saved copy yields no candidate');
-$m=require dirname(__DIR__).'/Domains/database/migrations/2026_11_23_000001_create_domains_schema.php';$m->down();PslReviewSchema::verify();same(4,WatchAudit::count(),'Retain acceptance history');
+(new Domains([]))->uninstalled();
+PslReviewSchema::verify();same(4,WatchAudit::count(),'Retain acceptance history');
 echo "PSL pending bytes, exact hash, permission, sentinel refusal, rebaseline and retained audit passed.\n";$nativeSuccessful=true;

@@ -11,14 +11,13 @@ use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
+use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Models\{ContactProfile, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, ContactDetails, ContactProfiles, ContactProfileSchema,
     ContactRecovery, ContactSetup, ContactValidation, InvoiceBinding, RegistryInputs};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 $fixtureEnding = 'test';
 extract(commerceFixture(true, ending: $fixtureEnding)); ContactProfileSchema::install(); ContactProfileSchema::verify();
-$migration = require dirname(__DIR__).'/Domains/database/migrations/2026_11_23_000001_create_domains_schema.php';
-$migration->down(); ContactProfileSchema::verify();
 $clock ??= new FakeClock($now); $admission = activeFixtureAdmission($native, $sellers, activeFixtureEligibility($bindings, $clock), $clock);
 $admission->boot(); $invoiceBinding=new InvoiceBinding($admission,$native,$prices,$clock);$invoiceBinding->boot();app()->instance(InvoiceBinding::class,$invoiceBinding);
 $user = commerceUser(); $user->update(['email' => 'contact@example.com']); $other = commerceUser();
@@ -315,7 +314,8 @@ try {
     app()->instance('encrypter', $originalEncrypter); Illuminate\Database\Eloquent\Model::encryptUsing($originalEncrypter);
     config(['app.key' => $originalKey]);
 }
-$migration->down(); ContactProfileSchema::install(); same(2, ContactProfile::count(), 'Reinstall retains owner mappings');
+(new Domains([]))->uninstalled();
+ContactProfileSchema::install(); same(2, ContactProfile::count(), 'Reinstall retains owner mappings');
 // Non-billable contacts can close only as audited never-sent terminal disposition, never refund/replay.
 $management = static function () use ($op): Operation {
     return Operation::create(['domain_id' => $op->domain_id, 'service_id' => $op->service_id, 'server_id' => $op->server_id,

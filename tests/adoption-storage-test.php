@@ -112,7 +112,6 @@ foreach([['domains_adoptions','request_key',$preview->request_key],['domains_his
 $counts=[Adoption::count(),HistoryLink::count()];$ciphertexts=[DB::table('domains_adoptions')->pluck('evidence','id')->all(),DB::table('domains_history_links')->pluck('evidence','id')->all()];
 $entry->upgraded('0.1.0');$entry->uninstalled();$entry->installed();
 $migration=\Paymenter\Extensions\Servers\Domains\Services\Installation::BASELINE;
-$m=require dirname(__DIR__).'/Domains/database/migrations/'.$migration.'.php';$m->down();
 $record=(array)DB::table('migrations')->where('migration',$migration)->first();DB::table('migrations')->where('migration',$migration)->delete();
 adoptionRefused(fn()=>$entry->installed(),'Missing retained migration history refuses reinstall',DomainException::class,false);DB::table('migrations')->insert($record);
 AdoptionSchema::verify();HistoryLinkSchema::verify();

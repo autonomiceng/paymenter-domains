@@ -8,10 +8,10 @@ use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, Price, Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{FoundationSchema, ObservationSchema};
 
-$migration = require dirname(__DIR__).'/Domains/database/migrations/2026_11_23_000001_create_domains_schema.php';
 // The extension lifecycle owns fresh-install authority through catalogue retirement.
 (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 $installedTables = Schema::getTableListing(); sort($installedTables);
@@ -108,7 +108,9 @@ $before = [];
 foreach (['domains_domains', 'domains_operations', 'domains_tlds', 'domains_prices', 'domains_accounts'] as $table) {
     $before[$table] = DB::table($table)->orderBy('id')->get()->toJson();
 }
-$migration->down(); app(Illuminate\Database\Migrations\Migrator::class)->run([dirname(__DIR__).'/Domains/database/migrations']);
+$entry = new Domains([]);
+$entry->uninstalled();
+$entry->installed();
 FoundationSchema::verify();
 expect(DB::table('migrations')->where('migration', '2026_11_23_000001_create_domains_schema')->exists(), 'Native migration history recorded');
 foreach ($before as $table => $rows) { same($rows, DB::table($table)->orderBy('id')->get()->toJson(), 'Reinstall retains bytes: '.$table); }

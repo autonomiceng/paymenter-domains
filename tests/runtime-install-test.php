@@ -5,6 +5,7 @@ require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/staff-panel.php';
 use App\Models\{Server,Extension};
+use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Support\Facades\{DB,Event,Schema};
 use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Services\{Installation,Runtime,RuntimePorts,RuntimeSchema,ReminderSchedules,AccountBindings,NativePresenter,StaffSettingsReview as Review,StaffSettingsWrites,NativeCatalogue,NativeServerGuard};
@@ -27,9 +28,20 @@ try{$entry->installed();}catch(RuntimeException $e){same('Retained Domains schem
 expect($receiptRefused,'Recorded receipt storage with a missing column refuses installation');
 Schema::drop($receipts);$receiptSchema::install();
 DB::table($receipts)->insert(['delivery_key'=>str_repeat('a',64),'user_id'=>1,'notification_id'=>2]);
+$retainedReceipt = (array) DB::table($receipts)->sole();
 $entry->upgraded('0.0.1');$entry->uninstalled();$entry->installed();
-$receiptMigration=require dirname(__DIR__).'/Domains/database/migrations/2026_11_23_000001_create_domains_schema.php';$receiptMigration->down();
-same(2,(int)DB::table($receipts)->sole()->notification_id,'Install, upgrade, uninstall and rollback retain recipient receipts');
+$rollbackRefused = false;
+try {
+    app(Migrator::class)->rollback([dirname(__DIR__).'/Domains/database/migrations'], ['batch' => $receiptRecord->batch]);
+} catch (DomainException) {
+    $rollbackRefused = true;
+}
+expect($rollbackRefused, 'Native rollback refuses to remove the Domains baseline');
+same((array) $receiptRecord, (array) DB::table('migrations')->where('migration', Installation::BASELINE)->sole(),
+    'Refused rollback preserves the Domains migration record');
+same($retainedReceipt, (array) DB::table($receipts)->sole(), 'Refused rollback preserves the recipient receipt');
+$entry->installed();
+same($retainedReceipt, (array) DB::table($receipts)->sole(), 'Reinstallation after refused rollback preserves the recipient receipt');
 Runtime::register();same(app(RuntimePorts::class),app(RuntimePorts::class),'One port authority');expect(!app()->bound(\Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck::class),'Disabled TEST transfer preserves absent cart precheck');
 $entry->boot();$entry->boot();
 same(1,count(Event::getListeners('navigation')),'One public navigation authority');
