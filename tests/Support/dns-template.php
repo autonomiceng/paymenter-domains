@@ -22,9 +22,3 @@ function dnsFixture(): array
         'edited_by'=>$owner->id,'reason'=>'Synthetic composition']));
     return compact('entry','owner','other','server','product','plan','order','service','property','profile');
 }
-function dnsRefused(Closure $run, string $label, bool $transaction = true): void
-{
-    $refused = false;
-    try { $transaction ? DB::transaction($run) : $run(); } catch (LogicException|RuntimeException) { $refused = true; }
-    expect($refused, $label);
-}
