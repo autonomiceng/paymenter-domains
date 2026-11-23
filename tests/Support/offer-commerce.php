@@ -1,7 +1,6 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require_once __DIR__.'/fixture-costs.php';
 require_once __DIR__.'/OfferFixture.php';
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Edit, Facts, FactsObserved, Intent, Query};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
@@ -32,7 +31,7 @@ function offerCommerceAsStaff(callable $body): mixed
 }
 function offerCommerceFixture(): array
 {
-    $fixtureTimer = new FixtureSetup;
+    if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
     // One protected composition: every returned adapter and owner registration uses the installed staff rule.
     $installed = InstalledCommerceFixture::prepare();
     extract(offerCommerceAsStaff(static fn () => commerceFixture(true, active: true, authorize: offerCommerceAuthorize(), installed: $installed)));

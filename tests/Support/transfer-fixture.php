@@ -1,7 +1,6 @@
 <?php
 // Synthetic Enom 444f31c transfer inputs/dispatch scenarios; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require_once __DIR__.'/fixture-costs.php';
 require dirname(__DIR__).'/native-app.php';
 require __DIR__.'/commerce.php';
 require_once __DIR__.'/namesilo-account-guard.php';
@@ -71,7 +70,7 @@ $historicalTransfer = static function(string $name,int $i)use($user,$native,$pri
 };
 $startsWithRetainedTransfer = $fixtureRetainedTransfer ?? false;
 $newTransfer = static function ($name, int $i=0, bool $paid=true, bool $code=true) use ($user,$native,$sellers,$tlds,$clock,$inputs,$state,$historicalTransfer,$startsWithRetainedTransfer): Operation {
-    $fixtureTimer = new FixtureSetup;
+    if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
     $policy = DB::table('domains_sales_policies')->where('tld','com')->first();
     if ((int) $policy->server_id !== $tlds[$i]->server_id) { activeFixtureSeller($sellers,'com',$policy->revision,$tlds[$i]->server_id,true,true,$clock->now()); }
     if($startsWithRetainedTransfer||Account::where('server_id',$tlds[$i]->server_id)->sole()->environment==='live'){$op=$historicalTransfer($name,$i);}

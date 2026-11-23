@@ -50,6 +50,4 @@ final class FixtureSetup
     }
 }
 
-if (ini_get('auto_prepend_file') === __FILE__) {
-    register_shutdown_function(FixtureSetup::report(...));
-}
+register_shutdown_function(FixtureSetup::report(...));

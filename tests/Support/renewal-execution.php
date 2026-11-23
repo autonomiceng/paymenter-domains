@@ -1,7 +1,6 @@
 <?php
 // Synthetic Enom d1392a8 managed renewal scenarios; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require_once __DIR__.'/fixture-costs.php';
 require_once __DIR__.'/enom-history.php';
 require __DIR__.'/reconciliation-fixture.php';
 use App\Models\{Invoice, InvoiceTransaction};
@@ -54,7 +53,7 @@ $observeRenewalCost=static function($binding)use($ports,$clock):void{
         $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',[$cost]),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
 };
 $acquireRenewalHolding = static function (string $name) use ($prepare, $reconcile): array {
-    $fixtureTimer = new FixtureSetup;
+    if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
     [$original, $binding] = $prepare($name);
     $original = $reconcile->run($original->id);
     same('succeeded', $original->state, 'Real original charge and expiry anchor');

@@ -1,7 +1,6 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require_once __DIR__.'/fixture-costs.php';
 require_once __DIR__.'/FakeRegistrar.php';
 require_once __DIR__.'/offer-generation.php';
 require_once __DIR__.'/offer-writers.php';
@@ -15,7 +14,7 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 
 function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com', bool $active = true, ?Closure $authorize = null, array $registrars = ['enom','namesilo'], bool $nameSiloLocal = true, array $identities = [], ?InstalledCommerceFixture $installed = null): array
 {
-    $fixtureTimer = new FixtureSetup;
+    if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
     if(!app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)){app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new \Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z')));}
     if ($active) { ($installed ?? InstalledCommerceFixture::prepare())->consume();app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class);
         // Fresh empty ports keep the installed catalogue contract, without retaining provider factories.

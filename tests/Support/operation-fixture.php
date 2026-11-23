@@ -2,7 +2,6 @@
 // Synthetic adaptations of Enom 444f31c request-gates/cart-funding/provider-disposition scenarios.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require_once __DIR__.'/fixture-costs.php';
 if (!($installedFixture ?? false)) { require_once dirname(__DIR__).'/native-app.php'; }
 require __DIR__.'/commerce.php';
 require __DIR__.'/native-commerce.php';
@@ -40,7 +39,7 @@ $readyRegistration = ($fixtureReadyRegistration ?? false) && !($installedFixture
     && ($fixtureEnvironment ?? \Paymenter\Extensions\Servers\Domains\Data\Environment::Test) === \Paymenter\Extensions\Servers\Domains\Data\Environment::Test;
 if ($readyRegistration) { require_once __DIR__.'/ready-registration.php'; }
 $new = static function (string $name, bool $paid = true, bool $setup = true, string $action = 'register', int $term = 1) use ($user, $product, $native, $tlds, $clock, $transfers, $admission, $readyRegistration): Operation {
-    $fixtureTimer = new FixtureSetup;
+    if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
     // Checkout belongs to this explicit module composition; later physical-send probes keep their Runtime.
     $runtime=app()->bound(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)?app(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class):null;
     app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);

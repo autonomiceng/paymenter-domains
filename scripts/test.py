@@ -409,7 +409,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                   'guard_complete': False, 'skipped': kind == 'mariadb' and code == 77,
                   'seconds': seconds, 'guard_seconds': 0, 'started_seconds': started-started_run,
                   'finished_seconds': time.monotonic()-started_run}
-        if kind == 'native' and code == 0 and argv[-1].endswith('.php'):
+        if kind == 'native' and code == 0 and (env or {}).get('DOMAINS_TEST_FIXTURE_COSTS') == '1' and argv[-1].endswith('.php'):
             record = re.search(rb'^DOMAINS_FIXTURE_COSTS (.+)$', stderr, re.MULTILINE)
             if record:
                 result['fixture_costs'] = json.loads(record[1])
@@ -752,7 +752,7 @@ def main(*, launch=False):
                     if requested and path not in requested:
                         continue
                     argv = [sys.executable] if path.endswith('.py') else [php]
-                    if kind == 'native' and path.endswith('.php'):
+                    if kind == 'native' and path.endswith('.php') and env.get('DOMAINS_TEST_FIXTURE_COSTS') == '1':
                         argv += ['-d', 'auto_prepend_file='+str(ROOT/'tests/Support/fixture-costs.php')]
                     commands.append((kind, [*argv, path]))
         if not commands:

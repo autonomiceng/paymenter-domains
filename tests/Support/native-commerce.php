@@ -2,7 +2,6 @@
 // Native checkout helpers adapted from Enom 444f31c tests/enom-cart-order.php.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require_once __DIR__.'/fixture-costs.php';
 require_once __DIR__.'/reserved-fixtures.php';
 use App\Models\{Cart, Product, User};
 use Illuminate\Support\Facades\Auth;
@@ -23,7 +22,7 @@ function commerceAdd(Cart $cart, Product $product, string $name, int $term = 1):
 }
 function commerceCheckout(User $user, Cart $cart)
 {
-    $fixtureTimer = new FixtureSetup;
+    if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
     Illuminate\Support\Once::flush();
     $page=Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])->test(App\Livewire\Cart::class);
     // Ordinary commerce cases supply the contact form; account-specific cases define their own properties.
@@ -44,7 +43,7 @@ function commerceOrderContact(User $user): array
 /** Synthetic retained order from before checkout required valid contacts. Never a product admission path. */
 function commerceLegacyCheckout(User $user, Cart $cart)
 {
-    $fixtureTimer = new FixtureSetup;
+    if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
     $beforeOrderId = App\Models\Order::max('id');
     $legacy = \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::collect($user);
     $contact = commerceOrderContact($user);
