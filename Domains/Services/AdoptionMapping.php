@@ -75,15 +75,14 @@ final class AdoptionMapping
                 try { return CanonicalName::normalize($property->value) === $target->name; } catch (\Throwable) { return false; }
             })) { throw new \DomainException('competing_holding'); }
             $p = $peer->product; $server = $p?->server;
-            $watch = $p ? \Paymenter\Extensions\Servers\Domains\Models\WatchProductMap::where('product_id', $p->id)->first() : null;
             $departed = $departedServices[$peer->id] ?? null;
             if ($departed && ((int) $peer->user_id !== (int) $departed->user_id || $peer->status !== 'cancelled'
                 || Domain::where('service_id', $peer->id)->whereKeyNot($departed->id)->exists())) { throw new \DomainException('competing_holding'); }
             if (!$departed && (!$p || $p->settings()->whereIn('key', ['domains_catalogue', 'domains_tld_id', 'domains_action', 'domains_registrar'])->exists()
-                || ($p->server_id !== null && (!$watch || !$server || in_array(strtolower($server->extension), ['domains', 'enom', 'namesilo'], true))))) {
+                || $p->server_id !== null)) {
                 throw new \DomainException('competing_holding');
             }
-            $peerStamps[] = self::stamp([$peer->getRawOriginal(), $p?->getRawOriginal(), $server?->getRawOriginal(), $watch?->getRawOriginal(), $peerNames->map(fn ($n) => $n->getRawOriginal())->all()]);
+            $peerStamps[] = self::stamp([$peer->getRawOriginal(), $p?->getRawOriginal(), $server?->getRawOriginal(), $peerNames->map(fn ($n) => $n->getRawOriginal())->all()]);
         }
         $ops = Operation::where(fn ($q) => $q->where('service_id', $service->id)->when($domain, fn ($q) => $q->orWhere('domain_id', $domain->id)))->orderBy('id')->limit(101)->when($lock, fn ($q) => $q->lockForUpdate())->get();
         $items = $lock ? $l['items']->where('reference_type', $service->getMorphClass())->where('reference_id', $service->id)->values() : $service->invoiceItems()->orderBy('id')->limit(101)->get();

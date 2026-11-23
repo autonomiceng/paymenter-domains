@@ -16,7 +16,7 @@ final class Runtime
         foreach([RegistrarRegistry::class,AccountBindings::class,PricingRules::class,PriceCatalogue::class,SellerPolicies::class,NativeCatalogue::class,
             CheckoutEligibility::class,CartAdmission::class,InvoiceBinding::class,HolderPricing::class,NativeDomainGuard::class,NativeServerGuard::class,
             Storefront::class,OwnedDomains::class,Installation::class,AccountReadBudget::class,ObservationWork::class,
-            RegistrarBalances::class,PublicSuffixList::class,PslTransport::class,PslValidator::class,CatalogueSync::class,Reminders::class,Refunds::class,PayCheck::class,RuntimeWork::class,RuntimePorts::class,NativePresenter::class,WatchWork::class,WatchDiscoveryWork::class,WatchDiscovery::class] as $class){
+            RegistrarBalances::class,CatalogueSync::class,Reminders::class,Refunds::class,PayCheck::class,RuntimeWork::class,RuntimePorts::class,NativePresenter::class] as $class){
             if(!$app->bound($class)){$app->singleton($class);}
         }
         if (!$app->bound(\Paymenter\Extensions\Servers\Domains\Contracts\DnsReader::class)) {
@@ -53,7 +53,7 @@ final class Runtime
     public function boot(): void
     {
         if($this->booted){return;}$this->booted=true;
-        View::addNamespace('domains',dirname(__DIR__).'/resources/views');HostingDomainRow::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\ComplimentaryAccountSetting::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\ProductMonitoring::boot();
+        View::addNamespace('domains',dirname(__DIR__).'/resources/views');\Paymenter\Extensions\Servers\Domains\Admin\Support\ComplimentaryAccountSetting::boot();
         require dirname(__DIR__).'/routes/web.php';require dirname(__DIR__).'/routes/owned.php';
         app(NativeServerGuard::class)->boot();app(NativeDomainGuard::class)->boot();
         NativeCancellation::boot();AcquisitionRetirement::boot();PayCheck::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\NativeEditorNotice::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\SellToolbar::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\TableMenus::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\PricingEditorNotice::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\DemoTag::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffStyles::boot();
@@ -68,43 +68,6 @@ final class Runtime
         NativePaidHooks::boot();
         app()->booted(static function():void {foreach(NativePaidHooks::notices()as$feature=>$notice){if($notice!=='Available'){
             HookDiagnostics::unavailable($feature,$notice,$feature==='Start after payment'?[\App\Events\Invoice\Paid::class]:NativePaidHooks::serviceMissing());}}});
-        foreach(['saved','deleted']as$event) {
-            Event::listen('eloquent.'.$event.': '.\App\Models\Service::class,static function($service):void {
-                $products=array_values(array_filter(array_unique([(int)$service->product_id,(int)$service->getRawOriginal('product_id')]),static fn(int $id):bool=>$id>0));
-                \Illuminate\Support\Facades\DB::afterCommit(static function()use($products):void {foreach($products as$product){app(WatchDiscoveryWork::class)->hint($product);}});
-            });
-            Event::listen('eloquent.'.$event.': '.\App\Models\Property::class,static function($property):void {
-                if ($property->model_type!==(new \App\Models\Service())->getMorphClass()) { return; }
-                $service=(int)$property->model_id;
-                \Illuminate\Support\Facades\DB::afterCommit(static function()use($service):void {
-                    if (!app(WatchDiscoveryWork::class)->ready()) { return; }
-                    try {
-                        $product=\App\Models\Service::whereKey($service)->value('product_id');
-                        if ($product!==null) { app(WatchDiscoveryWork::class)->hint((int)$product); }
-                    } catch (\Throwable) { \Illuminate\Support\Facades\Log::warning('Public domain property hint deferred.'); }
-                });
-            });
-        }
-        Event::listen('eloquent.saved: '.\Paymenter\Extensions\Servers\Domains\Models\WatchProductMap::class,static function($map):void {
-            $product=(int)$map->product_id;
-            \Illuminate\Support\Facades\DB::afterCommit(fn()=>app(WatchDiscoveryWork::class)->hint($product));
-        });
-        Event::listen('eloquent.saved: '.\Paymenter\Extensions\Servers\Domains\Models\Domain::class,static function($domain):void {
-            if(!$domain->wasRecentlyCreated && !$domain->wasChanged(['status','service_id','user_id','server_id','authority_generation','confirmed_revision','provider_expires_at'])){return;}
-            $id=(int)$domain->id;$owner=(int)$domain->user_id;
-            WatchDiscoveryHints::names([[$owner,$domain->reservation_name],[(int)$domain->getRawOriginal('user_id'),$domain->getRawOriginal('reservation_name')]]);
-            \Illuminate\Support\Facades\DB::afterCommit(static fn()=>app(WatchWork::class)->enrollManaged($id,$owner));
-        });
-        foreach([\Paymenter\Extensions\Servers\Domains\Models\WatchName::class,\Paymenter\Extensions\Servers\Domains\Models\WatchSource::class] as $model){
-            Event::listen('eloquent.saved: '.$model,static function($row):void {
-                $id=$row instanceof \Paymenter\Extensions\Servers\Domains\Models\WatchName?(int)$row->id:(int)$row->watch_id;
-                $owner=(int)$row->user_id;
-                \Illuminate\Support\Facades\DB::afterCommit(fn()=>app(WatchWork::class)->enrollWatch($id,$owner));
-            });
-        }
         Schedule::call(static function():void {\Paymenter\Extensions\Servers\Domains\Jobs\RunRuntime::dispatch();})->name('domains-runtime')->everyMinute()->withoutOverlapping(15)->onOneServer();
-        Schedule::call(static function():void {
-            if(app(PublicSuffixList::class)->scheduledAttemptDue()){\Paymenter\Extensions\Servers\Domains\Jobs\UpdatePublicSuffixList::dispatch();}
-        })->name('domains-public-suffix-list')->everyMinute()->withoutOverlapping(15)->onOneServer();
     }
 }

@@ -137,8 +137,7 @@ $context = new \Paymenter\Extensions\Servers\Domains\Data\RequestContext($bindin
 try { $readBindings->reader($binding->serverId)->reconcile($attempt, $context); throw new LogicException('Pre-proof refusal was swallowed'); }
 catch (\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred) {}
 same([array_slice($proofCommands, 0, 8), 9, 8], [$observe->calls, $limiter->calls, $limiter->released], 'Pre-proof transfer refusal still escapes before order/DNS');
-require __DIR__.'/Support/transfer-watch.php';
-$predecessor=transferWatchFixture('full-transfer-placeholder.com',(int)$user->id);$op=$prepare(placeholderComFixtureName('full-transfer-placeholder.com'));$r=$reconcile->run($op->id);
+$op=$prepare(placeholderComFixtureName('full-transfer-placeholder.com'));$r=$reconcile->run($op->id);
 same('succeeded',$r->state,'Status, exact unique original charge, expiry and ownership complete'); same('9001',$r->provider_order_id,'Independent billing order ID');
 same('8.95',$r->cost['actual']['amount'],'Exact charged USD amount'); same('2028-01-01',$r->confirmed_expires_at->format('Y-m-d'),'Full year added to original expiry');
 same('active',$r->domain->status,'Active only after proof'); same('2028-01-01',$r->domain->renewal_policy['billing_anchor']['expiry'],'Transfer billing anchor');
@@ -250,7 +249,6 @@ same('2028-01-01',$renew->base_expires_at->format('Y-m-d'),'Transfer full-term a
 same('2029-01-01',$renew->expected_expires_at->format('Y-m-d'),'One complete renewal year'); same('awaiting_payment',$renew->state,'Billing grants no write authority');
 same($invoice->id,$billing->invoice($completed->domain_id,$user)->id,'Transfer renewal billing is idempotent');
 same(null,$invoice->items->sole()->reference_id,'Renewal debt has no native service dispatch');
-assertTransferWatch($predecessor,$completed,$clock->now()->getTimestamp());
 // A pending wait stays quiet only while its reads work and will continue.
 Paymenter\Extensions\Servers\Domains\Services\ReminderSchema::install();
 $raised=static function($op)use($clock):bool {

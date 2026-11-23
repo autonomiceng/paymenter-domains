@@ -33,7 +33,6 @@ final class DomainReservations
         if(DB::transactionLevel()!==1){throw new \LogicException('Unfunded release requires the outer retirement transaction.');}
         UnpaidAcquisitionProof::require($locks,true);
         Domain::whereKey($locks['domain']->id)->update(['reservation_name'=>null]);
-        WatchDiscoveryHints::names([[(int)$locks['domain']->user_id,$locks['domain']->reservation_name]]);
     }
 
     /** A confirmed departure frees the name inside its own money decision, after its record is written. */
@@ -60,7 +59,6 @@ final class DomainReservations
         }
         // Single release writer; ordinary model edits cannot clear a reservation.
         Domain::whereKey($domain->id)->update(['reservation_name' => null]);
-        WatchDiscoveryHints::names([[(int)$domain->user_id,$name]]);
     }
 
     private static function resolved(Operation $operation, Domain $domain): bool

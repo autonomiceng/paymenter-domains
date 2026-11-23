@@ -224,10 +224,6 @@ final class OperationReconciliation
             ComplimentaryInvoices::complete($op);
             return $op;
         });
-        if ($operation->action === 'transfer' && $operation->state === 'succeeded') {
-            try { (new TransferWatchEnrollment())->repair((int)$operation->domain_id,(int)$operation->domain->user_id,$this->clock->now()->getTimestamp()); }
-            catch (\Throwable $e) { logger()->warning('Transfer watch repair deferred.',['exception_class'=>$e::class]); } // Runtime cursor retries.
-        }
         return $operation;
     }
     /** Internal audited resume seam; staff authorization/route belongs to36. No send authority. */
