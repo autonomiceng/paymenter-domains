@@ -28,7 +28,7 @@ function curl_exec($h): bool {
 extract(adoptionCommitFixture());
 $clock->time=new \DateTimeImmutable('2026-11-02T12:00:00Z');
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
-\Paymenter\Extensions\Servers\Domains\Services\LiveReservationSchema::install();
+\Paymenter\Extensions\Servers\Domains\Services\EnomLiveCallSchema::install();
 $server=Server::create(['name'=>'Synthetic import','type'=>'server','extension'=>'Domains','enabled'=>true]);
 $identity=LocalAccountEnrollment::PREFIX.'import-account';
 $account=Account::withVerifiedBindingWrite(fn()=>Account::create(['server_id'=>$server->id,'registrar_key'=>'namesilo','environment'=>'live','stable_identity'=>$identity]));

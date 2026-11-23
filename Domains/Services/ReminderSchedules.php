@@ -3,10 +3,10 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{Server,User};
-use Illuminate\Support\Facades\{DB,Schema};
+use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-/** New connections enroll On; the upgrade pins existing accounts Off before this default applies. */
+/** New connections enroll with reminder delivery enabled. */
 final class ReminderSchedules
 {
     /** Null means unreadable saved data, not an empty schedule. */
@@ -36,7 +36,6 @@ final class ReminderSchedules
             if($row){if($row->account_fingerprint!==$a->account_fingerprint){throw new \DomainException('Reminder account changed.');}return;}
             $schedule=['server_id'=>$serverId,'account_fingerprint'=>$a->account_fingerprint,
                 'enabled'=>true,'before_days'=>'[1,7,30,60]','after_days'=>'[3]'];
-            if(Schema::hasColumn('domains_reminder_schedules','audit')){$schedule['audit']=encrypt([]);}
             DB::table('domains_reminder_schedules')->insert($schedule);
         });
     }

@@ -5,6 +5,7 @@ require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/storefront.php';
 use Illuminate\Http\Request;
+use Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation;
 use Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter;
 use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\StorefrontController;
@@ -85,19 +86,22 @@ catch (Paymenter\Extensions\Servers\Domains\Services\ReadDeferred) {}
 $budget->release($b, RequestOrigin::Background, $lease);
 $leases = static fn (): array => json_decode((string) Illuminate\Support\Facades\DB::table('domains_read_budgets')->where('server_id', $b->serverId)->value('leases'), true);
 same([AccountReadBudget::WAITING], array_keys($leases()), 'Fixture: only the waiting marker is left');
-// A catalogue upgrade drains with only the marker left: it is not a reservation.
-if (!Illuminate\Support\Facades\Schema::hasTable('domains_observation_work')) { Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install(); }
-$drained = static function (): ?string {
-    try { Illuminate\Support\Facades\DB::transaction(static fn () => (new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::class, 'drained'))->invoke(null)); return null; }
-    catch (DomainException $e) { return $e->getMessage(); }
+// The activation drain check allows the waiting marker and refuses an active reservation.
+$drained = static function (): bool {
+    try {
+        Illuminate\Support\Facades\DB::transaction(static fn () => (new ReflectionMethod(CatalogueActivation::class, 'drained'))->invoke(null));
+        return true;
+    } catch (DomainException) {
+        return false;
+    }
 };
-same(null, $drained(), 'A waiting search marker does not block a catalogue upgrade');
+expect($drained(), 'A waiting search marker satisfies the activation drain check');
 $refused = false;
 try { $budget->acquire($b, RequestOrigin::Background); } catch (Paymenter\Extensions\Servers\Domains\Services\ReadDeferred) { $refused = true; }
 expect($refused, 'Background reads give way while the marker lasts');
 $clock->instant = $clock->instant->modify('+3 seconds');
 $lease = $budget->acquire($b, RequestOrigin::Background);
 same([$lease], array_keys($leases()), 'Once the marker expires a background read is admitted without any search, and the marker is gone');
-same('Catalogue upgrade requires released read reservations.', $drained(), 'A real read reservation still blocks a catalogue upgrade');
+expect(!$drained(), 'An active read reservation fails the activation drain check');
 $budget->release($b, RequestOrigin::Background, $lease);
 $nativeSuccessful = true; echo "Storefront busy-slot recovery and plain retry results passed.\n";

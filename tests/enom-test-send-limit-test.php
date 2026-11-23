@@ -13,7 +13,6 @@ use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Services\{ApiCallLimits,EnomLive,EnomLiveCalls,EnomLiveCallSchema,StaffSettingsReview as Review,EnomTestCallLimit,EnomTestCalls,EnomTestSendLimit as Limit,EnomTestSendLimitSchema as Tables,Installation};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 (new Installation)->install();(new Installation)->install();
-foreach(Tables::RETIRED as $table){expect(!Schema::hasTable($table),'Fresh install has no retired TEST budget table '.$table);}
 $clock=new FakeClock(new DateTimeImmutable('2026-10-28T23:59:30Z'));app()->instance(Clock::class,$clock);
 function admits(string $uid,string $command='GetBalance'): bool { try{Limit::admit(Environment::Test,$uid,$command);return true;}catch(EnomTestCallLimit){return false;} }
 function sends(): int { return DB::table(Tables::SENDS)->count(); }

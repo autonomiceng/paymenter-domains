@@ -85,7 +85,7 @@ $retryAt=now()->getTimestamp()+600;
 $failRead=static function(string $code)use($server,$account,$retryAt):void {
     DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$server],['account_fingerprint'=>$account->account_fingerprint,'offer_lease'=>0,
         'offer_feed_failure'=>$code,'offer_feed_failed_at'=>now()->getTimestamp(),'offer_feed_succeeded_at'=>null,
-        'offer_work'=>json_encode(['feed_due'=>$retryAt,'tries'=>1,'upgrade_generation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::generation()])]);
+        'offer_work'=>json_encode(['feed_due'=>$retryAt,'tries'=>1,'catalogue_generation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation::generation()])]);
 };
 $failRead('read_deadline');
 $progress=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()?->progress($server)??[];
@@ -165,10 +165,10 @@ foreach(['unobserved','stale','disabled'] as $case){
     if($case==='unobserved'){expect(str_contains($gap['text'],'Ask the registrar for a 1-year renewal cost for .com.'),'The gap uses the existing specific registrar request');}
 }
 $renewPrice->update([...costColumns($observation)]);
-$gate=App\Models\Setting::where('key',\Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::KEY)->sole();
-$savedGate=$gate->value;$gate->value=json_encode(['state'=>'paused','generation'=>2]);$gate->save();
+$gate=App\Models\Setting::where('key',\Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation::KEY)->sole();
+$savedGate=$gate->value;$gate->value=json_encode(['state'=>'invalid','generation'=>2]);$gate->save();
 $inactive=RegistrarFacts::dueGap($account,$unpriced);
-expect($inactive['act']&&str_contains($inactive['text'],\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE),
-    'Inactive catalogue needs the upgrade step rather than promising an automatically queued read');
+expect($inactive['act']&&str_contains($inactive['text'],\Paymenter\Extensions\Servers\Domains\Services\FreshInstallation::MESSAGE),
+    'An invalid catalogue receipt requires installation verification');
 $gate->value=$savedGate;$gate->save();
 echo "Registrar account counts and links agree.\n";$nativeSuccessful=true;

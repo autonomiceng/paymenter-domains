@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier,Clock,Creden
 use Paymenter\Extensions\Servers\Domains\Data\{Environment,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Registrars\{Enom\EnomLiveReservationPolicy,NameSilo\NameSiloLiveReservationPolicy};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountReadBudget,Installation,LiveReservationLimit,LiveReservations,LiveReservationSchema,LocalAccountEnrollment,NativeCatalogue,PriceCatalogue,PricingRules,RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountReadBudget,Installation,LiveReservationLimit,LiveReservations,EnomLiveCallSchema,LocalAccountEnrollment,NativeCatalogue,PriceCatalogue,PricingRules,RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 (new Installation)->install();
 $clock=new FakeClock(new DateTimeImmutable('2026-11-04T12:00:00Z'));app()->instance(Clock::class,$clock);
@@ -49,7 +49,7 @@ foreach(['enom','namesilo'] as $provider){
     $key=hash('sha256',$provider==='enom'?$identity:$provider."\0live\0".$identity);
     $ledger=new LiveReservations($provider==='enom'?new EnomLiveReservationPolicy:new NameSiloLiveReservationPolicy);
     // Old rows do not carry a purpose. All their usage must remain other work, even after upgrade.
-    DB::table(LiveReservationSchema::TABLE)->insert(['account'=>$key,'day'=>LiveReservations::day(),'used'=>909,'spend_micros'=>123]);
+    DB::table(EnomLiveCallSchema::TABLE)->insert(['account'=>$key,'day'=>LiveReservations::day(),'used'=>909,'spend_micros'=>123]);
     same(25,$ports->allowance($binding,RequestOrigin::Background),$provider.' price reads still go after other work used most of the day');
     $scope=(new ReflectionProperty(CredentialFeed::class,'scope'))->getValue($ports->feed($binding));
     $send=static function(int $count,bool $catalogue)use($scope,$binding,$ledger):int {
@@ -64,7 +64,7 @@ foreach(['enom','namesilo'] as $provider){
     same(25,$ports->allowance($binding,RequestOrigin::Interactive),'Manual sync shares the same price-read allowance');
     $reset=static function(int $used,int $catalogue=0)use($setting,$key):void {
         config([$setting.'.daily_call_cap'=>100]);
-        DB::table(LiveReservationSchema::TABLE)->where('account',$key)->update(['used'=>$used,'catalogue_used'=>$catalogue]);
+        DB::table(EnomLiveCallSchema::TABLE)->where('account',$key)->update(['used'=>$used,'catalogue_used'=>$catalogue]);
     };
     // Seed durable prior usage and exercise the boundary calls, rather than replaying a day's redundant admissions.
     $reset(79,29);
@@ -83,10 +83,10 @@ foreach(['enom','namesilo'] as $provider){
     $scope(static function()use($scope,$ledger,$binding):void {
         $scope(fn()=>$ledger->reserve($binding));$ledger->reserve($binding);
     });
-    same(2,(int)DB::table(LiveReservationSchema::TABLE)->where('account',$key)->value('catalogue_used'),'Nested catalogue scopes preserve their marker');
+    same(2,(int)DB::table(EnomLiveCallSchema::TABLE)->where('account',$key)->value('catalogue_used'),'Nested catalogue scopes preserve their marker');
     try{$scope(static fn()=>throw new RuntimeException('Synthetic scope exit'));}catch(RuntimeException){}
     $ledger->reserve($binding);
-    same(2,(int)DB::table(LiveReservationSchema::TABLE)->where('account',$key)->value('catalogue_used'),'Scope exit restores ordinary customer work');
+    same(2,(int)DB::table(EnomLiveCallSchema::TABLE)->where('account',$key)->value('catalogue_used'),'Scope exit restores ordinary customer work');
     // Production worker retains its 25-read minute ceiling for either origin; no provider attempt is allowed.
     $minute=new AccountReadBudget($clock);$lease=$minute->reserve($binding,RequestOrigin::Interactive,25);$minute->release($binding,RequestOrigin::Interactive,$lease);
     $attempts=0;config(['domains.provider_send_guard'=>static function()use(&$attempts):never{$attempts++;throw new RuntimeException('No send.');}]);

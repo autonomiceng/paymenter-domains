@@ -41,8 +41,7 @@ The installed scenario covers:
 The existing runtime worker and physical-registration capacity fixtures now use the
 same pure factory. The native payment matrix, late-contact replay and runtime records
 fixtures also supply genuine typed ports and explicit offline exchanges. They retain their reconciliation, activation, renewal, shared
-write-slot and native paid-worker checks. Retained database upgrade coverage remains
-in `tests/test_installed_package_previous.py`.
+write-slot and native paid-worker checks.
 
 These are offline composition and engine checks. They do not establish provider
 identity, live transport, financial completion, actual-stack UI or database

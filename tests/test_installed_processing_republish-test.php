@@ -3,7 +3,7 @@
 declare(strict_types=1);
 // Replay the existing small retained database instead of rebuilding the two-account catalogue.
 // Real native cart hooks, projection and checkout cannot be proved by a unit stub.
-require __DIR__.'/offer-activation-test.php';
+require __DIR__.'/Support/current-catalogue.php';
 $nativeSuccessful = false;
 require __DIR__.'/Support/offer-commerce.php';
 

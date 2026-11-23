@@ -9,7 +9,6 @@ use Paymenter\Extensions\Servers\Domains\Services\{CatalogueImportFailure,EnomTe
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock=new Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-24T12:00:00Z')));
 EnomTestSendLimitSchema::install();config(['domains.enom_test_sends_per_day'=>10,'domains.enom_test_sends_per_minute'=>100000]);
 $problems=[];
-same('Catalogue upgrade needed: install the Domains bridge and run the catalogue conversion.',Labels::reason('catalogue_upgrade_required'),'Catalogue upgrade cause has staff words');
 // A paid order is cancelled and refunded; a complimentary one has nothing to refund.
 foreach(['name_unavailable'=>'Not sent: name not available.','premium_name'=>'Not sent: premium names not supported.','order_not_supported'=>'Not sent: registrar does not support this order.'] as $code=>$cause){
     same([$cause.' Cancel and refund.',$cause.' Cancel.'],[Labels::reason($code),Labels::reason($code,true)],'Refund words follow the funding: '.$code);

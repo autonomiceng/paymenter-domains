@@ -721,8 +721,6 @@ def main(*, launch=False):
         if php_suite.IMAGE_ARCHIVES.is_dir():
             env['PHP_RUNTIME_ARCHIVE_CACHE'] = str(php_suite.IMAGE_ARCHIVES)
         env.update({key: value for key, value in os.environ.items() if key.startswith('DOMAINS_TEST_')})
-        if 'DOMAINS_UPGRADE_FROM' in os.environ:
-            env['DOMAINS_UPGRADE_FROM'] = os.environ['DOMAINS_UPGRADE_FROM']
         if 'ui' in selected:
             env.update({name: os.environ[name] for name in BROWSER_ENV if name in os.environ})
         if binary:

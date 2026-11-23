@@ -1,13 +1,13 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/offer-activation-test.php';$nativeSuccessful=false;
+require __DIR__.'/Support/current-catalogue.php';$nativeSuccessful=false;
 require_once __DIR__.'/Support/offer-generation.php';
 use App\Models\{Role,User};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices;
-use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
+use Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,StaffSettingsReview};
 $role=Role::create(['name'=>'Synthetic sync staff','permissions'=>[Staff::VIEW,Staff::POLICY,StaffSettingsReview::permission('import')]]);
@@ -22,5 +22,5 @@ DB::listen(static function($event)use(&$armed):void {
 });
 $job->handle();same(false,$armed,'Race crosses the real delivery account lookup');
 same($before,$reads->calls,'Generation change after delivery validation cannot reach provider');
-same(UpgradeGate::generation(),(new SyncPrices($actor->id,$b->serverId,$b->fingerprint))->upgradeGeneration,'Next job captures the current generation');
+same(CatalogueActivation::generation(),(new SyncPrices($actor->id,$b->serverId,$b->fingerprint))->catalogueGeneration,'Next job captures the current generation');
 $nativeSuccessful=true;

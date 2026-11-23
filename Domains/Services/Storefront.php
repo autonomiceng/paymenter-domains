@@ -61,13 +61,13 @@ class Storefront
             $mapping = $this->native->mapping($product);
             if ($mapping === null) { return ['plans'=>collect(), 'failed'=>false, 'persistent'=>false]; }
             $ending = $mapping['tld']->tld;
-            $offers = ($this->catalogue() ?? throw new \DomainException(OfferUpgrade::MESSAGE))->display([$ending]);
+            $offers = ($this->catalogue() ?? throw new \DomainException(FreshInstallation::MESSAGE))->display([$ending]);
             $plans = collect($offers[$ending] ?? [])
                 ->filter(static fn ($offer) => $offer['product']->id === $product->id)
                 ->pluck('plan')->sortBy('billing_period')->values();
             return ['plans'=>$plans, 'failed'=>false, 'persistent'=>false];
         } catch (\Throwable $error) {
-            // Allowlisted cause only; never exception text. Invalid saved upgrade state survives a reload.
+            // Allowlisted cause only; never exception text. Invalid saved activation state survives a reload.
             $cause = CartHandoffFailure::key($error);
             try {
                 if (\Illuminate\Support\Facades\Cache::add('domains.cart.choices:'.$product->id.':'.$cause, true, 60)) {
@@ -253,7 +253,7 @@ class Storefront
     /** Server-only resolution; links and forms never carry native identities. Cart admission rechecks independently. */
     public function offer(string $ending, string $action, int $term): array
     {
-        return ($this->catalogue() ?? throw new \DomainException(OfferUpgrade::MESSAGE))->offer($ending, $action, $term);
+        return ($this->catalogue() ?? throw new \DomainException(FreshInstallation::MESSAGE))->offer($ending, $action, $term);
     }
 
     /** Exact two-decimal display; no float conversion even at the integer boundary. */

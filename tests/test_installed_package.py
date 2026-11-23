@@ -1,13 +1,11 @@
 # MIT, Copyright (c) 2026 Autonomic Engineering.
-"""Installed lifecycle scenarios use active installs; retained upgrades start at the pinned checked bridge."""
-import importlib.util
+"""Exercise the native lifecycle of the current ZIP."""
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
-import tarfile
 import time
 import zipfile
 import stat
@@ -19,50 +17,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'scripts'))
 import build
 import installed_fixture
-
-# Previous local runtime before the additive public-suffix schema; no released
-# older version is implied. Source is pinned, with explicit unreleased schema
-# fixture adjustments below; superseded declarations have no upgrade path.
-PREVIOUS = '89112442164558c4ab61ff32f210d1b102605112'
-# Published main before C activation: a production-valid retained installation.
-RETAINED = 'eab53f0e98c8c2274adc7b4d5e806aa612e0d325'
-
-
-def previous_build(root, revision=PREVIOUS, *, legacy=True, name='previous'):
-    previous_source = root/(name+'-source'); previous_source.mkdir()
-    # A historical runtime is packaged and verified by the builder from its exact revision.
-    # Stream the trusted archive so its bytes are not retained twice in the budgeted process.
-    command = ['git', 'archive', revision, 'Domains', 'scripts/build.py', 'LICENSE']
-    with subprocess.Popen(command, cwd=ROOT, stdout=subprocess.PIPE) as archive:
-        with tarfile.open(fileobj=archive.stdout, mode='r|') as source:
-            for member in source:
-                path = previous_source/member.name
-                if Path(member.name).is_absolute() or '..' in Path(member.name).parts:
-                    raise ValueError('Unsafe previous source member')
-                if member.isdir():
-                    path.mkdir(parents=True, exist_ok=True)
-                elif member.isfile():
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    with source.extractfile(member) as incoming, path.open('wb') as output:
-                        shutil.copyfileobj(incoming, output)
-                else:
-                    raise ValueError('Unsafe previous source member')
-        if archive.wait():
-            raise subprocess.CalledProcessError(archive.returncode, command)
-    spec = importlib.util.spec_from_file_location('pinned_package_builder', previous_source/'scripts/build.py')
-    builder = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(builder)
-    if legacy:
-        # The unreleased observation creation baseline now includes this index.
-        # Keep the historical runtime/additive migrations, without claiming an
-        # upgrade path from its superseded synthetic index set.
-        observation = previous_source/'Domains/Services/ObservationSchema.php'
-        old = observation.read_text()
-        anchor = "                $t->unsignedBigInteger('due_at')->index(); $t->unsignedInteger('tries')->default(0);\n"
-        assert old.count(anchor) == 1, 'Pinned observation fixture changed'
-        observation.write_text(old.replace(anchor, anchor + "                $t->index(['server_id','account_fingerprint','due_at'], $t->getTable().'_account_due_index');\n"))
-    return installed_fixture.package(previous_source/'Domains', root/name, builder=builder), builder
-
 
 def refuse_unsafe_archives(root, current):
     # Refuse before native upload, which executes extension PHP and has no
@@ -88,7 +42,7 @@ def refuse_unsafe_archives(root, current):
 
 
 def main(scenario):
-    if scenario not in ('held', 'fresh', 'upgrade', 'previous', 'enom-live', 'acquisition', 'enom-exchange', 'enom-test-registration', 'enom-test-renewal', 'enom-test-management', 'enom-test-transfer', 'namesilo-registration', 'namesilo-renewal', 'namesilo-enrollment'):
+    if scenario not in ('held', 'fresh', 'enom-live', 'acquisition', 'enom-exchange', 'enom-test-registration', 'enom-test-renewal', 'enom-test-management', 'enom-test-transfer', 'namesilo-registration', 'namesilo-renewal', 'namesilo-enrollment'):
         raise ValueError('Unknown installed package scenario')
     began = time.monotonic()
     # Keep scenario limits above the measured identity and management costs.
@@ -132,44 +86,15 @@ def main(scenario):
             "zip_sha256": current["archive_sha256"],
             "real_provider_calls": 0,
         }
-        previous = previous_builder = None
-        baseline_migrations = None
         if scenario == "held":
             refuse_unsafe_archives(root, current)
             evidence['unsafe_archives_refused'] = 3
-        elif scenario == 'upgrade':
-            previous, previous_builder = previous_build(root, legacy=False)
-            assert previous['archive_sha256'] != current['archive_sha256'], 'Upgrade must replace different runtime bytes'
-            evidence.update(previous_revision=PREVIOUS,
-                            previous_fixture_adjustments=[],
-                            previous_zip_sha256=previous['archive_sha256'])
-        elif scenario == 'previous':
-            requested = os.environ.get('DOMAINS_UPGRADE_FROM', 'HEAD~1')
-            revision = subprocess.check_output(['git', 'rev-parse', '--verify', '--end-of-options',
-                                                requested+'^{commit}'], cwd=ROOT, timeout=10).decode().strip()
-            previous, previous_builder = previous_build(root, revision, legacy=False)
-            baseline_migrations = len(list((root/'previous-source/Domains/database/migrations').glob('*.php')))
-            unchanged = previous['archive_sha256'] == current['archive_sha256']
-            print('Runtime-selected baseline: '+revision+('; no Domains diff; still running' if unchanged else '; Domains differ'), flush=True)
-            evidence.update(previous_revision=revision, previous_fixture_adjustments=[],
-                            previous_zip_sha256=previous['archive_sha256'], no_domains_diff=unchanged)
-        # Current financial/provider scenarios start from the normal active fresh package.
-        # Retained upgrade uses the actual checked bridge snapshot in its own phase.
-        retained_package = None
-        evidence['catalogue_mode'] = 'checked-bridge' if scenario == 'upgrade' else 'fresh-active'
-        current_migrations = len(list((ROOT/'Domains/database/migrations').glob('*.php')))
-        first, count = 'current', current_migrations
-        if scenario in ('upgrade', 'previous'):
-            first = 'previous'
-            count = len(list((root/'previous-source/Domains/database/migrations').glob('*.php')))
         # Every scenario owns its app copy and retained database.
         database = root/(scenario+'.sqlite'); database.touch()
         retained = root/(scenario+'-retained.json')
         migrations = root/(scenario+'-migrations.json')
         env = dict(os.environ, PAYMENTER_TEST_FIXTURE=str(app), PACKAGE_DATABASE=str(database),
-                   PACKAGE_RETAINED=str(retained), PACKAGE_MIGRATION_RECEIPT=str(migrations), PACKAGE_MIGRATIONS=str(count),
-                   PACKAGE_STANDING_UPGRADE='1' if scenario == 'previous' else '',
-                   PACKAGE_CATALOGUE_MODE=evidence['catalogue_mode'])
+                   PACKAGE_RETAINED=str(retained), PACKAGE_MIGRATION_RECEIPT=str(migrations), PACKAGE_MIGRATIONS='1')
         def phase(name, package=None, worker=None):
             phase_started = time.monotonic()
             package_seconds = 0.0
@@ -180,13 +105,12 @@ def main(scenario):
                 run_env['PACKAGE_RACE_WORKER'] = str(worker)
             if package:
                 package_started = time.monotonic()
-                receipt = {'current': current, 'previous': previous, 'retained': retained_package}[package]
+                receipt = current
                 original = root/package/receipt['archive']
-                verifier = previous_builder if package == 'previous' else build
-                verifier.verify(original, receipt)
+                build.verify(original, receipt)
                 upload = root/'upload'/receipt['archive']; upload.parent.mkdir(exist_ok=True)
                 shutil.copyfile(original, upload)
-                verifier.verify(upload, receipt)
+                build.verify(upload, receipt)
                 run_env['PACKAGE_ZIP'] = str(upload)
                 package_seconds = time.monotonic() - package_started
             phase_limit = 120 if name == 'enom-live' else 45
@@ -226,18 +150,7 @@ def main(scenario):
                 print(json.dumps({'timing': 'phase_finish', 'scenario': scenario, 'phase': name,
                                   'seconds': round(time.monotonic() - phase_started, 3),
                                   'package_seconds': round(package_seconds, 3)}), flush=True)
-        if scenario == 'upgrade':
-            # The bridge database contains a genuine B6 checked activation receipt,
-            # captured at the pinned source. Current code never loads the converter.
-            phase('install', 'previous')
-            phase('bridge-seed')
-            phase('bridge-upload', 'current')
-            phase('bridge-verify')
-            evidence.update(upgrade=True, checked_bridge_revision=PREVIOUS,
-                            frozen_obligations_retained=True, converter_removed=True)
-            print(json.dumps(evidence), flush=True)
-            return
-        phase('install', first)
+        phase('install', 'current')
         if scenario in ('acquisition', 'enom-exchange'):
             # Seed once through the real ZIP uploader, then fork committed SQLite bytes.
             with closing(sqlite3.connect(database)) as source, closing(sqlite3.connect(root/'installed-seed.sqlite')) as target:
@@ -321,18 +234,8 @@ def main(scenario):
             evidence['typed_acquisition_routing'] = True
         else:
             phase('seed')
-            if scenario == 'previous':
-                shutil.rmtree(installed)
-                phase('reinstall', 'current')
-            else:
-                phase('upload', 'current')
-            env['PACKAGE_MIGRATIONS'] = str(current_migrations)
+            phase('upload', 'current')
             phase('verify')
-            if scenario == 'previous':
-                evidence.update(upgrade=True, native_install_retained=True, retained_rows=True, migration_history_ordered=True,
-                                seconds=round(time.monotonic()-began, 3))
-                print(json.dumps(evidence), flush=True)
-                return
             phase('watch-seed')
             phase('verify')
             evidence.update(watch_adoption_retained=True, activation_default_off=True)
@@ -348,7 +251,7 @@ def main(scenario):
             phase('verify')
             evidence.update(same_zip_reinstall=True, native_delete_refused=True,
                             retained_install_branch=True, uninstall_hook_retained=True)
-            evidence['fresh_install' if scenario == 'fresh' else 'upgrade'] = True
+            evidence['fresh_install'] = True
         print(json.dumps(evidence))
         print(json.dumps({'timing': 'scenario', 'scenario': scenario,
                           'seconds': round(time.monotonic() - began, 3)}), flush=True)

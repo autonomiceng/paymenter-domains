@@ -4,10 +4,10 @@ declare(strict_types=1);
 require_once __DIR__.'/adoption-preview.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Adoption;
-use Paymenter\Extensions\Servers\Domains\Services\{HoldingAdoptionSchema, HoldingIdentityLock};
+use Paymenter\Extensions\Servers\Domains\Services\{HoldingIdentityLock};
 function adoptionHoldingFixture(\Paymenter\Extensions\Servers\Domains\Data\Environment $environment = \Paymenter\Extensions\Servers\Domains\Data\Environment::Test, ?Closure $beforePreview = null): array
 {
-    $f = adoptionFixture($environment); extract($f); HoldingAdoptionSchema::install();
+    $f = adoptionFixture($environment); extract($f);
     $d = adoptionPendingFixture($service, $binding, ['reservation_name' => 'example.com']);
     if ($beforePreview) { $beforePreview($f, $d); }
     $preview = $reader->preview($target, $context);

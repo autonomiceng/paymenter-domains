@@ -16,5 +16,5 @@ same(['select distinct "server_id" from "domains_sales_policies"','select * from
     'select * from "extensions" where "id" in (?) order by "id" asc','select * from "settings" where "settingable_type" = ? and "settingable_id" in (?) order by "id" asc',
     'select * from "settings" where "settingable_type" is null and "settingable_id" is null and "key" = ?'],array_column($queries,'query'),
     'Warm public projection reads the cache fence, then the current catalogue gate');
-same(['domains_offer_upgrade'],end($queries)['bindings'],'Warm public projection reads the current catalogue gate last');
+same(['domains_catalogue_activation'],end($queries)['bindings'],'Warm public projection reads the current catalogue gate last');
 $nativeSuccessful=true;echo "Warm storefront reads the cache fence and its current catalogue gate once.\n";

@@ -17,20 +17,6 @@ DB::beginTransaction();try {
     DB::table('domains_watch_preferences')->insert(['scope'=>str_repeat('a',64),'user_id'=>$uid]);
     same(false,(bool)DB::table('domains_watch_preferences')->where('scope',str_repeat('a',64))->value('enabled'),'Schema default requires opt-in');
 }finally{DB::rollBack();}
-// Upgrade the old default without inventing consent or changing saved choices.
-DB::beginTransaction();try {
-    DB::table('migrations')->where('migration',\Paymenter\Extensions\Servers\Domains\Services\WatchNoticeSchema::OPT_IN_MIGRATION)->delete();
-    DB::table('domains_watch_preferences')->where('scope',Pref::account($uid))->update(['enabled'=>true]);
-    DB::table('domains_watch_preferences')->insert(['scope'=>str_repeat('b',64),'user_id'=>$uid,'enabled'=>true,'revision'=>2]);
-    DB::table('domains_watch_preferences')->insert(['scope'=>str_repeat('c',64),'user_id'=>$uid,'enabled'=>false,'revision'=>2]);
-    \Illuminate\Support\Facades\Schema::table('domains_watch_preferences',static fn($t)=>$t->boolean('enabled')->default(true)->change());
-    \Paymenter\Extensions\Servers\Domains\Services\WatchNoticeSchema::requireOptIn();
-    same(false,Pref::enabled($uid,'example.com'),'Legacy inserted defaults are not consent');
-    same(true,(bool)DB::table('domains_watch_preferences')->where('scope',str_repeat('b',64))->value('enabled'),'Saved opt-in survives upgrade');
-    same(false,(bool)DB::table('domains_watch_preferences')->where('scope',str_repeat('c',64))->value('enabled'),'Saved opt-out survives upgrade');
-    DB::table('domains_watch_preferences')->insert(['scope'=>str_repeat('d',64),'user_id'=>$uid]);
-    same(false,(bool)DB::table('domains_watch_preferences')->where('scope',str_repeat('d',64))->value('enabled'),'Upgraded default stays off');
-}finally{DB::rollBack();}
 noticeRegistry($f,$now);$at=$now+2;
 same([], (new WatchNotices())->plan('watch',$id,$uid,$at),'Default planning dormant');
 $ids=$planner->plan('watch',$id,$uid,$at);same(1,count($ids),'One nearest expiry notice');$n=WatchNotice::findOrFail($ids[0]);

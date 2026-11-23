@@ -20,7 +20,7 @@ final class ObservationCandidates
                 else { RuntimeCandidates::transfer($ops)->whereIn('state',['awaiting_code','awaiting_payment','held']); }
                 $ids=$ops->orderBy('id')->limit($limit)->pluck('id'); $result[$row->server_id]=$ids->all();
                 $update=[$kind.'_turn'=>++$turn,$cursor=>$ids->count()===$limit?$ids->last():0];
-                if ($kind==='refund') { [$closures,$next]=self::closures($row,$limit); $result[$row->server_id]=[...$ids->all(),...$closures]; if ($next!==null) { $update[ClosureCursorSchema::COLUMN]=$next; } }
+                if ($kind==='refund') { [$closures,$next]=self::closures($row,$limit); $result[$row->server_id]=[...$ids->all(),...$closures]; if ($next!==null) { $update['complimentary_cursor']=$next; } }
                 (clone $q)->where('id',$row->id)->update($update);
             }
             return $result;
@@ -31,7 +31,7 @@ final class ObservationCandidates
      * Before the cursor column is installed the page starts over each turn: [ids, next cursor or null]. */
     private static function closures(object $row, int $limit): array
     {
-        $stored=property_exists($row,ClosureCursorSchema::COLUMN); $cursor=$stored?(int)$row->{ClosureCursorSchema::COLUMN}:0;
+        $stored=property_exists($row,'complimentary_cursor'); $cursor=$stored?(int)$row->{'complimentary_cursor'}:0;
         $ids=RefundCandidates::complimentary(Operation::where('server_id',$row->server_id)->where('account_fingerprint',$row->account_fingerprint)
             ->where('id','>',$cursor))->orderBy('id')->limit($limit)->pluck('id');
         return [$ids->all(),$stored?($ids->count()===$limit?$ids->last():0):null];

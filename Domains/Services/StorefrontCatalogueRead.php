@@ -20,7 +20,7 @@ final class StorefrontCatalogueRead
     public function offer(string $ending, string $action, int $term): array
     {
         $catalogue = $this->catalogue ?? \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(AcquisitionOffers::class)
-            ?? throw new \DomainException(OfferUpgrade::MESSAGE);
+            ?? throw new \DomainException(FreshInstallation::MESSAGE);
         $this->offers ??= $catalogue->display($this->wanted ?? [$ending]);
         return $this->offers[$ending][$action.':'.$term] ?? throw new \DomainException('Offer unavailable.');
     }

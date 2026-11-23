@@ -5,16 +5,31 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use App\Models\{Setting, NotificationTemplate};
 use Illuminate\Database\Migrations\Migrator;
-use Illuminate\Support\Facades\{Cache, DB, Schema};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, OfferState, UpgradeGate};
+use Illuminate\Support\Facades\{Cache, DB};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, OfferState, CatalogueActivation};
 
 /** The extension lifecycle owns new-install authority; schema maintenance alone never grants it. */
 final class FreshInstallation
 {
+    public const CONTRACT = '907d219e28e91b6d556793f7f1bd243521b99e1e65ccaa04c00a55ff4f910c00';
+    public const MESSAGE = 'Domains catalogue activation is missing or incompatible. Verify the installation before processing.';
+    public const STAFF = 'Ask your site admin to verify the Domains installation, then try again.';
+
+    public static function requireCompatible(): void
+    {
+        try {
+            $state = CatalogueActivation::initializationState();
+            if ($state['state'] === 'active' && hash_equals(self::CONTRACT, $state['contract'])) { return; }
+            if ($state['state'] === 'initializing') { return; }
+            if ($state['state'] === 'absent' && $state['generation'] === 0 && FreshInstallation::uninstalled()) { return; }
+        } catch (\DomainException) { /* A damaged receipt cannot authorize replacement or migration. */ }
+        throw new \DomainException(self::MESSAGE);
+    }
+
     private static ?self $owner = null;
     private function __construct(private readonly string $intent, private readonly string $manifest) {}
     private static function query(): \Illuminate\Database\Eloquent\Builder
-    { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key', UpgradeGate::KEY); }
+    { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key', CatalogueActivation::KEY); }
     private static function files(): array
     { return app(Migrator::class)->getMigrationFiles([dirname(__DIR__).'/database/migrations']); }
 
@@ -25,27 +40,36 @@ final class FreshInstallation
             || array_filter($ran, static fn ($name) => str_contains(strtolower($name),'domains')) !== [];
     }
 
-    public static function manifest(): string
+    private static function manifest(): string
     {
         $root = dirname(__DIR__); $files = [];
         foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS)) as $file) {
             if ($file->isFile() && $file->getExtension() === 'php') {
-                $files[substr($file->getPathname(),strlen($root)+1)] = hash_file('sha256',$file->getPathname());
+                $files['Domains/'.substr($file->getPathname(),strlen($root)+1)] = hash_file('sha256',$file->getPathname());
             }
         }
-        ksort($files); return hash('sha256', OfferState::json($files));
+        ksort($files);
+        if (is_file($root.'/manifest.json')) {
+            $package = json_decode(file_get_contents($root.'/manifest.json'), true, flags: JSON_THROW_ON_ERROR);
+            $members = $package['members'] ?? null;
+            if (!is_array($members)) { throw new \DomainException('Invalid Domains package manifest.'); }
+            $expected = array_filter($members, static fn ($path) => str_ends_with($path, '.php'), ARRAY_FILTER_USE_KEY);
+            ksort($expected);
+            if ($expected !== $files) { throw new \DomainException('Installed Domains PHP files differ from the package manifest.'); }
+        }
+        return hash('sha256', OfferState::json($files));
     }
 
     /** Advisory bootstrap check; only the locked lifecycle proof may create initialization authority. */
     public static function uninstalled(): bool
     {
-        if (self::tables() !== [] || self::history()) { return false; }
+        if (Installation::tables() !== [] || self::history()) { return false; }
         try { self::empty(true); return true; } catch (\DomainException) { return false; }
     }
 
     public static function install(): void
     {
-        OperationClaims::outside(); OfferUpgrade::requireCompatible(); Installation::legacy();
+        OperationClaims::outside(); self::requireCompatible(); Installation::legacy();
         Cache::lock('domains-fresh-installation', 60)->block(5, static function (): void {
             // MariaDB DDL commits transactions. A connection lock survives both DDL and cache TTL expiry.
             $connection = DB::connection(); $mysql = in_array($connection->getDriverName(), ['mysql','mariadb'], true);
@@ -66,15 +90,15 @@ final class FreshInstallation
             Setting::orderBy('id')->lockForUpdate()->get();
             $rows = self::query()->lockForUpdate()->get();
             if ($rows->isNotEmpty()) {
-                $state = UpgradeGate::initializationState();
+                $state = CatalogueActivation::initializationState();
                 if ($state['state'] !== 'initializing') { return null; }
                 if ($state['manifest'] !== $manifest) { throw new \DomainException('Domains initialization package changed. Restore the initializing package.'); }
                 return new self($state['intent'], $manifest);
             }
-            if (self::history() || self::tables() !== []) { return null; } // Retained C6 preflight/activation remain authoritative.
+            if (self::history() || Installation::tables() !== []) { return null; } // Existing installations require their own receipt.
             self::empty(true);
             $intent = bin2hex(random_bytes(16));
-            $row = new Setting; $row->forceFill(['key'=>UpgradeGate::KEY,'type'=>'string','encrypted'=>true,
+            $row = new Setting; $row->forceFill(['key'=>CatalogueActivation::KEY,'type'=>'string','encrypted'=>true,
                 'value'=>OfferState::json(['state'=>'initializing','generation'=>1,'intent'=>$intent,'manifest'=>$manifest])])->save();
             return new self($intent, $manifest);
         });
@@ -84,17 +108,8 @@ final class FreshInstallation
             $owner->check();
             app(Migrator::class)->run([dirname(__DIR__).'/database/migrations'], ['force'=>true]);
             app(Installation::class)->verify(); ReminderTemplates::ensure(); WatchNoticeTemplates::ensure();
-            UpgradeGate::initialize($owner);
+            CatalogueActivation::initialize($owner);
         } finally { self::$owner = null; CallerRouting::reset(); }
-    }
-
-    private static function tables(): array
-    {
-        $prefix = DB::connection()->getTablePrefix(); $tables = [];
-        foreach (Schema::getTableListing(null, false) as $table) {
-            if (str_starts_with($table, $prefix.'domains_')) { $tables[] = substr($table, strlen($prefix)); }
-        }
-        sort($tables); return $tables;
     }
 
     private static function empty(bool $new = false): void
@@ -106,13 +121,13 @@ final class FreshInstallation
             }
         });
         if (DB::table('extensions')->where('extension','Domains')->lockForUpdate()->exists()
-            || Setting::where('key','like','domains%')->where(static fn ($q) => $q->whereNotIn('key',[UpgradeGate::KEY,...($new?[]:[Installation::VERIFIED_KEY])])
+            || Setting::where('key','like','domains%')->where(static fn ($q) => $q->whereNotIn('key',[CatalogueActivation::KEY,...($new?[]:[Installation::VERIFIED_KEY])])
                 ->orWhereNotNull('settingable_type')->orWhereNotNull('settingable_id'))->exists()
             || $new && NotificationTemplate::where('key','like','domains%')->exists()) {
             throw new \DomainException('Retained Domains settings or identity refuse fresh initialization. Restore and verify installation history.');
         }
         if ($new) { self::work(); }
-        foreach (self::tables() as $table) {
+        foreach (Installation::tables() as $table) {
             $query = DB::table($table)->lockForUpdate();
             if ($table === 'domains_psl_status') {
                 foreach ($query->get() as $row) {
@@ -145,20 +160,14 @@ final class FreshInstallation
     }
 
     /** The source-bound package owns only this storage, not every empty domains_* table. */
-    private static function progress(): void
+    private static function progress(bool $complete): void
     {
-        $allowed = [BusinessSettingsSchema::TABLE,'domains_complimentary_accounts','domains_complimentary_approvals','domains_domains','domains_operations','domains_tlds','domains_accounts','domains_prices',
-            'domains_sales_policies','domains_contact_profiles','domains_read_budgets','domains_observation_queues','domains_observation_work',
-            'domains_reminder_schedules','domains_reminder_deliveries','domains_obligation_alerts','domains_runtime_turns','domains_runtime_operations',
-            'domains_psl_snapshots','domains_psl_status','domains_psl_candidates','domains_watch_audit',
-            ...WatchSchema::tables(),'domains_adoptions','domains_history_links',...WatchDnsSchema::tables(),'domains_native_intents',
-            BalanceSchema::TABLE,ManagedPublicWorkSchema::TABLE,...ManagedPublicSchema::tables(),...WatchScheduleSchema::tables(),
-            ...WatchNoticeSchema::tables(),'domains_watch_staff_claims',...StaffAuditSchema::tables(),...RetentionSchema::tables(),UserDeletionSchema::TABLE,
-            EnomLiveCallSchema::TABLE,LiveReservationSchema::TABLE,ProfileContactSchema::TABLE,StaffAlertSchema::TABLE,BalanceAlertSchema::TABLE,MoneyWorkSchema::TABLE,...EnomTestSendLimitSchema::tables(),...OfferRetirement::TABLES];
         $expected = array_keys(self::files());
         $ran = DB::table('migrations')->orderBy('id')->lockForUpdate()->pluck('migration')->all();
         $extra = array_filter($ran, static fn ($name) => str_contains(strtolower($name),'domains') && !in_array($name,$expected,true));
-        if (array_diff(self::tables(),$allowed) !== [] || $extra !== []) {
+        $tables = Installation::tables();
+        $allowed = Installation::expectedTables();
+        if (array_diff($tables, $allowed) || ($complete && $tables !== $allowed) || $extra) {
             throw new \DomainException('Unexpected Domains schema or migration history refuses initialization. Preserve it and investigate.');
         }
     }
@@ -171,11 +180,11 @@ final class FreshInstallation
     public function check(bool $complete = false): array
     {
         if (self::$owner !== $this) { throw new \LogicException('Owned initialization required.'); }
-        $state = UpgradeGate::initializationState();
+        $state = CatalogueActivation::initializationState();
         if ($state['state'] !== 'initializing' || $state['generation'] !== 1 || $state['intent'] !== $this->intent || $state['manifest'] !== $this->manifest) {
             throw new \DomainException('Domains initialization intent changed.');
         }
-        self::progress(); self::empty();
+        self::progress($complete); self::empty();
         if ($complete) { self::work(); }
         if ($complete && (self::manifest() !== $this->manifest
             || array_diff(array_keys(self::files()), DB::table('migrations')->orderBy('id')->lockForUpdate()->pluck('migration')->all()))) {

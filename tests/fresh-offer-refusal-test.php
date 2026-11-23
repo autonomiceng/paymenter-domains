@@ -6,13 +6,13 @@ use App\Models\Setting;
 use Illuminate\Support\Facades\{DB, Schema};
 use Illuminate\Database\Schema\Blueprint;
 use Paymenter\Extensions\Servers\Domains\Domains;
-use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
+use Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation;
 use Paymenter\Extensions\Servers\Domains\Services\Installation;
 
 $entry = new Domains;
 $legacy = static function (string $why): void {
-    same('legacy', UpgradeGate::routeState()['state'], $why.' cannot take the fresh shortcut');
-    same(0, Setting::where('key',UpgradeGate::KEY)->whereNull('settingable_type')->count(), $why.' cannot create an initialization intent');
+    same('absent', CatalogueActivation::initializationState()['state'], $why.' cannot take the fresh shortcut');
+    same(0, Setting::where('key',CatalogueActivation::KEY)->whereNull('settingable_type')->count(), $why.' cannot create an initialization intent');
 };
 // A native route is retained evidence even after its extension/ledger/settings were lost.
 $categoryId = DB::table('categories')->insertGetId(['name'=>'Synthetic retained','slug'=>'synthetic-retained']);
@@ -47,7 +47,7 @@ same($payload, DB::table('failed_jobs')->where('id',$failedId)->value('payload')
 DB::table('failed_jobs')->where('id',$failedId)->delete();
 // Retained orphan settings include scoped rows whose key happens to match the global gate.
 foreach ([['key'=>'domains_catalogue_acceptance_orphan'],
-    ['key'=>UpgradeGate::KEY,'settingable_type'=>'server','settingable_id'=>999]] as $attributes) {
+    ['key'=>CatalogueActivation::KEY,'settingable_type'=>'server','settingable_id'=>999]] as $attributes) {
     $row = Setting::create([...$attributes,'type'=>'string','encrypted'=>true,'value'=>'synthetic retained evidence']);
     $before = (array) DB::table('settings')->where('id',$row->id)->sole();
     try { $entry->installed(); } catch (DomainException) {}
@@ -74,19 +74,4 @@ Schema::drop('domains_domains');
 DB::table('migrations')->insert(['migration'=>'2000_01_01_000001_create_domains_retired','batch'=>1]);
 try { $entry->installed(); } catch (DomainException) {}
 $legacy('Unfamiliar Domains migration history');
-// Schema maintenance represents an already installed, empty C6 database, never new-install authority.
-$legacyFiles=array_values(array_filter($files,static fn($path)=>basename($path,'.php')<Paymenter\Extensions\Servers\Domains\Services\OfferRetirement::BEGIN));
-app(Illuminate\Database\Migrations\Migrator::class)->run($legacyFiles,['force'=>true]); $before = DB::table('migrations')->orderBy('id')->get()->toJson();
-foreach ([fn() => $entry->installed(), fn() => $entry->upgraded('0.1.0')] as $upgrade) {
-    try { $upgrade(); throw new LogicException('Old empty installation skipped the bridge'); }
-    catch (DomainException $e) { expect(str_contains($e->getMessage(), 'bridge 0.1.0 at 891124421645'), 'Old empty installation names the required bridge'); }
-}
-$legacy('Old empty installation');
-same($before, DB::table('migrations')->orderBy('id')->get()->toJson(), 'Old empty history is unchanged');
-$record = DB::table('migrations')->where('migration','2026_10_18_000001_create_domains_foundation')->sole();
-DB::table('migrations')->where('id',$record->id)->delete();
-try { $entry->installed(); throw new LogicException('Partial migration history unexpectedly accepted'); }
-catch (DomainException) {}
-$legacy('Partial migration history');
-expect(Schema::hasTable('domains_accounts'), 'Partial history refusal retains its existing schema');
 $nativeSuccessful = true;

@@ -175,7 +175,7 @@ final class AccountChecklist
             }
         } catch (\Throwable) { $endings=[];$chosen=[];$defaults=0; }
         sort($endings);sort($chosen);
-        try { $url=WhatYouSell::getUrl(['account'=>$a->server_id]); } catch (\Throwable) { $url=null; }
+        try { $url=WhatYouSell::salesUrl(['account'=>$a->server_id]); } catch (\Throwable) { $url=null; }
         // Orders off pauses sales but keeps the saved choices, so the row shows them as paused, not missing.
         $paused=!$endings&&$chosen&&!$a->processing_enabled;$shown=$paused?$chosen:$endings;$count=count($shown);
         $cause=match(true){$paused=>$count.' '.($count===1?'TLD is':'TLDs are').' chosen. Sales are paused while Orders is off.',(bool)$endings=>$count.' '.($count===1?'TLD':'TLDs').' for sale',default=>'Choose the TLDs you sell.'};
@@ -265,7 +265,7 @@ final class AccountChecklist
             });
             foreach(collect($sold)->concat($fallback)->unique('id')->take(10) as $t){
                 $terms=self::termReadiness($binding,$t->tld)[0];$unknown=$terms[1]==='Missing';
-                $rows[]=[...self::row(($unknown?'Unknown term range ':'').'.'.$t->tld,$terms[1],null,$terms[2],null,'Registration terms confirmed for this TLD. Review the current registry rules in Edit terms.'),'buttons'=>[Sheet::link('terms_'.$t->id,$unknown?'Review TLD rules':'Edit terms',WhatYouSell::getUrl(['account'=>$server,'tld'=>$t->tld]))]];
+                $rows[]=[...self::row(($unknown?'Unknown term range ':'').'.'.$t->tld,$terms[1],null,$terms[2],null,'Registration terms confirmed for this TLD. Review the current registry rules in Edit terms.'),'buttons'=>[Sheet::link('terms_'.$t->id,$unknown?'Review TLD rules':'Edit terms',WhatYouSell::salesUrl(['account'=>$server,'tld'=>$t->tld]))]];
             }
         }catch(\Throwable){/* Current setup remains visible when term facts cannot be read. */}
         $terms=TldTerms::summary($server);$attention=count($terms['attention']);
@@ -344,7 +344,7 @@ final class AccountChecklist
     /** The System checks row for an account with Orders on that sells no TLD: the cause and fix, and a link to What you sell. */
     public static function notSelling(Account $a,string $reason): array
     {
-        try { $url=WhatYouSell::getUrl(['account'=>$a->server_id]); } catch (\Throwable) { $url=null; }
+        try { $url=WhatYouSell::salesUrl(['account'=>$a->server_id]); } catch (\Throwable) { $url=null; }
         return [...self::row('Sales',AccountStatus::SET['not_selling'][0],'warning',$reason,null,'Whether customers can buy any TLD from this account while Orders is on.'),
             'buttons'=>[Action::make('not_selling_'.$a->server_id)->label('Open What you sell')->link()->size('sm')->url($url)->visible($url!==null)]];
     }

@@ -55,10 +55,10 @@ final class CartHandoffFailure
             'transfer_creation_lock' => 'transfer_creation_lock',
             'transfer_previous_lock' => 'transfer_previous_lock',
             'transfer_maximum_term' => 'transfer_maximum_term',
-            'Catalogue upgrade state is invalid; keep maintenance active.' => 'catalogue_upgrade_state_invalid',
+            \Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation::INVALID_STATE => 'catalogue_activation_state_invalid',
             'Invalid active catalogue contract.' => 'catalogue_contract_invalid',
             'Invalid Domains initialization intent.' => 'initialization_intent_invalid',
-            OfferUpgrade::MESSAGE => 'catalogue_upgrade_required',
+            FreshInstallation::MESSAGE => 'catalogue_activation_required',
         ],
         RuntimeIneligible::class => ['Registrar processing is disabled.' => 'processing_disabled'],
         ReadDeferred::class => ['Account read budget unavailable.' => 'account_read_budget_unavailable'],
@@ -79,9 +79,9 @@ final class CartHandoffFailure
             'Registrar request budget exhausted.' => 'request_budget_exhausted',
         ],
     ];
-    /** Saved upgrade state that a reload cannot repair, or an upgrade staff must finish first. */
-    public const PERSISTENT = ['catalogue_upgrade_state_invalid', 'catalogue_contract_invalid', 'initialization_intent_invalid',
-        'catalogue_upgrade_required'];
+    /** Saved catalogue state that requires staff attention. */
+    public const PERSISTENT = ['catalogue_activation_state_invalid', 'catalogue_contract_invalid', 'initialization_intent_invalid',
+        'catalogue_activation_required'];
 
     /** Closed context only. Unknown messages, nested exceptions and names never enter logs. */
     public static function context(\Throwable $error,string $phase): array

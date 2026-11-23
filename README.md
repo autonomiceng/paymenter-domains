@@ -28,12 +28,12 @@ tests/      Synthetic provider, transport and native package acceptance
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md), [extension conventions](docs/paymenter-extension-conventions.md), and [verification guidance](docs/testing.md). See the [API contract](docs/design/api-contract.md), [runtime boundaries](docs/runtime.md), and [parity gates](docs/design/parity.md). Offline native SQLite acceptance does not establish shared-database locking, real provider acceptance or a production deployment.
 
-## One-time conversion
+## Installation
 
-This package has no converter. Convert a legacy Enom installation with the converter and
-evidence collector from Domains bridge 0.1.0 at `891124421645`, then install this package
-as an upgrade. The [release runbook](docs/release-runbook.md#one-time-conversion-checkpoint-order)
-lists the steps.
+Install the current Domains ZIP on a Paymenter site with no retained Domains data. Reinstalling
+the same package verifies its schema and preserves holdings, settings and billing records.
+If activation refuses retained data or an incompatible catalogue contract, preserve the
+database and verify the installation. Staff can import individual domains through **Import**.
 
 ## Public suffix list review
 
@@ -64,7 +64,7 @@ post-checkout transfer-code entry remains separate. No verified current-provider
 price source is supplied, so the customer flow makes no numeric savings claim.
 
 Before enabling adoption, discovery, public DNS/registry checks or watch notices, qualify
-retained ZIP upgrade/reinstall, owner and revision races, provider adapters, shared-database
+current ZIP install and reinstall, owner and revision races, provider adapters, shared-database
 locking, delivery acceptance and the supplied site shell. Keep each feature off until its
 own acceptance is complete; a green offline suite does not activate it. Internal moves
 between platform-held accounts remain a separate, unavailable feature.

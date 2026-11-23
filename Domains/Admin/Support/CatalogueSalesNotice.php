@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 
 use App\Models\Server;
 use Filament\Schemas\Components\Callout;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting,UpgradeGate};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting,CatalogueActivation};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Row, Value};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\Section;
@@ -18,7 +18,7 @@ final class CatalogueSalesNotice
     /** True while the new catalogue is on and no connected registrar account can sell domains. */
     public static function needed(): bool
     {
-        if (UpgradeGate::routeState()['state'] !== 'active') { return false; }
+        if (CatalogueActivation::routeState()['state'] !== 'active') { return false; }
         $registrars=Account::whereIn('server_id',Server::where('extension','Domains')->where('type','server')->where('enabled',true)->select('id'))
             ->distinct()->pluck('registrar_key');
         return !$registrars->contains(CallerRouting::supportsSales(...));

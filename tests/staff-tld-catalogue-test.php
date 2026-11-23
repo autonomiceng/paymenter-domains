@@ -64,28 +64,12 @@ same(200,$sale->getStatusCode(),'For sale resolves through the same registered r
 expect($hasLink($sale,$enomUrl)&&!$hasLink($sale,$nameSiloUrl),'For sale keeps the chosen seller and excludes the unavailable sibling');
 same(200,$get($historyUrl,$actor)->getStatusCode(),'The numeric history route still resolves');
 same(403,$get($index,$ungranted)->getStatusCode(),'Catalogue requires Domains View');
-same(403,$get(WhatYouSell::getUrl(),$ungranted)->getStatusCode(),'Legacy page keeps the same View grant');
-
-$old=WhatYouSell::getUrl(['account'=>$namesilo->server_id,'tld'=>'com','years'=>3,'search'=>'com',
-    'filters'=>['for_sale'=>['isActive'=>0],'registrar_key'=>['value'=>'namesilo']]]);
-$redirect=$get($old,$actor);
-same(301,$redirect->getStatusCode(),'Legacy page redirects permanently');
-$location=$redirect->headers->get('Location');
-same('/admin/tlds',parse_url($location,PHP_URL_PATH),'Legacy sales link opens the canonical table');
-parse_str((string)parse_url($location,PHP_URL_QUERY),$scope);
-same([(string)$namesilo->server_id,'com','3','com','0','namesilo'],
-    [$scope['account'],$scope['tld'],$scope['years'],$scope['search'],$scope['filters']['for_sale']['isActive'],$scope['filters']['registrar_key']['value']],
-    'Redirect keeps an explicit account, exact focus, years, search and selected filters');
-$focused=$get($location,$actor);
+$scope=['account'=>$namesilo->server_id,'tld'=>'com','years'=>3,'search'=>'com',
+    'filters'=>['for_sale'=>['isActive'=>0],'registrar_key'=>['value'=>'namesilo']]];
+$focused=$get(WhatYouSell::salesUrl($scope),$actor);
 same(200,$focused->getStatusCode(),'Canonical route loads the focused table');
 expect($hasLink($focused,$nameSiloUrl)&&!$hasLink($focused,$enomUrl)
     &&!$hasLink($focused,TldResource::getUrl('view',['record'=>$matching])),'Focused unavailable row still links only to the chosen account and suffix');
-
-$legacyDefault=$get(url('/admin/tlds/price-list').'?search=com&filters[for_sale][isActive]=0',$actor);
-same(301,$legacyDefault->getStatusCode(),'The older price list routes before the numeric detail');
-$firstAccount=$get($legacyDefault->headers->get('Location'),$actor);
-same(200,$firstAccount->getStatusCode(),'The older bookmark reaches the catalogue');
-expect($hasLink($firstAccount,$enomUrl)&&!$hasLink($firstAccount,$nameSiloUrl),'A legacy bookmark without an account still selects the first account');
 
 $page=Livewire::actingAs($actor)->withQueryParams($scope)->test(WhatYouSell::class,['allTlds'=>true])
     ->assertCountTableRecords(1)->assertSet('account',$namesilo->server_id)->assertSet('years',3);

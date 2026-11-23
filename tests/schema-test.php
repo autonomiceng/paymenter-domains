@@ -8,10 +8,10 @@ use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, Price, Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{FoundationSchema, ObservationSchema};
 
-$migration = require dirname(__DIR__).'/Domains/database/migrations/2026_10_18_000001_create_domains_foundation.php';
 // The extension lifecycle owns fresh-install authority through catalogue retirement.
 (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 $installedTables = Schema::getTableListing(); sort($installedTables);
@@ -23,7 +23,7 @@ $referenceCreates=count(array_filter($verificationQueries,static fn(array $q):bo
 expect($referenceCreates<=100,'One verification uses at most 100 reference tables, got '.$referenceCreates);
 
 FoundationSchema::verify();
-expect(DB::table('migrations')->where('migration', '2026_10_18_000001_create_domains_foundation')->exists(), 'Native migration history recorded');
+expect(DB::table('migrations')->where('migration', '2026_11_23_000001_create_domains_schema')->exists(), 'Native migration history recorded');
 foreach (Schema::getTableListing() as $table) {
     if (!str_starts_with($table, 'domains_')) { continue; }
     foreach (Schema::getIndexes($table) as $index) {
@@ -40,8 +40,7 @@ Schema::table('domains_observation_work', static fn (Blueprint $t) => $t->dropIn
 app(Illuminate\Database\Migrations\Migrator::class)->run([dirname(__DIR__).'/Domains/database/migrations']);
 try { ObservationSchema::verify(); expect(false, 'Missing account/due index accepted after migration skip'); }
 catch (RuntimeException $error) { same('Retained Domains schema mismatch: domains_observation_work', $error->getMessage(), 'Missing account/due index refuses retained verification'); }
-ObservationSchema::install(); ObservationSchema::verify();
-expect(Schema::hasIndex('domains_observation_work', 'domains_observation_work_account_due_index'), 'Retained install adds only the missing account/due index');
+Schema::table('domains_observation_work', static fn (Blueprint $t) => $t->index($accountDue[0]['columns'], $accountDue[0]['name']));
 Schema::table('domains_observation_work', static fn (Blueprint $t) => $t->dropIndex(['due_at']));
 try { ObservationSchema::install(); expect(false, 'Other retained observation mismatch accepted'); }
 catch (RuntimeException $error) { same('Retained Domains schema mismatch: domains_observation_work', $error->getMessage(), 'Other retained mismatch still refuses'); }
@@ -109,9 +108,11 @@ $before = [];
 foreach (['domains_domains', 'domains_operations', 'domains_tlds', 'domains_prices', 'domains_accounts'] as $table) {
     $before[$table] = DB::table($table)->orderBy('id')->get()->toJson();
 }
-$migration->down(); $migration->up(); app(Illuminate\Database\Migrations\Migrator::class)->run([dirname(__DIR__).'/Domains/database/migrations']);
+$entry = new Domains([]);
+$entry->uninstalled();
+$entry->installed();
 FoundationSchema::verify();
-expect(DB::table('migrations')->where('migration', '2026_10_18_000001_create_domains_foundation')->exists(), 'Native migration history recorded');
+expect(DB::table('migrations')->where('migration', '2026_11_23_000001_create_domains_schema')->exists(), 'Native migration history recorded');
 foreach ($before as $table => $rows) { same($rows, DB::table($table)->orderBy('id')->get()->toJson(), 'Reinstall retains bytes: '.$table); }
 // Missing indexes and changed columns fail closed; verification never repairs retained history.
 Schema::table('domains_domains', static fn (Blueprint $t) => $t->dropUnique(['reservation_name']));
@@ -141,23 +142,12 @@ Schema::swap(DB::connection()->getSchemaBuilder());
 try {
     FoundationSchema::install();
     FoundationSchema::verify();
-    // The isolated old foundation still retains exact legacy costs before catalogue conversion.
-    DB::table('domains_tlds')->insert([...$tldRow,'id'=>101,'cost_register_terms'=>json_encode(['2'=>'19.1234'])]);
-    same(['2'=>'19.1234'],json_decode(DB::table('domains_tlds')->where('id',101)->value('cost_register_terms'),true,512,JSON_THROW_ON_ERROR),'Exact-term legacy costs');
-    // Upgrade populated old storage without changing its evidence or ordinary debt uniqueness.
-    $legacyRow=$operationRow;unset($legacyRow['retry_number']);
-    DB::table('domains_operations')->insert($legacyRow);
-    $legacyBefore=(array)DB::table('domains_operations')->first();
-    \Paymenter\Extensions\Servers\Domains\Services\RenewalRetrySchema::install();
-    $upgraded=(array)DB::table('domains_operations')->first();
-    same(0,$upgraded['retry_number'],'Retained attempts start at retry zero');unset($upgraded['retry_number']);
-    same($legacyBefore,$upgraded,'Retry upgrade preserves every original column');
-    \Paymenter\Extensions\Servers\Domains\Services\RenewalRetrySchema::install();
-    $rejectDuplicate('domains_operations',array_replace($legacyRow,['operation_key'=>'other-key']));
+    DB::table('domains_operations')->insert($operationRow);
+    $rejectDuplicate('domains_operations',array_replace($operationRow,['operation_key'=>'other-key']));
     $retryIndexes=array_values(array_filter(Schema::getIndexes('domains_operations'),fn($i)=>$i['columns']===['invoice_item_id','action','retry_number']&&$i['unique']));
     same(1,count($retryIndexes),'One exact retry identity index');
     Schema::table('domains_operations',static fn(Blueprint $t)=>$t->dropUnique($retryIndexes[0]['name']));
-    try{\Paymenter\Extensions\Servers\Domains\Services\RenewalRetrySchema::install();expect(false,'Missing retry uniqueness accepted');}
+    try{FoundationSchema::verify();expect(false,'Missing retry uniqueness accepted');}
     catch(RuntimeException $e){expect(str_contains($e->getMessage(),'schema mismatch'),'Retained retry drift refuses');}
     Schema::table('domains_operations',static fn(Blueprint $t)=>$t->unique(['invoice_item_id','action','retry_number'],$t->getTable().'_debt_retry_u'));
     Schema::table('domains_domains', static fn (Blueprint $t) => $t->dropUnique(['reservation_name']));

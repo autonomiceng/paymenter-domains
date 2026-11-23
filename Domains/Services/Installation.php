@@ -8,7 +8,39 @@ use Illuminate\Support\Facades\{Cache,DB,Schema};
 /** No destructive rollback or automatic adoption of retained history. */
 final class Installation
 {
-    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class,PslReviewSchema::class,WatchSchema::class,AdoptionSchema::class,HistoryLinkSchema::class,WatchDnsSchema::class,NativeIntentSchema::class,HoldingAdoptionSchema::class,BalanceSchema::class,ManagedPublicWorkSchema::class,ManagedPublicSchema::class,WatchScheduleSchema::class,WatchNoticeSchema::class,StaffWatchSchema::class,StaffAuditSchema::class,EnomTestSendLimitSchema::class,UserDeletionSchema::class,EnomLiveCallSchema::class,StaffAlertSchema::class,BalanceAlertSchema::class,OfferRetirement::class,RenewalRetrySchema::class,ManagementProgressIndex::class,ProfileContactSchema::class,OfferSchema::class,OfferWorkSchema::class,LiveCatalogueSchema::class,ComplimentaryAccountSchema::class,TemplateAssignmentIndex::class,ComplimentaryTimeSchema::class,HistoryAccountIndex::class,WatchAuditTimeSchema::class,BusinessSettingsSchema::class,AuditEventSchema::class,AuditBatchRetirement::class,CurrentCostSchema::class,CatalogueMirrorRetirement::class,RetentionSchema::class,RetentionOwnerIndex::class,MoneyWorkSchema::class];
+    public const BASELINE = '2026_11_23_000001_create_domains_schema';
+    public const SCHEMAS = [
+        FoundationSchema::class,
+        SalesPolicySchema::class,
+        ContactProfileSchema::class,
+        ObservationSchema::class,
+        ReminderSchema::class,
+        RuntimeSchema::class,
+        PslSchema::class,
+        PslReviewSchema::class,
+        WatchSchema::class,
+        AdoptionSchema::class,
+        HistoryLinkSchema::class,
+        WatchDnsSchema::class,
+        NativeIntentSchema::class,
+        BalanceSchema::class,
+        ManagedPublicWorkSchema::class,
+        ManagedPublicSchema::class,
+        WatchScheduleSchema::class,
+        WatchNoticeSchema::class,
+        StaffWatchSchema::class,
+        StaffAuditSchema::class,
+        EnomTestSendLimitSchema::class,
+        UserDeletionSchema::class,
+        EnomLiveCallSchema::class,
+        StaffAlertSchema::class,
+        BalanceAlertSchema::class,
+        ProfileContactSchema::class,
+        ComplimentaryAccountSchema::class,
+        BusinessSettingsSchema::class,
+        RetentionSchema::class,
+        MoneyWorkSchema::class,
+    ];
     public static function legacy(): void
     {
         foreach(Server::where('extension','Enom')->get() as $server){
@@ -20,23 +52,65 @@ final class Installation
     public const VERIFIED_KEY='domains_schema_verified';
     private static function verificationRecord(): \Illuminate\Database\Eloquent\Builder
     { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key',self::VERIFIED_KEY); }
+    public static function tables(): array
+    {
+        $prefix = DB::connection()->getTablePrefix(); $tables = [];
+        foreach (Schema::getTableListing(null, false) as $table) {
+            if (str_starts_with($table, $prefix.'domains_')) { $tables[] = substr($table, strlen($prefix)); }
+        }
+        sort($tables); return $tables;
+    }
+
+    public static function expectedTables(): array
+    {
+        $allowed = [];
+        foreach (self::SCHEMAS as $schema) {
+            array_push($allowed, ...$schema::tables());
+        }
+        sort($allowed);
+        return $allowed;
+    }
     public function verify(): void
     {
         // Invalidate first: a failed explicit check must not leave an older success usable.
         self::verificationRecord()->delete();
         $version=self::verificationState();
+        if (self::tables() !== self::expectedTables()) {
+            throw new \RuntimeException('Retained Domains table inventory differs from the installed schema.');
+        }
         SchemaVerifier::batch(static function():void {foreach(self::SCHEMAS as $schema){$schema::verify();}});
         self::verificationRecord()->create(['key'=>self::VERIFIED_KEY,'settingable_type'=>null,'settingable_id'=>null,
             'type'=>'string','encrypted'=>false,'value'=>$version]);
     }
+    /** Identify the shipped package, or the schema definitions when installing directly from source. */
+    public static function schemaVersion(): string
+    {
+        $manifest = dirname(__DIR__).'/manifest.json';
+        if (is_file($manifest)) {
+            return hash_file('sha256', $manifest) ?: throw new \RuntimeException('Cannot read the Domains package manifest.');
+        }
+
+        $files = [dirname(__DIR__).'/database/migrations/'.self::BASELINE.'.php'];
+        foreach ([self::class, TableSchema::class, SchemaVerifier::class, ...self::SCHEMAS] as $class) {
+            $files[] = (new \ReflectionClass($class))->getFileName();
+        }
+        $hash = hash_init('sha256');
+        foreach ($files as $file) {
+            if (!hash_update_file($hash, $file)) {
+                throw new \RuntimeException('Cannot read the Domains schema definition.');
+            }
+        }
+        return hash_final($hash);
+    }
+
     private static function verificationState(): string
     {
         $ran=app(Migrator::class)->getRepository()->getRan();sort($ran);
-        $files=glob(dirname(__DIR__).'/database/migrations/*.php');
-        if(array_diff(array_map(static fn($file)=>basename($file,'.php'),$files),$ran)){
+        $domains = array_values(array_filter($ran, static fn ($name) => str_contains(strtolower($name), 'domains')));
+        if ($domains !== [self::BASELINE]) {
             throw new \RuntimeException('Retained Domains migration history is incomplete.');
         }
-        return json_encode(['version'=>FreshInstallation::manifest(),'migrations'=>$ran,'schema'=>SchemaVerifier::fingerprint()],JSON_THROW_ON_ERROR);
+        return json_encode(['version'=>self::schemaVersion(),'migrations'=>$ran,'schema'=>SchemaVerifier::fingerprint()],JSON_THROW_ON_ERROR);
     }
     public function verifyForOrders(): void
     {
@@ -51,124 +125,12 @@ final class Installation
     {
         OperationClaims::outside(); self::legacy();
         if (FreshInstallation::uninstalled()) { Runtime::register(); FreshInstallation::install(); SiteDnsDefault::ensure(); return; }
-        OfferUpgrade::requireCompatible();
+        FreshInstallation::requireCompatible();
         Cache::lock('domains-installation',60)->block(5,function():void {
-            $present=Schema::hasTable('domains_accounts');
-            foreach(['domains_audit_archives','domains_staff_review_keys','domains_domains','domains_operations','domains_tlds','domains_prices','domains_contact_profiles','domains_sales_policies','domains_read_budgets','domains_observation_queues','domains_observation_work','domains_reminder_schedules','domains_reminder_deliveries','domains_obligation_alerts','domains_runtime_turns','domains_runtime_operations','domains_psl_snapshots','domains_psl_status','domains_psl_candidates','domains_watch_audit','domains_watch_product_maps','domains_watch_names','domains_watch_sources'] as $table){
-                if(!$present&&Schema::hasTable($table)){throw new \DomainException('Partial retained Domains schema. Restore its installation history before reinstalling.');}
+            if (!DB::table('migrations')->where('migration', self::BASELINE)->exists()) {
+                throw new \DomainException('Retained Domains data has no installation record.');
             }
-            foreach(['domains_adoptions','domains_history_links','domains_watch_profiles','domains_watch_observations','domains_watch_work','domains_native_intents','domains_registrar_balances','domains_managed_public_work',...ManagedPublicSchema::tables(),...WatchScheduleSchema::tables(),...WatchNoticeSchema::tables(),'domains_watch_staff_claims',...RetentionSchema::tables(),...EnomTestSendLimitSchema::RETIRED,...EnomTestSendLimitSchema::tables(),...OfferRetirement::TABLES,UserDeletionSchema::TABLE,EnomLiveCallSchema::TABLE,StaffAlertSchema::TABLE,BalanceAlertSchema::TABLE,ProfileContactSchema::TABLE,MoneyWorkSchema::TABLE] as $table){
-                if(!$present&&Schema::hasTable($table)){throw new \DomainException('Partial retained Domains schema. Restore its installation history before reinstalling.');}
-            }
-            $ran=app(Migrator::class)->getRepository()->getRan();$recorded=in_array('2026_10_18_000001_create_domains_foundation',$ran,true);
-            if($present&&!$recorded){throw new \DomainException('Retained Domains data has no installation record. Restore and verify its migration history before reinstalling.');}
-            if(in_array(OfferWorkSchema::MIGRATION,$ran,true)){OfferWorkSchema::verify();}
-            if(in_array(OfferSchema::MIGRATION,$ran,true)){OfferSchema::verify();}
-            // A complete preflight prevents a partial retained schema from being silently filled in.
-            if($present){
-                $files=glob(dirname(__DIR__).'/database/migrations/*.php');sort($files);
-                foreach(array_slice($files,0,5) as $file){if(!in_array(basename($file,'.php'),$ran,true)){throw new \DomainException('Retained Domains migration history is incomplete. Restore its original history.');}}
-                foreach(array_slice(self::SCHEMAS,0,5) as $schema){$schema::verify();}
-                if(Schema::hasTable('domains_runtime_turns')||Schema::hasTable('domains_runtime_operations')){
-                    if(!in_array('2026_10_18_000006_create_runtime_turns',$ran,true)){throw new \DomainException('Retained runtime history has no installation record.');}RuntimeSchema::verify();
-                }
-            }
-            if (in_array('2026_10_18_000007_add_holding_provenance',$ran,true)) { HoldingProvenanceSchema::verify(); }
-            if(Schema::hasTable('domains_psl_snapshots')||Schema::hasTable('domains_psl_status')){
-                if(!in_array('2026_10_19_000007_create_psl_snapshots',$ran,true)){throw new \DomainException('Retained public suffix history has no installation record.');}PslSchema::verify();
-            }
-            if(Schema::hasTable('domains_psl_candidates')||Schema::hasTable('domains_watch_audit')){
-                if(!in_array('2026_10_19_000008_create_psl_reviews',$ran,true)){throw new \DomainException('Retained suffix review history has no installation record.');}EvidenceDatesSchema::verify(PslReviewSchema::class);
-            }
-            if(Schema::hasTable('domains_watch_product_maps')||Schema::hasTable('domains_watch_names')||Schema::hasTable('domains_watch_sources')){
-                if(!in_array('2026_10_19_000009_create_watch_storage',$ran,true)){throw new \DomainException('Retained watch storage history has no installation record.');}EvidenceDatesSchema::verify(WatchSchema::class);
-            }
-            foreach([
-                [ProfileContactSchema::TABLE,ProfileContactSchema::MIGRATION,ProfileContactSchema::class],
-                [MoneyWorkSchema::TABLE,MoneyWorkSchema::MIGRATION,MoneyWorkSchema::class],
-                [StaffAlertSchema::TABLE,StaffAlertSchema::MIGRATION,StaffAlertSchema::class],
-                [BalanceAlertSchema::TABLE,BalanceAlertSchema::MIGRATION,BalanceAlertSchema::class],
-                [UserDeletionSchema::TABLE,UserDeletionSchema::MIGRATION,UserDeletionSchema::class],
-                ['domains_complimentary_accounts',ComplimentaryAccountSchema::MIGRATION,ComplimentaryAccountSchema::class],
-                ['domains_complimentary_approvals',ComplimentaryAccountSchema::MIGRATION,ComplimentaryAccountSchema::class],
-                [EnomLiveCallSchema::TABLE,EnomLiveCallSchema::MIGRATION,EnomLiveCallSchema::class],
-                ['domains_watch_staff_claims',StaffWatchSchema::MIGRATION,StaffWatchSchema::class],
-                ['domains_adoptions','2026_10_19_000010_create_domains_adoptions',AdoptionSchema::class],
-                ['domains_history_links','2026_10_19_000011_create_domains_history_links',HistoryLinkSchema::class],
-                ['domains_native_intents','2026_10_19_000013_create_native_intents',NativeIntentSchema::class],
-                ['domains_managed_public_work','2026_10_19_000018_create_managed_public_work',ManagedPublicWorkSchema::class],
-                ['domains_registrar_balances','2026_10_19_000015_create_registrar_balances',BalanceSchema::class],
-            ] as [$table,$migration,$schema]){
-                $recorded=in_array($migration,$ran,true);
-                if(Schema::hasTable($table)&&!$recorded){throw new \DomainException('Retained holding storage has no installation record.');}
-                if($recorded){
-                    if(in_array($schema, EvidenceDatesSchema::SCHEMAS, true)){EvidenceDatesSchema::verify($schema);}
-                    else{$schema::verify();}
-                } // Refuse lost/drifted tables before any migration can fill gaps.
-            }
-            $catalogueRecorded=in_array(LiveCatalogueSchema::MIGRATION,$ran,true);
-            if(Schema::hasColumn(LiveReservationSchema::TABLE,'catalogue_used')&&!$catalogueRecorded){throw new \DomainException('Retained Live catalogue usage has no installation record.');}
-            if($catalogueRecorded){LiveCatalogueSchema::verify();}
-            $closureRecorded=in_array(ClosureCursorSchema::MIGRATION,$ran,true);
-            if(Schema::hasTable(ClosureCursorSchema::TABLE)&&Schema::hasColumn(ClosureCursorSchema::TABLE,ClosureCursorSchema::COLUMN)&&!$closureRecorded){throw new \DomainException('Retained complimentary closure cursor has no installation record.');}
-            if($closureRecorded){ClosureCursorSchema::verify();}
-            $businessRecorded=in_array(BusinessSettingsSchema::MIGRATION,$ran,true);
-            if(Schema::hasTable(BusinessSettingsSchema::TABLE)&&!$businessRecorded){throw new \DomainException('Retained global domain choices have no installation record.');}
-            if($businessRecorded){BusinessSettingsSchema::verify();}
-            $watchZoneRecorded=in_array(WatchAuditTimeSchema::MIGRATION,$ran,true);
-            if(Schema::hasColumn('domains_watch_audit','time_zone')&&!$watchZoneRecorded){throw new \DomainException('Retained watch audit time zones have no installation record.');}
-            if($watchZoneRecorded){WatchAuditTimeSchema::verify();}
-            $zoneRecorded=in_array(ComplimentaryTimeSchema::MIGRATION,$ran,true);
-            if(ComplimentaryTimeSchema::present()&&!$zoneRecorded){throw new \DomainException('Retained complimentary time zones have no installation record.');}
-            if($zoneRecorded){ComplimentaryTimeSchema::verify();}
-            $retryRecorded=in_array(RenewalRetrySchema::MIGRATION,$ran,true);
-            if(Schema::hasColumn('domains_operations','retry_number')&&!$retryRecorded){throw new \DomainException('Retained renewal retry storage has no installation record.');}
-            if($retryRecorded){RenewalRetrySchema::verify();}
-            if(in_array(ManagementProgressIndex::MIGRATION,$ran,true)){ManagementProgressIndex::upgrade();}
-            $sendsRecorded=in_array(EnomTestSendLimitSchema::MIGRATION,$ran,true);
-            $sendsPresent=array_filter(array_map(Schema::hasTable(...),EnomTestSendLimitSchema::tables()));
-            if($sendsPresent&&!$sendsRecorded){throw new \DomainException('Retained TEST send history has no installation record.');}
-            if($sendsRecorded){EnomTestSendLimitSchema::verify();}
-            $sellRecorded=in_array('2026_10_30_000045_create_sell_table',$ran,true);
-            $sellPresent=array_filter(array_map(Schema::hasTable(...),OfferRetirement::TABLES));
-            if($sellPresent&&!$sellRecorded){throw new \DomainException('Retained sell table has no installation record.');}
-            if($sellRecorded && !OfferRetirement::finished()){OfferRetirement::verifyLegacyStores();}
-            if(in_array(CatalogueMirrorRetirement::FINISH,$ran,true)){CatalogueMirrorRetirement::verify();}
-            if(in_array(CurrentCostSchema::MIGRATION,$ran,true)){CurrentCostSchema::verify();}
-            if(in_array(AuditBatchRetirement::MIGRATION,$ran,true)){AuditBatchRetirement::verify();}
-            if(in_array(AuditEventSchema::MIGRATION,$ran,true)){AuditEventSchema::verify();}
-            RetentionOwnerIndex::verify();
-            $retentionRecorded=in_array(RetentionSchema::MIGRATION,$ran,true);
-            if(array_filter(array_map(Schema::hasTable(...),RetentionSchema::tables()))&&!$retentionRecorded){throw new \DomainException('Retained history has no installation record.');}
-            if($retentionRecorded){RetentionSchema::verify();}
-            $auditRecorded=in_array(StaffAuditSchema::MIGRATION,$ran,true);
-            $auditPresent=array_filter(array_map(Schema::hasTable(...),StaffAuditSchema::tables()));
-            if($auditPresent&&!$auditRecorded){throw new \DomainException('Retained staff audit storage has no installation record.');}
-            if($auditRecorded){StaffAuditSchema::verify();}
-            $publicRecorded = in_array('2026_10_19_000030_extend_managed_public_signals', $ran, true);
-            $publicPresent = array_filter(array_map(Schema::hasTable(...), ManagedPublicSchema::tables()));
-            if (($publicPresent || Schema::hasColumn(ManagedPublicWorkSchema::TABLE, 'claim')) && !$publicRecorded) {
-                throw new \DomainException('Retained managed public history has no installation record.');
-            }
-            if ($publicRecorded) { ManagedPublicSchema::verify(); }
-            $watchScheduleRecorded=in_array(WatchScheduleSchema::MIGRATION,$ran,true);
-            $watchSchedulePresent=array_filter(array_map(Schema::hasTable(...),WatchScheduleSchema::tables()));
-            if ($watchSchedulePresent && !$watchScheduleRecorded) { throw new \DomainException('Retained watch schedule has no installation record.'); }
-            if ($watchScheduleRecorded) { WatchScheduleSchema::verify(); }
-            $noticeRecorded=in_array(WatchNoticeSchema::MIGRATION,$ran,true);
-            $noticePresent=array_filter(array_map(Schema::hasTable(...),WatchNoticeSchema::tables()));
-            if ($noticePresent && !$noticeRecorded) { throw new \DomainException('Retained watch notices have no installation record.'); }
-            if ($noticeRecorded) { WatchNoticeSchema::verifyForUpgrade(); }
-            $adoptionRecorded = in_array('2026_10_19_000014_add_holding_adoption', $ran, true);
-            if (Schema::hasColumn('domains_domains', 'adoption_id') && !$adoptionRecorded) { throw new \DomainException('Retained adoption pointer has no installation record.'); }
-            if ($adoptionRecorded) { HoldingAdoptionSchema::verify(); }
-            $dnsPresent = array_map(Schema::hasTable(...), WatchDnsSchema::tables());
-            $dnsRecorded = in_array('2026_10_19_000012_create_watch_dns', $ran, true);
-            if (in_array(true, $dnsPresent, true) && !$dnsRecorded) { throw new \DomainException('Retained DNS history has no installation record.'); }
-            if ($dnsRecorded) { WatchDnsSchema::verify(); }
-            app(Migrator::class)->run([dirname(__DIR__).'/database/migrations'],['force'=>true]);
-            $this->verify(); // Required even when every migration was skipped.
-            SalesPolicySchema::checkpointSelections();
+            $this->verify();
             ReminderTemplates::ensure();WatchNoticeTemplates::ensure();
         });
         SiteDnsDefault::ensure();

@@ -1,7 +1,6 @@
 # Candidate release, rollback and support
 
-Use this checklist with [runtime composition](runtime.md), the bridge 0.1.0
-[conversion procedure](https://github.com/autonomiceng/paymenter-domains/blob/89112442164558c4ab61ff32f210d1b102605112/scripts/conversion/README.md) and the
+Use this checklist with [runtime composition](runtime.md) and the
 [native lifecycle contract](design/native-lifecycle.md). Record the candidate commit,
 archive hash, environment, operator, time and independent acceptance receipts privately.
 Keep credentials, contact data, transfer codes and raw provider replies out of tickets.
@@ -11,9 +10,6 @@ Keep credentials, contact data, transfer codes and raw provider replies out of t
 1. Start from a clean reviewed commit. Run the complete offline runner described in
    [verification setup](testing.md), with its pinned native fixture. Retain `receipt.json`,
    selected/omitted suites and command counts; a partial or skipped run is not a green run.
-   Run the opt-in MariaDB conversion rehearsal from the bridge 0.1.0 checkout where its
-   prerequisites exist. It qualifies conversion transactions and fencing, not
-   checkout/worker concurrency.
 2. Build and verify a runtime archive in a fresh output directory:
 
    ```sh
@@ -23,15 +19,12 @@ Keep credentials, contact data, transfer codes and raw provider replies out of t
 
    Verification checks the embedded manifest and payload. Obtain the archive from a
    trusted source; a matching hash alone does not establish publisher identity.
-   Conversion tools, evidence collectors, development fixtures and the supplied site
+   Development fixtures and the supplied site
    shell are separate artifacts and must not be added to the runtime ZIP.
-3. Rehearse native upload/install, upgrade and uninstall/reinstall in an isolated copy
-   with synthetic holdings and money. `tests/test_installed_package.py` (held),
-   `tests/test_installed_package_fresh.py` and `tests/test_installed_package_upgrade.py`
-   drive the real native uploader and check held, fresh and previous-runtime upgrade
-   paths, migration history and retained data. Partial-schema refusal is exercised separately by
-   `tests/runtime-install-test.php`, not by an injected installed-ZIP scenario. The upgrade test's previous runtime is a pinned
-   local development commit, not a compatibility claim for an earlier release.
+3. Rehearse native upload, install and uninstall/reinstall with synthetic holdings and money.
+   `tests/test_installed_package.py` and `tests/test_installed_package_fresh.py` exercise
+   the native uploader, default-held registration and preservation of records across reinstalls.
+   `tests/runtime-install-test.php` covers refusal of damaged retained storage.
    Also run `tests/test_schema_mariadb.py` with the prerequisites in
    [coverage notes](testing-coverage/native-lifecycle.md#mysqlmariadb-schema-identifiers-and-native-lifecycle).
    This opt-in rehearsal proves fresh install and retained reinstall/upgrade on real
@@ -67,8 +60,7 @@ A green synthetic receipt establishes only the scope named in that receipt. Sepa
 provider acceptance, concurrent database schedules, delivered-mail checks and installed
 shell/browser acceptance remain release gates. Adoption remains off until its native
 mutation, consumer and concurrency prerequisites are independently qualified. The concurrent User-deletion/checkout gap is closed by owner locks and retained deletion intent.
-Install migration 000036 before reopening domain checkout. It creates an empty owned table;
-no native schema change or backfill is required. Missing storage refuses domain acquisition
+Verify the user deletion intent table before reopening domain checkout. Missing storage refuses domain acquisition
 and customer deletion. Drain old requests and restart web/queue workers to install the guard.
 If a customer deletion fails after the guard passes, retry and finish deletion. Domain
 checkout and adoption for that customer stay blocked until then. Do not clear or expire
@@ -143,71 +135,11 @@ physical calls. A TEST receipt never qualifies live writes.
 | Management and transfers | Check stale/missing inventory, unsupported actions, foreign owner, stale form, paused processing and revoked acceptance. Confirm supported management by fresh readback. Transfer pending/needs-action/unknown never implies completion or resend. Qualify code/deadline recovery offline until a supported TEST transfer fixture exists. |
 | Notifications and staff permissions | Check authorized native inbox recipient and link, no customer/unauthorized staff alert, duplicate suppression, missing template/channel, render failure and uncertain handoff. Inspect queue failures and delivered test mail independently. |
 
-## One-time conversion checkpoint order
-
-This package has no converter. Run the whole one-time conversion from a checkout of
-Domains bridge 0.1.0 at `891124421645`, with that checkout's converter, `source.json` pins,
-pinned PHP and tests:
-
-1. Convert with the bridge converter, `scripts/convert-enom-05.php` in that checkout.
-2. Install the bridge 0.1.0 package and run its checked catalogue conversion.
-3. Install this package as an upgrade from 0.1.0. It finishes offer retirement and keeps the
-   checked catalogue receipt.
-
-This package's `scripts/convert-enom-05.php` only refuses with these steps. Follow the
-complete bridge [profile procedure](https://github.com/autonomiceng/paymenter-domains/blob/89112442164558c4ab61ff32f210d1b102605112/scripts/conversion/README.md), including its
-Docker/Plesk sections where applicable. This summary does not replace process, cron,
-lock, web-entry-point or permission inspection.
-
-| Checkpoint | Required evidence before continuing |
-| --- | --- |
-| Source | Exact accepted `source.json` revision and schema; source/plan digests; no independently configured NameSilo server |
-| Drain | Legacy jobs drained without deletion; running scheduler children finished; previous gate values recorded; all registrar gates off |
-| Fence | Maintenance with no bypass, web/queue/dispatch entry points stopped, cache/overlap locks expired and both registrar runtimes parked outside active discovery |
-| Profile | Dedicated profile: complete masked/inactive units and readable empty cron inventories. App profile: explicit operator inventory plus inspected process, cron, queue, database-cache-lock and rendered-maintenance fences |
-| Evidence | Independently accepted authenticated ownership reads, one valid anchor per retained account in the same private evidence file, within the 24-hour window |
-| Schema | Consistent pre-stage database/files/key backup with a proved isolated restore; explicit separate `--stage-schema` if needed; exact migrations and shape verified |
-| Plan | `--dry-run` with exact canonical paths/profile; review unresolved attempts, pending IDs, unsupported history, payable invoices and all near-expiry triage |
-| Apply | Pending holdings have recorded staff-managed renewal coverage; fresh pre-apply backup/marker and proved restore; every fence still valid; explicit `--apply` |
-| Verify | Repeat dry run with runtimes still parked reports complete/already-complete and matching digests; IDs/counts, native money, null native expiry, reservations, encrypted history, reminders/templates/preferences and permissions match |
-| Reopen | Install only Domains with all gates off; explicit recorded go/no-go before any entry point resumes; restore only intended workers/triggers, then maintenance |
-
-The bridge converter defaults to dry run. Required arguments are `--app`, `--source`,
-`--source-revision` and `--evidence`. The dedicated profile requires `--units`; the
-app profile requires `--host-profile=app --operator-inventory`. Do not combine profiles.
-`--stage-schema` is separate from `--apply`; DDL is not an atomic rollback. An apply
-requires `--backup-marker`, whose database/files archives predate the marker and whose
-hashes and key proof match. A backup hash check does not prove a restore.
-
-The bridge's read-only evidence collector is a separate, explicitly authorized provider step.
-It accepts no command-line credentials. TEST scope, account anchors, one-name live scope,
-private `0600` publication and replacement semantics are documented in the conversion
-procedure. Replacing a file does not accumulate earlier account proofs. Converter dry
-runs make no provider requests. Offline green does not authorize running the collector.
-
-Do not cancel invoices or discard jobs just to pass conversion. Payable invoices and
-unsupported terminal histories require the documented prerequisite or deferral under
-the legacy deployment. Converted pending holdings need ongoing staff-managed renewal
-coverage until verified adoption is available; the risk continues beyond initial triage.
-
-On interruption, keep every entry point stopped. Park Domains again if incomplete
-journal detection blocks boot. Resume only with identical source/plan/evidence inside
-its validity window. A process, pool, deployment or supervisor restart invalidates the
-stopped window. Repeat inspection and lock waits. Do not edit journals, mappings or
-migration history to bypass refusal. A completed conversion with newer activity must
-not be replayed. Preserve the current encryption key: previous decryption keys alone
-do not preserve current-key authority seals after rotation.
-
 ## Rollback boundaries
 
-After migration 000061, do not roll code back to a build before that migration; global domain settings have moved out of native settings.
-
-Before any entry point is re-enabled, restore the pre-stage database, matching files
-and encryption keys from the rehearsed backup into an empty recreated database.
-Remove Domains from active discovery, restore the pinned legacy runtime to its original
-active path, verify configuration/IDs/money and then restore only recorded legacy entry
-points. Keep maintenance active until verification passes. A parked source-file archive
-alone is insufficient. Keep an extra pre-apply backup for interrupted DML analysis.
+Before reopening the application, restore the matching database, files and encryption
+keys from a backup whose restore has been rehearsed. Verify retained identities, money,
+schema and the catalogue activation receipt before restarting workers.
 
 The first restarted entry point crosses the simple-restore boundary, even while web
 maintenance is still active. After any new obligation, credit, native write or provider
@@ -223,7 +155,7 @@ post-backup native and provider outcome before any reviewed restore or repair.
 | Gateway charge or registrar request may have started | Retain current database/files/keys, invoice transactions, collection marker and original provider IDs. No blind gateway/registrar retry, downgrade or old-dump restore. Reconcile the original attempt first. |
 
 Uninstall and migration `down()` retain evidence; they do not undo purchases, refunds,
-invoices, reservations or conversion. A seller change changes future offers only.
+invoices or reservations. A seller change changes future offers only.
 It cannot migrate holdings, restore legacy authority or settle an unknown operation.
 
 ## Support decisions
@@ -253,7 +185,7 @@ and invoice due dates are separate facts.
 | Failed/partial managed-record read | Preserve the last successful inventory and watermarks. Inspect the current hold; use the supported audited Resume scheduled reads action, then require a complete current-identity read before editing |
 | Binding or key drift | Pause affected work, restore the original binding/key material and inspect authority. Re-verification with a different account does not rebind retained history |
 | Notification handoff unknown | Inspect the original claim/provider delivery independently and record staff review. Never release/resend the original claim; queue acceptance is not delivery proof |
-| Partial schema or conversion journal | Keep maintenance and workers stopped; restore/review exact schema/history or resume the guarded bridge converter. No normal runtime repair or forced boot |
+| Partial retained schema or missing activation receipt | Stop processing, preserve the database and restore or verify the matching installation. |
 
 Repeated switching must leave both holding accounts operational for read-only facts,
 financial reconciliation, renewals and reminders. Review account rotation lag, balance

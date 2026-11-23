@@ -45,7 +45,7 @@ final class TldFacts
      * Each row: action, term, retail (null when missing), flags (below_cost, cost_missing, not_offered, price_missing, needs_sync, unpublished),
      * fresh, observed and until; cost only with the costs permission. */
     private static function catalogue(): \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue
-    { return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE); }
+    { return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\FreshInstallation::MESSAGE); }
     public static function snapshot(Tld $tld, ?StaffGrants $grants=null, ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $catalogue=null): array
     { return ($catalogue??self::catalogue())->page(collect([$tld]))[$tld->id]; }
     /** snapshot() for a page of TLD rows in a fixed number of reads: accounts, acceptances and default rules once per
@@ -162,7 +162,7 @@ final class TldFacts
             $fix=null;
             if(($fact['invalid_rule']??false)&&($fact['invalid_rule_kind']??null)!=='unreadable'){
                 try{$kind=$fact['invalid_rule_kind']??null;$label=match($kind){'default'=>'Edit default pricing','account_defaults'=>'Edit default for new TLDs',default=>'Edit prices'};
-                    $url=match($kind){'default'=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl(),'account_defaults'=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl(['account'=>(int)$row->server_id]),default=>\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$row])};
+                    $url=match($kind){'default'=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::salesUrl(),'account_defaults'=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::salesUrl(['account'=>(int)$row->server_id]),default=>\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$row])};
                     $fix=['label'=>$label,'url'=>$url];}catch(\Throwable){}
             }
             $out[]=['name'=>(string)$row->server?->name,'url'=>RegistrarFacts::accountUrl((int)$row->server_id),'demo'=>(bool)$fact['demo'],'seller'=>$fact['seller']===(int)$row->server_id,

@@ -20,7 +20,7 @@ final class SellerPolicies
     public function selection(string $tld, string $action, int $term, \DateTimeImmutable $now): SaleSelection
     {
         if ($offers=$this->catalogue()) { return $offers->selection($tld,$action,$term); }
-        throw new \DomainException(OfferUpgrade::MESSAGE);
+        throw new \DomainException(FreshInstallation::MESSAGE);
     }
 
     /** One display invocation only. Account validation is shared across its selected endings, never admission. */
@@ -34,7 +34,7 @@ final class SellerPolicies
             }
             return $out;
         }
-        throw new \DomainException(OfferUpgrade::MESSAGE);
+        throw new \DomainException(FreshInstallation::MESSAGE);
     }
 
     /** Join native checkout AFTER user/coupon/product locks. No nested transaction or per-line commit.
@@ -44,7 +44,7 @@ final class SellerPolicies
     public function admit(array $lines, \DateTimeImmutable $now): array
     {
         if ($offers=$this->catalogue()) { return array_column($offers->admit($lines),'snapshot'); }
-        throw new \DomainException(OfferUpgrade::MESSAGE);
+        throw new \DomainException(FreshInstallation::MESSAGE);
     }
 
 }

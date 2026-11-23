@@ -345,16 +345,6 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(code, 1); self.assertEqual(len(receipt['results']), 1)
             self.assertFalse(receipt['dependency_unchanged']); self.assertEqual(receipt['dependency_error'], 'ValueError')
 
-    def test_upgrade_revision_reaches_clean_worker_environment(self):
-        with mock.patch.dict(os.environ, {'DOMAINS_UPGRADE_FROM': 'published^{commit}'}), \
-             mock.patch.object(runner.sys, 'argv', ['test.py', '--jobs', '1']), \
-             mock.patch.object(runner, 'default_suites', return_value=['provider']), \
-             mock.patch.object(runner, 'manifest', return_value={'provider': ['tests/probe.php']}), \
-             mock.patch.object(runner, 'prepare', return_value=(None, None, None)), \
-             mock.patch.object(runner, 'run', return_value=0) as run:
-            self.assertEqual(runner.main(), 0)
-        self.assertEqual(run.call_args.args[1]['DOMAINS_UPGRADE_FROM'], 'published^{commit}')
-
     def test_jobs_environment_default_override_and_invalid_values(self):
         for arguments, environment, expected in [([], '2', 2), (['--jobs', '1'], '4', 1)]:
             with mock.patch.dict(os.environ, {'DOMAINS_TEST_JOBS': environment}), \
@@ -673,9 +663,9 @@ class RunnerTests(unittest.TestCase):
         suites = runner.manifest()
         cases = [(['tests/test_package.py'], ['package'], None),
                  (['tests/test_schema_mariadb.py'], ['mariadb'], None),
-                 (['tests/test_package.py', 'tests/test_installed_package_previous.py', 'tests/test_package.py'],
+                 (['tests/test_package.py', 'tests/test_installed_package_fresh.py', 'tests/test_package.py'],
                   ['native', 'package'], False),
-                 (['tests/test_installed_package_previous.py'], ['native'], True),
+                 (['tests/test_installed_package_fresh.py'], ['native'], True),
                  (['tests/checkout-refresh-test.php'], ['native'], True),
                  (['tests/offer-reader-batch-test.php'], ['native'], True),
                  (['tests/checkout-refresh-test.php', 'tests/offer-reader-batch-test.php'], ['native'], True),
@@ -730,7 +720,7 @@ class RunnerTests(unittest.TestCase):
         for path, message in [('tests/unregistered-test.php', 'Unregistered'),
                               ('../tests/test_runner.py', 'Unregistered'),
                               (str(ROOT/'tests/test_runner.py'), 'Unregistered'),
-                              ('tests/test_installed_package_previous.py', 'PAYMENTER_TEST_APP')]:
+                              ('tests/test_installed_package_fresh.py', 'PAYMENTER_TEST_APP')]:
             with self.subTest(path=path), tempfile.TemporaryDirectory() as temp, \
                  mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': ''}), \
                  mock.patch.object(runner.tempfile, 'mkdtemp', return_value=temp), \

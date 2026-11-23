@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\{PricingRule, Refunds, RefundPayment, RenewalCycles, RenewalFunding, HoldingLocks, FinancialAdjustments};
 \Paymenter\Extensions\Servers\Domains\Services\ReminderSchema::install();
-\Paymenter\Extensions\Servers\Domains\Services\RenewalRetrySchema::install();
+
 $refunds=new Refunds($clock); $staff=commerceUser();
 // Native SQLite is needed to exercise Paid/afterCommit against the retained invoice and operation bindings.
 $presenter=new \Paymenter\Extensions\Servers\Domains\Services\NativePresenter(

@@ -2,7 +2,7 @@
 // Enom444f31c bounded refresh/follow-up; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
+use Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation;
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, ReadLimiter};
 use Paymenter\Extensions\Servers\Domains\Data\{CatalogueFreshness, RequestBudget, RequestContext, RequestOrigin};
@@ -18,7 +18,7 @@ final class ObservationWork
     public function __construct(private readonly DomainObservation $observer, private readonly Clock $clock,
         private readonly ReadLimiter $budget, private readonly ?CatalogueSync $catalogue=null) {}
     private function scheduler(): \Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler
-    { return \Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed() ?? throw new \DomainException(OfferUpgrade::MESSAGE); }
+    { return \Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed() ?? throw new \DomainException(FreshInstallation::MESSAGE); }
     public function enroll(int $server): void { $this->scheduler()->enroll($server); }
     public function tick(int $accounts=8): array { return $this->scheduler()->tick($accounts); }
     public static function resumeBlocked(Domain $d): ?string

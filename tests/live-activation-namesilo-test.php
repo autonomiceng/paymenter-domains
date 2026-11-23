@@ -6,7 +6,7 @@ require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-panel.php';
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts,Context,Cost,Facts,OfferReadiness,OfferState,Query,UpgradeGate};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts,Context,Cost,Facts,OfferReadiness,OfferState,Query,CatalogueActivation};
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,CredentialAuthenticator};
 use Paymenter\Extensions\Servers\Domains\Data\{Environment,SystemClock};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
@@ -143,7 +143,7 @@ expect(!$a->fresh()->processing_enabled,'Missing prices keep Live spending close
 // Native installed routing is required: a unit reader cannot exercise CallerRouting's setup gates.
 // OFFLINE price/fact rows model setup only; no activation or provider send is performed.
 Paymenter\Extensions\Servers\Domains\Services\Runtime::register();
-same('active',UpgradeGate::routeState()['state'],'Real fresh installation has already activated current catalogue');
+same('active',CatalogueActivation::routeState()['state'],'Real fresh installation has already activated current catalogue');
 $server->settings()->where('key',LiveActivation::KEY)->delete();
 expect(!$engine->current($binding),'Setup review starts without an activation receipt');
 $now=app(Clock::class)->now();

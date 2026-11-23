@@ -1,7 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/offer-activation-test.php';$nativeSuccessful=false;
+require __DIR__.'/Support/current-catalogue.php';$nativeSuccessful=false;
 require __DIR__.'/Support/staff-tlds.php';
 use Illuminate\Support\Facades\{Auth,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;

@@ -218,7 +218,7 @@ def domains(root, arguments, *, history=None):
                 raise ValueError('Use a canonical pristine development dependency.')
             mounts.update({p: p for p in [app, *git_inputs(app)]})
             env['PAYMENTER_TEST_APP'] = source
-        for key in ('DOMAINS_TEST_JOBS', 'DOMAINS_UPGRADE_FROM'):
+        for key in ('DOMAINS_TEST_JOBS',):
             if key in os.environ:
                 env[key] = os.environ[key]
         if history:

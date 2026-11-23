@@ -112,12 +112,12 @@ final readonly class RuntimeWork
             }
             $this->attempt('producer',fn()=>app(DomainBilling::class)->sweep($a),(int)$a->server_id);
             $domains=Domain::where('server_id',$a->server_id)->where('id','>',$row->domain_cursor)->orderBy('id')->limit(25)->get();
-            foreach($domains as $d){if(in_array($d->provenance,[null,'purchased','converted_purchase'],true)){$this->attempt('transfer_watch_enrollment',fn()=>(new TransferWatchEnrollment())->repair((int)$d->id,(int)$d->user_id,$this->clock->now()->getTimestamp()),(int)$d->id);}if($d->provenance==='adopted'){$this->attempt('adoption_enrollment',fn()=>app(AdoptionEnrollment::class)->repair((int)$d->id),(int)$d->id);}$this->attempt('acquisition_retirement',fn()=>app(AcquisitionRetirement::class)->inspect((int)$d->id),(int)$d->id);$this->attempt('native_identity',fn()=>NativeIdentityDiscrepancies::inspect($d,$this->clock->now()->getTimestamp()),(int)$d->id);$this->bill($d);$this->attempt('corrections',fn()=>$this->ports->corrections($d),(int)$d->id);}
+            foreach($domains as $d){if(in_array($d->provenance,[null,'purchased'],true)){$this->attempt('transfer_watch_enrollment',fn()=>(new TransferWatchEnrollment())->repair((int)$d->id,(int)$d->user_id,$this->clock->now()->getTimestamp()),(int)$d->id);}if($d->provenance==='adopted'){$this->attempt('adoption_enrollment',fn()=>app(AdoptionEnrollment::class)->repair((int)$d->id),(int)$d->id);}$this->attempt('acquisition_retirement',fn()=>app(AcquisitionRetirement::class)->inspect((int)$d->id),(int)$d->id);$this->attempt('native_identity',fn()=>NativeIdentityDiscrepancies::inspect($d,$this->clock->now()->getTimestamp()),(int)$d->id);$this->bill($d);$this->attempt('corrections',fn()=>$this->ports->corrections($d),(int)$d->id);}
             $tlds=\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$a->server_id)->where('id','>',$row->tld_cursor)->orderBy('id')->limit(25)->get();
             $tldCursor=(int)$row->tld_cursor;
             $this->attempt('publication',function()use($a,$tlds,&$tldCursor):void {
                 $scheduler=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed()
-                    ?? throw new \DomainException(OfferUpgrade::MESSAGE);
+                    ?? throw new \DomainException(FreshInstallation::MESSAGE);
                 $scheduler->wake(AccountBindings::binding($a));
             },(int)$a->server_id);
             DB::table('domains_runtime_turns')->where('id',$row->id)->update(['tld_cursor'=>$tldCursor,'operation_cursor'=>$ops->count()===25?$ops->last()->id:0,'domain_cursor'=>$domains->count()===25?$domains->last()->id:0,'finished_at'=>$this->clock->now()->getTimestamp()]);
@@ -137,7 +137,7 @@ final readonly class RuntimeWork
             $this->attempt('registrar_balance',fn()=>app(RegistrarBalances::class)->daily($a),(int)$a->server_id);
             $this->attempt('price_sync',function()use($a):void {
                 $scheduler=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed()
-                    ?? throw new \DomainException(OfferUpgrade::MESSAGE);
+                    ?? throw new \DomainException(FreshInstallation::MESSAGE);
                 $scheduler->sync(AccountBindings::binding($a),\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background);
             },(int)$a->server_id);
         }

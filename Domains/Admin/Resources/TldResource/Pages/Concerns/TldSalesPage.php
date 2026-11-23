@@ -107,7 +107,7 @@ trait TldSalesPage
         if($s['label']==='For sale'||$this->staffStop()){return $head;}
         $url=match(true){
             in_array($reason,['Check registrar account',TldFacts::RENEWALS_OFF],true)=>RegistrarFacts::accountUrl((int)$t->server_id),
-            $reason==='Over the cost limit'=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl(['account'=>$t->server_id]),
+            $reason==='Over the cost limit'=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::salesUrl(['account'=>$t->server_id]),
             default=>null};
         return $url===null?$head:$head->link($reason==='Over the cost limit'?'Change it in What you sell':'Open the registrar account',$url);
     }
@@ -163,7 +163,7 @@ trait TldSalesPage
         $t=$this->getRecord();$key=md5((string)$t->catalogue_intent.'|'.(string)$t->catalogue_facts);
         if(($this->start[0]??null)!==$key){
             try{
-                $catalogue=StaffCatalogue::routed()??throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE);
+                $catalogue=StaffCatalogue::routed()??throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\FreshInstallation::MESSAGE);
                 $start=$catalogue->start($t);$on=static fn(string $key):bool=>(bool)$catalogue->setting($t,$key);
                 $stopped=!$on('enabled')||!$on('renew')||array_filter($start['actions'],static fn(string $action):bool=>!$on($action))!==[];
                 $start['can']=$stopped&&$start['actions']!==[]&&$start['block']===null;
@@ -190,7 +190,7 @@ trait TldSalesPage
                 try{
                     $t=$this->getRecord()->fresh();
                     if((TldFacts::snapshot($t)['seller']??null)===null){Notification::make()->warning()->title('Choose a registrar for new orders.')->send();return;}
-                    $start=(StaffCatalogue::routed()??throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE))->start($t);
+                    $start=(StaffCatalogue::routed()??throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\FreshInstallation::MESSAGE))->start($t);
                     if($start['actions']===[]){throw new \DomainException('No acquisition actions to resume.');}
                     if($start['block']!==null){throw new \DomainException('Explicit verified widening required.');}
                     $input=['min_years'=>1,'max_years'=>$start['years'],'sales'=>'start','verified'=>true];

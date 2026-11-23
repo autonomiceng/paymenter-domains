@@ -84,7 +84,7 @@ final class DomainDecisions
         try { $observation=$d->observation??[]; $policy=$d->renewal_policy??[]; } catch (\Throwable) { $observation=$policy=null; }
         if ($registered) {
             $expiry=$d->provider_expires_at?->format('Y-m-d');
-            if ($pending) { $expiry??=is_string($policy['conversion_source_expiry']??null)?$policy['conversion_source_expiry']:null; }
+            if ($pending) { $expiry??=is_string($policy['source_expiry']??null)?$policy['source_expiry']:null; }
             $f['Expires']=Facts::row($expiry?gmdate('M j, Y',strtotime($expiry.' 00:00:00 UTC')):null,sub:$pending&&$expiry?'From the old record. Not synced yet.':($expiry?null:self::unread($d,$sync)));
         }
         $registrar=['enom'=>'Enom','namesilo'=>'NameSilo'][$d->registrar_key]??null;

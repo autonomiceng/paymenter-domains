@@ -231,5 +231,4 @@ $weak=staffUser(array_values(array_diff($permissions,[Review::permission('card_f
 tldRefusal(fn()=>$writer->run(pricingReview($weak->id,'Synthetic reviewed price change'),pricingForm(),$now),'Current staff permissions required.');Auth::setUser($u);
 expect(!isset(Staff::permissions()[Review::permission('default_pricing')]),'Default pricing adds no permission of its own');
 foreach(['default_rule','card_fee'] as $old){tldRefusal(fn()=>$writer->run(new Review($u->id,$t->server_id,null,$old,Review::ticket($u->id,$t->server_id,null,$old,Review::stamp($t->server_id,null)),'Synthetic reviewed price change'),[],$now),'Unsupported settings action.');}
-require __DIR__.'/Support/pricing-upgrade.php';
 echo "Saving prices publishes them, matches the preview, keeps below-cost rules and refuses missing costs.\n";$nativeSuccessful=true;

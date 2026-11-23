@@ -27,7 +27,7 @@ final class StaffTabs
     { return self::items($active,['All accounts'=>[RegistrarSetup::canAccess(),fn()=>RegistrarSetup::getUrl()],'Registrar requests'=>[OperationResource::canViewAny(),fn()=>OperationResource::getUrl('index')]]); }
     /** @return list<NavigationItem> */
     public static function tlds(string $active): array
-    { return self::items($active,['All TLDs'=>[TldResource::canViewAny(),fn()=>TldResource::getUrl('index')],'What you sell'=>[WhatYouSell::canAccess(),fn()=>WhatYouSell::getUrl()]]); }
+    { return self::items($active,['All TLDs'=>[TldResource::canViewAny(),fn()=>TldResource::getUrl('index')],'What you sell'=>[WhatYouSell::canAccess(),fn()=>WhatYouSell::salesUrl()]]); }
     /** @return list<NavigationItem> */
     public static function tldCatalogue(string $active,array $scope): array
     {

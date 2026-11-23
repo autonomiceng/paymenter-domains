@@ -15,7 +15,7 @@ final class ManagedPublicEnrollment
         return FreshTransaction::run(function()use($seed,$peek,$id,$owner,$now,$defaultProfile,$transferOnly):?bool {
             $changed=false;
             try { $l=HoldingLocks::take($seed,additionalServices:$peek->pluck('service_id')->all());HoldingAnchor::resolve($l);
-                if ($transferOnly && (!in_array($l['domain']->provenance,[null,'purchased','converted_purchase'],true) || $l['account']->environment!=='live' || !$l['operations']->contains(fn($op)=>$op->action==='transfer' && $op->state==='succeeded' && $op->authority_generation===$l['domain']->authority_generation))) { return null; } }
+                if ($transferOnly && (!in_array($l['domain']->provenance,[null,'purchased'],true) || $l['account']->environment!=='live' || !$l['operations']->contains(fn($op)=>$op->action==='transfer' && $op->state==='succeeded' && $op->authority_generation===$l['domain']->authority_generation))) { return null; } }
             catch (HoldingNativeMarkersUnavailable $e) { if ($transferOnly) { return null; } throw $e; }
             catch (\DomainException) { return null; }
             if (!ManagedPublicTarget::valid($l,$now)) { return null; }$d=$l['domain'];

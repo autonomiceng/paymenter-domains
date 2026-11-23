@@ -5,39 +5,21 @@ require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/staff-panel.php';
 use App\Models\{Server,Extension};
+use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Support\Facades\{DB,Event,Schema};
 use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Services\{Installation,Runtime,RuntimePorts,RuntimeSchema,ReminderSchedules,AccountBindings,NativePresenter,StaffSettingsReview as Review,StaffSettingsWrites,NativeCatalogue,NativeServerGuard};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 // Start through the authentic current fresh initializer before exercising retained lifecycle.
 $entry=new Domains([]);$entry->installed(); // The native entry performs fresh initialization and verifies every schema.
-// A preview installation already recorded the index migration before glue was included.
-$legacy=new \Paymenter\Extensions\Servers\Domains\Models\Operation(['domain_id'=>999,'service_id'=>999,'server_id'=>999,
-    'registrar_key'=>'enom','account_fingerprint'=>str_repeat('a',64),'authority_generation'=>1,'operation_key'=>'retained-glue',
-    'action'=>'glue_add','state'=>'queued','currency'=>'USD','funding_basis'=>'non_billable_management','policy'=>['management'=>['input'=>['host'=>'ns1.example.com','ips'=>['192.0.2.1']]]]]);
-$legacyId=DB::table('domains_operations')->insertGetId($legacy->getAttributes());
-$retained=array_diff_key((array)DB::table('domains_operations')->find($legacyId),['management_pending'=>true]);
-$entry->upgraded('0.0.1');
-expect((bool)DB::table('domains_operations')->find($legacyId)->management_pending,'Upgrade indexes retained pending glue even when its migration is already recorded');
-same($retained,array_diff_key((array)DB::table('domains_operations')->find($legacyId),['management_pending'=>true]),'Upgrade preserves retained request evidence and dates');
-DB::table('domains_operations')->where('id',$legacyId)->delete();
-// Retired stores stay absent on install, upgrade and repeated verification.
-foreach(['domains_sell_rows','domains_sell_fills'] as $retired){expect(!Schema::hasTable($retired),'Final package never recreates retired stores');}
-$pointerMigration = DB::table('migrations')->where('migration', '2026_10_19_000014_add_holding_adoption')->sole();
-DB::table('migrations')->where('id', $pointerMigration->id)->delete();
-$pointerRefused = false;
-try { $entry->installed(); } catch (DomainException $e) { $pointerRefused = str_contains($e->getMessage(), 'adoption pointer'); }
-expect($pointerRefused, 'Retained adoption pointer without migration history refuses installation');
-DB::table('migrations')->insert((array) $pointerMigration);
-same(7,DB::table('migrations')->where('migration','like','2026_10_18_%')->count(),'All extension migrations recorded');
 $receipts=\Paymenter\Extensions\Servers\Domains\Services\StaffAlertSchema::TABLE;
 DB::table($receipts)->insert(['delivery_key'=>str_repeat('a',64),'user_id'=>1,'notification_id'=>2]);
 // Each retained receipt refusal uses its own restored fixture.
 $receiptSchema=\Paymenter\Extensions\Servers\Domains\Services\StaffAlertSchema::class;
-$receiptRecord=DB::table('migrations')->where('migration',$receiptSchema::MIGRATION)->sole();
+$receiptRecord=DB::table('migrations')->where('migration',Installation::BASELINE)->sole();
 DB::table('migrations')->where('id',$receiptRecord->id)->delete();
 $receiptRefused=false;
-try{$entry->installed();}catch(DomainException $e){same('Retained holding storage has no installation record.',$e->getMessage(),'Receipt history refusal is specific');$receiptRefused=true;}
+try{$entry->installed();}catch(DomainException $e){$receiptRefused=true;}
 expect($receiptRefused,'Receipt storage without migration history refuses installation');
 DB::table('migrations')->insert((array)$receiptRecord);
 Schema::table($receipts,fn($b)=>$b->dropColumn('notification_id'));
@@ -46,9 +28,20 @@ try{$entry->installed();}catch(RuntimeException $e){same('Retained Domains schem
 expect($receiptRefused,'Recorded receipt storage with a missing column refuses installation');
 Schema::drop($receipts);$receiptSchema::install();
 DB::table($receipts)->insert(['delivery_key'=>str_repeat('a',64),'user_id'=>1,'notification_id'=>2]);
+$retainedReceipt = (array) DB::table($receipts)->sole();
 $entry->upgraded('0.0.1');$entry->uninstalled();$entry->installed();
-$receiptMigration=require dirname(__DIR__).'/Domains/database/migrations/2026_10_24_000039_create_staff_alert_receipts.php';$receiptMigration->down();
-same(2,(int)DB::table($receipts)->sole()->notification_id,'Install, upgrade, uninstall and rollback retain recipient receipts');
+$rollbackRefused = false;
+try {
+    app(Migrator::class)->rollback([dirname(__DIR__).'/Domains/database/migrations'], ['batch' => $receiptRecord->batch]);
+} catch (DomainException) {
+    $rollbackRefused = true;
+}
+expect($rollbackRefused, 'Native rollback refuses to remove the Domains baseline');
+same((array) $receiptRecord, (array) DB::table('migrations')->where('migration', Installation::BASELINE)->sole(),
+    'Refused rollback preserves the Domains migration record');
+same($retainedReceipt, (array) DB::table($receipts)->sole(), 'Refused rollback preserves the recipient receipt');
+$entry->installed();
+same($retainedReceipt, (array) DB::table($receipts)->sole(), 'Reinstallation after refused rollback preserves the recipient receipt');
 Runtime::register();same(app(RuntimePorts::class),app(RuntimePorts::class),'One port authority');expect(!app()->bound(\Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck::class),'Disabled TEST transfer preserves absent cart precheck');
 $entry->boot();$entry->boot();
 same(1,count(Event::getListeners('navigation')),'One public navigation authority');

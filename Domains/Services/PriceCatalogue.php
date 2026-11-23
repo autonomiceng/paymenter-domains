@@ -29,7 +29,7 @@ final class PriceCatalogue
             if ($b->fingerprint !== $fingerprint) { throw new \DomainException('Holder binding changed.'); }
             return $caps->holder($b,$tld,$lock ? ($locked ?? throw new \LogicException('Locked holding TLD required.')) : null);
         }
-        throw new \DomainException(OfferUpgrade::MESSAGE);
+        throw new \DomainException(FreshInstallation::MESSAGE);
     }
 
     /** Fresh cost evidence only; does not check seller, ownership, funding or driver eligibility.
@@ -45,7 +45,7 @@ final class PriceCatalogue
             $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($b,[$tld],$action,$term,$currency);
             return $ports->loadBatch([$q],\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Holder,$lock)[0][0]->costPrice($now);
         }
-        throw new \DomainException(OfferUpgrade::MESSAGE);
+        throw new \DomainException(FreshInstallation::MESSAGE);
     }
 
     public static function cost(string $value): string

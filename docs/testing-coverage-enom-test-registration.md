@@ -60,7 +60,7 @@ endpoint. The fixture covers:
   the action on Registrars says nothing was saved, and the unaccepted-route warning appears only when the
   deployment allows TEST registration.
 
-The retained upgrade scenario remains `tests/test_installed_package_previous.py`. These offline
+These offline
 fixtures prove local composition and refusal behavior; they do not establish Enom account or
 provider acceptance.
 

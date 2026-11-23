@@ -21,7 +21,7 @@ final class HolderPricing implements NativeRepriceGuard
             if ($domain->account_fingerprint !== $b->fingerprint || $domain->registrar_key !== $b->registrarKey) { throw new \DomainException('Holder binding changed.'); }
             return $offers->holder($b, $domain->tld, $lock ? ($locked ?? throw new \LogicException('Locked holding TLD required.')) : null);
         }
-        throw new \DomainException(OfferUpgrade::MESSAGE);
+        throw new \DomainException(FreshInstallation::MESSAGE);
     }
 
     /** The renewal price the domain pages show, tax included: the holder quote that Renew now and the next renewal invoice

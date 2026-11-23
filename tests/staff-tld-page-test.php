@@ -180,7 +180,7 @@ DB::table('domains_observation_queues')->insert(['server_id'=>$enom->server_id,'
 // Current status comes from retained OfferWork fields; legacy catalogue audit columns grant no status.
 $syncFailureFixture=static function(?string $code,?string $at)use($enom,$now):void {
     DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->update([
-        'offer_work'=>json_encode(['upgrade_generation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::generation(),'feed_due'=>$now->modify('+1 day')->getTimestamp()]),
+        'offer_work'=>json_encode(['catalogue_generation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation::generation(),'feed_due'=>$now->modify('+1 day')->getTimestamp()]),
         'offer_feed_succeeded_at'=>$now->getTimestamp(),'offer_feed_failure'=>$code,
         'offer_feed_failed_at'=>$at===null?null:(new DateTimeImmutable($at))->getTimestamp()]);
 };

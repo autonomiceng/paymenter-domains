@@ -65,7 +65,6 @@ foreach(['accepted','null','absent'] as $mode){
 // Complimentary refusals without retained proof come first by ID, yet a later paid return still gets its turn.
 Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 // The complimentary closure cursor arrives in its own migration (older code keeps it in the cache).
-if(is_file(dirname(__DIR__).'/Domains/Services/ClosureCursorSchema.php')){Paymenter\Extensions\Servers\Domains\Services\ClosureCursorSchema::install();}
 foreach(Paymenter\Extensions\Servers\Domains\Models\Account::orderBy('server_id')->get() as $a){DB::table('domains_observation_queues')->insertOrIgnore(['server_id'=>$a->server_id,'account_fingerprint'=>$a->account_fingerprint]);}
 $unproven=[];
 for($i=0;$i<25;$i++){

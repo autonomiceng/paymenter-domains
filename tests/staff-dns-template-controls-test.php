@@ -251,7 +251,7 @@ $check('Dependency reads stay bounded to the template and use its indexes',funct
         foreach($seen as$sql){expect(str_contains($sql,' limit '),'Each dependency read is one bounded row or page: '.$sql);}
         expect(count($seen)>=4,'Each dependency is read');
         same(2,count(array_filter($seen,fn($sql)=>str_contains($sql,'from "domains_managed_public_config"'))),'150 registered domain records are read in two pages');
-        foreach(\Paymenter\Extensions\Servers\Domains\Services\TemplateAssignmentIndex::COLUMNS as$table=>$columns){
+        foreach(['domains_watch_names'=>['ns_profile_id','state'], 'domains_managed_public_config'=>['profile_id'], 'domains_watch_product_maps'=>['expected_ns_profile_id']] as$table=>$columns){
             expect(\Illuminate\Support\Facades\Schema::hasIndex($table,$columns),'Template assignments are indexed in '.$table);
         }
         $plan=json_encode(DB::select('EXPLAIN QUERY PLAN select "id" from "domains_watch_names" where "ns_profile_id" = ? and "state" in (?, ?) limit 1',[$row->id,'active','paused']));

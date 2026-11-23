@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
+use Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation;
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
 /** One estimated card fee per payment; all arithmetic uses integers. */
@@ -40,7 +40,7 @@ final class CardFee
     public static function saveLocked(array $fee): void
     {
         if(DB::transactionLevel()!==1){throw new \LogicException('Outer card fee transaction required.');}
-        UpgradeGate::active(UpgradeGate::generation());
+        CatalogueActivation::active(CatalogueActivation::generation());
         BusinessSetting::saveLocked(self::KEY,self::validate($fee));
         StorefrontCatalogueCache::invalidateAfterCommit();
     }

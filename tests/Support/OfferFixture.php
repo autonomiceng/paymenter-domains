@@ -7,9 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\{Cost,Intent,OfferState};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,CostUnit};
 use Paymenter\Extensions\Servers\Domains\Models\{Price,Tld};
 
-/** Arrange known synthetic commerce rows for active-module tests, not an upgrade implementation.
- * Actual retained compatibility is tested with the pinned bridge database in retained-offer-package-test.
- */
+/** Arrange synthetic commerce rows for current catalogue tests. */
 final class OfferFixture
 {
     public function batch(AccountBinding $binding): void

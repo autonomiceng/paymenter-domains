@@ -39,7 +39,7 @@ foreach (['seller', 'defaults', 'facts', 'publication', 'credential', 'generatio
     $mutate = static function () use ($change, $binding, $secondBinding, &$saved, &$reached): void {
         $reached = true;
         if ($change === 'generation') {
-            $row = new App\Models\Setting(['key' => Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::KEY,
+            $row = new App\Models\Setting(['key' => Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation::KEY,
                 'settingable_type' => null, 'settingable_id' => null, 'type' => 'string', 'encrypted' => true]);
             $row->value = json_encode(['state' => 'legacy', 'generation' => 2]); $row->save(); return;
         }

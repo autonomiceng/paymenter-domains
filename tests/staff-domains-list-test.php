@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\Li
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
-staffPanel();[$held,$active]=staffData();Paymenter\Extensions\Servers\Domains\Services\HoldingProvenanceSchema::install();Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
+staffPanel();[$held,$active]=staffData();Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 $viewer=staffUser([Staff::VIEW]);Auth::setUser($viewer);
 $list=function(?callable $queries=null)use($viewer){
     DB::flushQueryLog();DB::enableQueryLog();$page=Livewire::actingAs($viewer)->test(ListDomains::class)->assertSuccessful();

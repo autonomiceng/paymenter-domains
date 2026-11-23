@@ -16,7 +16,7 @@ use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
     config(['domains.enom_live.management'=>false]);
     // Other producers have their own schedules; keep this turn focused on balance refreshes.
     DB::table('domains_observation_queues')->where('server_id',$server->id)->update(['catalogue_due'=>$clock->now()->getTimestamp()+86400]);
-    DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$server->id],['account_fingerprint'=>$binding->fingerprint,'offer_feed_tried_at'=>$clock->now()->getTimestamp(),'offer_work'=>json_encode(['feed_due'=>$clock->now()->getTimestamp()+86400,'credential_revision'=>$bindings->offerCredentialRevision($binding),'upgrade_generation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::generation()])]);
+    DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$server->id],['account_fingerprint'=>$binding->fingerprint,'offer_feed_tried_at'=>$clock->now()->getTimestamp(),'offer_work'=>json_encode(['feed_due'=>$clock->now()->getTimestamp()+86400,'credential_revision'=>$bindings->offerCredentialRevision($binding),'catalogue_generation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation::generation()])]);
     $balance=static fn()=>DB::table(BalanceSchema::TABLE)->where('server_id',$server->id)->sole();
     $balances=app(RegistrarBalances::class);$worker=app(RuntimeWork::class);
     resetWire(['reply'=>static function(array $p):string {

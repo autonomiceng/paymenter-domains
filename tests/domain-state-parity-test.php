@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaries;
 
 [$d,$invoice,$cycle]=$make(placeholderComFixtureName('state-parity-placeholder.com'));
 $user=$d->service->user;$op=Operation::where('domain_id',$d->id)->whereIn('action',['register','transfer'])->sole();
-Paymenter\Extensions\Servers\Domains\Services\AdoptionSchema::install();Paymenter\Extensions\Servers\Domains\Services\HoldingProvenanceSchema::install();Paymenter\Extensions\Servers\Domains\Services\HoldingAdoptionSchema::install();
+Paymenter\Extensions\Servers\Domains\Services\AdoptionSchema::install();
 $rows=['domain'=>(array)DB::table('domains_domains')->where('id',$d->id)->first(),'op'=>(array)DB::table('domains_operations')->where('id',$op->id)->first(),'cycle'=>(array)DB::table('domains_operations')->where('id',$cycle->id)->first(),
     'invoice'=>(array)DB::table('invoices')->where('id',$invoice->id)->first(),'order'=>(array)DB::table('invoices')->where('id',$op->invoice_id)->first()];
 $start=$clock->instant;$expiry=$d->provider_expires_at->format('Y-m-d');

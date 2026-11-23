@@ -29,7 +29,7 @@ final class OfferWork
     public function sync(AccountBinding $binding, RequestOrigin $origin = RequestOrigin::Interactive, ?int $expectedGeneration = null): void
     {
         $this->editQueue($binding, function ($q, $row) use ($origin, $expectedGeneration): void {
-            if ($expectedGeneration !== null && $expectedGeneration !== UpgradeGate::generation()) { throw new \DomainException('Queued offer generation changed.'); }
+            if ($expectedGeneration !== null && $expectedGeneration !== CatalogueActivation::generation()) { throw new \DomainException('Queued offer generation changed.'); }
             $work = OfferState::decode($row->offer_work);
             $claimed = (int) $row->offer_lease > $this->at();
             if ($claimed && ($work['feed_claim'] ?? null) === $row->offer_claim) { return; }
@@ -96,7 +96,7 @@ final class OfferWork
         $this->fence($binding); $this->account($binding);
         $row = DB::table('domains_observation_queues')->where('server_id', $binding->serverId)->where('account_fingerprint', $binding->fingerprint)->first();
         $work = OfferState::decode($row?->offer_work);
-        if ($this->generation !== null && ($work['upgrade_generation'] ?? null) !== $this->generation) { return ['state' => 'queued']; }
+        if ($this->generation !== null && ($work['catalogue_generation'] ?? null) !== $this->generation) { return ['state' => 'queued']; }
         $failure = empty($work['local_failure']) ? [] : ['state' => 'retrying', 'failure' => $work['local_failure'],
             'local_failure' => true, 'failed_at' => $work['local_failed_at'], 'due_at' => null];
         if ($tld !== null) {
@@ -137,7 +137,7 @@ final class OfferWork
             || (int) $row->offer_feed_tried_at > (int) $row->offer_feed_succeeded_at
             || $row->offer_feed_failure !== null || !empty($work['pending']) || !empty($work['local_failure'])
             || !empty($work['tries']) || !empty($work['feed_hint']) || ($work['feed_due'] ?? 0) <= $this->at()
-            || $this->generation !== null && ($work['upgrade_generation'] ?? null) !== $this->generation
+            || $this->generation !== null && ($work['catalogue_generation'] ?? null) !== $this->generation
             || $this->credentials && ($work['credential_revision'] ?? null) !== ($this->credentials)($binding)) { return false; }
         if (!$endings) { return false; }
         foreach ($endings as $ending) {
@@ -192,10 +192,10 @@ final class OfferWork
         $writer = $this->writer->withGuard($guard); $work = OfferState::decode($job->offer_work); $touched = [];
         try {
             if ($this->credentials && ($work['credential_revision'] ?? null) !== $credential
-                || $this->generation !== null && ($work['upgrade_generation'] ?? null) !== $this->generation) {
+                || $this->generation !== null && ($work['catalogue_generation'] ?? null) !== $this->generation) {
                 // A durable buffer belongs to the credentials that fetched it, even after restart.
                 $work['pending'] = []; $work['feed_due'] = $this->at(); $work['tries'] = 0;
-                $work['credential_revision'] = $credential; $work['upgrade_generation'] = $this->generation;
+                $work['credential_revision'] = $credential; $work['catalogue_generation'] = $this->generation;
             }
             $this->republish($writer, $b, $work, $guard, $touched);
             // Republication can wake retained facts when reviewed authority changes.

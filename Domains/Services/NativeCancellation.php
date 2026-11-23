@@ -118,7 +118,6 @@ final class NativeCancellation
                 return;
             }
             if($acquisitions->isEmpty()){
-                // A converted holding may retain only a converter-sealed historical renewal.
                 // Require its authenticated current billing anchor, including later renewals; never a state label.
                 foreach($domains as$d){
                     $anchor=$ops->firstWhere('operation_key',$d->renewal_policy['billing_anchor']['operation_key']??null);

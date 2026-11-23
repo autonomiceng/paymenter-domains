@@ -7,8 +7,7 @@ use Carbon\CarbonImmutable;
 use Filament\Actions\{Action,BulkAction};
 use Filament\Forms\Components\{Radio,Select,TextInput,Toggle};
 use Filament\Notifications\Notification;
-use Filament\Pages\{Page,PageConfiguration};
-use Filament\Panel;
+use Filament\Pages\Page;
 use Filament\Schemas\{Schema,Components\Callout,Components\EmbeddedTable};
 use Filament\Tables\Columns\{ColumnGroup,TextColumn};
 use Filament\Tables\Concerns\InteractsWithTable;
@@ -17,7 +16,7 @@ use Filament\Tables\Filters\{Filter,SelectFilter};
 use Filament\Tables\Table;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\{Auth,Blade,Log,Route};
+use Illuminate\Support\Facades\{Auth,Blade,Log};
 use Illuminate\Support\HtmlString;
 use Livewire\Attributes\{Locked,Url};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
@@ -27,7 +26,6 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Row,Value};
 use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Reader,State};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,CanonicalName};
-use Paymenter\Extensions\Servers\Domains\Http\Controllers\MovedStaffPageController;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,OfferRow};
 use Paymenter\Extensions\Servers\Domains\Services\{EndingChoices,PriceList,StaffSettingsReview as Review,StaffSettingsWrites};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
@@ -48,7 +46,7 @@ class WhatYouSell extends Page implements HasTable
     protected static string|\UnitEnum|null $navigationGroup='Domains';
     protected static bool $shouldRegisterNavigation=false;
     protected static ?string $title='TLDs & pricing';
-    protected static ?string $slug='what-you-sell';
+    protected static bool $isDiscovered = false; // Registered at the TLD resource index.
     protected string $view='domains::admin.what-you-sell';
     protected static ?\Filament\Pages\Enums\SubNavigationPosition $subNavigationPosition=\Filament\Pages\Enums\SubNavigationPosition::Top;
     public function getSubNavigation(): array
@@ -81,12 +79,15 @@ class WhatYouSell extends Page implements HasTable
     private array $rights=[];
     public static function canAccess(): bool {return Staff::can();}
     public static function getNavigationLabel(): string {return 'What you sell';}
-    public static function routes(Panel $panel,?PageConfiguration $configuration=null): void
+    public static function salesUrl(array $parameters = []): string
     {
-        Route::get(static::getRoutePath($panel),[MovedStaffPageController::class,'whatYouSell'])
-            ->middleware(static::getRouteMiddleware($panel))->withoutMiddleware(static::getWithoutRouteMiddleware($panel))
-            ->defaults('panel',$panel->getPath())->name(static::getRelativeRouteName($panel));
+        if (blank($parameters['tld'] ?? null)) {
+            $parameters['filters']['for_sale'] ??= ['isActive' => 1];
+        }
+        $parameters['account'] ??= '';
+        return TldResource::getUrl('index', $parameters);
     }
+
     public function mount(bool $allTlds=false): void
     {
         Staff::requireView();
@@ -157,7 +158,7 @@ class WhatYouSell extends Page implements HasTable
         return $binding!==null&&($binding->registrarKey!=='enom'||config($binding->environment->value==='live'?'domains.enom_live.catalogue':'domains.enom_catalogue.enabled')===true)&&!$this->hasReader($binding);
     }
     protected function catalogue(): ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue
-    {return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE);}
+    {return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\FreshInstallation::MESSAGE);}
     private function reads(): SellTable
     {
         return $this->reads??=new SellTable(

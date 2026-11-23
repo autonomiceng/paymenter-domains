@@ -20,8 +20,8 @@ final class AdoptionRows
     public static function sections(Domain $d, array $review, string $reason, ?string $environment, string $unavailable): array
     {
         $staff = Reader::Staff; $details = $review['details'] ?? []; $checked = ($review['code'] ?? null) !== null;
-        $source = $details['source_expiry'] ?? ($d->renewal_policy['conversion_source_expiry'] ?? $d->provider_expires_at?->format('Y-m-d'));
-        try { new DateEvidence($source ?? '', ExpiryPrecision::Date, 'conversion_source'); } catch (\Throwable) { $source = null; }
+        $source = $details['source_expiry'] ?? ($d->renewal_policy['source_expiry'] ?? $d->provider_expires_at?->format('Y-m-d'));
+        try { new DateEvidence($source ?? '', ExpiryPrecision::Date, 'import_source'); } catch (\Throwable) { $source = null; }
         $user = User::find($d->user_id);
         $account = match ($review['details']['environment'] ?? $environment) { 'test' => Value::plain(Plain::Test), 'live' => Value::plain(Plain::Live), default => Value::state(State::NotReadYet, $staff) };
         $customer = ($fact = $user === null ? null : Fact::attr($user, 'name')) === null ? Value::state(State::NotReadYet, $staff, 'Customer #'.$d->user_id) : Value::fact($fact, 'Customer #'.$d->user_id);

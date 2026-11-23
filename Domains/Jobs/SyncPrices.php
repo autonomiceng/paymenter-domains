@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Jobs;
 use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 use App\Models\{Notification,User};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferScheduler,UpgradeGate};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferScheduler,CatalogueActivation};
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\{ShouldQueue,ShouldBeUnique};
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -18,7 +18,7 @@ final class SyncPrices implements ShouldQueue,ShouldBeUnique
 {
     use Dispatchable,InteractsWithQueue,Queueable,SerializesModels;
     public int $uniqueFor=900;
-    public int $upgradeGeneration=0;
+    public int $catalogueGeneration=0;
     // The bulk read has a 60-second deadline. Leave time to save before Paymenter's 90-second reservation expires.
     public const TIMEOUT=75;
     // Both forms enqueue module work; neither performs an inline price batch.
@@ -28,7 +28,7 @@ final class SyncPrices implements ShouldQueue,ShouldBeUnique
     public bool $failOnTimeout=true;
     public const WORKER='Price sync needs a database or Redis queue with retry_after above %d seconds. Configure it and start the scheduler and queue worker, then try Sync again.';
     public function __construct(public int $actor,public int $server,public string $fingerprint,public ?string $reviewKey=null)
-    {$this->upgradeGeneration=UpgradeGate::generation();$this->timeout=$reviewKey===null?self::TIMEOUT:self::ACCEPTED_TIMEOUT;}
+    {$this->catalogueGeneration=CatalogueActivation::generation();$this->timeout=$reviewKey===null?self::TIMEOUT:self::ACCEPTED_TIMEOUT;}
     public function uniqueId(): string {return 'domains-price-sync:'.$this->server.':'.$this->actor.':'.($this->reviewKey===null?'list':'prices');}
     public static function isQueueRefusal(\Throwable $error): bool
     {return $error instanceof \DomainException&&in_array($error->getMessage(),[sprintf(self::WORKER,self::TIMEOUT),sprintf(self::WORKER,self::ACCEPTED_TIMEOUT)],true);}
@@ -46,16 +46,16 @@ final class SyncPrices implements ShouldQueue,ShouldBeUnique
         $user=User::find($this->actor);
         if(!Staff::allows($user,Staff::POLICY)||!Staff::allows($user,Review::permission('import'))){return;}
         try{
-            if($this->upgradeGeneration!==UpgradeGate::generation()){throw new \DomainException('Settings changed. Reload this page.');}
+            if($this->catalogueGeneration!==CatalogueActivation::generation()){throw new \DomainException('Settings changed. Reload this page.');}
             $account=Account::where('server_id',$this->server)->sole();
             if(!hash_equals($this->fingerprint,AccountBindings::binding($account)->fingerprint)){throw new \DomainException('Settings changed. Reload this page.');}
             if(($scheduler=OfferScheduler::routed())!==null){
                 // Reviewed imports continue through StaffSettingsWrites, preserving their current ticket.
                 if($this->reviewKey!==null){app(StaffSettingsWrites::class)->run(new Review($this->actor,$this->server,null,'import',$this->reviewKey,''),[]);}
-                else{$scheduler->sync(AccountBindings::binding($account), expectedGeneration:$this->upgradeGeneration);}
+                else{$scheduler->sync(AccountBindings::binding($account), expectedGeneration:$this->catalogueGeneration);}
                 $this->notice('Price sync queued','The account worker will refresh prices. Check sync progress on What you sell.');return;
             }
-            throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE);
+            throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\FreshInstallation::MESSAGE);
         }catch(\Throwable $error){
             if(!$error instanceof \DomainException){Log::warning('Domains queued price sync failed.',['exception_class'=>$error::class]);}
             $this->notice("Couldn't sync prices",SettingsActions::refusal($error,'import',[],$this->server));
@@ -66,7 +66,9 @@ final class SyncPrices implements ShouldQueue,ShouldBeUnique
     private function notice(string $title,string $body): void
     {
         if(!Staff::allows(User::find($this->actor),Staff::VIEW)){return;}
-        $route=$this->reviewKey===null?'filament.admin.pages.what-you-sell':'filament.admin.resources.tlds.index';
-        Notification::create(['user_id'=>$this->actor,'title'=>$title,'body'=>$body,'url'=>Route::has($route)?route($route,['account'=>$this->server]):null]);
+        $route='filament.admin.resources.tlds.index';
+        $scope=['account'=>$this->server];
+        if ($this->reviewKey === null) { $scope['filters']['for_sale']=['isActive'=>1]; }
+        Notification::create(['user_id'=>$this->actor,'title'=>$title,'body'=>$body,'url'=>Route::has($route)?route($route,$scope):null]);
     }
 }

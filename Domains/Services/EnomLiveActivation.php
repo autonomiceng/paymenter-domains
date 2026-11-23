@@ -67,7 +67,7 @@ final class EnomLiveActivation
     private static function prices(Account $a,AccountBinding $b,array $features,\DateTimeImmutable $now,?array &$failures=null): array
     {
         $offers=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferReadiness::routed()
-            ?? throw new \DomainException(OfferUpgrade::MESSAGE);
+            ?? throw new \DomainException(FreshInstallation::MESSAGE);
         $r=$offers->review($a,$features,DB::transactionLevel()>0);
         if($failures!==null){$failures=$r['failures'];} elseif($r['missing']!==null){throw new \DomainException($r['missing']);}
         return $r['costs'];

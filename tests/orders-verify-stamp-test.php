@@ -4,10 +4,10 @@ declare(strict_types=1);
 require __DIR__.'/namesilo-test-activation-test.php';
 $nativeSuccessful=false;
 use Illuminate\Support\Facades\{DB,Schema};
-use Paymenter\Extensions\Servers\Domains\Services\{FreshInstallation,Installation};
+use Paymenter\Extensions\Servers\Domains\Services\Installation;
 $key='domains_schema_verified';
 $record=static fn()=>DB::table('settings')->whereNull('settingable_type')->whereNull('settingable_id')->where('key',$key);
-$sourceVersion=FreshInstallation::manifest();
+$sourceVersion=Installation::schemaVersion();
 $version=$record()->value('value');
 $failures=[];
 $check=static function(bool $ok,string $why)use(&$failures):void {if(!$ok){$failures[]=$why;echo "FAIL: $why\n";}};
@@ -43,7 +43,7 @@ foreach([['domains_domains',['reservation_name']],['domains_operations',['operat
 }
 $drift(static fn()=>Schema::table('domains_operations',static fn($t)=>$t->renameColumn('attempt','fixture_attempt')),
     static fn()=>Schema::table('domains_operations',static fn($t)=>$t->renameColumn('fixture_attempt','attempt')),'a changed evidence column');
-$migration=DB::table('migrations')->where('migration','2026_10_18_000001_create_domains_foundation')->sole();
+$migration=DB::table('migrations')->where('migration','2026_11_23_000001_create_domains_schema')->sole();
 DB::table('migrations')->where('id',$migration->id)->delete();$refused=false;
 try{
     try{$toggle(true);}catch(RuntimeException $error){$refused=true;}

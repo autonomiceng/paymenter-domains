@@ -54,9 +54,9 @@ A stock Filament action/page on adoption-pending records reads only on explicit 
 history IDs/status, environment, expiry, due date, charge, price alert and DNR are escaped native entries. Confirm is
 disabled with “Adoption is not enabled yet”. No holding, service, invoice, operation or authority is committed here.
 
-Pending conversions compare fresh expiry against encrypted `conversion_source_expiry`, falling back to a retained
+Pending imports compare fresh expiry against encrypted `source_expiry`, falling back to a retained
 provider date. Missing/invalid pending source dates require separate qualification; the preview never substitutes a
-registrar date for an unknown converted date. New matched services without a pending source still require all fresh
+registrar date for an unknown source date. New matched services without a pending source still require all fresh
 provider expiry reads to agree. TEST success is labelled rehearsal; live success remains a disabled eligible preview.
 
 Converted pending rows are matched by canonical name even when their reservation is null. Preview preserves their ID and never acquires a reservation; competing names or reservations still refuse.

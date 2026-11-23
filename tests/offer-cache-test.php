@@ -6,7 +6,7 @@ require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Edit, Intent, Query, UpgradeGate};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Edit, Intent, Query, CatalogueActivation};
 use Paymenter\Extensions\Servers\Domains\Services\{Storefront, StorefrontCatalogueCache};
 expect(method_exists(Storefront::class, 'catalogue'), 'Public cache needs a dormant offer route and activation/credential namespace');
 require __DIR__.'/Support/offer-commerce.php';

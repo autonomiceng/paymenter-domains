@@ -6,7 +6,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchSource,WatchProd
 use Paymenter\Extensions\Servers\Domains\Services\ManagedPublicEnrollment;
 function transferWatchFixture(string $name,int $owner): array
 {
-    foreach(['ReminderSchema','PslSchema','PslReviewSchema','WatchSchema','WatchDnsSchema','WatchScheduleSchema','WatchNoticeSchema','HoldingAdoptionSchema','AdoptionSchema','HistoryLinkSchema','NativeIntentSchema','ManagedPublicWorkSchema','ManagedPublicSchema']as$type){('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$type)::install();}
+    foreach(['ReminderSchema','PslSchema','PslReviewSchema','WatchSchema','WatchDnsSchema','WatchScheduleSchema','WatchNoticeSchema','AdoptionSchema','HistoryLinkSchema','NativeIntentSchema','ManagedPublicWorkSchema','ManagedPublicSchema']as$type){('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$type)::install();}
     $server=App\Models\Server::create(['name'=>'Hosting','type'=>'server','extension'=>'SyntheticHosting','enabled'=>true]);
     $product=commerceHosting();$product->update(['server_id'=>$server->id]);
     $order=App\Models\Order::withoutEvents(fn()=>App\Models\Order::create(['user_id'=>$owner,'currency_code'=>'USD']));$plan=$product->plans()->sole();

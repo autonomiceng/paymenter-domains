@@ -31,7 +31,7 @@ final class ReadRuntime
                     $actions=array_values(array_filter(['register','renew','transfer'],static fn($action)=>$caps->endings($binding,$action)!==[]));
                     return new Driver(new Client($binding,$key,new AdmittedTransport($binding,$current)),$actions,$clock);
                 }
-                throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE);
+                throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\FreshInstallation::MESSAGE);
             }catch(\Throwable){throw new \DomainException('NameSilo runtime reader unavailable.');}
         };
     }

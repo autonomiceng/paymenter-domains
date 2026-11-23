@@ -4,9 +4,7 @@
 
 `managed-public-storage-test.php` covers the target union, separate encrypted immutable
 facts, no managed watch creation, dormant defaults, retention and missing-history refusal.
-`managed-public-upgrade-test.php` upgrades original 000018 enrollment rows in place,
-preserving IDs, continuity/profile pointers and awaiting-acceptance state. Partial retained
-upgrades refuse repair. These serialized SQLite tests make no DNS or registrar calls.
+These serialized SQLite tests make no DNS or registrar calls.
 
 ## Managed public DNS runtime
 

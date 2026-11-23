@@ -25,7 +25,7 @@ $measure = static function (Closure $read): array {
     try {
         $value = $read(); $queries = DB::getQueryLog();
         $gate = array_filter($queries, static fn ($q) => $q['query'] === 'select * from "settings" where "settingable_type" is null and "settingable_id" is null and "key" = ?'
-            && $q['bindings'] === ['domains_offer_upgrade']);
+            && $q['bindings'] === ['domains_catalogue_activation']);
         return [$value, count($queries), count($gate)];
     }
     finally { DB::disableQueryLog(); DB::flushQueryLog(); }

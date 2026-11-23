@@ -123,7 +123,7 @@ foreach(['dnsListRecords'=>'catalogue','dnsAddRecord'=>'management','dnsUpdateRe
     same($feature,$actual,'DNS physical admission classifies each child and inventory read');
 }
 require __DIR__.'/Support/namesilo-write-wire.php';
-\Paymenter\Extensions\Servers\Domains\Services\LiveReservationSchema::install();
+\Paymenter\Extensions\Servers\Domains\Services\EnomLiveCallSchema::install();
 [$d]=$setup('dns-physical',[$a,$caa]);$wire->next=0;
 $transport=\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\nsWriteTransport($binding,$clock);
 $driver=new DnsManagement($binding,$transport->exchange());$driver->useReservation($transport->reservation);

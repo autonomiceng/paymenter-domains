@@ -34,7 +34,7 @@ class Domain extends Model
         });
         static::creating(static function (self $domain): void {
             if ($domain->adoption_id !== null || isset($domain->snapshot['holding'])) { throw new \DomainException('Adoption requires locked attachment.'); }
-            if ($domain->provenance !== null && !in_array($domain->provenance, ['purchased', 'converted_purchase', 'adopted', 'adoption_pending'], true)) { throw new \InvalidArgumentException('Unknown holding provenance.'); }
+            if ($domain->provenance !== null && !in_array($domain->provenance, ['purchased', 'adopted', 'adoption_pending'], true)) { throw new \InvalidArgumentException('Unknown holding provenance.'); }
             if ($domain->adoptionPending()) { throw new \DomainException('Pending holdings require reviewed conversion.'); }
             $name = \Paymenter\Extensions\Servers\Domains\Data\CanonicalName::parse($domain->domain, [$domain->tld]);
             if ($domain->sld !== $name['sld']) { throw new \InvalidArgumentException('Domain label mismatch.'); }

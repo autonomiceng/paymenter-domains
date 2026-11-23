@@ -12,10 +12,10 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\{StaffContext, Target};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AdoptionMapping, AdoptionReader, AdoptionSchema, HoldingProvenanceSchema, PslReviewSchema, WatchSchema, RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AdoptionMapping, AdoptionReader, AdoptionSchema, PslReviewSchema, WatchSchema, RegistrarRegistry};
 function adoptionFixture(Environment $environment = Environment::Test, array $registrars = ['enom','namesilo'], bool $nameSiloLocal = true): array
 {
-    Queue::fake(); extract(commerceFixture(environment: $environment, registrars: $registrars, nameSiloLocal: $nameSiloLocal)); AdoptionSchema::install(); HoldingProvenanceSchema::install(); PslReviewSchema::install(); WatchSchema::install();
+    Queue::fake(); extract(commerceFixture(environment: $environment, registrars: $registrars, nameSiloLocal: $nameSiloLocal)); AdoptionSchema::install();  PslReviewSchema::install(); WatchSchema::install();
     $owner = commerceUser(); $other = commerceUser(); $staff = staffUser(['admin.domains.view', 'admin.domains.adopt.preview']);
     $tld = $tlds[0]; $product = $native->product($tld, 'register'); $plan = $native->annualPlan($product);
     $order = Order::create(['user_id' => $owner->id, 'currency_code' => 'USD']);
@@ -48,6 +48,6 @@ function adoptionPendingFixture(App\Models\Service $service, AccountBinding $bin
         'reservation_name' => 'example.com', 'server_id' => $binding->serverId, 'registrar_key' => 'enom', 'account_fingerprint' => $binding->fingerprint,
         'user_id' => $service->user_id, 'service_id' => $service->id, 'status' => 'adoption_pending', 'provenance' => 'adoption_pending',
         'authority_generation' => 1, 'confirmed_revision' => 0, 'billing_managed' => false, 'price_mode' => 'standard',
-        'renewal_policy' => encrypt(json_encode(['conversion_source_expiry' => '2027-10-20', 'conversion_hold_reason' => 'billing_not_managed']), false)], $overrides));
+        'renewal_policy' => encrypt(json_encode(['source_expiry' => '2027-10-20']), false)], $overrides));
     return \Paymenter\Extensions\Servers\Domains\Models\Domain::findOrFail($id);
 }

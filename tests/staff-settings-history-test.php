@@ -5,7 +5,8 @@ require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 use App\Models\{Server,Setting};
 use Illuminate\Support\Facades\{Auth,Crypt,DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Staff,TldFacts};
-use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,StaffAuditSchema,StaffSettingsReview as Review};
+use Paymenter\Extensions\Servers\Domains\Domains;
+use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,Installation,StaffAuditSchema,StaffSettingsReview as Review};
 extract(commerceFixture());Carbon\Carbon::setTestNow($now);$t=$tlds[0];
 $u=staffUser([Staff::VIEW,Staff::POLICY,Review::permission('default_rule'),Review::permission('publish')]);Auth::setUser($u);
 $review=static fn(?string $ticket=null)=>new Review($u->id,$t->server_id,$t->id,'default_rule',$ticket??Review::ticket($u->id,$t->server_id,$t->id,'default_rule',Review::stamp($t->server_id,$t->id)),'Retain synthetic audit evidence');
@@ -80,15 +81,21 @@ expect(count(Review::historyRows($server))<=2*Review::HISTORY_LIMIT,'Both histor
 same($stamp,Review::stamp($t->server_id,$t->id),'Audit growth leaves the reviewed state unchanged');
 tldRefusal(fn()=>$first->local(static fn()=>null),'Review key used.');
 $keyRows=DB::table(Review::KEYS)->get()->toJson();$archiveRows=DB::table(AuditArchives::TABLE)->orderBy('id')->get()->toJson();
-$migration=require dirname(__DIR__).'/Domains/database/migrations/2026_10_21_000034_create_staff_audit_storage.php';
-$migration->down();$migration->up();StaffAuditSchema::verify();
-same($keyRows,DB::table(Review::KEYS)->get()->toJson(),'Reinstall retains used keys');
-same($archiveRows,DB::table(AuditArchives::TABLE)->orderBy('id')->get()->toJson(),'Reinstall retains encrypted archive bytes');
+(new Domains([]))->uninstalled();
+$installation = app(Installation::class);
+$installation->install();
+StaffAuditSchema::verify();
+same($keyRows,DB::table(Review::KEYS)->get()->toJson(),'Uninstall and reinstall retain used keys');
+same($archiveRows,DB::table(AuditArchives::TABLE)->orderBy('id')->get()->toJson(),'Uninstall and reinstall retain encrypted archive bytes');
 foreach([Review::KEYS,AuditArchives::TABLE] as $table){
     Schema::rename($table,'retained_audit_fixture');
-    try{StaffAuditSchema::install();expect(false,'Missing retained audit table accepted');}
-    catch(RuntimeException $e){expect(str_contains($e->getMessage(),'schema mismatch'),'Missing audit storage refuses reinstall');}
-    finally{Schema::rename('retained_audit_fixture',$table);}
+    try {
+        $refused = false;
+        try { $installation->install(); } catch (RuntimeException) { $refused = true; }
+        expect($refused && !Schema::hasTable($table), 'Missing audit storage refuses reinstall without being recreated');
+    } finally {
+        Schema::rename('retained_audit_fixture', $table);
+    }
 }
 StaffAuditSchema::verify();
 $used=DB::table(Review::KEYS)->first();

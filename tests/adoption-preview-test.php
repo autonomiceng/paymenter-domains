@@ -101,13 +101,13 @@ foreach (['service_id' => $peerService->id, 'user_id' => $other->id, 'account_fi
 }
 DB::table('domains_domains')->where('id', $pending->id)->update(['provider_domain_id' => '456']);
 same('identity_unconfirmed', $reader->preview($target, $context)->code, 'Stored pending provider ID must agree');
-DB::table('domains_domains')->where('id', $pending->id)->update(['renewal_policy' => encrypt(json_encode(['conversion_source_expiry' => '2027-10-21']), false)]);
+DB::table('domains_domains')->where('id', $pending->id)->update(['renewal_policy' => encrypt(json_encode(['source_expiry' => '2027-10-21']), false)]);
 same('identity_unconfirmed', $reader->preview($target, $context)->code, 'Identity refusal takes precedence over source expiry mismatch');
-DB::table('domains_domains')->where('id', $pending->id)->update(['provider_domain_id' => '123', 'renewal_policy' => encrypt(json_encode(['conversion_source_expiry' => '2027-10-21']), false)]);
+DB::table('domains_domains')->where('id', $pending->id)->update(['provider_domain_id' => '123', 'renewal_policy' => encrypt(json_encode(['source_expiry' => '2027-10-21']), false)]);
 same('expiry_disagrees', $reader->preview($target, $context)->code, 'Converted source expiry must agree even when provider expiry is null');
-DB::table('domains_domains')->where('id', $pending->id)->update(['renewal_policy' => encrypt(json_encode(['conversion_source_expiry' => null]), false)]);
+DB::table('domains_domains')->where('id', $pending->id)->update(['renewal_policy' => encrypt(json_encode(['source_expiry' => null]), false)]);
 $count = count($wire->calls); same('expiry_unconfirmed', $reader->preview($target, $context)->code, 'Missing converted source date requires separate qualification'); same($count, count($wire->calls), 'Unknown source date zero wire');
-DB::table('domains_domains')->where('id', $pending->id)->update(['renewal_policy' => encrypt(json_encode(['conversion_source_expiry' => '2027-10-20']), false)]);
+DB::table('domains_domains')->where('id', $pending->id)->update(['renewal_policy' => encrypt(json_encode(['source_expiry' => '2027-10-20']), false)]);
 // Terminal labels never replace negative proof. These uncertain rows exist only in the disposable fixture.
 foreach (['failed', 'cancelled', 'succeeded'] as $state) {
     $op = Operation::create(['domain_id' => $pending->id, 'service_id' => $service->id, 'server_id' => $binding->serverId,

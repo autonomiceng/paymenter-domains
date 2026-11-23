@@ -439,7 +439,7 @@ final class SettingsActions
     {
         $t=$tld?Tld::find($tld):null;
         if($t===null||$rule===null){return new \Illuminate\Support\HtmlString('');}
-        try{$rows=(StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE))->preview($t,$rule);}catch(\Throwable){$rows=[];}
+        try{$rows=(StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\FreshInstallation::MESSAGE))->preview($t,$rule);}catch(\Throwable){$rows=[];}
         $canSync=self::cached(fn()=>TldRegistrar::canRecheck((int)$t->server_id));
         if($rows===[]){return new \Illuminate\Support\HtmlString('<p>Exact registrar costs missing. '.e(TldFacts::refreshText(TldFacts::snapshot($t)['refresh']??[],$canSync())).'</p>');}
         $registrarRequirement=self::cached(fn()=>self::previewRegistrarRequirement($t));
@@ -680,7 +680,7 @@ final class SettingsActions
         if($name==='acceptance'&&$error->getMessage()==='Audit entry too large. Changes held.'){return 'That is too many changes for one save. Save fewer at a time. Nothing was saved.';}
         if($error instanceof EnomTestCallLimit&&(Account::where('server_id',$server)->value('environment')??($data['environment']??null))==='live'){return 'We stopped this before it reached Enom. Earlier reads may have been sent. Check API calls on the account page.';}
         return $error instanceof EnomTestCallLimit?self::testRefusal($error,$name,$server,$data)
-                :match($error->getMessage()){\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE=>\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::STAFF,'The calculated price is too large.'=>'This makes a price too large to save. Lower the markup or the card fee. Nothing was changed.','Processing state unchanged.'=>'Orders are already set that way. Nothing changed.',
+                :match($error->getMessage()){\Paymenter\Extensions\Servers\Domains\Services\FreshInstallation::MESSAGE=>\Paymenter\Extensions\Servers\Domains\Services\FreshInstallation::STAFF,'The calculated price is too large.'=>'This makes a price too large to save. Lower the markup or the card fee. Nothing was changed.','Processing state unchanged.'=>'Orders are already set that way. Nothing changed.',
                 CardFee::INVALID=>'Enter a card fee from 0% to 99.99% and a fixed amount from $0 to $100,000, with up to two decimal places. Nothing was changed.',
                 'This TLD is hidden.'=>"That TLD isn't offered here. Nothing was saved.",
                 \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::NO_SELLER=>'No registrar takes its new orders yet, so Sell would do nothing. Use Start selling on its TLD page to choose one. Nothing was saved.',

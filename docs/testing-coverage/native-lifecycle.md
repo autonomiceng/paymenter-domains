@@ -65,16 +65,10 @@ projections. These offline fixtures do not establish provider or installed brows
 
 ## Installed-package scenario commands
 
-`test_installed_package.py` runs default-held registration and all three unsafe-archive
-refusals. `test_installed_package_fresh.py` runs the current-build lifecycle;
-`test_installed_package_upgrade.py` builds the pinned previous revision, applies the
-existing observation-index fixture adjustment and runs the previous-to-current lifecycle.
-Both lifecycle commands retain install, seed, repeated upload/verify, server-delete/verify
-and file-removal/reinstall/verify phases. Each command gates on 1.5 GiB available memory
-and owns a temporary application/database under the runner fixture parent.
-Each prints only its scenario's JSON evidence; together they retain every original key,
-including both archive hashes and previous-fixture provenance. Offline native SQLite
-acceptance does not establish provider, installed-theme or concurrent-database acceptance.
+`test_installed_package.py` runs default-held registration and rejects unsafe archives.
+`test_installed_package_fresh.py` installs the current ZIP into a disposable native app,
+seeds records, repeats upload and verification, checks server deletion refusal and
+reinstalls after removing the files. It checks the retained records in a new process.
 
 ## Native service refusal feedback
 

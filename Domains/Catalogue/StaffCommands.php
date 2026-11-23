@@ -31,7 +31,7 @@ final class StaffCommands
         $staff=static fn($q)=>array_map(static fn(array $r)=>array_diff_key($r,self::BACKGROUND),$raw($q));
         $names=Tld::when($server!==Review::ALL_ACCOUNTS,fn($q)=>$q->where('server_id',$server))->when($tld,fn($q)=>$q->whereKey($tld))->pluck('tld');
         $ids=Server::where('extension','Domains')->orderBy('id')->pluck('id');
-        return 'offer:'.hash('sha256',OfferState::json([UpgradeGate::generation(),
+        return 'offer:'.hash('sha256',OfferState::json([CatalogueActivation::generation(),
             $raw(DB::table((new Server)->getTable())->whereIn('id',$ids)->orderBy('id')),
             $raw(DB::table('domains_accounts')->whereIn('server_id',$ids)->orderBy('server_id')),
             Account::whereIn('server_id',$ids)->orderBy('server_id')->get()->map(\Paymenter\Extensions\Servers\Domains\Services\ApiCallLimits::forAccount(...))->all(),
