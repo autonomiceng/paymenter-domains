@@ -45,7 +45,7 @@ python3 scripts/test.py --jobs 1 --only \
   tests/managed-public-source-drift-test.php tests/managed-public-stamp-test.php \
   tests/namesilo-enrollment-test.php tests/native-identity-readiness-test.php \
   tests/native-paid-baseline-test.php tests/native-server-settings-test.php \
-  tests/operation-service-index-test.php tests/registrar-balances-test.php \
+  tests/registrar-balances-test.php \
   tests/registrars-page-test.php tests/reminder-form-test.php \
   tests/renewal-autopay-adopted-test.php tests/renewal-billing-settings-test.php \
   tests/staff-adopt-commit-test.php tests/staff-adoption-test.php \
@@ -59,7 +59,6 @@ python3 scripts/test.py --jobs 1 --only \
   tests/php83-compatibility-test.php tests/schema-identifiers-test.php \
   tests/test_package.py tests/test_runner.py \
   tests/test_installed_package.py tests/test_installed_package_fresh.py \
-  tests/test_installed_package_upgrade.py tests/test_installed_package_previous.py \
   tests/test_installed_namesilo_enrollment.py tests/test_installed_package_acquisition.py \
   tests/test_installed_package_enom_exchange.py tests/test_installed_package_enom_test.py \
   tests/test_installed_package_enom_live.py tests/test_installed_package_enom_renewal.py \

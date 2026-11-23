@@ -52,7 +52,7 @@ python3 scripts/test.py --jobs 2 --only \
   tests/enom-money-test.php tests/enom-pricing-test.php \
   tests/enom-protocol-test.php tests/enom-read-test.php \
   tests/enom-test-management-guards-test.php tests/enom-test-renewal-guards-test.php \
-  tests/enom-test-transfer-guards-test.php tests/evidence-dates-upgrade-test.php \
+  tests/enom-test-transfer-guards-test.php \
   tests/fixture-policy-test.php tests/glossary-sweep-test.php \
   tests/holding-adoption-test.php tests/holding-identity-lock-test.php \
   tests/holding-identity-writers-test.php tests/holding-provenance-test.php \
@@ -61,7 +61,7 @@ python3 scripts/test.py --jobs 2 --only \
   tests/managed-public-overflow-test.php tests/managed-public-quota-test.php \
   tests/managed-public-reconciliation-test.php tests/managed-public-relink-test.php \
   tests/managed-public-source-drift-test.php tests/managed-public-stamp-test.php \
-  tests/managed-public-storage-test.php tests/managed-public-upgrade-test.php \
+  tests/managed-public-storage-test.php \
   tests/management-deadline-test.php tests/management-namesilo-boundary-test.php \
   tests/management-namesilo-contacts-test.php tests/management-namesilo-test.php \
   tests/management-preparation-test.php tests/management-privacy-retirement-test.php \
@@ -82,7 +82,7 @@ python3 scripts/test.py --jobs 2 --only \
   tests/observation-test.php tests/operation-claim-lifecycle-test.php \
   tests/operation-claims-test.php tests/operation-clock-test.php \
   tests/operation-contacts-test.php tests/operation-rate-test.php \
-  tests/operation-recovery-test.php tests/operation-service-index-test.php \
+  tests/operation-recovery-test.php \
   tests/ote-normal-completion-test.php tests/ote-purchase-evidence-test.php \
   tests/ote-reconciliation-test.php tests/ote-renewal-probe-test.php \
   tests/owned-pages-test.php tests/owner-actions-test.php \
@@ -127,7 +127,7 @@ python3 scripts/test.py --jobs 2 --only \
   tests/seller-switch-lifecycle-test.php tests/seller-switch-namesilo-renewal-test.php \
   tests/seller-switch-renewal-test.php tests/settings-refusal-test.php \
   tests/staff-adopt-commit-test.php tests/staff-adoption-test.php \
-  tests/staff-audit-upgrade-test.php tests/staff-contact-release-test.php \
+  tests/staff-contact-release-test.php \
   tests/staff-domain-page-test.php tests/staff-domains-list-test.php \
   tests/staff-domains-test.php tests/staff-hold-release-audit-test.php \
   tests/staff-holding-test.php tests/staff-monitoring-test.php \
@@ -153,7 +153,6 @@ python3 scripts/test.py --jobs 2 --only \
   tests/test_installed_package_enom_management.py tests/test_installed_package_enom_renewal.py \
   tests/test_installed_package_enom_test.py tests/test_installed_package_enom_transfer.py \
   tests/test_installed_package_fresh.py tests/test_installed_package_namesilo.py \
-  tests/test_installed_package_previous.py tests/test_installed_package_upgrade.py \
   tests/test_package.py tests/test_runner.py \
   tests/transfer-completion-namesilo-test.php tests/transfer-completion-test.php \
   tests/transfer-dispatch-namesilo-test.php tests/transfer-dispatch-refusals-test.php \

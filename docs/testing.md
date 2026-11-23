@@ -556,9 +556,7 @@ Fresh-call invalidation covers native stock/plans, TLD and seller flags/revision
 identity, acceptance revisions and current-price proof. Query logging forbids display writes;
 only explicit synthetic availability checks read the provider port.
 
-Holding provenance tests pair purchased holdings with pending conversions: billing, renewal proof, reminders, direct dispatch, observation and owner/staff presentation refuse pending authority. The additive migration retains existing rows without fabricating purchase provenance.
-
-`tests/conversion-gate-test.php` checks the runtime conversion gate: an installation without a conversion journal boots, while an incomplete or foreign journal left by the bridge 0.1.0 converter refuses the gate, registration and boot, and a completed journal is checked once.
+Holding provenance tests check billing, renewal proof, reminders, direct dispatch, observation and owner/staff presentation with purchased holdings and unverified imports.
 
 PSL updater tests use small synthetic ICANN/PRIVATE lists and injected clocks/transports.
 `psl-test.php` covers retained copies, validation refusals, conditional requests, shared daily admission,
@@ -578,8 +576,7 @@ can never resolve DNS or download data.
 `python3 scripts/build.py --output-dir /fresh/output` builds the complete native runtime.
 References reachable from the entry point and native Admin discovery, plus literal
 boot/view/migration paths, determine included roots. Source README files and tooling stay out.
-Sorted uncompressed entries use fixed metadata, avoiding compression-toolchain variance. The runtime conversion
-completion guard remains included; the one-time converter and its directories do not.
+Sorted uncompressed entries use fixed metadata, avoiding compression-toolchain variance.
 The embedded `Domains/manifest.json` hashes all payload files. The adjacent release
 `manifest.json` hashes every ZIP member, including the embedded inventory, and the ZIP itself.
 Run `python3 scripts/build.py --verify /fresh/output/paymenter-domains-0.1.0.zip` before upload.
@@ -593,10 +590,8 @@ The native suite verifies the built ZIP before passing an upload copy to Payment
 1.5.9's real UploadExtensionService. A second disposable app copy uses installed files
 without the source-tree runtime autoloader. Native ZIP support uses a pinned PHP archive
 and requires the system libzip library; missing offline dependencies fail rather than simulate.
-Keep git object `e7881cf404e934e1cc84931ab9036e84804b8b61` available for the
-previous local development-build upgrade (same 0.1.0 version, before the additive PSL schema).
 Fresh-process boot checks migration history, installed classes/pages/routes and one scheduler.
-Same-ZIP reinstall, previous-build upgrade and file-removal/reinstall via native Install preserve
+Same-ZIP reinstall and file-removal/reinstall via native Install preserve
 raw ledgers/settings and all prior migration records; only account update timestamps are
 normalized because native pause touches them. Native server deletion calls disabled then
 refuses retained accounts; the separate uninstall hook also retains data. Upload-time schemas
@@ -654,10 +649,6 @@ the payment is recorded and credited once. `tests/test_checkout_lock_order_maria
 holds a checkout on its customer row while Record answer and contact recovery wait on it.
 `tests/test_user_deletion_mariadb.py` holds a receipt's invoice: deletion waits, then
 refuses the retained customer. Both table prefixes are exercised.
-
-This package has no converter. The one-time conversion and its MariaDB rehearsal run from a
-checkout of Domains bridge 0.1.0 at `891124421645`; see the
-[release runbook](release-runbook.md#one-time-conversion-checkpoint-order).
 
 `registration-nameservers-test.php` runs both registrars through the real registration preflight
 and native claim/finish path with a synthetic writer. Empty hosts, excessive counts and invalid
@@ -754,7 +745,7 @@ shared fixtures/transitive consumers and source-wide scanners of changed bytes. 
 runtime regressions; `--only` does not expand dependencies. For adoption/registrar seams, use the
 [source triggers and complete focused command](testing-coverage/adoption-focused.md), including the unchanged
 `tests/adoption-preview-test.php` mid-read matrix. For native marker identity/public enrollment, use the
-[native identity focused command](testing-coverage/native-identity-focused.md), including shared transfer/conversion
+[native identity focused command](testing-coverage/native-identity-focused.md), including shared transfer and identity
 consumers and separately recorded MariaDB scenarios.
 
 The PR boundary runs `python3 scripts/test.py` with the pristine native dependency and pinned runtime cache.
@@ -762,7 +753,7 @@ For focused iteration, `--only` selects exact registered test paths:
 
 ```sh
 python3 scripts/test.py --only tests/test_runner.py tests/test_native.py
-python3 scripts/test.py --only tests/test_installed_package_previous.py
+python3 scripts/test.py --only tests/test_installed_package_fresh.py
 ```
 
 The second command requires `PAYMENTER_TEST_APP`, like the native suite. Selection follows scheduled plan

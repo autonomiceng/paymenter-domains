@@ -47,8 +47,6 @@ Account auto-replenishment remains a separate operator setting.
 - `test_installed_package_namesilo.py`: native ZIP upload/extraction/install in
   separate disposable apps; both scenarios use the installed runtime autoloader,
   with reflection checks for the changed registry/protocol/renewal classes.
-- `test_installed_package_previous.py`: retained unpatched previous-runtime upgrade
-  remains part of the full offline suite.
 
 Mutation checks exercise validation, frozen-state protection, publication/privacy,
 independent setup/preflight/protocol threading, renewal wire flag, completion gate,

@@ -64,7 +64,7 @@ final class AdoptionReader
             'command_set_version' => $facts['command_set_version'] ?? null, 'credential_revision' => $before['stamps']['settings'], 'revisions' => $before['stamps'],
             'retail' => $before['retail'], 'calendar' => $calendar, 'renewal_eligibility' => $renewalEligibility, 'existing_do_not_renew' => $before['existing_do_not_renew'], 'prior_generation' => $before['prior_generation'], 'prior_revision' => $before['prior_revision'],
             'resulting_generation' => $before['prior_generation'] + 1, 'resulting_revision' => $before['prior_revision'] + 1,
-            'source_conversion_row_id' => null, 'history_link_ids' => $before['history_link_ids'],
+            'history_link_ids' => $before['history_link_ids'],
             'actor_id' => $staff->actorId, 'reason' => $staff->reason, 'requested_do_not_renew' => $staff->doNotRenew, 'do_not_renew' => $doNotRenew, 'refusal' => $code === 'ready' ? null : $code];
         // No portable authority is produced, including by live previews. A later commit must independently lock and revalidate.
         $row = DB::transaction(fn () => Adoption::create(['request_key' => bin2hex(random_bytes(24)), 'request_digest' => AdoptionMapping::stamp($evidence),

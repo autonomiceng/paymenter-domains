@@ -21,7 +21,7 @@ $evidence=['version'=>1,'canonical_name'=>'example.com','native_identity'=>['use
     'expiry'=>['value'=>'2027-10-19','precision'=>'date','timezone'=>null,'source'=>'synthetic'],
     'auto_renew'=>false,'ordinary'=>true,'hold'=>false,'redemption'=>false,'read_started_at'=>'2026-10-19T12:00:00Z','read_ended_at'=>'2026-10-19T12:00:30Z',
     'command_set_version'=>1,'credential_revision'=>1,'retail'=>['price_id'=>7,'revision'=>1,'currency'=>'USD','tax_basis'=>'exclusive'],
-    'prior_generation'=>1,'prior_revision'=>2,'resulting_generation'=>2,'resulting_revision'=>3,'source_conversion_row_id'=>8,'history_link_ids'=>[]];
+    'prior_generation'=>1,'prior_revision'=>2,'resulting_generation'=>2,'resulting_revision'=>3,'history_link_ids'=>[]];
 $data=['request_key'=>'synthetic-preview','request_digest'=>str_repeat('b',64),'domain_id'=>10,'service_id'=>3,'user_id'=>2,'server_id'=>1,
     'registrar_key'=>'enom','environment'=>'test','account_fingerprint'=>str_repeat('c',64),'state'=>'preview','origin'=>'staff','evidence'=>$evidence,
     'actor_id'=>9,'reason'=>'Synthetic adoption evidence','do_not_renew'=>false,'observed_at'=>'2026-10-19 12:00:00','valid_until'=>'2026-10-19 12:02:00'];

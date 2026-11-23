@@ -151,12 +151,14 @@ final class FreshInstallation
     }
 
     /** The source-bound package owns only this storage, not every empty domains_* table. */
-    private static function progress(): void
+    private static function progress(bool $complete): void
     {
         $expected = array_keys(self::files());
         $ran = DB::table('migrations')->orderBy('id')->lockForUpdate()->pluck('migration')->all();
         $extra = array_filter($ran, static fn ($name) => str_contains(strtolower($name),'domains') && !in_array($name,$expected,true));
-        if (array_diff(Installation::tables(),Installation::expectedTables()) !== [] || $extra !== []) {
+        $tables = Installation::tables();
+        $allowed = Installation::expectedTables();
+        if (array_diff($tables, $allowed) || ($complete && $tables !== $allowed) || $extra) {
             throw new \DomainException('Unexpected Domains schema or migration history refuses initialization. Preserve it and investigate.');
         }
     }
@@ -173,7 +175,7 @@ final class FreshInstallation
         if ($state['state'] !== 'initializing' || $state['generation'] !== 1 || $state['intent'] !== $this->intent || $state['manifest'] !== $this->manifest) {
             throw new \DomainException('Domains initialization intent changed.');
         }
-        self::progress(); self::empty();
+        self::progress($complete); self::empty();
         if ($complete) { self::work(); }
         if ($complete && (self::manifest() !== $this->manifest
             || array_diff(array_keys(self::files()), DB::table('migrations')->orderBy('id')->lockForUpdate()->pluck('migration')->all()))) {

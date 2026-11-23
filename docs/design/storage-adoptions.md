@@ -22,7 +22,7 @@ deletes are added. The existing holding provenance column is unchanged.
 user and server IDs, registrar/environment/account fingerprint, state, origin, encrypted
 `evidence`, actor/reason, do-not-renew intent, nullable native cancellation ID, observation and
 validity times, nullable commit time, nullable authority generation and timestamps.
-States are `preview|committed|refused|superseded`; origins are `staff|converter_pending`.
+States are `preview|committed|refused|superseded`; staff imports use the origin `staff`.
 
 `authority_generation` is populated only for committed rows, with a positive domain ID and
 commit time. Its value must equal encrypted `evidence.resulting_generation`. Preview, refused
@@ -46,7 +46,7 @@ property identity; registrar/environment/stable-account proof digest and binding
 domain ID where supported; provider expiry precision/timezone/source; explicit auto-renew false;
 ordinary/hold/redemption flags; read start/end; command-set version; accepted credential
 revision; retail price row/revision/currency/tax basis; prior and resulting generation/revision;
-source conversion row ID; and `history_link_ids`: always a sorted, de-duplicated list of
+and `history_link_ids`: always a sorted, de-duplicated list of
 `{invoice_id, invoice_item_id|null}` pairs, never link-row primary keys, whether or not the domain
 already exists. Sort by invoice ID then nullable item ID (null first) and freeze this canonical list
 in `request_digest`. The discriminator is `version=1`.
@@ -220,7 +220,7 @@ current rows, compares its digest and checks both the saved deadline and a maxim
 
 New names reserve an internal pending row at generation zero inside this transaction,
 then attach verified generation one before commit. The transient row is never a
-purchase or an externally visible pending conversion. Converted pending rows retain
+purchase. Existing pending holdings retain
 ID/service/customer/account and advance generation exactly once; a missing reservation
 is acquired through the same unique key. Any duplicate, deadlock, timeout, callback
 failure or stale proof rolls the whole transaction back. No native order, invoice,

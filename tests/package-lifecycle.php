@@ -125,7 +125,7 @@ if($phase==='server-delete'){
         echo "Native upload/extract/Install branch passed.\n";
     }elseif($phase==='reinstall'){
         app(Installation::class)->verify();
-        same(1,DB::table('migrations')->where('migration',Installation::BASELINE)->count(),'Reinstall retains the TEST send limit migration record');
+        same(1,DB::table('migrations')->where('migration',Installation::BASELINE)->count(),'Reinstall retains the baseline migration record');
         assertRetained($receipt);echo "Native reinstall retained all recorded data and the TEST send limit schema.\n";
     }else{assertRetained($receipt);echo "Native upload retained all recorded data (".$phase.").\n";}
 }elseif($phase==='enom-live'){
@@ -253,7 +253,7 @@ if($phase==='server-delete'){
     $before=json_decode(file_get_contents((string)getenv('PACKAGE_MIGRATION_RECEIPT')),true,512,JSON_THROW_ON_ERROR);
     $after=DB::table('migrations')->orderBy('id')->get()->map(fn($r)=>(array)$r)->all();
     same($before,array_slice($after,0,count($before)),'Original migration history unchanged');
-    same((int)getenv('PACKAGE_MIGRATIONS'),count(glob(base_path('extensions/Servers/Domains/database/migrations/*.php'))),'Installed additive migration count');
+    same((int)getenv('PACKAGE_MIGRATIONS'),count(glob(base_path('extensions/Servers/Domains/database/migrations/*.php'))),'Installed baseline migration count');
     foreach(glob(base_path('extensions/Servers/Domains/database/migrations/*.php')) as $migration){same(1,DB::table('migrations')->where('migration',basename($migration,'.php'))->count(),'Each installed migration ran once');}
     if(class_exists(Paymenter\Extensions\Servers\Domains\Services\EnomLive::class)){
         $oldLiveConfig=config('domains.enom_live');$oldIdentity=config('domains.enom_identity.environment');$oldUrl=config('app.url');

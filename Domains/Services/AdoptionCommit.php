@@ -82,7 +82,7 @@ final class AdoptionCommit
             if (!hash_equals($e['capture_digest'], AdoptionMapping::stamp($comparable))) { throw new AdoptionRefused(RefusalCode::VerificationChanged); }
             $d = $capture['domain_id'] === null ? $this->reserve($lock, $capture, $target, $name) : Domain::findOrFail($capture['domain_id']);
             if ($d->reservation_name === null) {
-                // Sole reviewed reservation acquisition for an existing converted pending row.
+                // Sole reviewed reservation acquisition for an existing pending holding.
                 Domain::whereKey($d->id)->update(['reservation_name' => $target->name]); $d->refresh();
             }
             if ($d->reservation_name !== $target->name || !($d->price_mode==='standard'||($d->price_mode==='complimentary'&&ComplimentaryAccounts::authorization($target->customerId,true)))) { throw new AdoptionRefused(RefusalCode::HoldingReview); }

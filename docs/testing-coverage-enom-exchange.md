@@ -18,9 +18,8 @@ Enom TEST sends pass one per-login send limit (`EnomTestSendLimit`) at the two p
 send sites, after the deployment send guard and before the last deadline check. It counts
 every attempt in any 24 hours and per minute, refuses inside an outer transaction and
 refuses on any database error. `enom-test-send-limit-test.php`,
-`enom-send-limit-upgrade-test.php`, `test_enom_send_limit_concurrency.py` (SQLite) and
-`test_enom_send_limit_mariadb.py` cover it. One stated exception: the conversion
-evidence collector from Domains bridge 0.1.0 is not counted; this package has no collector.
+`test_enom_send_limit_concurrency.py` (SQLite) and
+`test_enom_send_limit_mariadb.py` cover it.
 It runs with the app stopped and a read-only database, so it cannot record attempts; it sends
 one GetDomainInfo per selected holding, at most one per second per login, with no retry.
 

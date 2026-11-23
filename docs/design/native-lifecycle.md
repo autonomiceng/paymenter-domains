@@ -239,9 +239,7 @@ intent. Paid and attempted acquisitions require original terminal proof; a succe
 label alone is insufficient. Missing protection schema refuses only lifecycle mutation, with a
 clear upgrade message. Active native paid-loop saves remain available. See
 [native intent storage](native-intent-storage.md). Owned renewal controls are described below.
-For converted holdings with no acquisition row, only the current billing anchor's complete
-authenticated proof permits cancellation: converter-sealed history or a later original renewal
-completion. A terminal label or invalid conversion MAC cannot authorize cancellation.
+For a holding without an acquisition row, cancellation checks the current billing anchor and its original renewal completion evidence. Staff-adopted holdings use their verified adoption authority.
 
 ## Owned holding controls
 
