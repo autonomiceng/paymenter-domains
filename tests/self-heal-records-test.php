@@ -72,7 +72,7 @@ $readBindings->setProcessing($d->server_id,false);$observation->fault='owner';$q
 // Both transports stay synthetic; a registry with no matching service returns an unknown answer.
 $registryReads=0;
 app()->instance(DepartureChecks::class,new DepartureChecks(new \Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(static fn()=>[]),$clock,
- static function($dns,$snapshot)use(&$registryReads){$registryReads++;return new PublicRegistryReader($dns,['services'=>[]],static fn()=>throw new RuntimeException('No registry HTTP calls'));}));
+ static function($dns)use(&$registryReads){$registryReads++;return new PublicRegistryReader($dns,['services'=>[]],static fn()=>throw new RuntimeException('No registry HTTP calls'));}));
 $result=$worker->turn($queue,$guard);$job=(clone $q)->sole();
 $check($result==='departure_registry','Closed-gate absence queues the public registry read');
 $check((int)$job->tries===0&&$job->safe_code==='departure_registry','Departure work has its own bounded schedule');

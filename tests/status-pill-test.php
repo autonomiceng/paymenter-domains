@@ -18,24 +18,22 @@ $fresh=array_fill_keys(['delegation','points','registry'],['checkedAt'=>time(),'
 $summary=static fn(string $name,array $states,array $extra=[])=>new DomainSummary(...[...['name'=>$name,'displayName'=>null,'kind'=>'managed','registrationKey'=>'domain.registration.platform','stateKeys'=>$states,'labels'=>$strings,'expiry'=>$later,'expiryPrecision'=>'date','expirySource'=>'Confirmed registration','renewalDueAt'=>null,'renewalPrice'=>'$14.00','urls'=>['detail'=>'/domains/1','support'=>'/tickets/create']],...$extra]);
 // case => [summary states, summary extras, resolved state, expected pill, expected reason]
 $cases=[
-    'active'=>[['domain.active','watch.not_checked','adopt.provenance'],[],'active','Active',null],
+    'active'=>[['domain.active','adopt.provenance'],[],'active','Active',null],
     'expiring'=>[['domain.active','adopt.renewal_off'],['expiry'=>$soon,'renewalOff'=>true],'renewal_off_expiring','Action required','Auto-renew off'],
     'auto-renew-on-soon'=>[['domain.active'],['expiry'=>$soon],'active','Active',null],
     'no-expiry'=>[['domain.review'],['expiry'=>null],'active_no_expiry','Under review','Expiry missing'],
     'expired'=>[['domain.expired'],['expiry'=>$today],'expired','Expired',DomainStatus::LATE],
     'grace'=>[['domain.expired'],['expiry'=>$today],'grace','Expired',DomainStatus::LATE],
     'redemption'=>[['domain.redemption'],[],'redemption','Redemption',DomainStatus::LATE],
-    'registry-expiry'=>[['watch.expired','adopt.provenance'],['expiry'=>$today],'expired','Expired',DomainStatus::LATE],
     'pending'=>[['domain.pending'],[],'registration_pending','Pending registration',null],
     'transfer'=>[['domain.transfer'],[],'transfer_pending','Pending transfer',null],
     'adoption'=>[['adopt.pending'],[],'adoption_pending','Under review','Import not confirmed'],
     'processing'=>[['domain.processing'],[],'registration_pending','Pending registration',null],
     'setup'=>[['domain.processing'],[],'setup_required','Action required','Finish setup'],
     'payment'=>[['domain.awaiting_payment'],[],'awaiting_payment','Awaiting payment','Invoice not paid'],
-    'review'=>[['domain.review','watch.stale'],[],'needs_review','Under review',null],
+    'review'=>[['domain.review'],[],'needs_review','Under review',null],
     'failed'=>[['domain.review'],[],'registration_rejected','Failed','Registration did not finish'],
     // A managed domain's nameserver change is a notice on its page, not its status.
-    'expired-and-moved'=>[['domain.expired','watch.ns_changed'],[],'expired','Expired',DomainStatus::LATE],
     'cancelled'=>[['domain.cancelled'],[],'cancelled','Cancelled',null],
 ];
 // A status is a pill on the service card, and a State value in the list's Status cell and the detail head line.

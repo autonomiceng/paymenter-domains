@@ -90,7 +90,7 @@ final class DepartureChecks
         $pool=new PublicDnsQuota();$token=$pool->acquire($clock());if($token===null){return false;}
         try{
             $quota=new RdapQuota();$dns=new QuotaDnsReader($this->dns,$pool,$token,$clock);
-            $reader=$this->factory?($this->factory)($dns,null):new PublicRegistryReader($dns);
+            $reader=$this->factory?($this->factory)($dns):new PublicRegistryReader($dns);
             $context=new RegistryContext($clock,fn($url)=>$quota->reserve($url,$clock()),fn($url,$r)=>$quota->complete($url,$r,$clock()));
             $result=$reader->read($seed->domain,$context);if($dns->saturated||($result['reason']??null)==='deferred'){return false;}
             return FreshTransaction::run(function()use($seed,$identity,$result,$clock):bool{

@@ -25,7 +25,7 @@ $wire=0;
 $dns=new class implements DnsReader {
     public function read(DnsQuery $q,DnsContext $c):DnsAnswer { $c->reserve();return $q->type==='A'?DnsAnswer::rrset($q,[['host'=>$q->name,'type'=>'A','class'=>'IN','ttl'=>60,'ip'=>'8.8.8.8']]):DnsAnswer::negative($q); }
 };
-$registry=new DepartureChecks($dns,$clock,static function($dns,$snapshot)use(&$wire,$d){return new PublicRegistryReader($dns,['services'=>[[['com'],['https://rdap.example.com']]]],static function()use(&$wire,$d){same(0,DB::transactionLevel(),'RDAP runs outside locks');$wire++;return ['status'=>200,'body'=>json_encode(['objectClassName'=>'domain','ldhName'=>$d->domain,'status'=>['ok'],'events'=>[['eventAction'=>'expiration','eventDate'=>'2028-10-25']],'entities'=>[['roles'=>['registrar'],'vcardArray'=>['vcard',[['fn',[], 'text','Example Registrar']]]]]])];});});
+$registry=new DepartureChecks($dns,$clock,static function($dns)use(&$wire,$d){return new PublicRegistryReader($dns,['services'=>[[['com'],['https://rdap.example.com']]]],static function()use(&$wire,$d){same(0,DB::transactionLevel(),'RDAP runs outside locks');$wire++;return ['status'=>200,'body'=>json_encode(['objectClassName'=>'domain','ldhName'=>$d->domain,'status'=>['ok'],'events'=>[['eventAction'=>'expiration','eventDate'=>'2028-10-25']],'entities'=>[['roles'=>['registrar'],'vcardArray'=>['vcard',[['fn',[], 'text','Example Registrar']]]]]])];});});
 app()->instance(DepartureChecks::class,$registry);
 $worker=new HoldingObservationWork($observer,$clock);
 DB::table('domains_observation_queues')->insert(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint]);

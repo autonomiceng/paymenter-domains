@@ -15,8 +15,6 @@ final class PublicRegistryReader
         $this->bootstrap = $bootstrap === null ? null : json_decode(json_encode($bootstrap, JSON_THROW_ON_ERROR), true, 32, JSON_THROW_ON_ERROR);
         $this->transport = $transport === null ? (new Rdap())->pinned(...) : \Closure::fromCallable($transport);
     }
-    public function revision(): string { return hash('sha256', json_encode($this->bootstrap, JSON_THROW_ON_ERROR)); }
-    public function snapshot(): ?array { return $this->bootstrap; }
     /** Refreshing metadata must never discard the last validated registry routes. */
     public function refresh(RegistryContext $context): bool
     {
