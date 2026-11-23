@@ -117,4 +117,22 @@ foreach ([
 ] as [$case, $seen, $expected]) {
     same($expected, RenewalDecision::positiveObservation($binding, $name, '2027-10-18', $seen), $case.' retained proof');
 }
+$old = new DomainSnapshot($binding, $name, true, $expiry('2027-10-18'));
+$later = new DomainSnapshot($binding, $name, true, $expiry('2028-10-18'));
+$other = new DomainSnapshot($foreign, $name, true, $expiry('2027-10-18'));
+foreach ([
+    ['unchanged confirmed expiry', $old, $old, true, true, null],
+    ['advanced info', $later, $later, true, true, 'advanced'],
+    ['advanced dedicated expiry', $old, $later, true, true, 'advanced'],
+    ['failed info', null, null, false, false, 'unconfirmed'],
+    ['malformed info followed by an old expiry', null, $old, true, true, 'unconfirmed'],
+    ['failed or malformed dedicated expiry', $old, $old, false, true, 'unconfirmed'],
+    ['late dedicated expiry', $old, $old, true, false, 'unconfirmed'],
+    ['foreign info', $other, $old, true, true, 'unconfirmed'],
+    ['foreign last reply', $old, $other, true, true, 'unconfirmed'],
+    ['positive reply before read failure', $later, $later, false, false, 'advanced'],
+] as [$case, $info, $highest, $answered, $inTime, $refusal]) {
+    same($refusal, RenewalDecision::negativeRead($binding, $name, '2027-10-18', $info, $highest, $answered, $inTime),
+        $case.' negative support answer');
+}
 echo "Paid renewal admission, funding, send, reply and settlement decisions passed.\n";

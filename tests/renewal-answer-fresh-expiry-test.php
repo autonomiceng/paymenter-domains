@@ -41,7 +41,7 @@ DB::connection()->beforeExecuting(static function (string $sql) use ($clock, &$d
     $clock->instant = $clock->now()->modify('+31 seconds');
 });
 $results = []; $expected = [];
-foreach (['failed', 'malformed', 'late', 'lock-wait'] as $fault) {
+foreach (['malformed', 'lock-wait'] as $fault) {
     app()->instance(AccountBindings::class, $bindings);
     [$op, $d, $b] = $makeRenewal(placeholderComFixtureName('fresh-expiry-'.$fault.'-placeholder.com'));
     [$engine, $writer, $completion] = $compose($b);
@@ -49,12 +49,7 @@ foreach (['failed', 'malformed', 'late', 'lock-wait'] as $fault) {
     $state->after = '2027-10-18'; $state->fail = ReadCommand::Order;
     $clock->instant = $clock->now()->modify('+25 hours'); $stop($op, $completion);
     app()->instance(AccountBindings::class, $renewBindings);
-    $state->fail = $fault === 'failed' ? ReadCommand::Expiry : null;
     if ($fault === 'malformed') { $state->after = 'unreadable'; }
-    if ($fault === 'late') {
-        $state->duringCommand = ReadCommand::Expiry;
-        $state->during = static function () use ($clock): void { $clock->instant = $clock->now()->modify('+31 seconds'); };
-    }
     if ($fault === 'lock-wait') {
         $state->duringCommand = ReadCommand::Expiry;
         $state->during = static function () use (&$delayFinalLock): void { $delayFinalLock = true; };

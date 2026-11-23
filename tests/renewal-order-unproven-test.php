@@ -146,18 +146,6 @@ $state->expiry = '10/18/2027 5:00:00 AM';
 for ($i = 1; $i <= OperationReconciliation::POLL_LIMIT; $i++) { $clock->instant = $clock->now()->modify('+10 minutes'); $completion->run($deferred->id); }
 expect(RegistrarAnswers::ready($deferred->fresh(), $clock->now()), 'Checks stopped after the deferred check');
 $seen['an advanced expiry before a deferred read'] = $refused($deferred);
-// Every check saw the old date; the fresh read at answer time shows the renewed expiry, or fails.
-foreach (['a fresh expiry read showing the renewal' => static function ($s) { $s->after = '2028-10-18'; },
-    'a fresh info read showing the renewal' => static function ($s) { $s->expiry = '10/18/2028 5:00:00 AM'; },
-    'a failed fresh read' => static function ($s) { $s->fail = ReadCommand::Info; },
-    // The info read still shows the old date, but the expiry read must answer too, readably and in time.
-    'an old info read and a failed fresh expiry read' => static function ($s) { $s->fail = ReadCommand::Expiry; },
-    'an old info read and a malformed fresh expiry read' => static function ($s) { $s->after = 'not a date'; },
-    'an old info read and a late fresh expiry read' => static function ($s) use ($clock) { $s->duringCommand = ReadCommand::Expiry; $s->during = static function () use ($clock) { $clock->instant = $clock->now()->modify('+60 seconds'); }; }] as $why => $answerTime) {
-    [$op, , , $completion] = $sent('renew-proof-'.substr(md5($why), 0, 8).'-placeholder.com', '2027-10-18', 'another order');
-    $readUntilStopped($op, $completion, $why); $answerTime($state);
-    $seen[$why] = $refused($op); $state->after = '2027-10-18'; $state->expiry = '10/18/2027 5:00:00 AM'; $state->fail = null; $state->during = null; $state->duringCommand = null;
-}
 // A fresh info read shows the renewed expiry and the expiry read then fails: the proof stays on the attempt, so a retry
 // whose reads all lag again is still refused.
 [$op, , , $completion] = $sent('renew-proof-kept-placeholder.com', '2027-10-18', 'another order');

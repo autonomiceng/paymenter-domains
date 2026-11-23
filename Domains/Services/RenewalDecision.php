@@ -70,6 +70,21 @@ final class RenewalDecision
         return ['kind' => 'advanced_expiry', 'expiry' => $seen->expiry->value, 'precision' => $seen->expiry->precision->value];
     }
 
+    /** A negative support answer requires fresh domain evidence from the original account. */
+    public static function negativeRead(AccountBinding $account, string $name, ?string $baseExpiry, ?DomainSnapshot $info,
+        ?DomainSnapshot $highest, bool $expiryAnswered, bool $finishedInTime): ?string
+    {
+        $matched = $highest !== null && $highest->binding->matches($account) && $highest->name === $name
+            && $highest->owned === true && $highest->expiry !== null;
+        if ($matched && $baseExpiry !== null && substr($highest->expiry->value, 0, 10) > substr($baseExpiry, 0, 10)) {
+            return 'advanced';
+        }
+        if (!$matched || $baseExpiry === null || !$finishedInTime || $info === null || !$info->binding->matches($account)
+            || $info->name !== $name || $info->owned !== true || $info->expiry === null
+            || ($account->registrarKey === 'enom' && !$expiryAnswered)) { return 'unconfirmed'; }
+        return null;
+    }
+
     /** Charge and owned expiry have already been proved against this reservation. */
     public static function settlement(string $registrar, int $years, string $actual, string $authorized,
         string $cap, ?string $retail, bool $corrections): array
