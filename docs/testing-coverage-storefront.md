@@ -1,8 +1,7 @@
 # Storefront policy reads
 
 `policy-ending-reads-test.php` compares actual policy/TLD result cardinality and query counts
-with 10 and 1,500 policy endings. It exercises check/order POSTs, watch GET/check/confirmed
-handoff, a mixed managed/watch portal batch and native hosting summaries. Synthetic SELECTs
+with 10 and 1,500 policy endings. It exercises check/order POSTs and owned domain summaries. Synthetic SELECTs
 are replayed immediately through local PDO to count returned rows; SQLite SELECT rowCount
 is not a cardinality measure. No provider transport or production database is exercised.
 

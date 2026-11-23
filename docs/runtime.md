@@ -83,8 +83,7 @@ These deployment and request checks have no page; review them before turning pro
 - Prior outcomes and history: validate current claim, seal, funding and generation. Reconcile possibly sent work using accepted action-specific history, unique original charge and owned expiry; at most five covered polls. Never replay an unresolved purchase.
 - Renewal and management acceptance: independently accept renewal USD/route/interval and any grace capability. Require owned expiry, known cost and registrar balance. Management needs accepted engine/protocol, active authority and complete readback; DNS tools require their own setting.
 - Reminder delivery: approve the optional reminder schedule and verify native channels, templates and preferences. Required paid-code and account-credit notices remain active; uncertain handoffs need staff inspection.
-- Public checks and watch delivery: accept discovery, enabled profiles and native product mappings, a valid public suffix baseline, and a shared asynchronous public-check queue with retry_after ≥ 180. Config flags alone cannot enable these paths.
-- Adoption and transfer watch: `domains.adoption.enabled` and `domains.watch_transfer.enabled` are separate default-off features. Verify native prerequisites, ownership, provenance and reviewed adoption proof before enabling either.
+- Domain imports require verified native prerequisites, ownership, provenance and reviewed adoption proof before enabling `domains.adoption.enabled`.
 - Enom identity: set `domains.enom_identity.environment` to `test` or `live` before extension boot to allow identity and balance reads. This does not turn on prices or processing.
 - NameSilo: only test (OTE) accounts can be connected, on a fresh Domains server, when OTE enrollment is on for the site. NameSilo does not confirm account ownership.
 
@@ -125,4 +124,4 @@ Registration retail uses the first registration year plus the annual renewal ret
 
 The TLD page starts and stops new sales while preserving the saved transfer choice and longest term. Existing holders keep renewal support. Registrar selection records intent; current facts, cost and native price checks still decide availability. Registration and transfer have separate public tabs, and each year choice shows its total. A storefront handoff never reuses a cart owned by a different current user.
 
-DNS templates can be turned off or deleted only after new-domain, domain and product assignments are moved. Edits refresh assigned monitoring work without changing unrelated retry backoff. Staff pause and resume hosting-domain monitoring; the hosting service lifecycle owns its end. Enrollment claims each bounded page before refresh side effects. A valid negative nameserver answer leaves routing unknown while counting as a successful DNS exchange.
+To turn off or delete the template used for new registrations, select a replacement under Domains → DNS templates first.

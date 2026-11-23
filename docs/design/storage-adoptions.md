@@ -286,21 +286,9 @@ to the server-side actor-bound request. Confirmation repeats current permissions
 120-second freshness; browser state contains only safe labels and locked IDs. TEST
 rehearsal never supplies live authority. The deployment flag defaults off and has no
 staff activation control. Readiness lists identity drain, accepted scenarios, live
-provider contract and separately accepted public DNS readers/notice delivery.
+provider contract and the ordinary registrar readback.
 
-After the adoption transaction commits, repair locks the original holding and native
-hosting identities before relinking exact same-owner mapped sources. Retirement is
-audited before the replacement managed link acquires its unique service identity.
-External watch identity, prior NS observation, DNS preferences, work IDs/cursors and
-backoff remain retained; external expiry notices are suppressed and old watch claims
-cannot project results. No public observation or delivered notice is fabricated.
-
-Migration 000018 retains managed public work keyed by holding/generation/kind, with
-account and target stamps and original watch/profile/NS observation pointers. Both
-delegation and points intents remain awaiting acceptance; no reader consumes them
-in this slice. Ordinary registrar observation is enrolled independently. Audit and
-work are atomic with the enrollment marker. Failure retains committed adoption as
-retry intent; an idempotent replay or runtime cursor repairs it without re-adoption.
+After adoption commits, a retryable local step enrolls the holding for registrar observation. Replaying confirmation or running the repair cursor retries this step without repeating adoption.
 
 Customer detail uses the company registration label, independent annual price/expiry,
 original invoice model routes and registration-adopted activity. Original renewal-off
@@ -308,7 +296,6 @@ intent has a pinned notice and read-only expired history. A current issued oblig
 suppresses projected new-invoice wording, including paid or held cycles; pending due
 comes from its frozen calendar. These fixtures qualify actual extension Blade and
 native staff components only. The installed supplied site shell remains unqualified.
-Activation remains OFF; enrollment is not public DNS or mail-delivery acceptance.
 Unissued renewals at or after the calendar cutoff show review rather than promising
 an invoice that the billing boundary will refuse.
 
