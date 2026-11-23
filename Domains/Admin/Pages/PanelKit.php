@@ -85,7 +85,7 @@ class PanelKit extends Page implements \Filament\Tables\Contracts\HasTable
                     ->step('Invoice 100', State::Paid, self::AT - 60, 'the customer')
                     ->step('Registrar read', State::CouldntRead, self::AT - 4320, null, 'We couldn\'t reach the registrar.')
                     ->step('Check the renewal price', State::NeedsReview, self::AT - 8000, null, 'Compare the renewal price with the current registrar cost.')
-                    ->step('Monitoring paused', State::Paused, self::AT - 86400, 'Ilya')
+                    ->step('Paused', State::Paused, self::AT - 86400, 'Ilya')
                     ->step('Auto-renew at registrar', State::Stopped, self::AT - 950400, 'Ilya')], null, 'kit-activity', [Sheet::link('kit_all_activity', 'History', PanelKitHistory::getUrl())]),
             ], 'kit-split'),
             Sheet::single([
@@ -242,7 +242,7 @@ class PanelKit extends Page implements \Filament\Tables\Contracts\HasTable
     public const AT = 1794503520;
     public const EXPIRES = 1804180320;
     private const WORDS = [
-        'OK' => [State::Ok, State::Active, State::Monitored, State::Completed, State::Paid, State::ForSale],
+        'OK' => [State::Ok, State::Active, State::Completed, State::Paid, State::ForSale],
         'Off' => [State::NotReadYet, State::NotIssuedYet, State::NotForSale, State::NotSupported, State::NotConnected, State::Paused, State::Stopped, State::Cancelled, State::TransferredAway, State::Deleted, State::NotRecognized, State::Unpaid],
         'In progress' => [State::Checking, State::Queued, State::Running, State::PendingRegistration, State::PendingTransfer, State::AwaitingPayment],
         'Needs attention' => [State::NotSet, State::NeedsReview, State::ActionRequired, State::OrdersPaused, State::ExpiresToday, State::LowBalance, State::BelowCost, State::Delayed, State::OutOfDate, State::UnderReview],

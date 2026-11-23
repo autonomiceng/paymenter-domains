@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\{Auth, Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnedDomainController, StorefrontController};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Price, SalesPolicy, Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{CheckoutEligibility, NativeCatalogue, DomainAuditSchema, Storefront, WatchSchema};
+use Paymenter\Extensions\Servers\Domains\Services\{CheckoutEligibility, NativeCatalogue, DomainAuditSchema, Storefront};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
 require __DIR__.'/Support/offer-commerce.php';

@@ -29,7 +29,7 @@ final class DomainAudit extends Model
         static::created(static function (self $row): void {
             \Paymenter\Extensions\Servers\Domains\Services\HistoryRetention::recorded('domain_audit',(int)$row->id,time());
         });
-        static::updating(static function (): never { throw new \DomainException('Watch audit is append-only.'); });
-        static::deleting(static function (): never { throw new \DomainException('Watch audit is retained.'); });
+        static::updating(static function (): never { throw new \DomainException('Domain audit is append-only.'); });
+        static::deleting(static function (): never { throw new \DomainException('Domain audit is retained.'); });
     }
 }

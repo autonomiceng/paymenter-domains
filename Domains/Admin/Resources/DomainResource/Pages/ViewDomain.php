@@ -232,7 +232,7 @@ class ViewDomain extends RecordDetailPage
     public function notice_reviewAction(): Action
     { return Sheet::button(NoticeReview::action($this->getRecord())); }
     /** The sheet. An active domain leads with its registrar records, as in the approved mock; other states lead with
-     * registration and billing. Monitoring keeps the public DNS evidence. */
+     * registration and billing. */
     protected function sections(): array
     {
         $this->cacheHoldingActions();
@@ -431,7 +431,7 @@ class ViewDomain extends RecordDetailPage
         return $items;
     }
     /** Each notice in the section it concerns: costs in Renewal, the records read and the hold in Registrar records,
-     * DNS setup in Monitoring. @return array<string,list<array{0:State,1:mixed,2:?Action}>> */
+     * DNS setup. @return array<string,list<array{0:State,1:mixed,2:?Action}>> */
     private function noticeItems(Domain $d, bool $late, ?string $heldIn): array
     {
         $out=[]; $edits=$this->edits();

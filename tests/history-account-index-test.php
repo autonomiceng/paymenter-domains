@@ -13,11 +13,11 @@ $indexes=[
 ];
 $install=new Installation;$install->install();
 foreach($indexes as $table=>$columns){expect(Schema::hasIndex($table,$columns),'Fresh history/account index: '.$table);}
-DB::table('domains_audit')->insert(['subject_type'=>'watch','subject_id'=>7,'event'=>'staff_pause','after_revision'=>'2','data'=>'retained encrypted bytes','created_at'=>'2026-11-01 01:30:00']);
+DB::table('domains_audit')->insert(['subject_type'=>'dns_profile','subject_id'=>7,'event'=>'dns_profile_saved','after_revision'=>'2','data'=>'retained encrypted bytes','created_at'=>'2026-11-01 01:30:00']);
 $before=DB::table('domains_audit')->get()->toJson();
 $queries=[
     ['SELECT * FROM domains_history_links WHERE domain_id = 7 ORDER BY id','domains_history_links_domain_id_id_index'],
-    ["SELECT * FROM domains_audit WHERE subject_type = 'watch' AND subject_id = 7 AND event = 'staff_pause' ORDER BY id",'domains_audit_subject_type_subject_id_event_id_index'],
+    ["SELECT * FROM domains_audit WHERE subject_type = 'dns_profile' AND subject_id = 7 AND event = 'dns_profile_saved' ORDER BY id",'domains_audit_subject_type_subject_id_event_id_index'],
     ['SELECT * FROM domains_domains WHERE server_id = 7 AND id > 1 ORDER BY id LIMIT 25','domains_domains_server_id_id_index'],
     ["SELECT * FROM domains_operations WHERE server_id = 7 AND account_fingerprint = 'account' AND id > 1 ORDER BY id LIMIT 25",'domains_operations_server_id_account_fingerprint_id_index'],
 ];

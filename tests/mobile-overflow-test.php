@@ -8,7 +8,7 @@ require dirname(__DIR__).'/Domains/routes/owned.php';
 
 use Illuminate\Pagination\LengthAwarePaginator;
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainSummary, OwnedDomain};
-use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaryStrings, WatchTransferStrings};
+use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
 
 storefrontViews();
 app('view')->share('keys', array_fill_keys(['setup', 'code', 'renew', 'auto-renew'], str_repeat('a', 64)));

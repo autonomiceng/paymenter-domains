@@ -11,7 +11,7 @@ final class CustomerValues
     public static function state(?string $state): State
     { return State::tryFrom(StatusPill::key($state)) ?? State::UnderReview; }
 
-    /** The domain's own state with its reason line, or null when the state is not known (a monitored domain with no registry facts). */
+    /** The domain's own state with its reason line, or null when the state is not known. */
     public static function status(?string $state, ?string $reason = null, ?string $record = null): ?Value
     {
         if ($state === null) { return null; }

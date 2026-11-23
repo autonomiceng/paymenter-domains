@@ -49,9 +49,9 @@ $dnsRow=static function(string $html):array {
 };
 $assertMissing=static function(Account $account,string $rule)use($staff,$row,$dnsRow):void {
     // Account first: it must show the problem immediately after connect, without revisiting settings or upgrading.
-    // Monitoring settings draws it as a panel row: Not set, in the attention tone.
+    // DNS resolver settings draws it as a panel row: Not set, in the attention tone.
     $settings=settingsRowValue(Livewire::actingAs($staff)->test(DnsResolver::class)->assertSee($rule)->html(),'Default nameservers');
-    same([State::NotSet->label(),Tone::Attention->value],[$settings['word']??null,$settings['tone']??null],'Monitoring settings says the newly incompatible default is not set');
+    same([State::NotSet->label(),Tone::Attention->value],[$settings['word']??null,$settings['tone']??null],'DNS resolver settings says the newly incompatible default is not set');
     foreach([[RegistrarAccount::class,['account'=>$account->server_id]]]as[$class,$params]){
         $page=Livewire::actingAs($staff)->test($class,$params)->assertSee($rule);
         if($class===RegistrarAccount::class){
@@ -72,8 +72,8 @@ $select=static function(DnsTemplate $profile,array $accounts,string $oldRule)use
     same($domains,Domain::orderBy('id')->get()->toJson(),'Selecting a default never changes existing domain nameservers');
     foreach([[DnsResolver::class,[]],...array_map(fn($a)=>[RegistrarAccount::class,['account'=>$a->server_id]],$accounts)]as[$class,$params]){
         $page=Livewire::actingAs($staff)->test($class,$params)->assertDontSee($oldRule);
-        // Monitoring settings draws it as a panel row; the account page keeps its entry.
-        if($class===DnsResolver::class){same($profile->name,settingsRowValue($page->html(),'Default nameservers')['word']??null,'Valid staff choice is the Monitoring settings default');continue;}
+        // DNS resolver settings draws it as a panel row; the account page keeps its entry.
+        if($class===DnsResolver::class){same($profile->name,settingsRowValue($page->html(),'Default nameservers')['word']??null,'Valid staff choice is the DNS resolver settings default');continue;}
         // The account page names what new domains get, with its nameservers and Change, as in the approved mock.
         if($class===RegistrarAccount::class){
             $dns=$dnsRow($page->html());

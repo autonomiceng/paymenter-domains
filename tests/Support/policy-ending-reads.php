@@ -9,9 +9,9 @@ require __DIR__.'/storefront.php';
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{Auth, Cache, DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
-use Paymenter\Extensions\Servers\Domains\Http\Controllers\{StorefrontController, WatchTransferController};
+use Paymenter\Extensions\Servers\Domains\Http\Controllers\StorefrontController;
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
-use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, DomainSummaries, PolicyEndings, Rdap, Storefront, TransferPrecheck, WatchTransfer};
+use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, DomainSummaries, PolicyEndings, Rdap, Storefront, TransferPrecheck};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
 // This fixture exercises retained legacy commerce, rather than new-install activation.

@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head, Value};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{Column, Filter, ListPage};
 use Paymenter\Extensions\Servers\Domains\Presentation\{Reader, State};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
-/** The kit's List example: a standard table of made-up monitored domains, supplied as columns, a filter, rows and a
+/** The kit's List example: a standard table of sample domains, supplied as columns, a filter, rows and a
  * bulk action. Demo systems only, like the kit. Its bulk action changes nothing. */
 class PanelKitList extends ListPage
 {
@@ -21,7 +21,7 @@ class PanelKitList extends ListPage
     public static function canAccess(): bool { return PanelKit::canAccess(); }
     public function mount(): void { Staff::requireView(); abort_unless(DemoData::present(), 404); }
     public function getSubNavigation(): array { return PanelKit::tabs('List'); }
-    protected function head(): Head { return Head::make('Monitored domains', Reader::Staff)->tag(true, false); }
+    protected function head(): Head { return Head::make('Domains', Reader::Staff)->tag(true, false); }
     protected function columns(): array
     {
         return [
@@ -36,14 +36,14 @@ class PanelKitList extends ListPage
     protected function rows(): array { return array_map(static fn (array $r): array => [...$r, 'key' => $r['domain'], 'url' => PanelKitDetail::getUrl()], self::ROWS); }
     protected function bulkActions(): array
     {
-        return [BulkAction::make('kit_pause')->label('Pause monitoring')->action(static function (Collection $rows): void {
+        return [BulkAction::make('kit_pause')->label('Pause')->action(static function (Collection $rows): void {
             Staff::requireView();
             Notification::make()->title('Paused '.implode(', ', $rows->pluck('domain')->all()))->success()->send();
         })];
     }
-    protected function emptyLine(): array { return ['No monitored domains yet.', 'Add a domain to start checking it.']; }
+    protected function emptyLine(): array { return ['No domains yet.', 'Add a domain.']; }
     private const ROWS = [
-        ['domain' => 'fieldnote.example', 'status' => 'monitored', 'customer' => 'Ada Park', 'note' => 'Nameservers match the template.'],
+        ['domain' => 'fieldnote.example', 'status' => 'active', 'customer' => 'Ada Park', 'note' => 'Nameservers match the template.'],
         ['domain' => 'harbor-lights.example', 'status' => 'needs_review', 'customer' => 'Rui Costa', 'note' => 'Expires in 11 days.'],
         ['domain' => 'quietfield.example', 'status' => 'paused', 'customer' => 'Ada Park', 'note' => 'Paused by staff.'],
         ['domain' => 'saltmarsh.example', 'status' => 'failed', 'customer' => 'Mina Ito', 'note' => 'The last check failed.'],

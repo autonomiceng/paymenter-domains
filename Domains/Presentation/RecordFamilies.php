@@ -7,8 +7,6 @@ use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,ObservationPr
 /** No inferred completeness or edit grants. Last-good evidence remains historical after a failed read. */
 final class RecordFamilies
 {
-    /** What separate public and registrar checks mean for staff. */
-    public const EVIDENCE='Public DNS can’t confirm a registrar change or renewal.';
     public static function owner(OwnedDomain $page,array $facts): OwnedDomain
     {
         $management=$page->management;

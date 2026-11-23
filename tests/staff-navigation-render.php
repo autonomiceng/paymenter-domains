@@ -26,4 +26,4 @@ $save=function(string $name,$test)use($out,$css):void{
 \App\Models\Setting::where('key',DnsResolverSettings::KEY)->delete();$save('settings-missing',Livewire::actingAs($manager)->test(DnsResolver::class));
 $settings->save(DohEndpoint::URL,DohEndpoint::IP);$save('settings-saved',Livewire::actingAs($viewer)->test(DnsResolver::class));
 putenv('SSLKEYLOGFILE=/synthetic-disabled');$save('settings-forced',Livewire::actingAs($manager)->test(DnsResolver::class));putenv('SSLKEYLOGFILE');
-echo "Staff sidebar, Settings tab and monitoring notices rendered.\n";$nativeSuccessful=true;
+echo "Staff sidebar, Settings tab and resolver settings rendered.\n";$nativeSuccessful=true;

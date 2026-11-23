@@ -40,7 +40,5 @@
 @foreach ($recordFamilies['caa'] as $record)<tr><td class="domains-mono">{{ $record['name'] }}</td><td>CAA</td><td>{{ $record['value'] }}</td><td>{{ $record['ttl'] ?? 'Unknown' }}</td></tr>@endforeach
 </tbody></table></div>
 @endif
-{{-- The staff domain page says this once, in its Monitoring section. --}}
-@if ($staff && $part === null)<p class="domains-hint">{{ \Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::EVIDENCE }}</p>@endif
 @endif
 </div>

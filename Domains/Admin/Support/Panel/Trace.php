@@ -52,6 +52,6 @@ final class Trace extends Component implements HasEmbeddedView
     {
         $word = $step['state']?->label();
         $label = rtrim(trim($step['label']), '.');
-        return $word !== null && (strcasecmp($label, $word) === 0 || strcasecmp($label, 'Monitoring '.$word) === 0) ? null : $word;
+        return $word !== null && strcasecmp($label, $word) === 0 ? null : $word;
     }
 }

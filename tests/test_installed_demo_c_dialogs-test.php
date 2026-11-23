@@ -9,7 +9,7 @@ require __DIR__.'/Support/offer-commerce.php';
 require __DIR__.'/Support/storefront.php';
 use Illuminate\Support\Facades\{Auth,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,RoutingProfileResource,WatchResource};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource, RoutingProfileResource};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DialogFooter,Staff};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting,StaffCatalogue,Capabilities};

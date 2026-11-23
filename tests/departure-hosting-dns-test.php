@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/Support/departure-fixture.php';
 $invoice=$issueDepartureRenewal();
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Models\{WatchProductMap,DnsTemplate,WatchSource};
+use Paymenter\Extensions\Servers\Domains\Models\DnsTemplate;
 use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,ObservationProjection,RegistrationDns,SiteDnsDefault};
 
 $nativeSuccessful=false;

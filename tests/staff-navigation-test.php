@@ -1,5 +1,5 @@
 <?php
-// Staff navigation, the one Domains area with its tabs, the Monitoring settings tab and its maintenance notice. MIT, Copyright (c) 2026 Autonomic Engineering.
+// Staff navigation, the one Domains area with its tabs, the DNS resolver settings tab. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/doh-environment.php';
 require __DIR__.'/Support/dns-template.php';
@@ -16,11 +16,11 @@ require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Do
 $resources=[TldResource::class,RoutingProfileResource::class,\App\Admin\Resources\FailedJobResource::class];$pages=[DnsResolver::class,RegistrarSetup::class,WhatYouSell::class];$panel->resources($resources)->pages($pages);
 Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($resources,$pages,$panel){foreach([...$resources,...$pages] as$r){$r::registerRoutes($panel);}});app('router')->getRoutes()->refreshNameLookups();
 
-// Three pages in one Domains group, in the planned order; monitoring and DNS templates are tabs of Domains (Ilya, decision 1).
+// Three pages in one Domains group, in the planned order; resolver settings and DNS templates are tabs of Domains (Ilya, decision 1).
 // Every other page leaves the menu but keeps its route.
 $all=[DomainResource::class,OperationResource::class,TldResource::class,RegistrarSetup::class,RoutingProfileResource::class,
     PendingAdoptionResource::class,RegistrarAccount::class,RegistrarBalances::class,ActivationStatus::class,DnsResolver::class];
-same([DomainResource::class,TldResource::class,RegistrarSetup::class],array_values(array_filter($all,fn($c)=>$c::shouldRegisterNavigation())),'Monitoring and DNS templates have no menu item of their own');
+same([DomainResource::class,TldResource::class,RegistrarSetup::class],array_values(array_filter($all,fn($c)=>$c::shouldRegisterNavigation())),'Resolver settings and DNS templates have no menu item of their own');
 $menu=array_values(array_filter($all,fn($c)=>$c::shouldRegisterNavigation()));usort($menu,fn($a,$b)=>[$a::getNavigationSort()??PHP_INT_MAX]<=>[$b::getNavigationSort()??PHP_INT_MAX]);
 same([DomainResource::class,RegistrarSetup::class,TldResource::class],$menu,'Three staff pages in order');
 foreach($menu as $c){same('Domains',$c::getNavigationGroup(),'One Domains group: '.$c);}
@@ -53,8 +53,8 @@ foreach(array_values($open) as $n=>$page){
 same([],\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::domains('outside'),'A destination outside the tabs has no tab row');
 $marked=fn(string $route)=>collect((array)DomainResource::getNavigationItemActiveRoutePattern())->contains(fn($p)=>\Illuminate\Support\Str::is($p,$route));
 expect($marked(RoutingProfileResource::getRouteBaseName().'.index')&&!$marked(TldResource::getRouteBaseName().'.index'),'Domains marked on DNS templates only, not on TLDs');
-// Permissions stay per tab: staff who can't read monitoring see Domains alone, so no tab row.
-same([],Livewire::actingAs(staffUser([Staff::VIEW]))->test($open['index'])->instance()->getSubNavigation(),'No monitoring rights, no tab row');
+// Permissions stay per tab: staff who can't read DNS settings see Domains alone, so no tab row.
+same([],Livewire::actingAs(staffUser([Staff::VIEW]))->test($open['index'])->instance()->getSubNavigation(),'No DNS settings rights, no tab row');
 $settings=app(DnsResolverSettings::class);
 $tab=Livewire::actingAs($manager)->test(DnsResolver::class)->assertSuccessful();
 // No saved resolver: Missing with its cause and the fix beside it, said once; nothing to test yet, no bootstrap IP.

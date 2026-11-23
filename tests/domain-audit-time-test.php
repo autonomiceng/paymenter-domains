@@ -22,4 +22,4 @@ try{
         date_default_timezone_set('America/Los_Angeles');
     }
 }finally{date_default_timezone_set($prior);}
-$nativeSuccessful=true;echo "Watch audit UTC instants, DST, mixed rows and conservative retained upgrade.\n";
+$nativeSuccessful=true;echo "Domain audit UTC instants, DST, mixed rows and conservative retained upgrade.\n";

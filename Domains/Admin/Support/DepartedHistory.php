@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Services\HoldingDeparture;
 /** A confirmed departure's History rows, read from its saved record and the confirmation's history entry only (mock 07b,
- * 07c): Departure confirmed, each closed invoice, each Credit added with its saved amount, Name released, Monitoring and
+ * 07c): Departure confirmed, each closed invoice, each Credit added with its saved amount, Name released and
  * Email sent. */
 final class DepartedHistory
 {

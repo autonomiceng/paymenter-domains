@@ -9,7 +9,7 @@ require __DIR__.'/Support/accounts.php';
 use Filament\Infolists\Components\TextEntry;
 use Filament\Tables\Columns\TextColumn;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\DemoTag;
-use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, ManagedPublicConfig, Operation, WatchName, WatchRegistryObservation};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\FoundationSchema;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 storefrontViews();

@@ -5,9 +5,8 @@ require __DIR__.'/Support/staff-templates.php';require __DIR__.'/Support/site-dn
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\{ListConfiguration,ViewConfiguration};
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\ViewWatch;
 use Paymenter\Extensions\Servers\Domains\Models\{DnsTemplate,DomainAudit};
-use Paymenter\Extensions\Servers\Domains\Services\{DnsTemplateUsage,SiteDnsDefault,DnsTemplateWrites as Writes};
+use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault, DnsTemplateWrites as Writes};
 $errors=[];$check=function(string $name,Closure $run)use(&$errors):void{try{$run();echo "PASS $name\n";}catch(Throwable $e){$errors[]=$name.': '.$e->getMessage();}};
 $make=fn()=>DB::transaction(fn()=>DnsTemplate::create(['name'=>'Damaged template','enabled'=>false,'nameservers'=>['ns1.example.net','ns2.example.net'],'edited_by'=>$manager->id,'reason'=>'Synthetic retained template']));
 $check('Unused unreadable template can be deleted from the real page',function()use($make,$manager):void{
