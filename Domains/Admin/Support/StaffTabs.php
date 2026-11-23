@@ -31,15 +31,14 @@ final class StaffTabs
             'For sale'=>[$allowed,fn()=>TldResource::getUrl('index',[...$scope,'filters'=>[...($scope['filters']??[]),'for_sale'=>['isActive'=>1]]])],
         ]);
     }
-    /** One tab left is no choice, so it draws no row. A page the panel never registered drops out. A tab may carry a count. */
+    /** One tab left is no choice, so it draws no row. A page the panel never registered drops out. */
     private static function items(string $active, array $tabs): array
     {
         $items=[];
-        foreach ($tabs as $label=>$tab) {
-            [$allowed,$url]=$tab;$count=$tab[2]??null;
+        foreach ($tabs as $label=>[$allowed,$url]) {
             if (!$allowed) { continue; }
             try { $item=NavigationItem::make($label)->url($url())->isActiveWhen(fn()=>$label===$active); } catch (\Throwable) { continue; }
-            $items[]=$count===null?$item:$item->badge($count());
+            $items[]=$item;
         }
         return count($items)>1 && count(array_filter($items, static fn (NavigationItem $item): bool => $item->isActive())) === 1 ? $items : [];
     }

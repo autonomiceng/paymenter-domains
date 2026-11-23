@@ -2,11 +2,13 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\DomainReadResource;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainReadResource, Staff};
+use Paymenter\Extensions\Servers\Domains\Services\DnsTemplateWrites;
 use Paymenter\Extensions\Servers\Domains\Models\DnsTemplate;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\{EditConfiguration,ListConfiguration,ViewConfiguration};
 class RoutingProfileResource extends DomainReadResource
 {
+    public static function canViewAny(): bool{return Staff::can(DnsTemplateWrites::VIEW);}
     protected static ?string $model=DnsTemplate::class;
     protected static ?string $navigationLabel='DNS templates';
     protected static string|\BackedEnum|null $navigationIcon='heroicon-o-document-duplicate';

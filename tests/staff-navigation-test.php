@@ -52,7 +52,7 @@ foreach(array_values($open) as $n=>$page){
 }
 same([],\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::domains('outside'),'A destination outside the tabs has no tab row');
 $marked=fn(string $route)=>collect((array)DomainResource::getNavigationItemActiveRoutePattern())->contains(fn($p)=>\Illuminate\Support\Str::is($p,$route));
-expect($marked(RoutingProfileResource::getRouteBaseName().'.index')&&!$marked(TldResource::getRouteBaseName().'.index'),'Domains marked on DNS templates only, not on TLDs');
+expect($marked(RoutingProfileResource::getRouteBaseName().'.index') && $marked(DnsResolver::getRouteName()) && !$marked(TldResource::getRouteBaseName().'.index'),'Domains menu follows both DNS tabs');
 // Permissions stay per tab: staff who can't read DNS settings see Domains alone, so no tab row.
 same([],Livewire::actingAs(staffUser([Staff::VIEW]))->test($open['index'])->instance()->getSubNavigation(),'No DNS settings rights, no tab row');
 $settings=app(DnsResolverSettings::class);
