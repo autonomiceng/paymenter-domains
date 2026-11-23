@@ -1,6 +1,8 @@
 <?php
 // Adapted from Enom tests/enom-native-app.php; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/fixture-costs.php';
+$nativeSetup = new FixtureSetup;
 require_once __DIR__.'/bootstrap.php';
 require_once __DIR__.'/Support/business-choices.php';
 // Laravel may render an uncaught exception with status zero; require explicit suite completion.
@@ -65,8 +67,10 @@ if ($snapshot !== '') {
         expect(is_subclass_of($model, Illuminate\Database\Eloquent\Model::class), 'Snapshot model is an Eloquent model');
         new $model;
     }
+    FixtureSetup::$replays++;
 } else {
     Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
+    FixtureSetup::$migrations++;
 }
 $pdo=Illuminate\Support\Facades\DB::connection()->getPdo();
 $GLOBALS['nativeFixtureDatabase']=['pdo'=>$pdo,'changes'=>(int)$pdo->query('SELECT total_changes()')->fetchColumn(),
@@ -77,3 +81,4 @@ $app->instance(\Paymenter\Extensions\Servers\Domains\Services\PslTransport::clas
     new \Paymenter\Extensions\Servers\Domains\Services\PslTransport(static function (): never {
         throw new \Paymenter\Extensions\Servers\Domains\Services\PslFailure('transport_failed');
     }));
+unset($nativeSetup);

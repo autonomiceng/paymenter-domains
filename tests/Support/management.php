@@ -1,6 +1,7 @@
 <?php
 // Synthetic Enom 444f31c management fixtures; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/fixture-costs.php';
 require __DIR__.'/reconciliation-fixture.php';
 require_once __DIR__.'/reserved-fixtures.php';
 use Illuminate\Support\Facades\{Cache,DB,Queue};
@@ -57,6 +58,7 @@ $exchange=static function(string $origin,string $command,array $p,int $timeout)u
     return $xml($command,$body);
 };
 $holding=static function(string $name, ?\Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence $nameservers = null)use($prepare,$reconcile,$state,$exchange,$wrongDomain){
+    $fixtureTimer = new FixtureSetup;
     expect($name !== $wrongDomain, 'Wrong-domain response remains distinct from the holding');
     [$original,$binding]=$prepare($name, 'accepted', $nameservers);same('succeeded',$reconcile->run($original->id)->state,'Real uniquely completed registration anchor');$d=$original->domain()->firstOrFail();
     $state->name=$name;$state->locked=true;$state->dns=[];$state->srv=[];$state->ds=[];$state->glue=[];$state->contacts=[];$state->calls=[];$state->fault='';$state->afterWrite=null;$state->during=null;$state->apply=true;Cache::flush();
