@@ -6,7 +6,7 @@ require __DIR__.'/Support/owner-pages.php';
 require_once __DIR__.'/Support/reserved-fixtures.php';
 use Illuminate\Support\Facades\{DB,Schema,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-use Paymenter\Extensions\Servers\Domains\Services\{HoldingProvenanceSchema,Installation,RuntimeDispatch,DomainObservation,RenewalAuthority,RenewalReminders,DomainReservations};
+use Paymenter\Extensions\Servers\Domains\Services\{Installation,RuntimeDispatch,DomainObservation,RenewalAuthority,RenewalReminders,DomainReservations};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts;
 $enable();
 [$d,$invoice,$debt]=$make(reservedFixtureName('example.com'));

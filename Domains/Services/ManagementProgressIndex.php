@@ -2,8 +2,6 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 /** Derived display candidacy only; execution still requires the original encrypted evidence. */
 final class ManagementProgressIndex

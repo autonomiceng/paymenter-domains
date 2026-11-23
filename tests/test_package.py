@@ -275,7 +275,7 @@ class PackageTests(unittest.TestCase):
             receipt = builder.build(source, root/'staged')
             self.assertIn('Domains/Catalogue/Offer.php', receipt['members'])
             _, actual = builder.runtime_members(ROOT/'Domains')
-            for name in ['CallerRouting', 'UpgradeGate', 'Writer', 'OfferScheduler']:
+            for name in ['CallerRouting', 'CatalogueActivation', 'Writer', 'OfferScheduler']:
                 self.assertIn('Domains/Catalogue/'+name+'.php', actual)
             (source/'Unlisted').mkdir()
             (source/'Unlisted/Offer.php').write_text('<?php namespace Paymenter\\Extensions\\Servers\\Domains\\Unlisted;')

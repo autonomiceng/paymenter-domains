@@ -5,7 +5,7 @@ require __DIR__.'/native-app.php';
 use App\Models\Setting;
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Models\{WatchProfile,WatchAudit};
-use Paymenter\Extensions\Servers\Domains\Services\{Installation,SiteDnsDefault,ComplimentaryAccountSchema,ComplimentaryTimeSchema};
+use Paymenter\Extensions\Servers\Domains\Services\{Installation,SiteDnsDefault,ComplimentaryAccountSchema};
 // Same-version local setup calls Installation, not the uploader's upgraded hook.
 // Native settings, schema history and encrypted watch rows cannot be proved by a stub.
 $entry=new \Paymenter\Extensions\Servers\Domains\Domains([]);$entry->installed();

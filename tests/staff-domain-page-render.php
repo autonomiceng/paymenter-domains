@@ -10,7 +10,7 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement, HoldingProvenanceSchema, PslReviewSchema};
+use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement, PslReviewSchema};
 $out=$argv[1]??'';
 expect(is_dir($out)&&is_writable($out),'Output directory argument required');
 staffPanel(); [, $active]=staffData(ordinaryCompleted:true);  PslReviewSchema::install();

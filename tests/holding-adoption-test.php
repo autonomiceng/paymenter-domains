@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/adoption-holding.php';
 use Illuminate\Support\Facades\{DB, Schema};
-use Paymenter\Extensions\Servers\Domains\Services\{HoldingAdoptionSchema, HoldingIdentityLock};
+use Paymenter\Extensions\Servers\Domains\Services\{HoldingIdentityLock};
 $f = adoptionHoldingFixture(); $d = $f['domain']; $a = $f['adoption'];
 $guard = new \Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard(new \Paymenter\Extensions\Servers\Domains\Services\HolderPricing($f['prices']), $f['clock']); $guard->boot();
 foreach (['ADOPTION_ID' => $a->id, 'SNAPSHOT' => encrypt(json_encode(['holding' => ['version' => 1]]), false)] as $key => $value) {

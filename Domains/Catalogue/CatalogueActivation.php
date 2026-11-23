@@ -37,7 +37,7 @@ final class CatalogueActivation
     public static function initializationState(): array { return self::state(); }
     private static function executable(array $state): array
     {
-        if ($state['state'] !== 'active') {
+        if ($state['state'] !== 'active' || !hash_equals(FreshInstallation::CONTRACT, $state['contract'])) {
             throw new \DomainException(FreshInstallation::MESSAGE);
         }
         return $state;
@@ -50,17 +50,15 @@ final class CatalogueActivation
     { if (DB::transactionLevel() === 0) { throw new \LogicException('Current routing requires the owned prefix.'); } return self::executable(self::state()); }
     public static function active(int $generation): void
     {
-        $s = self::state();
-        if ($s['state'] !== 'active' || $s['generation'] !== $generation) { throw new \DomainException('Catalogue active generation changed.'); }
+        $s = self::executable(self::state());
+        if ($s['generation'] !== $generation) { throw new \DomainException('Catalogue active generation changed.'); }
     }
     public static function generation(): int { return self::state()['generation']; }
 
     private static function outside(): void
     { if (DB::transactionLevel() !== 0) { throw new \LogicException('Catalogue activation checks must run outside locks.'); } }
 
-
-
-/** Never clears a claim or assumes an expired lease proves a process has stopped. */
+    /** Never clears a claim or assumes an expired lease proves a process has stopped. */
     private static function drained(): void
     {
         if (DB::table('domains_observation_queues')->lockForUpdate()->whereNotNull('catalogue_claim')->orWhereNotNull('offer_claim')->exists()
@@ -101,11 +99,9 @@ final class CatalogueActivation
         });
     }
 
-    private static function lockNative(): array
+    private static function lockNative(): void
     {
         $native = ['users','credits','invoices','invoice_items','invoice_transactions','orders','services','categories','products','plans','prices','carts','cart_items'];
         foreach ($native as $table) { DB::table($table)->orderBy('id')->lockForUpdate()->chunk(250, static function (): void {}); }
-        return $native;
     }
-
 }

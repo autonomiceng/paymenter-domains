@@ -9,7 +9,7 @@ require __DIR__.'/Support/transfer-completion-enom-fixture.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities, CallerPorts, Projection};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{OfferSchema, OfferWorkSchema};
+
 
 $pending=$prepare(placeholderComFixtureName('offer-paid-transfer-placeholder.com'));
 $observe->fault='pending'; $waiting=$reconcile->run($pending->id);

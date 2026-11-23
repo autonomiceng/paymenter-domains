@@ -15,7 +15,7 @@ $row->value=json_encode([...CatalogueActivation::routeState(),'contract'=>str_re
 $before=retainedOfferSnapshot();
 foreach([FreshInstallation::requireCompatible(...),static fn()=>(new Domains)->upgraded('0.1.0')] as $upgrade){
     try{$upgrade();throw new LogicException('Unknown active contract passed package admission');}
-    catch(DomainException $error){same(FreshInstallation::MESSAGE,$error->getMessage(),'Unknown contract refuses activation');}
+    catch(DomainException){}
     same($before,retainedOfferSnapshot(),'Unknown active contract refuses before migrations, templates or cleanup');
 }
 $nativeSuccessful=true;

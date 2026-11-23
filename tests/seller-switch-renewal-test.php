@@ -7,7 +7,7 @@ require __DIR__.'/Support/lifecycle-scenarios.php';
 use App\Models\Role;
 use Paymenter\Extensions\Servers\Domains\Data\Money;
 use Paymenter\Extensions\Servers\Domains\Models\{Price, SalesPolicy};
-use Paymenter\Extensions\Servers\Domains\Services\{HoldingAdoptionSchema, HoldingProvenanceSchema};
+
 
 $refreshPrices = static function () use ($clock): void {
     Price::query()->update(['observed_at' => $clock->now(), 'fresh_until' => $clock->now()->modify('+1 day')]);

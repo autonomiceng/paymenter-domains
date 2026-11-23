@@ -111,11 +111,10 @@ foreach([['domains_adoptions','request_key',$preview->request_key],['domains_his
 }
 $counts=[Adoption::count(),HistoryLink::count()];$ciphertexts=[DB::table('domains_adoptions')->pluck('evidence','id')->all(),DB::table('domains_history_links')->pluck('evidence','id')->all()];
 $entry->upgraded('0.1.0');$entry->uninstalled();$entry->installed();
-foreach(['2026_11_23_000001_create_domains_schema','2026_11_23_000001_create_domains_schema'] as $migration){
-    $m=require dirname(__DIR__).'/Domains/database/migrations/'.$migration.'.php';$m->down();
-    $record=(array)DB::table('migrations')->where('migration',$migration)->first();DB::table('migrations')->where('migration',$migration)->delete();
-    adoptionRefused(fn()=>$entry->installed(),'Missing retained migration history refuses reinstall',DomainException::class,false);DB::table('migrations')->insert($record);
-}
+$migration=\Paymenter\Extensions\Servers\Domains\Services\Installation::BASELINE;
+$m=require dirname(__DIR__).'/Domains/database/migrations/'.$migration.'.php';$m->down();
+$record=(array)DB::table('migrations')->where('migration',$migration)->first();DB::table('migrations')->where('migration',$migration)->delete();
+adoptionRefused(fn()=>$entry->installed(),'Missing retained migration history refuses reinstall',DomainException::class,false);DB::table('migrations')->insert($record);
 AdoptionSchema::verify();HistoryLinkSchema::verify();
 same($counts,[Adoption::count(),HistoryLink::count()],'Uninstall, reinstall and down retain every row');
 same($ciphertexts,[DB::table('domains_adoptions')->pluck('evidence','id')->all(),DB::table('domains_history_links')->pluck('evidence','id')->all()],'Retention preserves encrypted bytes');

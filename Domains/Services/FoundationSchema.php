@@ -6,6 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 // Column declarations adapted from Enom d2c55e2.
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 
 final class FoundationSchema extends TableSchema
 {
@@ -150,5 +151,13 @@ final class FoundationSchema extends TableSchema
                 $t->unique(['server_id', 'tld', 'action', 'term', 'currency'], $t->getTable().'_price_unique');
             },
         ];
+    }
+
+    public static function verify(): void
+    {
+        parent::verify();
+        if (DB::table('domains_operations')->whereIn('action', ManagementProgress::ACTIONS)->whereNull('management_pending')->exists()) {
+            throw new \RuntimeException('Retained management operation has no progress state.');
+        }
     }
 }

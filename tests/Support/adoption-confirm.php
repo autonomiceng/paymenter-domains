@@ -8,7 +8,7 @@ function adoptionCommitFixture(\Paymenter\Extensions\Servers\Domains\Data\Enviro
 {
     config(['app.url' => 'https://domains-tests.invalid', 'domains.adoption.enabled' => true]);
     $f = adoptionFixture($environment, $registrars); extract($f);
-    foreach (['HoldingAdoptionSchema', 'HistoryLinkSchema', 'NativeIntentSchema', 'ObservationSchema', 'ReminderSchema', 'RuntimeSchema'] as $schema) {
+    foreach (['HistoryLinkSchema', 'NativeIntentSchema', 'ObservationSchema', 'ReminderSchema', 'RuntimeSchema'] as $schema) {
         ('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$schema)::install();
     }
     $permissions = ['admin.domains.view', 'admin.domains.adopt.preview', 'admin.domains.adopt', 'admin.domains.manage', 'admin.domains.fund', 'admin.services.update', 'admin.invoices.view'];

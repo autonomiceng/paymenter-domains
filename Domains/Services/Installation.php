@@ -52,11 +52,32 @@ final class Installation
     public const VERIFIED_KEY='domains_schema_verified';
     private static function verificationRecord(): \Illuminate\Database\Eloquent\Builder
     { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key',self::VERIFIED_KEY); }
+    public static function tables(): array
+    {
+        $prefix = DB::connection()->getTablePrefix(); $tables = [];
+        foreach (Schema::getTableListing(null, false) as $table) {
+            if (str_starts_with($table, $prefix.'domains_')) { $tables[] = substr($table, strlen($prefix)); }
+        }
+        sort($tables); return $tables;
+    }
+
+    public static function expectedTables(): array
+    {
+        $allowed = [];
+        foreach (self::SCHEMAS as $schema) {
+            array_push($allowed, ...$schema::tables());
+        }
+        sort($allowed);
+        return $allowed;
+    }
     public function verify(): void
     {
         // Invalidate first: a failed explicit check must not leave an older success usable.
         self::verificationRecord()->delete();
         $version=self::verificationState();
+        if (self::tables() !== self::expectedTables()) {
+            throw new \RuntimeException('Retained Domains table inventory differs from the installed schema.');
+        }
         SchemaVerifier::batch(static function():void {foreach(self::SCHEMAS as $schema){$schema::verify();}});
         self::verificationRecord()->create(['key'=>self::VERIFIED_KEY,'settingable_type'=>null,'settingable_id'=>null,
             'type'=>'string','encrypted'=>false,'value'=>$version]);
@@ -64,8 +85,8 @@ final class Installation
     private static function verificationState(): string
     {
         $ran=app(Migrator::class)->getRepository()->getRan();sort($ran);
-        $files=glob(dirname(__DIR__).'/database/migrations/*.php');
-        if(array_diff(array_map(static fn($file)=>basename($file,'.php'),$files),$ran)){
+        $domains = array_values(array_filter($ran, static fn ($name) => str_contains(strtolower($name), 'domains')));
+        if ($domains !== [self::BASELINE]) {
             throw new \RuntimeException('Retained Domains migration history is incomplete.');
         }
         return json_encode(['version'=>FreshInstallation::manifest(),'migrations'=>$ran,'schema'=>SchemaVerifier::fingerprint()],JSON_THROW_ON_ERROR);

@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\ComplimentaryAccountSetting;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccountSchema,ComplimentaryTimeSchema,FoundationSchema};
+use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccountSchema,FoundationSchema};
 /** A customer page that, like a store's own page, lists the domain price actions in its "..." menu. */
 final class ComplimentaryMenuUserPage extends EditUser
 {

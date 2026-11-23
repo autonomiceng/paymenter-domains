@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 
 final class StaffAuditSchema extends TableSchema
 {
@@ -27,5 +28,13 @@ final class StaffAuditSchema extends TableSchema
                 $t->unique(['event_key']);
             },
         ];
+    }
+
+    public static function verify(): void
+    {
+        parent::verify();
+        if (DB::table('domains_audit_archives')->whereNull('event_key')->exists()) {
+            throw new \RuntimeException('Retained Domains audit event has no identity.');
+        }
     }
 }

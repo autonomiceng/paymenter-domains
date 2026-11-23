@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\{DB,Schema};
-use Paymenter\Extensions\Servers\Domains\Services\{Installation,TemplateAssignmentIndex};
+use Paymenter\Extensions\Servers\Domains\Services\{Installation};
 $installation=new Installation;$installation->install();
 // A recorded migration with a lost index is refused.
 Schema::table('domains_watch_product_maps',static fn(Blueprint $t)=>$t->dropIndex(['expected_ns_profile_id']));

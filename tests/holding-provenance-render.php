@@ -9,7 +9,7 @@ use Illuminate\Support\HtmlString;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-use Paymenter\Extensions\Servers\Domains\Services\HoldingProvenanceSchema;
+
 $out=$argv[1]??'';$shell=file_get_contents($argv[2]??'');expect(is_dir($out),'Output directory required');
 [$d]=$make('example.com',false);
 DB::table('domains_domains')->where('id',$d->id)->update(['provenance'=>'adoption_pending','status'=>'adoption_pending','billing_managed'=>false,'provider_expires_at'=>null,'renewal_policy'=>encrypt(json_encode(['conversion_source_expiry'=>'2027-10-18']),false)]);$d->refresh();

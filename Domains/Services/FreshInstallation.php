@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use App\Models\{Setting, NotificationTemplate};
 use Illuminate\Database\Migrations\Migrator;
-use Illuminate\Support\Facades\{Cache, DB, Schema};
+use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, OfferState, CatalogueActivation};
 
 /** The extension lifecycle owns new-install authority; schema maintenance alone never grants it. */
@@ -54,7 +54,7 @@ final class FreshInstallation
     /** Advisory bootstrap check; only the locked lifecycle proof may create initialization authority. */
     public static function uninstalled(): bool
     {
-        if (self::tables() !== [] || self::history()) { return false; }
+        if (Installation::tables() !== [] || self::history()) { return false; }
         try { self::empty(true); return true; } catch (\DomainException) { return false; }
     }
 
@@ -86,7 +86,7 @@ final class FreshInstallation
                 if ($state['manifest'] !== $manifest) { throw new \DomainException('Domains initialization package changed. Restore the initializing package.'); }
                 return new self($state['intent'], $manifest);
             }
-            if (self::history() || self::tables() !== []) { return null; } // Existing installations require their own receipt.
+            if (self::history() || Installation::tables() !== []) { return null; } // Existing installations require their own receipt.
             self::empty(true);
             $intent = bin2hex(random_bytes(16));
             $row = new Setting; $row->forceFill(['key'=>CatalogueActivation::KEY,'type'=>'string','encrypted'=>true,
@@ -101,15 +101,6 @@ final class FreshInstallation
             app(Installation::class)->verify(); ReminderTemplates::ensure(); WatchNoticeTemplates::ensure();
             CatalogueActivation::initialize($owner);
         } finally { self::$owner = null; CallerRouting::reset(); }
-    }
-
-    private static function tables(): array
-    {
-        $prefix = DB::connection()->getTablePrefix(); $tables = [];
-        foreach (Schema::getTableListing(null, false) as $table) {
-            if (str_starts_with($table, $prefix.'domains_')) { $tables[] = substr($table, strlen($prefix)); }
-        }
-        sort($tables); return $tables;
     }
 
     private static function empty(bool $new = false): void
@@ -127,7 +118,7 @@ final class FreshInstallation
             throw new \DomainException('Retained Domains settings or identity refuse fresh initialization. Restore and verify installation history.');
         }
         if ($new) { self::work(); }
-        foreach (self::tables() as $table) {
+        foreach (Installation::tables() as $table) {
             $query = DB::table($table)->lockForUpdate();
             if ($table === 'domains_psl_status') {
                 foreach ($query->get() as $row) {
@@ -162,14 +153,10 @@ final class FreshInstallation
     /** The source-bound package owns only this storage, not every empty domains_* table. */
     private static function progress(): void
     {
-        $allowed = [];
-        foreach (Installation::SCHEMAS as $schema) {
-            array_push($allowed, ...$schema::tables());
-        }
         $expected = array_keys(self::files());
         $ran = DB::table('migrations')->orderBy('id')->lockForUpdate()->pluck('migration')->all();
         $extra = array_filter($ran, static fn ($name) => str_contains(strtolower($name),'domains') && !in_array($name,$expected,true));
-        if (array_diff(self::tables(),$allowed) !== [] || $extra !== []) {
+        if (array_diff(Installation::tables(),Installation::expectedTables()) !== [] || $extra !== []) {
             throw new \DomainException('Unexpected Domains schema or migration history refuses initialization. Preserve it and investigate.');
         }
     }

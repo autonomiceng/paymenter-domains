@@ -12,7 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\{StaffContext, Target};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AdoptionMapping, AdoptionReader, AdoptionSchema, HoldingProvenanceSchema, PslReviewSchema, WatchSchema, RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AdoptionMapping, AdoptionReader, AdoptionSchema, PslReviewSchema, WatchSchema, RegistrarRegistry};
 function adoptionFixture(Environment $environment = Environment::Test, array $registrars = ['enom','namesilo'], bool $nameSiloLocal = true): array
 {
     Queue::fake(); extract(commerceFixture(environment: $environment, registrars: $registrars, nameSiloLocal: $nameSiloLocal)); AdoptionSchema::install();  PslReviewSchema::install(); WatchSchema::install();
