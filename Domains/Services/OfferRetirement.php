@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\{DB,Schema};
-use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
+use Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation;
 
 /** Forward-only removal of obsolete current state, after checked bridge activation.
  * The separate begin migration is the durable DDL intent, including on MariaDB.
@@ -35,8 +35,8 @@ final class OfferRetirement
     }
     public static function begin(): void
     {
-        if (UpgradeGate::initializationState()['state'] !== 'active' && !FreshInstallation::recovering()) {
-            throw new \DomainException(OfferUpgrade::MESSAGE);
+        if (CatalogueActivation::initializationState()['state'] !== 'active' && !FreshInstallation::recovering()) {
+            throw new \DomainException(FreshInstallation::MESSAGE);
         }
         FoundationSchema::verify(); OfferSchema::verify(); self::verifyLegacyStores();
     }
@@ -65,7 +65,7 @@ final class OfferRetirement
     public static function install(): void
     {
         if(!self::started()){throw new \LogicException('Recorded offer retirement intent required.');}
-        if(UpgradeGate::initializationState()['state']!=='active' && !FreshInstallation::recovering()){throw new \DomainException(OfferUpgrade::MESSAGE);}
+        if(CatalogueActivation::initializationState()['state']!=='active' && !FreshInstallation::recovering()){throw new \DomainException(FreshInstallation::MESSAGE);}
         // Every statement is independently resumable; no native/history table is touched.
         foreach(self::TABLES as $table){Schema::dropIfExists($table);}
         foreach(self::COLUMNS as $table=>$columns){

@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\{DB,Schema};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,UpgradeGate};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,CatalogueActivation};
 /** The recorded begin migration owns resumable DDL. Current intent and costs already own every reader. */
 final class CatalogueMirrorRetirement
 {
@@ -21,7 +21,7 @@ final class CatalogueMirrorRetirement
     }
     public static function begin(): void
     {
-        if(UpgradeGate::initializationState()['state']!=='active'&&!FreshInstallation::recovering()){throw new \DomainException(OfferUpgrade::MESSAGE);}
+        if(CatalogueActivation::initializationState()['state']!=='active'&&!FreshInstallation::recovering()){throw new \DomainException(FreshInstallation::MESSAGE);}
         CurrentCostSchema::verify();
         if(DB::table('domains_prices')->whereNull('cost_source_unit')->exists()){throw new \DomainException('Current cost conversion is incomplete.');}
         // Unconverted intent is not inferred from old flags. Retain the old values explicitly for a person.

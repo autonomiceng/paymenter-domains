@@ -104,7 +104,7 @@ if($phase==='bridge-seed'){
     require __DIR__.'/Support/retained-offer.php';
     $saved=retainedOfferDatabase();
     file_put_contents($receipt,retainedOfferObligations());
-    same('active',\Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::routeState()['state'],'Pinned bridge already completed checked activation');
+    same('active',\Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation::routeState()['state'],'Pinned bridge already completed checked activation');
     echo "Pinned checked bridge database seeded with frozen native obligations.\n";
 }elseif($phase==='bridge-upload'){
     require __DIR__.'/Support/retained-offer.php';
@@ -117,7 +117,7 @@ if($phase==='bridge-seed'){
 }elseif($phase==='bridge-verify'){
     require __DIR__.'/Support/retained-offer.php';
     same(file_get_contents($receipt),retainedOfferObligations(),'Fresh final process retains exact bridge obligations');
-    same('active',\Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::routeState()['state'],'Final package retains active routing');
+    same('active',\Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation::routeState()['state'],'Final package retains active routing');
     foreach(['Catalogue/Upgrade'.'Conversion.php','Catalogue/Upgrade'.'Comparison.php','Catalogue/Upgrade'.'Evidence.php'] as $file){expect(!is_file(base_path('extensions/Servers/Domains/'.$file)),'Final ZIP removes bridge converter');}
     echo "Final installed process retains active bridge receipt and omits converter.\n";
 }elseif($phase==='server-delete'){
@@ -145,8 +145,8 @@ if($phase==='bridge-seed'){
         foreach(glob(base_path('extensions/Servers/Domains/database/migrations/*.php')) as $migration){same(1,DB::table('migrations')->where('migration',basename($migration,'.php'))->count(),'Native install ran each extension migration once');}
         assertInstalledMigrationOrder(base_path('extensions/Servers/Domains/database/migrations'));
         same(0,Account::count(),'Fresh package creates no activated accounts');
-        if($phase!=='retained-install'&&getenv('PACKAGE_CATALOGUE_MODE')==='retained-legacy'){same('legacy',Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::routeState()['state'],'Lifecycle scenario retains the unconverted catalogue through native installation');}
-        if(getenv('PACKAGE_CATALOGUE_MODE')==='fresh-active'){same('active',Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::routeState()['state'],'Fresh native installation activates the offer catalogue');}
+        if($phase!=='retained-install'&&getenv('PACKAGE_CATALOGUE_MODE')==='retained-legacy'){same('legacy',Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation::routeState()['state'],'Lifecycle scenario retains the unconverted catalogue through native installation');}
+        if(getenv('PACKAGE_CATALOGUE_MODE')==='fresh-active'){same('active',Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation::routeState()['state'],'Fresh native installation activates the offer catalogue');}
         echo "Native upload/extract/Install branch passed.\n";
     }elseif($phase==='reinstall'){
         app(Installation::class)->verify();
@@ -281,7 +281,7 @@ if($phase==='bridge-seed'){
     echo "Native checkout, uncertain evidence, invoice/payment/credit and reservations seeded.\n";
 }elseif($phase==='verify'){
     assertBooted(); // Native provider discovery must supply these before any manual boot.
-    if(getenv('PACKAGE_CATALOGUE_MODE')==='fresh-active'){same('active',Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::routeState()['state'],'Fresh catalogue remains active across upload, upgrade and reinstall');}
+    if(getenv('PACKAGE_CATALOGUE_MODE')==='fresh-active'){same('active',Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation::routeState()['state'],'Fresh catalogue remains active across upload, upgrade and reinstall');}
     // Prove the upload-time upgrade succeeded before any second upgrade can repair it.
     app(Installation::class)->verify();
     require_once __DIR__.'/Support/installed-watch.php';assertInstalledWatchGates();assertRetained($receipt);

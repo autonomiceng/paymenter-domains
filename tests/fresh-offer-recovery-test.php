@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\{Cache, DB, Schema};
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Paymenter\Extensions\Servers\Domains\Domains;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, UpgradeGate, OfferScheduler, Capabilities};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, CatalogueActivation, OfferScheduler, Capabilities};
 use Paymenter\Extensions\Servers\Domains\Services\{Runtime};
 
 final class InitializationInterrupted extends RuntimeException {}
@@ -29,21 +29,20 @@ try { $entry->installed(); throw new LogicException('DDL interruption did not ex
 catch (InitializationInterrupted) {}
 expect($competing, 'Competing initializers cannot acquire installation authority');
 $pending = static function (): void {
-    foreach ([Runtime::observations(...), OfferScheduler::routed(...), Capabilities::routed(...),
-        static fn () => CallerRouting::legacy(static fn () => true), UpgradeGate::legacy(...)] as $call) {
+    foreach ([Runtime::observations(...), OfferScheduler::routed(...), Capabilities::routed(...)] as $call) {
         $refused = false;
         try { $call(); } catch (DomainException) { $refused = true; }
         expect($refused, 'Incomplete durable intent refuses executable routing and legacy work');
     }
 };
 $pending();
-$intent = Setting::where('key',UpgradeGate::KEY)->sole()->value;
+$intent = Setting::where('key',CatalogueActivation::KEY)->sole()->value;
 $changed = json_decode($intent, true); $changed['generation']++;
-$row = Setting::where('key',UpgradeGate::KEY)->sole(); $row->value = json_encode($changed); $row->save();
+$row = Setting::where('key',CatalogueActivation::KEY)->sole(); $row->value = json_encode($changed); $row->save();
 $refused = false;
 try { $entry->installed(); } catch (DomainException) { $refused = true; } catch (InitializationInterrupted) {}
 expect($refused, 'Changed intent generation refuses before schema work');
-$row = Setting::where('key',UpgradeGate::KEY)->sole(); $row->value = $intent; $row->save();
+$row = Setting::where('key',CatalogueActivation::KEY)->sole(); $row->value = $intent; $row->save();
 // An original intent permits only package-owned partial progress, never restored foreign evidence.
 foreach (['schema','history'] as $extra) {
     if ($extra === 'schema') {
@@ -57,7 +56,7 @@ foreach (['schema','history'] as $extra) {
     same($remaining, $interrupts, 'Foreign evidence cannot advance package DDL');
     same($beforeTables, Schema::getTableListing(null,false), 'Unexpected empty schema is preserved');
     same($beforeMigrations, DB::table('migrations')->orderBy('id')->get()->toJson(), 'Unexpected migration history is preserved');
-    same($intent, Setting::where('key',UpgradeGate::KEY)->sole()->value, 'Foreign evidence cannot replace the original intent');
+    same($intent, Setting::where('key',CatalogueActivation::KEY)->sole()->value, 'Foreign evidence cannot replace the original intent');
     $pending();
     if ($extra === 'schema') { Schema::drop('domains_conversion_runs'); }
     else { DB::table('migrations')->where('migration','2000_01_01_000001_create_domains_retired')->delete(); }
@@ -74,19 +73,19 @@ while ($interrupts) {
     try { $entry->installed(); throw new LogicException('DDL interruption did not execute'); }
     catch (InitializationInterrupted) {}
     $pending();
-    same($intent, Setting::where('key',UpgradeGate::KEY)->sole()->value, 'Every partial schema resumes only the original initialization intent');
+    same($intent, Setting::where('key',CatalogueActivation::KEY)->sole()->value, 'Every partial schema resumes only the original initialization intent');
 }
 Setting::saving(static function (Setting $row) use (&$commit): void {
-    if (!$commit || $row->key !== UpgradeGate::KEY) { return; }
+    if (!$commit || $row->key !== CatalogueActivation::KEY) { return; }
     $commit = false; throw new InitializationInterrupted('Before active-state commit');
 });
 $commit = true;
 try { $entry->installed(); throw new LogicException('Final commit interruption did not execute'); }
 catch (InitializationInterrupted) {}
 $pending();
-same($intent, Setting::where('key',UpgradeGate::KEY)->sole()->value, 'DDL and failed activation retain the same durable intent');
+same($intent, Setting::where('key',CatalogueActivation::KEY)->sole()->value, 'DDL and failed activation retain the same durable intent');
 $entry->installed();
-same('active', UpgradeGate::routeState()['state'], 'Retry resumes the proven partial install and commits checked activation');
-same(2, UpgradeGate::generation(), 'Interrupted retries grant one activation generation');
-$entry->installed(); same(2, UpgradeGate::generation(), 'Completed retry is idempotent');
+same('active', CatalogueActivation::routeState()['state'], 'Retry resumes the proven partial install and commits checked activation');
+same(2, CatalogueActivation::generation(), 'Interrupted retries grant one activation generation');
+$entry->installed(); same(2, CatalogueActivation::generation(), 'Completed retry is idempotent');
 $nativeSuccessful = true;

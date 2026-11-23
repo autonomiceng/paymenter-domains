@@ -10,7 +10,7 @@ require __DIR__.'/Support/management.php';
 
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{FactsObserved, OfferScheduler, OfferWork, PricedFeed, Projection, UpgradeGate, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{FactsObserved, OfferScheduler, OfferWork, PricedFeed, Projection, CatalogueActivation, Writer};
 use Paymenter\Extensions\Servers\Domains\Data\RequestContext;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, DomainObservation, HoldingObservationWork, ObservationWork};
@@ -20,13 +20,13 @@ $b = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Acc
 foreach (Account::orderBy('server_id')->get() as $a) { (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a)); }
 $bindings->setProcessing($d->server_id, false);
 $frozen = serialize($original->fresh()->getAttributes());
-$generation = UpgradeGate::generation();
+$generation = CatalogueActivation::generation();
 $guard = static function (?int $server = null) use ($generation): void {
     if (DB::transactionLevel() > 0) {
         Server::where('extension', 'Domains')->when($server !== null, fn ($q) => $q->whereKey($server))->orderBy('id')->lockForUpdate()->get();
         Account::when($server !== null, fn ($q) => $q->where('server_id', $server))->orderBy('server_id')->lockForUpdate()->get();
-        UpgradeGate::active($generation);
-    } elseif (UpgradeGate::generation() !== $generation) { throw new DomainException('Synthetic generation changed.'); }
+        CatalogueActivation::active($generation);
+    } elseif (CatalogueActivation::generation() !== $generation) { throw new DomainException('Synthetic generation changed.'); }
 };
 $feed = new class($observation) implements PricedFeed {
     public int $calls = 0;

@@ -28,7 +28,7 @@ final class HoldingLocks
         $account = Account::where('server_id', $seed->server_id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
         $routed = $advisory ? Capabilities::routed() : \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::afterPrefix(Capabilities::class);
         $catalogue ??= $routed;
-        if ($routed) { \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::current(\Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::generation()); }
+        if ($routed) { \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::current(\Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation::generation()); }
         $settings = $server->settings()->when($advisory,fn($q)=>$q->whereIn('key',['domains_credentials','domains_verified_credentials','domains_dns_tools']))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $tld = Tld::where(['server_id' => $seed->server_id, 'tld' => $seed->tld])->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
         $prices = Price::where(['server_id' => $seed->server_id, 'tld' => $seed->tld, 'action' => 'renew'])->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();

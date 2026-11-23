@@ -10,7 +10,7 @@ app('view')->addNamespace('domains',dirname(__DIR__).'/Domains/resources/views')
 require_once __DIR__.'/Support/FakeRegistrar.php';
 use App\Models\{Category,Currency,Setting};
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities,CallerPorts,CallerRouting,Context,Edit,Intent,OfferPorts,OfferReadiness,OfferScheduler,Query,UpgradeGate};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities,CallerPorts,CallerRouting,Context,Edit,Intent,OfferPorts,OfferReadiness,OfferScheduler,Query,CatalogueActivation};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Operation,Tld};
@@ -45,7 +45,7 @@ Currency::firstOrCreate(['code'=>'USD'],['name'=>'US Dollar','format'=>'1,000.00
 Category::create(['name'=>'Domains','slug'=>'domains']);
 fixtureBusinessChoice('domains_pricing_default_rule',PricingRule::DEFAULT);
 auth()->login($staff);$binding=AccountBindings::binding($account->fresh());$bindings=app(AccountBindings::class);
-same('active',UpgradeGate::routeState()['state'],'Real fresh installation has already activated current catalogue');
+same('active',CatalogueActivation::routeState()['state'],'Real fresh installation has already activated current catalogue');
 // This commerce fixture needs a reviewed renewal path, including both billing switches.
 $writes->run($review('test_renewal'),['accept'=>true,'verified'=>true]);
 $ports=CallerPorts::routed();$scheduler=OfferScheduler::routed();$storefront=app(Storefront::class);

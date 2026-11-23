@@ -3,7 +3,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 use Illuminate\Support\Facades\{DB,Schema};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting,UpgradeGate};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting,CatalogueActivation};
 
 /** Native-only fixture: replay persisted bytes, never load a retired converter into the current runtime. */
 function retainedOfferDatabase(): array
@@ -24,7 +24,7 @@ function retainedOfferDatabase(): array
     foreach($saved['tables'] as $table=>$rows){foreach(array_chunk($rows,50) as $page){DB::table($table)->insert($page);}}
     foreach($saved['objects'] as $object){if($object['type']!=='table'){DB::statement($object['sql']);}}
     DB::statement('PRAGMA foreign_keys = ON');CallerRouting::reset();
-    same($saved['receipt'],UpgradeGate::routeState(),'Replayed database has the actual checked active receipt');
+    same($saved['receipt'],CatalogueActivation::routeState(),'Replayed database has the actual checked active receipt');
     return $saved;
 }
 

@@ -29,7 +29,7 @@ final class OfferWork
     public function sync(AccountBinding $binding, RequestOrigin $origin = RequestOrigin::Interactive, ?int $expectedGeneration = null): void
     {
         $this->editQueue($binding, function ($q, $row) use ($origin, $expectedGeneration): void {
-            if ($expectedGeneration !== null && $expectedGeneration !== UpgradeGate::generation()) { throw new \DomainException('Queued offer generation changed.'); }
+            if ($expectedGeneration !== null && $expectedGeneration !== CatalogueActivation::generation()) { throw new \DomainException('Queued offer generation changed.'); }
             $work = OfferState::decode($row->offer_work);
             $claimed = (int) $row->offer_lease > $this->at();
             if ($claimed && ($work['feed_claim'] ?? null) === $row->offer_claim) { return; }

@@ -84,7 +84,7 @@ final class Writer implements Catalogue
         if($rule['mode']==='fixed'){throw new \InvalidArgumentException('Set an own price on each TLD instead.');}
         $targets=DB::transaction(function()use($review,$rule,$fee):array {
             $review->lockActor();$review->lockAccounts();
-            if($this->current){($this->current)();}else{UpgradeGate::active(UpgradeGate::generation());}
+            if($this->current){($this->current)();}else{CatalogueActivation::active(CatalogueActivation::generation());}
             $review->check(false,static fn()=>StaffCommands::stamp(StaffSettingsReview::ALL_ACCOUNTS));
             // A fee-only edit cannot change an ordinary default's retail calculation or publication authority.
             try{$prior=(new PricingRules)->defaultRule(true,\Paymenter\Extensions\Servers\Domains\Services\CardFee::NONE);}
@@ -276,7 +276,7 @@ final class Writer implements Catalogue
         $native = $seeds ? $this->projection->lock($seeds) : null;
         // Legacy reviewed publication takes this same native -> all servers/accounts prefix.
         $review->lockAccounts();
-        if ($this->current) { ($this->current)(); } else { UpgradeGate::active(UpgradeGate::generation()); }
+        if ($this->current) { ($this->current)(); } else { CatalogueActivation::active(CatalogueActivation::generation()); }
         $names = Tld::where('server_id', $review->serverId)->when($review->tldId !== null, fn ($q) => $q->whereKey($review->tldId))->pluck('tld')->all();
         $names = array_values(array_unique([...$names, ...$endings])); sort($names, SORT_STRING);
         DB::table('domains_sales_policies')->whereIn('tld', $names)->orderBy('tld')->lockForUpdate()->get();

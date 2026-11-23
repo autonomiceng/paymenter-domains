@@ -88,7 +88,7 @@ same([AccountReadBudget::WAITING], array_keys($leases()), 'Fixture: only the wai
 // A catalogue upgrade drains with only the marker left: it is not a reservation.
 if (!Illuminate\Support\Facades\Schema::hasTable('domains_observation_work')) { Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install(); }
 $drained = static function (): ?string {
-    try { Illuminate\Support\Facades\DB::transaction(static fn () => (new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::class, 'drained'))->invoke(null)); return null; }
+    try { Illuminate\Support\Facades\DB::transaction(static fn () => (new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation::class, 'drained'))->invoke(null)); return null; }
     catch (DomainException $e) { return $e->getMessage(); }
 };
 same(null, $drained(), 'A waiting search marker does not block a catalogue upgrade');

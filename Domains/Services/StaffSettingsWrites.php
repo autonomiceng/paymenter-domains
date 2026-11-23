@@ -39,7 +39,7 @@ class StaffSettingsWrites
      * changing price freshness, otherwise null. */
     public function run(StaffSettingsReview $r,#[\SensitiveParameter] array $data,?\DateTimeImmutable $now=null): ?array
     {
-        if(in_array($r->action,\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::ACTIONS,true)){return ($this->catalogue() ?? throw new \DomainException(OfferUpgrade::MESSAGE))->run($r,$data);}
+        if(in_array($r->action,\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::ACTIONS,true)){return ($this->catalogue() ?? throw new \DomainException(FreshInstallation::MESSAGE))->run($r,$data);}
         $clock=app()->bound(Clock::class)?app(Clock::class):new SystemClock;
         if($now!==null){
             $clock=new class($now) implements Clock {

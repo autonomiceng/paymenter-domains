@@ -58,7 +58,7 @@ final class CartHandoffFailure
             'Catalogue upgrade state is invalid; keep maintenance active.' => 'catalogue_upgrade_state_invalid',
             'Invalid active catalogue contract.' => 'catalogue_contract_invalid',
             'Invalid Domains initialization intent.' => 'initialization_intent_invalid',
-            OfferUpgrade::MESSAGE => 'catalogue_upgrade_required',
+            FreshInstallation::MESSAGE => 'catalogue_upgrade_required',
         ],
         RuntimeIneligible::class => ['Registrar processing is disabled.' => 'processing_disabled'],
         ReadDeferred::class => ['Account read budget unavailable.' => 'account_read_budget_unavailable'],

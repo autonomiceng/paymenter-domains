@@ -22,7 +22,7 @@ class PriceList
             $tlds=TldFacts::bound(Tld::query())->where('catalogue_converted',true)->when($serverId!==null,fn($q)=>$q->where('server_id',$serverId))->orderBy('tld')->orderBy('server_id')->get();
             return $catalogue->matrix($tlds,$years,$filter);
         }
-        throw new \DomainException(OfferUpgrade::MESSAGE);
+        throw new \DomainException(FreshInstallation::MESSAGE);
     }
 
     /** One formula per account and pricing type, with the TLDs it prices. Grouped by account id, since two accounts can share a name. */

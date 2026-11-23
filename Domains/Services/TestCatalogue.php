@@ -30,7 +30,7 @@ final class TestCatalogue
         $phase = 'catalogue_refused';
         try {
             $account = \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $review->serverId)->sole();
-            $scheduler=OfferScheduler::routed() ?? throw new \DomainException(OfferUpgrade::MESSAGE);
+            $scheduler=OfferScheduler::routed() ?? throw new \DomainException(FreshInstallation::MESSAGE);
             $scheduler->sync(AccountBindings::binding($account));$phase='catalogue_queued';
             return ['synced'=>[],'failed'=>[],'deferred'=>[],'queued'=>true];
         } finally { $review->finish($phase); }

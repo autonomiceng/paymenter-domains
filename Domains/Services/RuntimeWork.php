@@ -117,7 +117,7 @@ final readonly class RuntimeWork
             $tldCursor=(int)$row->tld_cursor;
             $this->attempt('publication',function()use($a,$tlds,&$tldCursor):void {
                 $scheduler=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed()
-                    ?? throw new \DomainException(OfferUpgrade::MESSAGE);
+                    ?? throw new \DomainException(FreshInstallation::MESSAGE);
                 $scheduler->wake(AccountBindings::binding($a));
             },(int)$a->server_id);
             DB::table('domains_runtime_turns')->where('id',$row->id)->update(['tld_cursor'=>$tldCursor,'operation_cursor'=>$ops->count()===25?$ops->last()->id:0,'domain_cursor'=>$domains->count()===25?$domains->last()->id:0,'finished_at'=>$this->clock->now()->getTimestamp()]);
@@ -137,7 +137,7 @@ final readonly class RuntimeWork
             $this->attempt('registrar_balance',fn()=>app(RegistrarBalances::class)->daily($a),(int)$a->server_id);
             $this->attempt('price_sync',function()use($a):void {
                 $scheduler=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed()
-                    ?? throw new \DomainException(OfferUpgrade::MESSAGE);
+                    ?? throw new \DomainException(FreshInstallation::MESSAGE);
                 $scheduler->sync(AccountBindings::binding($a),\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background);
             },(int)$a->server_id);
         }

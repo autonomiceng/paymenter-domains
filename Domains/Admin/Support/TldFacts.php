@@ -45,7 +45,7 @@ final class TldFacts
      * Each row: action, term, retail (null when missing), flags (below_cost, cost_missing, not_offered, price_missing, needs_sync, unpublished),
      * fresh, observed and until; cost only with the costs permission. */
     private static function catalogue(): \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue
-    { return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE); }
+    { return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\FreshInstallation::MESSAGE); }
     public static function snapshot(Tld $tld, ?StaffGrants $grants=null, ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $catalogue=null): array
     { return ($catalogue??self::catalogue())->page(collect([$tld]))[$tld->id]; }
     /** snapshot() for a page of TLD rows in a fixed number of reads: accounts, acceptances and default rules once per

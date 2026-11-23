@@ -5,7 +5,7 @@ require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, Capabilities, OfferScheduler, UpgradeGate};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, Capabilities, OfferScheduler, CatalogueActivation};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CartAdmission, Installation, NativeCatalogue, ObservationWork, Runtime, RuntimePorts};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
@@ -34,8 +34,6 @@ commerceReject(fn () => CallerRouting::contract());
 expect(Capabilities::routed() instanceof Capabilities,'Failed inspection cannot erase actual lifecycle authority');
 app()->instance(CartAdmission::class, $admission);
 same($contract, CallerRouting::contract(), 'Restored installed adapters reproduce the compiled contract');
-commerceReject(fn()=>(new UpgradeGate)->pause(),'Active final package cannot reopen bridge conversion');
-same($contract, CallerRouting::contract(), 'Paused inspection remains construction-only');
 commerceReject(fn () => app(RuntimePorts::class)->registerInitialManagedRecordObservations(static fn () => null));
 same($calls, $reads->calls, 'Paused inspection and duplicate callback refusal send nothing');
 expect(Capabilities::routed() instanceof Capabilities,'Refused legacy transition preserves actual active composition');

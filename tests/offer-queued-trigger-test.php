@@ -7,7 +7,7 @@ use App\Models\{Role,User};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices;
-use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
+use Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,StaffSettingsReview};
 $role=Role::create(['name'=>'Synthetic sync staff','permissions'=>[Staff::VIEW,Staff::POLICY,StaffSettingsReview::permission('import')]]);
@@ -22,5 +22,5 @@ DB::listen(static function($event)use(&$armed):void {
 });
 $job->handle();same(false,$armed,'Race crosses the real delivery account lookup');
 same($before,$reads->calls,'Generation change after delivery validation cannot reach provider');
-same(UpgradeGate::generation(),(new SyncPrices($actor->id,$b->serverId,$b->fingerprint))->upgradeGeneration,'Next job captures the current generation');
+same(CatalogueActivation::generation(),(new SyncPrices($actor->id,$b->serverId,$b->fingerprint))->upgradeGeneration,'Next job captures the current generation');
 $nativeSuccessful=true;

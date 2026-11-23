@@ -6,15 +6,30 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{Setting, NotificationTemplate};
 use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Support\Facades\{Cache, DB, Schema};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, OfferState, UpgradeGate};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, OfferState, CatalogueActivation};
 
 /** The extension lifecycle owns new-install authority; schema maintenance alone never grants it. */
 final class FreshInstallation
 {
+    public const CONTRACT = '907d219e28e91b6d556793f7f1bd243521b99e1e65ccaa04c00a55ff4f910c00';
+    public const MESSAGE = 'Domains catalogue activation is missing or incompatible. Verify the installation before processing.';
+    public const STAFF = 'Ask your site admin to verify the Domains installation, then try again.';
+
+    public static function requireCompatible(): void
+    {
+        try {
+            $state = CatalogueActivation::initializationState();
+            if ($state['state'] === 'active' && hash_equals(self::CONTRACT, $state['contract'])) { return; }
+            if ($state['state'] === 'initializing') { return; }
+            if ($state['state'] === 'absent' && $state['generation'] === 0 && FreshInstallation::uninstalled()) { return; }
+        } catch (\DomainException) { /* A damaged receipt cannot authorize replacement or migration. */ }
+        throw new \DomainException(self::MESSAGE);
+    }
+
     private static ?self $owner = null;
     private function __construct(private readonly string $intent, private readonly string $manifest) {}
     private static function query(): \Illuminate\Database\Eloquent\Builder
-    { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key', UpgradeGate::KEY); }
+    { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key', CatalogueActivation::KEY); }
     private static function files(): array
     { return app(Migrator::class)->getMigrationFiles([dirname(__DIR__).'/database/migrations']); }
 
@@ -45,7 +60,7 @@ final class FreshInstallation
 
     public static function install(): void
     {
-        OperationClaims::outside(); OfferUpgrade::requireCompatible(); Installation::legacy();
+        OperationClaims::outside(); self::requireCompatible(); Installation::legacy();
         Cache::lock('domains-fresh-installation', 60)->block(5, static function (): void {
             // MariaDB DDL commits transactions. A connection lock survives both DDL and cache TTL expiry.
             $connection = DB::connection(); $mysql = in_array($connection->getDriverName(), ['mysql','mariadb'], true);
@@ -66,15 +81,15 @@ final class FreshInstallation
             Setting::orderBy('id')->lockForUpdate()->get();
             $rows = self::query()->lockForUpdate()->get();
             if ($rows->isNotEmpty()) {
-                $state = UpgradeGate::initializationState();
+                $state = CatalogueActivation::initializationState();
                 if ($state['state'] !== 'initializing') { return null; }
                 if ($state['manifest'] !== $manifest) { throw new \DomainException('Domains initialization package changed. Restore the initializing package.'); }
                 return new self($state['intent'], $manifest);
             }
-            if (self::history() || self::tables() !== []) { return null; } // Retained C6 preflight/activation remain authoritative.
+            if (self::history() || self::tables() !== []) { return null; } // Existing installations require their own receipt.
             self::empty(true);
             $intent = bin2hex(random_bytes(16));
-            $row = new Setting; $row->forceFill(['key'=>UpgradeGate::KEY,'type'=>'string','encrypted'=>true,
+            $row = new Setting; $row->forceFill(['key'=>CatalogueActivation::KEY,'type'=>'string','encrypted'=>true,
                 'value'=>OfferState::json(['state'=>'initializing','generation'=>1,'intent'=>$intent,'manifest'=>$manifest])])->save();
             return new self($intent, $manifest);
         });
@@ -84,7 +99,7 @@ final class FreshInstallation
             $owner->check();
             app(Migrator::class)->run([dirname(__DIR__).'/database/migrations'], ['force'=>true]);
             app(Installation::class)->verify(); ReminderTemplates::ensure(); WatchNoticeTemplates::ensure();
-            UpgradeGate::initialize($owner);
+            CatalogueActivation::initialize($owner);
         } finally { self::$owner = null; CallerRouting::reset(); }
     }
 
@@ -106,7 +121,7 @@ final class FreshInstallation
             }
         });
         if (DB::table('extensions')->where('extension','Domains')->lockForUpdate()->exists()
-            || Setting::where('key','like','domains%')->where(static fn ($q) => $q->whereNotIn('key',[UpgradeGate::KEY,...($new?[]:[Installation::VERIFIED_KEY])])
+            || Setting::where('key','like','domains%')->where(static fn ($q) => $q->whereNotIn('key',[CatalogueActivation::KEY,...($new?[]:[Installation::VERIFIED_KEY])])
                 ->orWhereNotNull('settingable_type')->orWhereNotNull('settingable_id'))->exists()
             || $new && NotificationTemplate::where('key','like','domains%')->exists()) {
             throw new \DomainException('Retained Domains settings or identity refuse fresh initialization. Restore and verify installation history.');
@@ -171,7 +186,7 @@ final class FreshInstallation
     public function check(bool $complete = false): array
     {
         if (self::$owner !== $this) { throw new \LogicException('Owned initialization required.'); }
-        $state = UpgradeGate::initializationState();
+        $state = CatalogueActivation::initializationState();
         if ($state['state'] !== 'initializing' || $state['generation'] !== 1 || $state['intent'] !== $this->intent || $state['manifest'] !== $this->manifest) {
             throw new \DomainException('Domains initialization intent changed.');
         }

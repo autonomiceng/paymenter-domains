@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferScheduler,UpgradeGate};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferScheduler,CatalogueActivation};
 
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\{CatalogueEntry, CatalogueFailure, CatalogueFreshness, CatalogueUnavailable, RequestContext};
@@ -14,7 +14,7 @@ final class CatalogueSync
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Catalogue reads must finish outside locks.'); }
         if ($serverId !== $context->binding->serverId) { throw new \DomainException('Catalogue account mismatch.'); }
-        $scheduler=OfferScheduler::routed() ?? throw new \DomainException(OfferUpgrade::MESSAGE);
+        $scheduler=OfferScheduler::routed() ?? throw new \DomainException(FreshInstallation::MESSAGE);
         $scheduler->sync($context->binding,$context->origin,$generation);
         return ['synced'=>0,'failed'=>[],'queued'=>true];
     }

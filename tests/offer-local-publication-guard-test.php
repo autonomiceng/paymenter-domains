@@ -3,14 +3,14 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/commerce.php';
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,OfferWork,Projection,UpgradeGate,Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,OfferWork,Projection,CatalogueActivation,Writer};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,NativeCatalogue};
 extract(commerceFixture());$server=(int)$tlds[0]->server_id;$budget=new AccountReadBudget($clock,48);
 require __DIR__.'/Support/runtime-health-publication.php';
 $first=$unpublished($tlds[0],'guardaa');$later=$unpublished($tlds[0],'guardab');
-$current=true;$tripped=false;$generation=UpgradeGate::generation();
+$current=true;$tripped=false;$generation=CatalogueActivation::generation();
 $guard=static function()use(&$current,$generation):void {
-    if(!$current||UpgradeGate::generation()!==$generation){throw new DomainException('Synthetic obsolete publication authority.');}
+    if(!$current||CatalogueActivation::generation()!==$generation){throw new DomainException('Synthetic obsolete publication authority.');}
 };
 $worker=new OfferWork(new Writer(new Projection($native),$clock,static fn()=>null,static fn()=>true),
     $clock,$budget,static fn()=>$feed,static fn()=>0,generation:$generation,guard:$guard);

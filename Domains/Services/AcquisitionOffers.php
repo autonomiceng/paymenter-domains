@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Illuminate\Support\Facades\{Cache, DB};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts, Context, Cost, OfferState, Pricing, Query, Retail, Revision, UpgradeGate};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts, Context, Cost, OfferState, Pricing, Query, Retail, Revision, CatalogueActivation};
 use Paymenter\Extensions\Servers\Domains\Contracts\{AcquisitionPriceReader, Clock};
 use Paymenter\Extensions\Servers\Domains\Data\{Action, Query as OrderQuery, RequestBudget, RequestContext, RequestOrigin, SaleSelection};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, SalesPolicy, Tld};
@@ -64,7 +64,7 @@ final class AcquisitionOffers
         $tld = Tld::where(['server_id' => $b->serverId, 'tld' => $ending])->sole();
         $rule = Pricing::rule($tld);
         $stamp = ['binding' => [$b->serverId, $b->registrarKey, $b->fingerprint, $ending, $action, $term],
-            'generation' => UpgradeGate::generation(), 'credential' => $this->bindings->offerCredentialRevision($b),
+            'generation' => CatalogueActivation::generation(), 'credential' => $this->bindings->offerCredentialRevision($b),
             'revision' => get_object_vars($acquire->decision->revision), 'prices' => [$acquire->identity(), $renew->identity()], 'rule' => $rule];
         $costs = $retail = []; $driver = null;
         try {
@@ -213,7 +213,7 @@ final class AcquisitionOffers
     /** Per-invocation display only. Shared evaluator and batched native mapping, never cart authority. */
     public function display(array $endings): array
     {
-        $generation = UpgradeGate::generation(); $result = [];
+        $generation = CatalogueActivation::generation(); $result = [];
         foreach ($this->eligibleRows($endings) as $offer) {
             extract($offer);
             if (($mismatch = self::nativePriceMismatch($product, $plan, $price->retail)) !== null) {
@@ -318,7 +318,7 @@ final class AcquisitionOffers
         }
         $loaded = $this->ports->loadBatch($queries, $locked ? Context::Locked : Context::Public);
         // All servers/accounts are now locked in batch order, including other cart accounts.
-        $generation = UpgradeGate::generation(); $result = [];
+        $generation = CatalogueActivation::generation(); $result = [];
         foreach ($selections as $i => $s) {
             $acquire = $loaded[2*$i][0]; $renew = $loaded[2*$i+1][0];
             $quote = isset($s->catalogue['order_quote']) ? $this->orderQuote($s) : null;
@@ -375,6 +375,6 @@ final class AcquisitionOffers
             else { $query->whereIn($table === $servers ? 'id' : 'server_id', $ids); }
             $rows[] = $query->orderBy('id')->get()->map(static fn ($r) => (array)$r)->all();
         }
-        return hash('sha256', OfferState::json([UpgradeGate::generation(), $rows]));
+        return hash('sha256', OfferState::json([CatalogueActivation::generation(), $rows]));
     }
 }

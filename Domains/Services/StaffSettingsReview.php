@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
+use Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation;
 use App\Models\{Role,Server,User};
 use Illuminate\Support\Facades\{Crypt,DB};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Price,SalesPolicy,Tld};
@@ -71,18 +71,7 @@ final class StaffSettingsReview
     {
         if(DB::transactionLevel()!==1){throw new \LogicException('Outer staff transaction required.');}
         if($catalogueStamp===null){if($this->current!==null){($this->current)();}else{
-            $state=UpgradeGate::routeState();
-            // A replaced package can still encounter legacy state after a failed native upgrade hook.
-            $disable=match($this->action){
-                'processing'=>($this->input['enabled']??null)===false,
-                'renewal_billing'=>($this->input['scheduled']??null)===false&&($this->input['manual']??null)===false,
-                default=>false,
-            };
-            if($state['state']==='legacy'&&$disable){UpgradeGate::legacy($state['generation']);}
-            else{
-                if($state['state']!=='active'){throw new \DomainException(OfferUpgrade::MESSAGE);}
-                UpgradeGate::active($state['generation']);
-            }
+            CatalogueActivation::active(CatalogueActivation::generation());
         }}
         $this->catalogueStamp=$catalogueStamp;
         if($this->serverId===self::ALL_ACCOUNTS){if(self::domainServers()->isEmpty()){throw new \DomainException('Registrar unavailable.');}}

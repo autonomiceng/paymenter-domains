@@ -5,15 +5,15 @@ require __DIR__.'/offer-work-test.php';
 $nativeSuccessful = false;
 
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferWork, Projection, UpgradeGate, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferWork, Projection, CatalogueActivation, Writer};
 use Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 
 // A paused generation is an explicit offline composition fixture, never an active parser shortcut.
-$generation = UpgradeGate::generation();
+$generation = CatalogueActivation::generation();
 $guard = static function () use ($generation): void {
-    if (DB::transactionLevel() > 0) { UpgradeGate::active($generation); }
-    elseif (UpgradeGate::generation() !== $generation) { throw new DomainException('Synthetic generation changed.'); }
+    if (DB::transactionLevel() > 0) { CatalogueActivation::active($generation); }
+    elseif (CatalogueActivation::generation() !== $generation) { throw new DomainException('Synthetic generation changed.'); }
 };
 $writer = new Writer(new Projection($native), $clock, static function (): void {}, static fn () => false, current: $guard);
 $worker = new OfferWork($writer, $clock, new AccountReadBudget($clock, 25, 25), $factory,

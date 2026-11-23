@@ -1,11 +1,11 @@
 <?php
 // Fresh active-catalogue checkout data from installed ZIP classes; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts,Cost,Edit,Facts,FactsObserved,FeedObserved,Intent,Revision,UpgradeGate};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts,Cost,Edit,Facts,FactsObserved,FeedObserved,Intent,Revision,CatalogueActivation};
 
 function installedFreshCommerceFixture(): array
 {
-    same('active',UpgradeGate::routeState()['state'],'Fresh ZIP starts with the offer catalogue active');
+    same('active',CatalogueActivation::routeState()['state'],'Fresh ZIP starts with the offer catalogue active');
     App\Models\Currency::firstOrCreate(['code'=>'USD'],['name'=>'US Dollar','format'=>'1,000.00','prefix'=>'$','suffix'=>'']);
     App\Models\Category::create(['name'=>'Domains','slug'=>'domains','description'=>'Domains']);
     $registry=new Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;

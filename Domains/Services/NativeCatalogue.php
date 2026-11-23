@@ -156,7 +156,7 @@ class NativeCatalogue
     public function publish(int $tldId, \DateTimeImmutable $now, ?StaffSettingsReview $review = null, ?\Closure $change = null): void
     {
         if ($change !== null) { throw new \DomainException('Typed catalogue command required.'); }
-        ($this->catalogue() ?? throw new \DomainException(OfferUpgrade::MESSAGE))->publish($tldId,$review);
+        ($this->catalogue() ?? throw new \DomainException(FreshInstallation::MESSAGE))->publish($tldId,$review);
     }
 
 }

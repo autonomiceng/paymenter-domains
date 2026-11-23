@@ -5,7 +5,7 @@ require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
 require __DIR__.'/Support/retained-offer.php';
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting,UpgradeGate};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting,CatalogueActivation};
 use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier,Clock};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Capabilities,Disposition,DriverResult,Environment,Evidence,ResultReason,SendState};
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
@@ -25,7 +25,7 @@ $sellers=new SellerPolicies($prices,$bindings);$now=new DateTimeImmutable('2026-
 app()->instance(AccountBindings::class,$bindings);app()->instance(NativeCatalogue::class,$native);app()->instance(Clock::class,new FakeClock($now));
 Runtime::register();$staff=App\Models\User::where('email','cutover@example.test')->sole();auth()->login($staff);
 (new Paymenter\Extensions\Servers\Domains\Domains)->upgraded('0.1.0');
-same($saved['receipt'],UpgradeGate::routeState(),'Current package retains the bridge checked receipt');
+same($saved['receipt'],CatalogueActivation::routeState(),'Current package retains the bridge checked receipt');
 same($before,retainedOfferObligations(),'Current upgrade preserves bridge identities and frozen obligations');
 same(0,$reads->calls,'Current upgrade creates no provider reads');
 $nativeSuccessful=true;

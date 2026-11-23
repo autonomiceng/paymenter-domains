@@ -7,7 +7,7 @@ require __DIR__.'/Support/commerce.php';require __DIR__.'/Support/native-commerc
 use App\Models\{Price as NativePrice,Product};
 use Illuminate\Support\Facades\{Auth,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,SettingsActions};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,Pricing,Projection,StaffCommands,UpgradeGate,Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,Pricing,Projection,StaffCommands,CatalogueActivation,Writer};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{CardFee,PricingRules,StaffSettingsReview as Review,StaffSettingsWrites};
 require __DIR__.'/Support/offer-commerce.php';

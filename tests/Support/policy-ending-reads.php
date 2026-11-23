@@ -63,7 +63,7 @@ DB::listen(static function ($query) use (&$stats): void {
     if ($stats === null) { return; }
     $stats['queries']++;
     if ($query->sql === 'select * from "settings" where "settingable_type" is null and "settingable_id" is null and "key" = ?'
-        && $query->bindings === ['domains_offer_upgrade']) { $stats['gateQueries']++; }
+        && $query->bindings === ['domains_catalogue_activation']) { $stats['gateQueries']++; }
     foreach (['domains_sales_policies' => 'policy', 'domains_tlds' => 'tld'] as $table => $key) {
         if (!preg_match('/^select\b.*\bfrom\s+["`]?'.preg_quote($table, '/').'["`]?\b/is', $query->sql)) { continue; }
         // Replay only local SELECTs immediately in the same snapshot via raw PDO (no listener recursion).

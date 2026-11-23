@@ -35,7 +35,7 @@ final class SellTable
      * The cast gives the id number affinity, so SQLite matches Filament's string keys. */
     private function source(): \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue
     { return $this->catalogue ?? \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()
-        ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE); }
+        ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\FreshInstallation::MESSAGE); }
     public function rows(?string $focus): Builder { return $this->source()->rows($this->bindings,$focus); }
     /** Rank only matching offers, so each displayed row keeps its own account, prices and record links. */
     public function onePerSuffix(Builder $offers): Builder

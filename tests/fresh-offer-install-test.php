@@ -5,7 +5,7 @@ require __DIR__.'/native-app.php';
 use App\Models\{User, Invoice};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Domains;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, UpgradeGate, OfferScheduler, Capabilities, CallerPorts};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, CatalogueActivation, OfferScheduler, Capabilities, CallerPorts};
 use Paymenter\Extensions\Servers\Domains\Services\{Runtime};
 
 // A new Domains install may share Paymenter with unrelated customers and financial history.
@@ -21,8 +21,8 @@ Runtime::register(); $uninstalledRefused = false;
 try { Runtime::observations(); } catch (DomainException) { $uninstalledRefused = true; }
 expect($uninstalledRefused, 'A completely uninstalled database refuses executable routing before the intent exists');
 $entry->installed();
-same('active', UpgradeGate::routeState()['state'], 'Proven-new installed extension selects active catalogue immediately');
-same(2, UpgradeGate::generation(), 'Fresh intent and activation each own a generation');
+same('active', CatalogueActivation::routeState()['state'], 'Proven-new installed extension selects active catalogue immediately');
+same(2, CatalogueActivation::generation(), 'Fresh intent and activation each own a generation');
 expect(Capabilities::routed() instanceof Capabilities, 'Installed capability port is active');
 expect(OfferScheduler::routed() instanceof OfferScheduler, 'Installed scheduler is active');
 same(OfferScheduler::routed(), Runtime::observations(), 'Runtime uses the active holding worker');
@@ -32,9 +32,7 @@ same(0, DB::table('domains_tlds')->count(), 'Initialization creates no catalogue
 same(0, DB::table('domains_operations')->count(), 'Initialization sends no operation');
 same($before, serialize([$user->fresh()->getAttributes(), $invoice->fresh()->getAttributes(), (array) DB::table('products')->where('id',$productId)->sole()]), 'Unrelated ownership, money and hosting stock are unchanged');
 same($payload, DB::table('jobs')->where('id',$job)->value('payload'), 'Unrelated hosting work is unchanged');
-$receipt = UpgradeGate::routeState();
+$receipt = CatalogueActivation::routeState();
 $entry->installed(); $entry->upgraded('0.1.0');
-same($receipt, UpgradeGate::routeState(), 'Repeat lifecycle calls preserve the committed receipt');
-try { (new UpgradeGate)->activate([]); throw new LogicException('Unauthenticated activation unexpectedly succeeded'); }
-catch (DomainException $e) { expect(str_contains($e->getMessage(), 'bridge 0.1.0 at 891124421645'), 'Current package directs retained conversion to the bridge'); }
+same($receipt, CatalogueActivation::routeState(), 'Repeat lifecycle calls preserve the committed receipt');
 $nativeSuccessful = true;

@@ -157,7 +157,7 @@ class WhatYouSell extends Page implements HasTable
         return $binding!==null&&($binding->registrarKey!=='enom'||config($binding->environment->value==='live'?'domains.enom_live.catalogue':'domains.enom_catalogue.enabled')===true)&&!$this->hasReader($binding);
     }
     protected function catalogue(): ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue
-    {return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE);}
+    {return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\FreshInstallation::MESSAGE);}
     private function reads(): SellTable
     {
         return $this->reads??=new SellTable(

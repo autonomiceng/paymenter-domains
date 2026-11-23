@@ -19,16 +19,14 @@ final class CallerRouting
     private static ?array $active = null;
     private static ?int $generation = null;
     public static function reset(): void { self::$active = null; self::$generation = null; }
-    public static function legacy(\Closure $body): mixed
-    { if (UpgradeGate::routeState()['state'] === 'active') { throw new \DomainException('Legacy catalogue path is superseded.'); } return $body(); }
     public static function resolve(string $type): ?object
     {
         if (self::$probe !== null) { return self::$probe[$type] ?? null; }
-        return self::select(UpgradeGate::routeState(), $type);
+        return self::select(CatalogueActivation::routeState(), $type);
     }
     /** CURRENT mode after the holding native/server/account prefix; never use an older read view. */
     public static function afterPrefix(string $type): ?object
-    { return self::select(UpgradeGate::currentRouteState(), $type); }
+    { return self::select(CatalogueActivation::currentRouteState(), $type); }
     private static function select(array $state, string $type): ?object
     {
         if ($state['state'] !== 'active') { return null; }
@@ -47,7 +45,7 @@ final class CallerRouting
             Server::whereKey($server)->lockForUpdate()->firstOrFail();
             \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$server)->lockForUpdate()->sole();
         }
-        UpgradeGate::active($generation);
+        CatalogueActivation::active($generation);
     }
 
     private static function composition(int $generation): array
@@ -110,7 +108,7 @@ final class CallerRouting
         if (self::$probe !== null) { throw new \LogicException('Nested catalogue inspection refused.'); }
         $routes = [];
         try {
-            self::$probe = self::composition(UpgradeGate::generation() + 1);
+            self::$probe = self::composition(CatalogueActivation::generation() + 1);
             foreach ([CallerPorts::class, Capabilities::class, OfferReadiness::class, StaffCatalogue::class, OfferScheduler::class] as $type) {
                 if ($type::routed() !== self::$probe[$type]) { throw new \DomainException('Incomplete installed catalogue routing.'); }
                 $routes[$type] = $type;

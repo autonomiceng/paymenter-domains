@@ -95,7 +95,7 @@ final class AdoptionMapping
         }
         try {
             if ($caps=($lock ? \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::afterPrefix(\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::class) : \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed())) { $caps->requireRenewal($binding,$tld->tld,$lock ? $tld : null); } else {
-                throw new \DomainException(OfferUpgrade::MESSAGE);
+                throw new \DomainException(FreshInstallation::MESSAGE);
             }
             // Preview and confirmation stamp the same contractual holder basis. Confirmation
             // uses its retained price prefix, never a new offer read after ledger locks.

@@ -51,7 +51,7 @@ final class Installation
     {
         OperationClaims::outside(); self::legacy();
         if (FreshInstallation::uninstalled()) { Runtime::register(); FreshInstallation::install(); SiteDnsDefault::ensure(); return; }
-        OfferUpgrade::requireCompatible();
+        FreshInstallation::requireCompatible();
         Cache::lock('domains-installation',60)->block(5,function():void {
             $present=Schema::hasTable('domains_accounts');
             foreach(['domains_audit_archives','domains_staff_review_keys','domains_domains','domains_operations','domains_tlds','domains_prices','domains_contact_profiles','domains_sales_policies','domains_read_budgets','domains_observation_queues','domains_observation_work','domains_reminder_schedules','domains_reminder_deliveries','domains_obligation_alerts','domains_runtime_turns','domains_runtime_operations','domains_psl_snapshots','domains_psl_status','domains_psl_candidates','domains_watch_audit','domains_watch_product_maps','domains_watch_names','domains_watch_sources'] as $table){

@@ -7,7 +7,7 @@ require __DIR__.'/mariadb-bootstrap.php';
 require __DIR__.'/FakeRegistrar.php';
 use App\Models\{Role, Server, User};
 use Illuminate\Support\Facades\{Artisan, DB, Schema};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{FactsObserved, OfferScheduler, OfferWork, PricedFeed, Projection, UpgradeGate, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{FactsObserved, OfferScheduler, OfferWork, PricedFeed, Projection, CatalogueActivation, Writer};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices;
@@ -37,12 +37,12 @@ if ($phase === 'seed') {
     (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch($b);
     Schema::create('offer_fixture_reads', static function ($t): void { $t->id(); });
 } else { $b = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::sole()); }
-$generation = UpgradeGate::generation();
+$generation = CatalogueActivation::generation();
 $guard = static function (?int $server = null) use ($generation): void {
     if (DB::transactionLevel() > 0) {
         Server::where('extension','Domains')->orderBy('id')->lockForUpdate()->get();
-        Account::orderBy('server_id')->lockForUpdate()->get(); UpgradeGate::active($generation);
-    } elseif (UpgradeGate::generation() !== $generation) { throw new DomainException('Synthetic stale generation'); }
+        Account::orderBy('server_id')->lockForUpdate()->get(); CatalogueActivation::active($generation);
+    } elseif (CatalogueActivation::generation() !== $generation) { throw new DomainException('Synthetic stale generation'); }
 };
 $feed = new class implements PricedFeed {
     public function priceReads(): int { return 1; }

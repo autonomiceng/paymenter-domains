@@ -9,26 +9,26 @@ use App\Console\Commands\Extension\Upgrade;
 use App\Models\{Role, Server, Setting};
 use Illuminate\Support\Facades\{Artisan, DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
+use Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{OfferUpgrade, RenewalBillingSettings as Billing, StaffSettingsReview as Review, StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{FreshInstallation, RenewalBillingSettings as Billing, StaffSettingsReview as Review, StaffSettingsWrites};
 
 $role = Role::create(['name' => 'Legacy safety reviewer', 'permissions' => array_keys(Staff::permissions())]);
 $staff->update(['role_id' => $role->id]);
 $staff->unsetRelation('role');
 $server = Server::findOrFail($tlds[0]->server_id);
 DB::transaction(static fn () => Billing::setSwitch($server->id, true));
-$gate = Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key', UpgradeGate::KEY)->sole();
+$gate = Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key', CatalogueActivation::KEY)->sole();
 $gate->value = json_encode(['state' => 'legacy', 'generation' => 3], JSON_THROW_ON_ERROR);
 $gate->save();
 
 // The uploader copies replacement files before calling this native command. Its caught hook
 // failure leaves the replacement package running against the retained legacy database.
-try { OfferUpgrade::requireCompatible(); throw new LogicException('Legacy package admission unexpectedly passed.'); }
-catch (DomainException $error) { same(OfferUpgrade::MESSAGE, $error->getMessage(), 'Pre-deploy admission requires the bridge'); }
+try { FreshInstallation::requireCompatible(); throw new LogicException('Legacy package admission unexpectedly passed.'); }
+catch (DomainException $error) { same(FreshInstallation::MESSAGE, $error->getMessage(), 'Pre-deploy admission requires the bridge'); }
 same(0, Artisan::call(Upgrade::class, ['type' => 'server', 'name' => 'Domains', 'oldVersion' => '0.1.0']), 'Native upgrade command catches package admission failure');
-expect(str_contains(Artisan::output(), OfferUpgrade::MESSAGE), 'Native upgrade reports the bridge refusal');
-same(['state' => 'legacy', 'generation' => 3], UpgradeGate::routeState(), 'Failed hook leaves retained legacy state reachable');
+expect(str_contains(Artisan::output(), FreshInstallation::MESSAGE), 'Native upgrade reports the bridge refusal');
+same(['state' => 'legacy', 'generation' => 3], CatalogueActivation::routeState(), 'Failed hook leaves retained legacy state reachable');
 
 $writer = new StaffSettingsWrites($native, $sellers, $bindings);
 $review = static fn (string $action) => new Review($staff->id, $server->id, null, $action,
@@ -50,20 +50,20 @@ same(2, count(array_filter(Review::historyRows($server->fresh()), static fn ($ro
 
 // The exception grants only disable writes; enabling or unrelated reviews remain fenced.
 foreach ([['scheduled' => true], ['manual' => true]] as $enable) {
-    $refusal(static fn () => $writer->run($review('renewal_billing'), [...$off, ...$enable]), OfferUpgrade::MESSAGE);
+    $refusal(static fn () => $writer->run($review('renewal_billing'), [...$off, ...$enable]), FreshInstallation::MESSAGE);
 }
 $enable = $review('processing');
 $enable->input(['enabled' => true]);
-$refusal(static fn () => $enable->local(static fn () => throw new RuntimeException('Legacy enable review passed its gate.')), OfferUpgrade::MESSAGE);
+$refusal(static fn () => $enable->local(static fn () => throw new RuntimeException('Legacy enable review passed its gate.')), FreshInstallation::MESSAGE);
 $other = $review('unpaid_hold');
 $other->input(['enabled' => false]);
-$refusal(static fn () => $other->local(static fn () => throw new RuntimeException('Unrelated legacy review passed its gate.')), OfferUpgrade::MESSAGE);
+$refusal(static fn () => $other->local(static fn () => throw new RuntimeException('Unrelated legacy review passed its gate.')), FreshInstallation::MESSAGE);
 
 // A paused window and a later resumed generation invalidate already issued disable tickets.
 $stale = $review('renewal_billing');
-$upgrade = new UpgradeGate;
+$upgrade = new CatalogueActivation;
 $upgrade->pause();
-$refusal(static fn () => $writer->run($review('renewal_billing'), $off), OfferUpgrade::MESSAGE);
+$refusal(static fn () => $writer->run($review('renewal_billing'), $off), FreshInstallation::MESSAGE);
 $upgrade->resume();
 $refusal(static fn () => $writer->run($stale, $off), 'Settings changed. Reload this page.');
 same(0, $reads->calls, 'Legacy safety writes never resolve a provider');

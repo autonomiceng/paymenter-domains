@@ -7,7 +7,7 @@ require __DIR__.'/Support/commerce.php';require __DIR__.'/Support/native-commerc
 use App\Models\{Product,Server};
 use Illuminate\Support\Facades\{Auth,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{StaffCatalogue,StaffCommands,Writer,Projection,OfferState,UpgradeGate};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{StaffCatalogue,StaffCommands,Writer,Projection,OfferState,CatalogueActivation};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{NativeCatalogue,StaffSettingsReview as Review,StaffSettingsWrites};
 expect(is_file(dirname(__DIR__).'/Domains/Catalogue/StaffCommands.php'),'Reverse staff edits need reviewed offer commands');
