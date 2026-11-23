@@ -20,8 +20,8 @@ final class RenewalFundingLedger
                     'source' => $source, 'source_id' => $id, 'amount_minor' => $amount];
             }
         }
-        // Bound each statement even for an invoice settled by many small payments.
-        foreach (array_chunk($rows, 250) as $batch) {
+        // Five bound columns per posting must fit the SQLite parameter limit.
+        foreach (array_chunk($rows, 128) as $batch) {
             DB::table(self::TABLE)->insert($batch);
         }
     }
