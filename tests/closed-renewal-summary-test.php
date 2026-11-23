@@ -9,6 +9,6 @@ use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaries, RenewalCycle
 $op=$original->replicate();
 $op->forceFill(['action'=>'renew','state'=>'rejected','safe_code'=>'renewal_cancelled_unpaid','operation_key'=>hash('sha256','closed-renewal'),'base_expires_at'=>$d->provider_expires_at,'policy'=>['unpaid_retirement'=>['reason'=>'Early renewal not paid']]])->save();
 expect(RenewalCycles::closedEarly($op->fresh()),'The renewal closed early');
-$summary=(new DomainSummaries)->one($user,'managed',(int)$d->id,$clock->now()->getTimestamp());
+$summary=(new DomainSummaries)->one($user,(int)$d->id,$clock->now()->getTimestamp());
 same([false,true],[$summary->renewalInvoiceMissing,$summary->renewalDueAt!==null],'Next invoice shows the planned date');
 $nativeSuccessful=true;echo "Closed renewal summary passed\n";

@@ -36,8 +36,8 @@ app()->instance(RenewalCycles::class,new RenewalCycles($bindings,$clock));
 $options=app(RenewalCycles::class)->complimentaryOptions($d->id,$actor);
 same([1],array_keys($options['terms']),'Complimentary retains one evidenced year');
 $panel=Filament\Facades\Filament::getCurrentPanel();// The default DNS change moved the default DNS destination to DNS templates.
-$panel->resources([DomainResource::class,RoutingProfileResource::class,WatchResource::class]);
-Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel){DomainResource::registerRoutes($panel);RoutingProfileResource::registerRoutes($panel);WatchResource::registerRoutes($panel);});
+$panel->resources([DomainResource::class,RoutingProfileResource::class]);
+Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel){DomainResource::registerRoutes($panel);RoutingProfileResource::registerRoutes($panel);});
 app('router')->getRoutes()->refreshNameLookups();
 $gift=Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id])->mountAction('complimentary_renewal')->call('$refresh');
 $giftAction=$gift->instance()->getMountedAction();

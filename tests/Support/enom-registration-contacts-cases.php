@@ -14,7 +14,6 @@ require __DIR__.'/enom-test-sales-fixture.php';
 $reader=$bindings->reader($server->id,true);$generalReader=$bindings->reader($server->id);
 $unpaidOp=Domain::where('domain','unpaid-test-placeholder.com')->sole()->operations()->sole();
 $op=Domain::where('domain','paid-test-placeholder.com')->first()?->operations()->sole();
-app()->instance(Paymenter\Extensions\Servers\Domains\Services\PslTransport::class,new Paymenter\Extensions\Servers\Domains\Services\PslTransport(static fn()=>throw new Paymenter\Extensions\Servers\Domains\Services\PslFailure('transport_failed')));
 // Missing frozen contacts must reach the existing contact-specific hold and correction path before any Enom read.
 $incompleteUser=commerceUser();$incompleteUser->update(['email'=>'contact-owner@example.com']);$incompleteCart=commerceCart($incompleteUser);commerceAdd($incompleteCart,$product,placeholderComFixtureName('contacts-recovery-placeholder.com'));
 commerceLegacyCheckout($incompleteUser,$incompleteCart)->assertHasNoErrors();$contactOp=Domain::where('domain','contacts-recovery-placeholder.com')->sole()->operations()->sole();

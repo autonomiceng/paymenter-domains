@@ -12,14 +12,8 @@ declare(strict_types=1);
     $name=static fn(int $i)=>sprintf('sort-%02d.example.com',$i);
     // Different insertion, name and expiry orders expose all four comparators.
     foreach ([18,1,27,5,14,22,8,30,3,25,12,32,7,20,10,28,16,4,24,13,31,2,19,9,26,15,29,6,23,11,21,17] as $i) {
-        if ($i>28) {
-            // Retained paused watches are visible without a hosting source or registry expiry.
-            \Illuminate\Support\Facades\DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchName::create([
-                'user_id'=>$owner->id,'canonical_name'=>$name($i),'psl_revision'=>str_repeat('a',64),'state'=>'paused','notice_preferences'=>[]]));
-            continue;
-        }
         $service=$clone('services',(int)$base->service_id,['user_id'=>$owner->id,'order_id'=>$order]);
-        $expiry=match($i%3){1=>'2035-01-01 12:00:00',2=>'2036-01-01 01:00:00',0=>null};
+        $expiry=$i>28?null:match($i%3){1=>'2035-01-01 12:00:00',2=>'2036-01-01 01:00:00',0=>null};
         $clone('domains_domains',(int)$base->id,['user_id'=>$owner->id,'service_id'=>$service,'domain'=>$name($i),
             'reservation_name'=>$name($i),'sld'=>sprintf('sort-%02d',$i),'tld'=>'example.com','provider_expires_at'=>$expiry]);
     }
@@ -42,7 +36,7 @@ declare(strict_types=1);
         $names=array_map(fn($row)=>$row->name,$page->items());$dom=storefrontDom($view->render());$rendered=[];
         foreach ($dom->query('//tbody/tr/td[1]/a') as $link) { $rendered[]=trim($link->textContent); }
         same($names,$rendered,'Real Blade preserves controller row order');
-        same(32,$page->total(),'All and only owned managed and watch rows are counted');
+        same(32,$page->total(),'All and only owned registered domains are counted');
         same(25,$page->perPage(),'Owned page size stays 25');same(32,$data['filterCounts'][''],'Owner filter counts exclude foreign ledger/service/order rows');
         return [$names,$data['sort'],$data['filter'],$page->currentPage()];
     };

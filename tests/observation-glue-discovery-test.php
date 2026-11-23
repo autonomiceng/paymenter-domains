@@ -133,7 +133,7 @@ $observation->nameservers=$state->ns=['ns-fresh.'.$d->domain,'ns2.example.net'];
 $state->calls=[];$observer->run($d->id,readRecords:true);
 expect(in_array(['CheckNSStatus',['CheckNSName'=>'ns-fresh.'.$d->domain]],$state->calls,true),'Current nameservers seed unknown child hosts');
 \Paymenter\Extensions\Servers\Domains\Services\WatchDnsSchema::install();
-DB::table('domains_watch_profiles')->insert(['name'=>'Glue candidate fixture','nameservers'=>json_encode(['ns-template.'.$d->domain,'ns.other.example.net']),'website_endpoints'=>'{}','email_endpoints'=>'{}','edited_by'=>$user->id,'reason'=>'synthetic']);
+DB::table('domains_watch_profiles')->insert(['name'=>'Glue candidate fixture','nameservers'=>json_encode(['ns-template.'.$d->domain,'ns.other.example.net']),'edited_by'=>$user->id,'reason'=>'synthetic']);
 $state->glue['ns-template.'.$d->domain]='8.8.4.4';$state->calls=[];$observer->run($d->id,readRecords:true);
 expect(in_array(['CheckNSStatus',['CheckNSName'=>'ns-template.'.$d->domain]],$state->calls,true),'Template child hosts discovered without changing the template');
 expect(!in_array(['CheckNSStatus',['CheckNSName'=>'ns.other.example.net']],$state->calls,true),'Unrelated template hosts excluded');

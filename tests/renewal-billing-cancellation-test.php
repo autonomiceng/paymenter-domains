@@ -25,7 +25,7 @@ app('view')->share('keys',array_fill_keys(['setup','recovery','code','renew','au
 app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
 $text=static fn(string $html):string=>trim(preg_replace('/\s+/',' ',html_entity_decode(strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si','',$html)),ENT_QUOTES)));
 $views=static function()use($owners,$o,$user,$clock,$text):array {
-    $dto=$owners->present($o->fresh());$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$o->id,$clock->now()->getTimestamp());
+    $dto=$owners->present($o->fresh());$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,$o->id,$clock->now()->getTimestamp());
     return [$dto,$summary,DomainListRow::renewal($summary)['note']??null,$text(view('domains::show',['domain'=>$dto,'summary'=>$summary])->render())];
 };
 $ledger=static fn():string=>serialize([DB::table('invoices')->get(),DB::table('invoice_items')->get(),DB::table('invoice_transactions')->get(),DB::table('credits')->get(),Operation::all()->map->getRawOriginal()->all()]);

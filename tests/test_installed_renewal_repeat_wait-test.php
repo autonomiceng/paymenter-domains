@@ -73,7 +73,7 @@ $check(substr_count($staffText, $staffWhy) === 1, 'staff page: the reason once')
 // Customer domain page and list: Paid, nothing to do, and when it goes. No amber, no Under review.
 require __DIR__.'/Support/owner-pages.php'; // Replaces \$ports with the owner page ports.
 $present = $owners->present($d->fresh());
-$summary = (new DomainSummaries)->one($user, 'managed', $d->id, $clock->now()->getTimestamp());
+$summary = (new DomainSummaries)->one($user, $d->id, $clock->now()->getTimestamp());
 $next = DomainPage::nextInvoice($present, $summary, null);
 $check(($next['value'] ?? null) === 'Paid' && !isset($next['tone']), 'customer page: Paid, no tone');
 app('view')->share('keys', array_fill_keys(['setup', 'recovery', 'code', 'renew', 'auto-renew', ...\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::ACTIONS], str_repeat('a', 64)));
@@ -100,7 +100,7 @@ $turn=static function(bool $on)use($session,$switch,$d,$user):void {
 };
 $debt=[$nativeMoney(),$second->fresh()->getRawOriginal()];$sent=[$state->writes,count($state->calls)];
 $turn(false);same(false,$d->fresh()->renewal_policy['owner_auto_renew'],'The owner switch saves Off');
-$offSummary=(new DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());$offRow=DomainListRow::renewal($offSummary);
+$offSummary=(new DomainSummaries)->one($user,$d->id,$clock->now()->getTimestamp());$offRow=DomainListRow::renewal($offSummary);
 same(['Off','Renewal invoice paid. '.$customer,$goes->format(DATE_ATOM)],[$offRow['value'],$offRow['note'],$offRow['at']],'Off list retains the paid cycle and its exact wait instant');
 $offList=view('domains::index',['domains'=>new Illuminate\Pagination\LengthAwarePaginator([$offSummary],1,25)])->render();
 expect($at($offList)&&str_contains($text($offList),'Renewal invoice paid. '.$customer),'Rendered Off list retains paid cycle timing and assurance');

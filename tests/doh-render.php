@@ -9,7 +9,7 @@ $css = file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
 $panel->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
 $emit = static function (string $name, bool $check = false, ?string $modal = null) use ($out, $css, $staff): void {
     session()->forget(['filament.notifications', 'filament.livewire.notifications']);
-    $test = \Livewire\Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\MonitoringSettings::class);
+    $test = \Livewire\Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\Pages\DnsResolver::class);
     if ($check) { $test->callAction('check'); }
     if ($modal !== null) {
         $test->mountAction('configure');

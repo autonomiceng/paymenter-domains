@@ -17,7 +17,7 @@ $profiles=[];
 for ($i=0;$i<26;$i++) {
     $profiles[]=DB::table('domains_watch_profiles')->insertGetId(['name'=>'Limit fixture '.$i,
         'nameservers'=>json_encode(['ns'.($i*2+1).'.'.$d->domain,'ns'.($i*2+2).'.'.$d->domain]),
-        'website_endpoints'=>'{}','email_endpoints'=>'{}','edited_by'=>$user->id,'reason'=>'synthetic']);
+        'edited_by'=>$user->id,'reason'=>'synthetic']);
 }
 $limitActor=staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW,'admin.domains.manage']);
 $limitJob=new \Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords($limitActor->id,$d->id,$d->authority_generation,$d->account_fingerprint);

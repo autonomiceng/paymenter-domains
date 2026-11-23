@@ -5,12 +5,12 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
-const SCOPES = ['staff', 'watch', 'heading', 'managed'];
+const SCOPES = ['staff', 'heading'];
 
 async function main() {
     // A hung browser fails the check instead of holding the suite.
     setTimeout(() => { console.error('Browser check exceeded 90 seconds'); process.exit(1); }, 90000).unref();
-    if (!process.argv[2]) throw new Error('usage: node scripts/check-name-and-heading.cjs RENDER_DIRECTORY [lists|staff|watch|heading|managed]');
+    if (!process.argv[2]) throw new Error('usage: node scripts/check-name-and-heading.cjs RENDER_DIRECTORY [lists|staff|heading]');
     const output = path.resolve(process.argv[2]);
     const scopes = process.argv[3] ? [process.argv[3]] : SCOPES;
     if (!scopes.every(scope => [...SCOPES, 'lists'].includes(scope))) throw new Error('Unknown scope');
@@ -50,20 +50,6 @@ async function main() {
                 await fullText('long-domain-long-domain-long-domain-long-domain-long-domain-end.example.com', where);
                 await fullText('Maximiliana-Alexandrina', where);
                 await fullText('Featherstonehaugh-Worthington', where);
-            }
-            if (scopes.includes('lists') || scopes.includes('watch')) {
-                for (const state of ['paused', 'retired']) {
-                    const where = `Monitoring ${state} at ${width}`;
-                    await open(`r14-watchlist-${state}.html`, width);
-                    await table(where);
-                    measured++;
-                    check(await page.locator('.domains-name-cell').count() > 0, `${where}: domain identity remains in the list`);
-                }
-            }
-            if (scopes.includes('managed')) {
-                await open('staff-managed-dns.html', width);
-                check(await page.locator('table tbody tr').count() > 0, 'DNS setup fixture rows rendered');
-                await fullText('maximiliana.featherstonehaugh-worthington@example.test', `DNS setup at ${width}`);
             }
         }
         if (scopes.includes('lists') || scopes.includes('heading')) {

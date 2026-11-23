@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaries;
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainListRow,DomainPage};
 [$op,$d,$binding,$invoice]=$makeRenewal(placeholderComFixtureName('standard-summary-placeholder.com'));
 $clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');
-$summary=fn()=>(new DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
+$summary=fn()=>(new DomainSummaries)->one($user,$d->id,$clock->now()->getTimestamp());
 $detail=fn($s)=>DomainPage::nextInvoice($owners->present($d->fresh()),$s,null);
 $s=$summary();
 same('Paid',$detail($s)['value'],'Valid standard invoice is Paid on the detail page');

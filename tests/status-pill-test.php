@@ -15,9 +15,7 @@ app('view')->share('keys',array_fill_keys(['setup','recovery','code','renew','au
 app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
 $strings=DomainSummaryStrings::all(); $today=gmdate('Y-m-d'); $soon=gmdate('Y-m-d',time()+10*86400); $later=gmdate('Y-m-d',time()+200*86400);
 $fresh=array_fill_keys(['delegation','points','registry'],['checkedAt'=>time(),'stale'=>false,'partial'=>false,'nextCheck'=>null]);
-$summary=static fn(string $name,array $states,array $extra=[])=>new DomainSummary(...[...['name'=>$name,'displayName'=>null,'kind'=>'managed','registrationKey'=>'domain.registration.platform',
-    'dnsKeys'=>DnsSignalLabels::keys('external',false,false),'website'=>false,'email'=>false,'stateKeys'=>$states,'labels'=>$strings,'expiry'=>$later,'expiryPrecision'=>'date','expirySource'=>'Confirmed registration',
-    'freshness'=>$fresh,'renewalDueAt'=>null,'renewalPrice'=>'$14.00','relatedServices'=>[],'hostnames'=>[],'urls'=>['detail'=>'/domains/1','support'=>'/tickets/create']],...$extra]);
+$summary=static fn(string $name,array $states,array $extra=[])=>new DomainSummary(...[...['name'=>$name,'displayName'=>null,'kind'=>'managed','registrationKey'=>'domain.registration.platform','stateKeys'=>$states,'labels'=>$strings,'expiry'=>$later,'expiryPrecision'=>'date','expirySource'=>'Confirmed registration','renewalDueAt'=>null,'renewalPrice'=>'$14.00','urls'=>['detail'=>'/domains/1','support'=>'/tickets/create']],...$extra]);
 // case => [summary states, summary extras, resolved state, expected pill, expected reason]
 $cases=[
     'active'=>[['domain.active','watch.not_checked','adopt.provenance'],[],'active','Active',null],
@@ -37,7 +35,6 @@ $cases=[
     'review'=>[['domain.review','watch.stale'],[],'needs_review','Under review',null],
     'failed'=>[['domain.review'],[],'registration_rejected','Failed','Registration did not finish'],
     // A managed domain's nameserver change is a notice on its page, not its status.
-    'moved'=>[['domain.active','watch.ns_changed'],['noticeDates'=>['dns'=>time()]],'active','Active',null],
     'expired-and-moved'=>[['domain.expired','watch.ns_changed'],[],'expired','Expired',DomainStatus::LATE],
     'cancelled'=>[['domain.cancelled'],[],'cancelled','Cancelled',null],
 ];
@@ -62,21 +59,6 @@ foreach ($cases as $state=>[$states,$extra,$resolved,$expected,$reason]) {
 $list=storefrontDom(view('domains::index',['domains'=>new LengthAwarePaginator($rows,count($rows),25)])->render());
 same(count($rows),count($pills($list)),'The full list shows one pill per domain and nothing else');
 same(array_column($cases,3),$pills($list),'List pills follow the resolved states');
-// Unknown evidence never earns a pill: a watch needs current registry facts and a known expiry to read Active.
-$watch=static function(array $states,array $extra=[])use($summary,$fresh){
-    $extra=[...['freshness'=>$fresh,'expiry'=>gmdate('Y-m-d',time()+200*86400)],...$extra];
-    $status=DomainStates::watch($states,$extra['expiry'],!$extra['freshness']['registry']['stale']);
-    return $summary('watch.example',$states,['kind'=>'watch','registrationKey'=>'domain.registration.external','renewalPrice'=>null,'statusState'=>$status[0]??null,'statusReason'=>$status[1]??null,...$extra]);
-};
-same(['label'=>'Active','tone'=>'ok','reason'=>null],StatusPill::summary($watch([])),'Current registry facts read Active');
-same(null,StatusPill::summary($watch(['watch.not_checked'],['freshness'=>array_map(fn($f)=>[...$f,'checkedAt'=>null,'stale'=>true],$fresh)])),'Never checked watch has no pill');
-same(null,StatusPill::summary($watch(['watch.stale'],['freshness'=>array_map(fn($f)=>[...$f,'stale'=>true],$fresh)])),'Out of date watch has no pill');
-same(null,StatusPill::summary($watch([],['expiry'=>null])),'Unknown expiry has no pill');
-same(null,StatusPill::summary($watch(['watch.paused'],['freshness'=>array_map(fn($f)=>[...$f,'stale'=>true],$fresh)])),'Paused checks show no pill; the page says checks are paused');
-same(['label'=>'Action required','tone'=>'warn','reason'=>'Not registered'],StatusPill::summary($watch(['watch.not_registered'])),'Not registered asks the customer to act');
-same(['label'=>'Redemption','tone'=>'bad','reason'=>'Restore at your registrar'],StatusPill::summary($watch(['watch.redemption','watch.expired'])),'Redemption outranks expiry');
-same(['label'=>'Expired','tone'=>'bad','reason'=>'Renew at your registrar'],StatusPill::summary($watch(['watch.expired','watch.ns_changed'])),'Expiry outranks a nameserver change');
-same('Action required',StatusPill::summary($watch(['watch.ns_changed']))['label'],'A monitored domain off our nameservers asks the customer to act');
 // Detail pages carry no other pills: management sections, notices and check details are plain text.
 $m=['nameservers'=>['label'=>'Nameservers','url'=>'/n','actions'=>['nameservers'=>'/n'],'max'=>12,'defaults'=>true,'current'=>['ns1.example.net','ns2.example.net'],'registrar'=>'Enom','defaultServers'=>['ns1.site.example.org','ns2.site.example.org']],
     'lock'=>['label'=>'Transfer lock','url'=>'/l','actions'=>['lock'=>'/l']],'privacy'=>['label'=>'Domain privacy','url'=>'/p','free'=>true,'price'=>null,'actions'=>['privacy_enable'=>'/e','privacy_disable'=>'/x']]];

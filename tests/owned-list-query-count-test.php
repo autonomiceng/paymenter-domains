@@ -5,12 +5,8 @@ require __DIR__.'/Support/owned.php';
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController;
-use Paymenter\Extensions\Servers\Domains\Models\WatchName;
 
 $base=$newTransfer('query-base-placeholder.com',0,false,false)->domain;
-// Retained paused watches remain on the owned list without an active hosting source.
-$watchBase=DB::transaction(fn()=>WatchName::create(['user_id'=>$user->id,'canonical_name'=>'query-watch.example.com',
-    'psl_revision'=>str_repeat('a',64),'state'=>'paused','notice_preferences'=>[]]));
 storefrontViews();
 $controller=new OwnedDomainController($owners);$session=app('request')->session();
 $clone=static function(string $table,int $id,array $changes=[]):int {
@@ -23,12 +19,7 @@ $measure=static function($actor)use($controller,$session):array {
     try {
         $page=$controller->index($request);$html=$page->render();$queries=DB::getQueryLog();
     } finally { DB::disableQueryLog();DB::flushQueryLog(); }
-    $batches=['managed'=>0,'watch'=>0];
-    foreach ($queries as $query) {
-        foreach (['managed'=>'domains_domains','watch'=>'domains_watch_names'] as $kind=>$table) {
-            if (str_starts_with($query['query'],'select * from "'.$table.'" where "user_id" = ? and "id" in (')) { $batches[$kind]++; }
-        }
-    }
+    $batches=count(array_filter($queries,fn($q)=>str_starts_with($q['query'],'select * from "domains_domains" where "user_id" = ? and "id" in (')));
     return ['queries'=>count($queries),'batches'=>$batches,'total'=>$page->getData()['domains']->total(),'visible'=>storefrontDom($html)->query('//tbody/tr')->length];
 };
 // Catalogue transfer availability adds fixed page reads, independent of owned row batches.
@@ -44,37 +35,28 @@ $renewing=static function(int $domain,int $service,string $key,int $i)use($clone
 };
 $expiry=$clock->now()->modify('+200 days')->format('Y-m-d');
 $results=[];
-foreach (['managed','watch','mixed','renewing'] as $kind) {
-    $actor=commerceUser();$counts=['managed'=>0,'watch'=>0];
+foreach (['managed','renewing'] as $kind) {
+    $actor=commerceUser();
     $managedOrder=$clone('orders',(int)$base->service->order_id,['user_id'=>$actor->id]);
-    // 502 crosses two 250-row boundaries, including both halves of a mixed list.
+    // 502 rows cross two 250-row boundaries.
     for ($i=1;$i<=502;$i++) {
-        $managed=$kind==='managed'||$kind==='renewing'||($kind==='mixed'&&$i%2===1);
         $name=$kind.'-'.$i.'.example.com';
-        if ($managed) {
             $service=$clone('services',(int)$base->service_id,['user_id'=>$actor->id,'order_id'=>$managedOrder]);
             $domain=$clone('domains_domains',(int)$base->id,['user_id'=>$actor->id,'service_id'=>$service,'domain'=>$name,'reservation_name'=>$name,'sld'=>$kind.'-'.$i,'tld'=>'example.com',
                 ...($kind==='renewing'?['status'=>'active','provider_expires_at'=>$expiry.' 00:00:00']:[])]);
             if ($kind==='renewing') { $renewing($domain,$service,'renew:'.$domain.':g'.$base->authority_generation.':'.$expiry,$i); }
-        } else {
-            $clone('domains_watch_names',(int)$watchBase->id,['user_id'=>$actor->id,'canonical_name'=>$name]);
-        }
-        $counts[$managed?'managed':'watch']++;
         if (!in_array($i,[25,250,251,502],true)) { continue; }
         // Warm Blade and application services before counting controller-through-render queries.
         if ($i===25) { $measure($actor); }
         $result=$measure($actor);$results[$kind][$i]=$result['queries'];
         same($i,$result['total'],'Every owned '.$kind.' row is resolved at '.$i);
         same(25,$result['visible'],'Only the requested page is rendered at '.$i);
-        same(['managed'=>(int)ceil($counts['managed']/250),'watch'=>(int)ceil($counts['watch']/250)],$result['batches'],'Both summary loops keep 250-row batches at '.$kind.' '.$i);
-        expect($result['queries']<=$emptyQueries+70*array_sum($result['batches']),'Query count stays bounded per batch at '.$kind.' '.$i.' ('.$result['queries'].' reads, '.$emptyQueries.' fixed)');
+        same((int)ceil($i/250),$result['batches'],'Summary queries use 250-row batches');
+        expect($result['queries']<=$emptyQueries+70*$result['batches'],'Query count stays bounded per batch at '.$kind.' '.$i.' ('.$result['queries'].' reads, '.$emptyQueries.' fixed)');
     }
     same($results[$kind][25],$results[$kind][250],'No per-row queries within a full '.$kind.' batch');
-    if ($kind==='mixed') { same($results[$kind][250],$results[$kind][251],'Mixed list stays within its two existing batches'); }
-    else {
         $extra=$results[$kind][251]-$results[$kind][250];expect($extra>0,'Crossing 250 rows adds one summary batch');
         same($results[$kind][25]+2*$extra,$results[$kind][502],'Three '.$kind.' batches add queries linearly');
-    }
 }
 echo 'Owned list query counts (SQLite, controller through Blade, no latency claim): '.json_encode($results,JSON_THROW_ON_ERROR)."\n";
 $nativeSuccessful=true;

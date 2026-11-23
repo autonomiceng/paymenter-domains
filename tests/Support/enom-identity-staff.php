@@ -78,7 +78,6 @@ $catalogue->apply(Paymenter\Extensions\Servers\Domains\Catalogue\Edit::override(
 $calls=count($GLOBALS['identityCalls']);app(Paymenter\Extensions\Servers\Domains\Services\RegistrarBalances::class)->daily($a->fresh());
 same($calls,count($GLOBALS['identityCalls']),'Daily balance stays off wire even with accepted catalogue');
 // Keep unrelated public data updating socket-free while exercising the actual scheduler turn.
-app()->instance(Paymenter\Extensions\Servers\Domains\Services\PslTransport::class,new Paymenter\Extensions\Servers\Domains\Services\PslTransport(static function():never {throw new Paymenter\Extensions\Servers\Domains\Services\PslFailure('transport_failed');}));
 app(Paymenter\Extensions\Servers\Domains\Services\RuntimeWork::class)->tick();
 same($calls,count($GLOBALS['identityCalls']),'Runtime turn cannot promote staff factory to background reads');
 try{app(AccountBindings::class)->adoptionReader($binding,app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class));expect(false,'Identity bootstrap cannot construct an adoption domain reader');}

@@ -39,6 +39,9 @@ expect(!DB::table(RetentionSchema::COLD)->where('family','audit_events')->where(
 expect(!HistoryRetention::replayed('audit_event',$retryKey),'Failed move leaves no replay marker');
 HistoryRetention::tick($at);HistoryRetention::tick($at);
 expect(!DB::table(AuditArchives::TABLE)->where('event_key',$retryKey)->exists(),'Cursor wrap retries the failed event');
+same(strtotime('2025-02-28 UTC'),HistoryRetention::cutoff(strtotime('2026-03-31 UTC'),13),'Month-end cutoff does not overflow');
+HistoryRetention::tick((int)$cold->delete_after);
+expect(DB::table(RetentionSchema::COLD)->where('id',$cold->id)->exists(),'Three-year boundary is retained');
 HistoryRetention::tick((int)$cold->delete_after+1);
 expect(!DB::table(RetentionSchema::COLD)->where('id',$cold->id)->exists(),'Cold event payload expires after three years');
 DB::transaction(fn()=>AuditEvents::append($server->id,'staff_settings',$old,$key));

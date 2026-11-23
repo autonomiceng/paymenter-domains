@@ -8,10 +8,9 @@ use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary;
 use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
 storefrontViews();$out=$argv[1]??'';expect(is_dir($out),'Output directory required');
-$strings=DomainSummaryStrings::all();$unknown=DnsSignalLabels::keys(null,null,null);
-$hosting=[['id'=>1,'label'=>'Starter hosting','url'=>'/services/1'],['id'=>2,'label'=>'Mail hosting','url'=>'/services/2']];
-$dto=static fn(string $name,string $kind,array $more)=>new DomainSummary($name,null,$kind,'domain.registration.unknown',$unknown,null,null,[],$strings,...[
-    'expiry'=>null,'expiryPrecision'=>null,'expirySource'=>null,'freshness'=>[],'renewalDueAt'=>null,'renewalPrice'=>null,'relatedServices'=>[],'hostnames'=>[],
+$strings=DomainSummaryStrings::all();
+$dto=static fn(string $name,string $kind,array $more)=>new DomainSummary($name,null,$kind,'domain.registration.unknown',[],$strings,...[
+    'expiry'=>null,'expiryPrecision'=>null,'expirySource'=>null,'renewalDueAt'=>null,'renewalPrice'=>null,
     'urls'=>['detail'=>'/domains/'.$name,'support'=>'/tickets/create'],...$more]);
 $rows=[
     $dto('real.example','managed',['expiry'=>'2027-03-01','daysLeft'=>129,'renewalPrice'=>'$14.99','statusState'=>'active']),
@@ -19,8 +18,6 @@ $rows=[
     $dto('demo-held.example','managed',['demo'=>true,'expiryWaits'=>'transfer','renewalPrice'=>'$15.99','statusState'=>'held','statusReason'=>'Transfer on hold']),
     $dto('test-expiring.example','managed',['testEnvironment'=>true,'expiry'=>'2026-11-02','daysLeft'=>10,'renewalInvoiceMissing'=>true,'statusState'=>'active']),
     $dto('missing-expiry.example','managed',['renewalPrice'=>'$14.99','statusState'=>'active']),
-    $dto('watch-expired.example','watch',['expiry'=>'2026-10-21','daysLeft'=>-2,'relatedServices'=>$hosting,'relatedOverflow'=>1,'statusState'=>'watch.expired','statusReason'=>'Renew at your registrar']),
-    $dto('hosting-only.example','watch',['relatedServices'=>array_slice($hosting,0,1)]),
 ];
 // Paymenter default theme colours (themes/default/views/layouts/colors.blade.php), so both modes read as they do in the client area.
 $colors=':root{--color-primary:229 100% 64%;--color-neutral:220 25% 85%;--color-base:0 0% 0%;--color-muted:0 0% 40%;--color-success:142 71% 45%;--color-error:0 75% 60%;--color-warning:25 95% 53%;--color-info:210 100% 60%;--color-background:100 100% 100%;--color-background-secondary:0 0% 97%}'

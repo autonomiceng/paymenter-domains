@@ -3,7 +3,7 @@
 declare(strict_types=1);
 $siteServers=['ns1.staff.example.org','ns2.staff.example.org'];
 $profile=Illuminate\Support\Facades\DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create([
-    'name'=>'Saved staff DNS','nameservers'=>$siteServers,'website_endpoints'=>[],'email_endpoints'=>[],
+    'name'=>'Saved staff DNS','nameservers'=>$siteServers,
     'enabled'=>true,'edited_by'=>$staff->id,'reason'=>'Synthetic site default']));
 fixtureClearBusinessChoice(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::KEY);
 fixtureBusinessChoice(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::KEY,(string)$profile->id,'string');

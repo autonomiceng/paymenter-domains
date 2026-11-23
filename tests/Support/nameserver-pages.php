@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence;
 staffPanel();
 $viewer=staffUser([Staff::VIEW]);
 $pages=static function($d, ?array $expected, string $why, bool $formsExpected=true) use($owners,$user,$clock): void {
-    $summary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',(int)$d->id,$clock->now()->getTimestamp());
+    $summary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,(int)$d->id,$clock->now()->getTimestamp());
     expect($summary!==null,$why.' customer summary exists');
     same($expected,($summary->nameservers['state']??null)==='observed'?$summary->nameservers['nameservers']:null,$why.' customer summary');
     $forms=$owners->present($d->fresh())->management;

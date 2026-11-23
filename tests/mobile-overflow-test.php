@@ -16,24 +16,17 @@ $label = (str_repeat('a',51).'-placeholder');
 $name = placeholderComFixtureName($label.'.com');
 same(63, strlen($label), 'Mobile fixture retains the DNS label boundary');
 expect(preg_match('/-placeholder(?:-[0-9]+)?\\.com\\z/', $name) === 1, 'Mobile long-name fixture has the approved placeholder suffix');
-$summary = new DomainSummary($name, null, 'watch', 'domain.registration.external', [], true, true,
-    ['watch.ns_changed'], DomainSummaryStrings::all(), '2027-01-15', 'date', 'Public registry', [], null, null,
-    [], [$name], ['detail'=>'/domains/checks/watch/1', 'support'=>'/tickets/create', 'compareTransfer'=>'/domains/checks/watch/1/transfer']);
+$summary = new DomainSummary($name, null, 'managed', 'domain.registration.platform',
+    ['domain.active'], DomainSummaryStrings::all(), '2027-01-15', 'date', null, null, null, ['detail'=>'/domains/1', 'support'=>'/tickets/create']);
 $domain = new OwnedDomain($name, 'Active', 'ok', '2027-01-15', 'On', '$14.00',
     ['show'=>'/domains/1', 'setupSave'=>'/domains/1/setup', 'codeSave'=>'/domains/1/code'], [],
     ['required'=>false, 'contacts'=>false, 'nameservers'=>true, 'privacy'=>false, 'defaults'=>false, 'maxNameservers'=>12],
     ['open'=>true, 'received'=>false, 'paid'=>false, 'phase'=>'editing', 'deadline'=>null, 'unchecked'=>false], [], false);
 $search = storefrontData();
 $search['results'][0] = [...$search['results'][0], 'domain'=>$name, 'sld'=>$label, 'tld'=>'com'];
-$transfer = ['id'=>1, 'name'=>$name, 'revision'=>'1', 'canCheck'=>true, 'state'=>'eligible',
-    'price'=>'$11.00', 'renew'=>'$14.00', 'strings'=>WatchTransferStrings::all(), 'key'=>str_repeat('a', 64)];
 $pages = [
     'owned'=>view('domains::show', ['domain'=>$domain, 'summary'=>$summary])->render(),
-    'watch'=>view('domains::watch-notices', ['summary'=>$summary, 'name'=>$name, 'kind'=>'watch', 'id'=>1,
-        'editable'=>false, 'preferences'=>['account'=>['enabled'=>true, 'revision'=>1], 'target'=>['enabled'=>true, 'revision'=>1]],
-        'notices'=>[], 'portal'=>[], 'key'=>null])->render(),
     'list'=>view('domains::index', ['domains'=>new LengthAwarePaginator([$summary], 1, 25)])->render(),
-    'watch-transfer'=>view('domains::watch-transfer', $transfer)->render(),
     'search'=>view('domains::search', $search)->render(),
     'transfer'=>view('domains::transfer', $search)->render(),
     'setup'=>view('domains::setup', ['domain'=>$domain])->render(),

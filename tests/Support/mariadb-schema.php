@@ -39,7 +39,7 @@ $entry = new Domains([]);
 $entry->installed();
 $tables = Schema::getTableListing($database, false); sort($tables);
 $owned = array_values(array_diff($tables, $native));
-expect(count($owned) > 30, 'Fresh native install created the complete Domains schema');
+same(41,count($owned), 'Fresh native install created the complete Domains schema');
 $prefix = DB::connection()->getTablePrefix();
 foreach ($owned as $table) {
     expect(str_starts_with($table, $prefix.'domains_'), 'Fresh install left no reference table: '.$table);

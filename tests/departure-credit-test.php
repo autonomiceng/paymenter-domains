@@ -27,7 +27,7 @@ same([(int)$invoice->id=>$amount],$preview['credit_minor']??null,'The preview na
 $staff=staffUser([Staff::VIEW,'admin.domains.manage',HoldingDeparture::PERMISSION]);
 // The staff page and its confirm dialog read the preview only: no row changes.
 $rows=static fn()=>array_map(fn($t)=>Illuminate\Support\Facades\DB::table($t)->orderBy('id')->get()->map(fn($r)=>(array)$r)->all(),
-    ['domains_domains','domains_operations','invoices','invoice_transactions','credits','services','domains_obligation_alerts','domains_watch_names']);
+    ['domains_domains','domains_operations','invoices','invoice_transactions','credits','services','domains_obligation_alerts']);
 $seen=$rows();Illuminate\Support\Facades\Auth::setUser($staff);
 $dialog=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id])
     ->assertSuccessful()->assertActionEnabled('confirm_departure')->mountAction('confirm_departure');

@@ -32,8 +32,8 @@ $management=static function(array $more=[]):array {
 $domain=static fn(array $more=[])=>new OwnedDomain(...[...['name'=>$name,'status'=>'Active','tone'=>'ok','expiry'=>'2027-03-01','renewal'=>'On','renewalPrice'=>'$14.99',
     'actions'=>['show'=>'/domains/1'],'progress'=>[],'setup'=>['required'=>false,'contacts'=>false,'defaults'=>true],'transfer'=>[],'management'=>$management(),'testEnvironment'=>false,
     'renewNow'=>['url'=>'/domains/1/renew','terms'=>[1,2,3],'order_by'=>'2027-02-28'],'autoRenew'=>['url'=>'/domains/1/auto-renew','enabled'=>true],'owner'=>['name'=>'Jane Doe','email'=>'jane@example.com']],...$more]);
-$summary=static fn(OwnedDomain $d,array $more=[])=>new DomainSummary($d->name,null,'managed',...['registrationKey'=>'domain.registration.platform','dnsKeys'=>[],'website'=>null,'email'=>null,'stateKeys'=>[],'labels'=>DomainSummaryStrings::all(),
-    'expiry'=>$d->expiry,'expiryPrecision'=>'date','expirySource'=>null,'freshness'=>[],'renewalDueAt'=>null,'renewalPrice'=>$d->renewalPrice,'relatedServices'=>[],'hostnames'=>[],
+$summary=static fn(OwnedDomain $d,array $more=[])=>new DomainSummary($d->name,null,'managed',...['registrationKey'=>'domain.registration.platform','stateKeys'=>[],'labels'=>DomainSummaryStrings::all(),
+    'expiry'=>$d->expiry,'expiryPrecision'=>'date','expirySource'=>null,'renewalDueAt'=>null,'renewalPrice'=>$d->renewalPrice,
     'urls'=>['detail'=>'/domains/1','support'=>'/tickets/create'],...$more]);
 $render=static fn(OwnedDomain $d,?DomainSummary $s=null)=>view('domains::show',['domain'=>$d,'summary'=>$s])->render();
 $norm=static fn(?DOMNode $n)=>$n?trim(preg_replace('/\s+/',' ',$n->textContent)):null;
@@ -355,12 +355,6 @@ same('Finish setup to start registration. Finish setup',$norm(storefrontDom($ren
 same('The auth code deadline passed. Update your details so we can finish the transfer. Update details',$norm(storefrontDom($render($setup(['defaults'=>false,'contacts'=>true],['phase'=>'cutoff','open'=>false,'received'=>false])))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Cutoff notice');
 $import=$domain(['status'=>'Under review','tone'=>'info','renewal'=>'','management'=>[],'renewNow'=>[],'autoRenew'=>[],'setupPending'=>true]);
 same('We’re confirming this domain. Changes and renewals start after that. If it expires soon, let us know. Contact support',$norm(storefrontDom($render($import))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Import notice');
-$moved=$domain();$dom=storefrontDom($render($moved,$summary($moved,['dnsPreviouslyMatched'=>true,'stateKeys'=>['domain.active','watch.ns_changed'],'noticeDates'=>['dns'=>1792540800]])));
-same($name.' stopped using Example Hosting nameservers on Oct 21, 2026. Change nameservers',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Nameserver change notice');
-same('/domains/1?edit=nameservers#edit-nameservers',$dom->query('//div[contains(@class,"domains-notice")]/a')->item(0)?->getAttribute('href'),'Nameserver change opens the editor');
-$moved=$domain(['management'=>[]]);$dom=storefrontDom($render($moved,$summary($moved,['dnsPreviouslyMatched'=>true,'stateKeys'=>['watch.ns_changed']])));
-same($name.' stopped using Example Hosting nameservers. Contact support',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Nameserver change without a date or an editor');
-$demo=$domain(['management'=>[],'demo'=>true,'syncPaused'=>true]);$html=$render($demo,$summary($demo,['demo'=>true]));$dom=storefrontDom($html);
 same(1,$dom->query('//div[contains(@class,"domains-notice")]')->length,'One notice');
 same('Sync paused: the demo registrar is off. Nameservers show when it resumes. Contact support',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Demo sync paused notice');
 same('Not read yet Fills in by itself when sync resumes',$joined($dom->query('//li[@id="nameservers"]/span[contains(@class,"domains-row__v")]')->item(0)),'Paused nameservers are Not read yet and say when they fill in');
@@ -409,15 +403,11 @@ expect(str_contains($html, '.domains .domains-card > div { position: relative;')
 
 expect(str_contains($html, '.domains .domains-ph { position: relative;'), 'Status help anchors to the full page header');
 expect(preg_match('/\\.domains \\.domains-help-pop \\{[^}]*white-space: normal;/s',$html)===1, 'Card help resets inherited label nowrap');
-$d=$domain(['dnsCorrection'=>true]);$html=$render($d,$summary($d,['dnsKeys'=>['domain.dns.platform','domain.points.platform_empty'],'website'=>false,'email'=>false]));$dom=storefrontDom($html);
+$d=$domain(['dnsCorrection'=>true]);$html=$render($d,$summary($d));$dom=storefrontDom($html);
 same('The registered nameservers do not match the registration settings. Set up DNS with your provider, then change nameservers. Change nameservers',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Refused registration DNS gives a quiet next step');
-expect(str_contains($html,'To use this domain, buy a service or point it to your own nameservers.'),'Domain without hosting explains the next step');
 
 $d=$domain(['dnsCorrection'=>true,'management'=>[]]);$dom=storefrontDom($render($d,$summary($d)));
-$dnsNextSteps=['correction_support'=>$dom->query('//div[contains(@class,"domains-notice")]//a[@href="/tickets/create"][.="Contact support"]')->length];
-$d=$domain();$html=$render($d,$summary($d,['dnsKeys'=>['domain.dns.external','domain.points.external_empty'],'website'=>false,'email'=>false]));
-$dnsNextSteps['configured_dns_hint']=str_contains($html,'To use this domain, buy a service or point it to your own nameservers.');
-same(['correction_support'=>1,'configured_dns_hint'=>false],$dnsNextSteps,'DNS next steps: '.json_encode($dnsNextSteps));
+same(1,$dom->query('//div[contains(@class,"domains-notice")]//a[@href="/tickets/create"][.="Contact support"]')->length,'Support handles correction when editing is disabled');
 foreach([[true,null,'then change nameservers.','Change nameservers'],[false,'/support','then contact support to change nameservers.','Contact support'],[false,null,'Set up DNS with your provider. Nameserver changes are currently unavailable.',null]]as[$editor,$support,$step,$label]){
     $notice=DomainPage::notice($domain(['dnsCorrection'=>true,'management'=>$editor?$management():[]]),$support);
     expect(str_contains($notice['text'],$step),'Correction describes an available next step: '.json_encode([$editor,$support,$notice]));

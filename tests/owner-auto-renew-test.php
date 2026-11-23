@@ -47,7 +47,7 @@ expect(!isset($owners->present($d->fresh())->renewNow['url']),'Cutoff hides manu
 expect(str_contains($late,'<time datetime="2027-10-18">Oct 18, 2027</time>')&&str_contains($late,'Cancels Oct 18, 2027'),'Owner page after cutoff shows the expiry and cancel date, got: '.substr($late,(int)strpos($late,'<dt>Expires'),600));
 expect(!str_contains($late,'Renew now'),'No renewal promise after cutoff');
 $clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');
-$summary=(new DomainSummaries)->one($user,'managed',$d->id);expect($summary->renewalOff,'List summary also shows Off');
+$summary=(new DomainSummaries)->one($user,$d->id);expect($summary->renewalOff,'List summary also shows Off');
 $before=Invoice::count();same(null,$billing->invoice($d->id),'Off skips scheduled invoice');same($before,Invoice::count(),'Off creates no invoice');
 // Refuse another owner both at the HTTP boundary and inside the locked writer.
 try{$controller->save($req($d,['enabled'=>'1'],$other),$d->id);expect(false,'Foreign HTTP owner refused');}catch(Illuminate\Database\Eloquent\ModelNotFoundException){}

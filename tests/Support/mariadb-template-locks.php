@@ -9,7 +9,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\{Artisan,DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Models\{WatchAudit,WatchName,WatchProfile};
+use Paymenter\Extensions\Servers\Domains\Models\{WatchAudit,WatchProfile};
 use Paymenter\Extensions\Servers\Domains\Services\{BusinessSetting,Installation,SiteDnsDefault,StaffWatchWrites as Writes};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 $root=(string)getenv('TPL_BARRIERS');expect(is_dir($root),'Private barriers required');
@@ -28,25 +28,22 @@ app()->instance(Clock::class,new FakeClock(new DateTimeImmutable('2026-11-09T12:
 if($phase==='seed'){
     (new Installation)->install();
     DB::transaction(static fn()=>BusinessSetting::saveLocked(SiteDnsDefault::KEY,''));
-    $role=Role::create(['name'=>'Synthetic template staff','permissions'=>[Staff::VIEW,Writes::VIEW,Writes::MANAGE]]);
+    $role=Role::create(['name'=>'Synthetic template staff','permissions'=>[Staff::VIEW,Staff::POLICY,SiteDnsDefault::MANAGE,Writes::VIEW,Writes::MANAGE]]);
     $manager=User::create(['first_name'=>'Synthetic','last_name'=>'Staff','email'=>'template-staff@example.test','password'=>'synthetic-password','role_id'=>$role->id]);
-    $customer=User::create(['first_name'=>'Synthetic','last_name'=>'Customer','email'=>'template-customer@example.test','password'=>'synthetic-password']);
     $template=static fn(string $label)=>(int)DB::transaction(fn()=>WatchProfile::create(['name'=>$label,'enabled'=>true,
-        'nameservers'=>['ns1.spare.test','ns2.spare.test'],'website_endpoints'=>[],'email_endpoints'=>[],
+        'nameservers'=>['ns1.spare.test','ns2.spare.test'],
         'edited_by'=>$manager->id,'reason'=>'Synthetic template setup']))->id;
-    $ids=['manager'=>$manager->id,'other'=>$template('Current watch template')];
+    $ids=['manager'=>$manager->id,'other'=>$template('Current registration default')];
+    SiteDnsDefault::save($manager,$ids['other']);
     foreach(['late','timeout','deadlock']as$kind){foreach(['disable','delete']as$verb){
         $ids[$kind.'-'.$verb]=$template('Locked '.$kind.' '.$verb);
-        $ids['watch-'.$kind.'-'.$verb]=(int)DB::transaction(fn()=>WatchName::create(['user_id'=>$customer->id,'canonical_name'=>$kind.'-'.$verb.'.example',
-            'psl_revision'=>str_repeat('a',64),'state'=>'active','expected_dns'=>'platform','ns_profile_id'=>$ids['other'],
-            'profile_revision'=>1,'notice_preferences'=>[]]))->id;
     }}
     file_put_contents($root.'/ids.json',json_encode($ids,JSON_THROW_ON_ERROR));
     echo "Seeded DNS template lock fixtures.\n";$nativeSuccessful=true;return;
 }
 expect(in_array($case,['late','timeout','deadlock'],true)&&in_array($action,['disable','delete'],true),'Known lock case');
 $ids=json_decode(file_get_contents($root.'/ids.json'),true,512,JSON_THROW_ON_ERROR);
-$id=$ids[$name];$watch=$ids['watch-'.$name];$manager=User::findOrFail($ids['manager']);
+$id=$ids[$name];$manager=User::findOrFail($ids['manager']);
 $writes=new Writes;
 if($phase==='hold'){
     // Only the waiting staff write blocked on this connection's template row lock counts.
@@ -63,20 +60,18 @@ if($phase==='hold'){
         file_put_contents($root.'/'.$name.'-lock-wait','proved');
     };
     if($case==='late'){
-        // A real staff watch assignment, held open until the staff write waits on the template row it locked.
+        // Save the registration default while the other connection holds its prior read view.
         $wait('snapshot');DB::beginTransaction();
-        $writes->run($manager,'watch',$watch,'profile',Writes::ticket((int)$manager->id,'watch',$watch,(int)WatchName::findOrFail($watch)->revision,'profile'),
-            'Synthetic late assignment',['profile'=>$id,'expected_dns'=>'platform']);
+        SiteDnsDefault::save($manager,$id);
         $signal('assigned');$observe();DB::commit();$signal('committed');
     }else{
         DB::beginTransaction();
         if($case==='deadlock'){
             // Enough undo makes InnoDB choose the lighter staff write as the deadlock victim.
-            $rows=array_map(static fn($i)=>['claim'=>hash('sha256','ballast-'.$name.'-'.$i),'subject_type'=>'ballast','subject_id'=>$i,'action'=>'ballast','created_at'=>1],range(1,300));
+            $rows=array_map(static fn($i)=>['claim'=>hash('sha256','ballast-'.$name.'-'.$i),'subject_id'=>$i,'action'=>'ballast','created_at'=>1],range(1,300));
             foreach(array_chunk($rows,100)as$chunk){DB::table('domains_watch_staff_claims')->insert($chunk);}
         }
         WatchProfile::whereKey($id)->lockForUpdate()->firstOrFail();
-        DB::table('domains_watch_names')->where('id',$watch)->update(['ns_profile_id'=>$id]);
         $signal('locked');$observe();
         if($case==='deadlock'){
             // Deliberately reverse the supported order to prove rollback on an external deadlock.
@@ -90,30 +85,31 @@ if($phase==='hold'){
 expect($phase==='mutate','Known fixture phase');
 $state=static fn():array=>['template'=>(array)DB::table('domains_watch_profiles')->where('id',$id)->first(),
     'audit'=>WatchAudit::where('subject_type','dns_profile')->where('subject_id',$id)->count(),
-    'claims'=>DB::table('domains_watch_staff_claims')->where('subject_type','profile')->where('subject_id',$id)->count()];
+    'claims'=>DB::table('domains_watch_staff_claims')->where('subject_id',$id)->count()];
 $before=$state();same(1,(int)$before['template']['enabled'],'The template starts on');
-$ticket=Writes::ticket((int)$manager->id,'profile',$id,(int)$before['template']['revision'],$action);
+$ticket=Writes::ticket((int)$manager->id,$id,(int)$before['template']['revision'],$action);
 $connection=(string)DB::selectOne('SELECT CONNECTION_ID() AS id')->id;
 // With snapshot isolation on, a locking read of a row changed after the read view fails instead of reading it.
 same('OFF',DB::selectOne("SHOW VARIABLES LIKE 'innodb_snapshot_isolation'")?->Value??'OFF','Pinned MariaDB keeps repeatable-read locking reads');
 $error=$code=$old=$stale=null;
 $run=static function()use($writes,$manager,$id,$action,$ticket,&$error,&$code):void {
-    try{$writes->run($manager,'profile',$id,$action,$ticket,'Synthetic contended template change');}
+    try{$writes->run($manager,$id,$action,$ticket,'Synthetic contended template change');}
     catch(DomainException $e){$error=$e->getMessage();}catch(QueryException $e){$code=(int)($e->errorInfo[1]??0);}
 };
 if($case==='late'){
     // The older read view comes first; the assignment commits while the write waits for the template lock.
     DB::beginTransaction();
-    $old=WatchName::whereKey($watch)->value('ns_profile_id');
+    $old=SiteDnsDefault::profile()?->id;
     file_put_contents($root.'/'.$name.'-connection',$connection);$signal('started');$signal('snapshot');$wait('assigned');
     $run();
-    $stale=WatchName::whereKey($watch)->value('ns_profile_id');
+    $stale=SiteDnsDefault::profile()?->id;
     DB::rollBack();
     $wait('committed');
     same($ids['other'],$old,'The older read view predates the assignment');
-    same($id,(int)DB::table('domains_watch_names')->where('id',$watch)->value('ns_profile_id'),'The late assignment committed');
-    same('This template is assigned to domains. Choose another template for them first.',$error,'The waiting '.$action.' reads the late assignment and refuses');
-    same($ids['other'],$stale,'A plain read in the same view still misses the late assignment');
+    same($id,SiteDnsDefault::profile()?->id,'The new registration default committed');
+    same(SiteDnsDefault::REPLACE,$error,'Changing the current default is refused');
+    same($ids['other'],$stale,'A plain read in the same view retains the prior default');
+    SiteDnsDefault::save($manager,$ids['other']);
 }else{
     if($case==='timeout'){DB::statement('SET SESSION innodb_lock_wait_timeout=4');}
     $wait('locked');file_put_contents($root.'/'.$name.'-connection',$connection);$signal('started');

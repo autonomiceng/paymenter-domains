@@ -70,7 +70,7 @@ DB::table('products')->whereNotIn('slug', array_merge(
 DB::table('plans')->whereNotIn('priceable_id', Product::pluck('id'))->delete();
 DB::table('prices')->whereNotIn('plan_id', Plan::pluck('id'))->delete();
 DB::table('domains_prices')->where('tld', 'com')->delete(); DB::table('domains_tlds')->where('tld', 'com')->delete();
-PslReviewSchema::install(); WatchSchema::install();
+PslReviewSchema::install();
 $clock = new FakeClock($now);
 // Every ending above carries independently known synthetic facts/costs from the real Writer seed.
 // Native products/plans are cloned explicitly to keep setup bounded at 599 endings.

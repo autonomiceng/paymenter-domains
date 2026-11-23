@@ -52,8 +52,6 @@ same('info',$notice['tone'],'Fallback is a quiet customer information note');
 expect(str_contains($notice['text'],'The registered nameservers do not match the registration settings')&&str_contains($notice['text'],'Set up DNS'),'Customer sees what happened and how to proceed');
 expect(!collect($owned->progress)->contains('state','Under review'),'Refused DNS correction does not send customer to staff');
 // A registration template is not evidence of a hosted zone.
-$dns=\Illuminate\Support\Facades\DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::proven(\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d),null,null,collect(),[]));
-same([null,null,null],$dns,'Registration template does not prove a hosting-source comparison');
 
 // A spend hold leaves neither the customer editor nor automatic correction available: retain the existing staff alert.
 $makeEngine($binding,$refusalExchange);$heldOp=$new('template-held.example.com');$assertRetained($runRegistration($heldOp),['nameservers']);$heldDomain=$heldOp->domain->fresh();

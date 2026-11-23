@@ -5,7 +5,7 @@ require __DIR__.'/Support/watch-dns.php';
 require __DIR__.'/Support/FakeDnsReader.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
-use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,NewDomainDns,WatchDnsChecks};
+use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,NewDomainDns};
 // Installation has no staff actor yet. Deployment supplies literal public names, never registrar credentials.
 config(['domains.site_dns_default.nameservers'=>['ns1.deployment.test','ns2.deployment.test']]);
 extract(dnsFixture());
@@ -24,49 +24,20 @@ expect(!$legacyRead,'Registration never reads the retired account setting');
 $entry->upgraded();same($default->id,SiteDnsDefault::profile()->id,'Upgrade keeps one stable default reference');
 same(0,\App\Models\Setting::where('key',$legacy)->count(),'Site-default upgrade deletes retired account DNS settings');
 same(1,WatchProfile::where('name','Site DNS')->count(),'Upgrade does not duplicate the deployment template');
-// Null watch choices inherit the site reference without storing a per-watch assignment.
-DB::table('domains_watch_names')->where('id',$watch->id)->update(['ns_profile_id'=>null,'profile_revision'=>0,'expected_dns'=>null]);
-$checks=new WatchDnsChecks(true);$at=1800000000;
-expect($checks->enroll($watch->id,$owner->id,$at),'An unassigned hosting watch enrolls with the site default');
-$ticket=$checks->begin($watch->id,$owner->id,'delegation',$at);
-same($default->id,$ticket?->profileId,'Public DNS worker uses inherited site default');
-same(null,$watch->fresh()->ns_profile_id,'Inheritance never stores an automatic profile choice');
-expect($checks->finish($ticket,new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('delegation','platform'),$at+1),'Inherited watch observation commits');
-$notice=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\WatchNoticeTarget::capture('watch',$watch->id,$owner->id,$at+1));
-same('platform',$notice['delegation']['dns']??null,'Inherited watch notice target uses the same stamp as its DNS reader');
-DB::table('domains_watch_work')->where('watch_id',$watch->id)->where('kind','delegation')->update(['due_at'=>$at+2]);
-$ticket=$checks->begin($watch->id,$owner->id,'delegation',$at+2);
-
 $manager=staffUser(['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.new_domain_dns','admin.domains.watch.view','admin.domains.watch.manage']);
 \Illuminate\Support\Facades\Auth::setUser($manager);
-same(1,\Paymenter\Extensions\Servers\Domains\Admin\Support\WatchFacts::usedBy($default->id),'Template usage includes an inherited active watch');
 $viewer=staffUser(['admin.domains.view','admin.domains.watch.view','admin.domains.watch.manage']);
-$fake=new \Paymenter\Extensions\Servers\Domains\Tests\FakeDnsReader;
-app()->instance(\Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new \Paymenter\Extensions\Servers\Domains\Services\WatchWork($fake,new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(fn()=>0),true,fn()=>$at+2));
 $replacement=DB::transaction(fn()=>WatchProfile::create(['name'=>'Explicit replacement','enabled'=>true,'nameservers'=>['ns1.other.test','ns2.other.test'],
-    'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$manager->id,'reason'=>'Synthetic site change']));
+    'edited_by'=>$manager->id,'reason'=>'Synthetic site change']));
 SiteDnsDefault::save($manager,$replacement->id);
-expect(!$checks->finish($ticket,new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('delegation','platform'),$at+3),'Site change rejects an in-flight old comparison');
-same($replacement->id,$checks->begin($watch->id,$owner->id,'delegation',$at+2)?->profileId,'Site change queues a current comparison');
-foreach(['paused','retired']as$state){
-    DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>$state]);
-    $before=$watch->fresh()->getRawOriginal();$work=DB::table('domains_watch_work')->where('watch_id',$watch->id)->get()->toJson();
-    SiteDnsDefault::save($manager,$default->id);
-    same($before,$watch->fresh()->getRawOriginal(),'Site changes preserve '.$state.' watch');
-    same($work,DB::table('domains_watch_work')->where('watch_id',$watch->id)->get()->toJson(),'Site changes leave '.$state.' work untouched');
-}
-DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>'active','ns_profile_id'=>$replacement->id,'expected_dns'=>'external']);
 SiteDnsDefault::save($manager,$default->id);
-same($replacement->id,SiteDnsDefault::watchProfile($watch->fresh())->id,'Explicit watch template survives site changes');
-same([], $fake->calls,'Reconciliation performs no DNS or registrar I/O');
 // Mount the actual pages to verify Missing and the one site-level writer with permission checks. The default is set
-// on Domains > DNS templates; Domains > Monitoring settings shows it and links there.
 staffPanel();
 $templates=\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource::class;
-$panel=\Filament\Facades\Filament::getCurrentPanel();$panel->resources([\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::class,$templates]);
-\Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel,$templates){\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::registerRoutes($panel);$templates::registerRoutes($panel);});
+$panel=\Filament\Facades\Filament::getCurrentPanel();$panel->resources([$templates]);
+\Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>$templates::registerRoutes($panel));
 app('router')->getRoutes()->refreshNameLookups();
-$settingsPage=\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\MonitoringSettings::class;
+$settingsPage=\Paymenter\Extensions\Servers\Domains\Admin\Pages\DnsResolver::class;
 $page=\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\ListConfiguration::class;
 \Livewire\Livewire::actingAs($viewer)->test($page)->assertActionHidden('siteDefault')->assertActionDoesNotExist('editDefault');
 fixtureClearBusinessChoice(SiteDnsDefault::KEY);
@@ -74,17 +45,11 @@ config(['domains.site_dns_default.nameservers'=>null]);$entry->upgraded();
 $settings=\Livewire\Livewire::actingAs($manager)->test($page)->assertSee(SiteDnsDefault::MISSING);
 // ui-r15 R4: the step is said once, in the red callout; the Default nameservers row shows only Missing.
 same(1,substr_count($settings->html(),'Choose a template in Domains &gt; DNS templates'),'Default nameservers step shows once');
-// dns-defaults-ux-r1: monitoring settings no longer change the default; they show it and link to DNS templates.
-$monitoring=\Livewire\Livewire::actingAs($manager)->test($settingsPage)->assertActionDoesNotExist('siteDefault')->assertSee(SiteDnsDefault::NONE);
-same(1,substr_count($monitoring->html(),'Choose a template in Domains &gt; DNS templates'),'Monitoring settings say the step once');
-expect(str_contains($monitoring->html(),'href="'.$templates::getUrl().'"'),'Monitoring settings link to DNS templates');
 $settings->callAction('siteDefault',['profile'=>$default->id])->assertHasNoActionErrors()->assertNotified('Default nameservers saved');
 same($default->id,SiteDnsDefault::profile()->id,'Site settings save a single global reference');
 $edit = fn ($template) => \Livewire\Livewire::actingAs($manager)->test(
     \Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\EditConfiguration::class, ['record'=>$template->id]);
-$draft = $edit($default)->set('data.website_endpoints','web.preview.test');
-same('No', panelRowValue($draft->html(),'New registrations'), 'Editing only a website target preserves registration defaults');
-expect(str_contains(panelRowValue($draft->html(),'Pending edits') ?? '', 'web.preview.test'), 'Preview identifies the unsaved hostname');
+$draft=$edit($default)->set('data.name','Preview name');
 $document = new DOMDocument;
 @$document->loadHTML($draft->html());
 $xpath = new DOMXPath($document);
@@ -106,10 +71,6 @@ same($before,[WatchProfile::orderBy('id')->get()->toJson(),\Paymenter\Extensions
 SiteDnsDefault::save($manager,$default->id);
 \Livewire\Livewire::actingAs($manager)->test($settingsPage)->assertSee('ns1.edited.test, ns2.edited.test');
 $default=$default->fresh();
-app(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)->boot();
-DB::table('domains_watch_work')->where('watch_id',$watch->id)->delete();
-DB::transaction(fn()=>$source->fresh()->fill(['revision'=>$source->revision+1,'last_seen_at'=>$at+1])->save());
-same(2,DB::table('domains_watch_work')->where('watch_id',$watch->id)->whereIn('kind',['delegation','points'])->count(),'Source attachment events enroll DNS work before the daily sweep');
 // Connected registrar rules also apply while processing is paused. No provider verification or send is faked here:
 // privileged immutable bindings supply only the native relationship used by these local policy writes.
 $connect=static function(string $key):void {
@@ -119,7 +80,7 @@ $connect=static function(string $key):void {
 };
 $servers=static fn(int $count)=>array_map(static fn($n)=>'ns'.$n.'.registrar.test',range(1,$count));
 $make=static fn(int $count)=>DB::transaction(fn()=>WatchProfile::create(['name'=>'Count '.$count,'enabled'=>true,'nameservers'=>$servers($count),
-    'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$manager->id,'reason'=>'Synthetic registrar limit']));
+    'edited_by'=>$manager->id,'reason'=>'Synthetic registrar limit']));
 $refuse=static function(Closure $write,string $rule):void {
     $before=[SiteDnsDefault::profile()->id,WatchProfile::orderBy('id')->get()->toJson(),\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count()];
     $error=null;try{$write();}catch(DomainException $e){$error=$e->getMessage();}

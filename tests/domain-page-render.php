@@ -27,8 +27,8 @@ $progress=[['label'=>'Nameservers','state'=>'Done','date'=>'2026-10-20'],['label
 $domain=static fn(string $name,array $more=[])=>new OwnedDomain(...[...['name'=>$name,'status'=>'Active','tone'=>'ok','expiry'=>'2027-03-01','renewal'=>'On','renewalPrice'=>'$14.99',
     'actions'=>['show'=>'/domains/1'],'progress'=>$progress,'setup'=>[],'transfer'=>[],'management'=>$m,'testEnvironment'=>false,'history'=>$history,'owner'=>['name'=>'Jane Doe','email'=>'jane@example.com'],
     'renewNow'=>['url'=>'/domains/1/renew','terms'=>[1,2,3],'order_by'=>'2027-02-28'],'autoRenew'=>['url'=>'/domains/1/auto-renew','enabled'=>true]],...$more]);
-$summary=static fn(OwnedDomain $d,array $more=[])=>new DomainSummary($d->name,null,'managed','domain.registration.platform',[],null,null,[],DomainSummaryStrings::all(),...[
-    'expiry'=>$d->expiry,'expiryPrecision'=>'date','expirySource'=>null,'freshness'=>[],'renewalDueAt'=>'2027-02-01','renewalPrice'=>$d->renewalPrice,'relatedServices'=>[],'hostnames'=>[],
+$summary=static fn(OwnedDomain $d,array $more=[])=>new DomainSummary($d->name,null,'managed','domain.registration.platform',[],DomainSummaryStrings::all(),...[
+    'expiry'=>$d->expiry,'expiryPrecision'=>'date','expirySource'=>null,'renewalDueAt'=>'2027-02-01','renewalPrice'=>$d->renewalPrice,
     'urls'=>['detail'=>'/domains/1','support'=>'/tickets/create'],...$more]);
 $paused=$m;$paused['dns']['records']=null;$paused['ds']['records']=null;
 $cases=[

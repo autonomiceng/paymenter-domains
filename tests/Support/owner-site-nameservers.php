@@ -7,8 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
 use Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault;
 $siteServers=['ns1.site.example.org','ns2.site.example.org'];
 config(['domains.site_dns_default.nameservers'=>['ns1.deploy.example.net','ns2.deploy.example.net']]);
-$siteProfile=DB::transaction(fn()=>WatchProfile::create(['name'=>'Saved site DNS','nameservers'=>$siteServers,'website_endpoints'=>[],
-    'email_endpoints'=>[],'enabled'=>true,'edited_by'=>$user->id,'reason'=>'Synthetic saved site default']));
+$siteProfile=DB::transaction(fn()=>WatchProfile::create(['name'=>'Saved site DNS','nameservers'=>$siteServers,'enabled'=>true,'edited_by'=>$user->id,'reason'=>'Synthetic saved site default']));
 fixtureBusinessChoice(SiteDnsDefault::KEY,(string)$siteProfile->id,'string');
 $nsSection=$owners->present($d->fresh())->management['nameservers'];
 same($siteServers,$nsSection['defaultServers'],'Existing-domain management uses the saved site default for either registrar');

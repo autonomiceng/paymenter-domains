@@ -52,6 +52,5 @@ $user=commerceUser();$user->update(['email'=>'transfer-owner@example.com']);fore
 config(['cache.default'=>'database','session.driver'=>'database','queue.default'=>'database','queue.connections.database.retry_after'=>900]);Queue::fake();
 
 
-$offlinePsl=static fn():never=>throw new \Paymenter\Extensions\Servers\Domains\Services\PslFailure('transport_failed');app()->instance(\Paymenter\Extensions\Servers\Domains\Services\PslTransport::class,new \Paymenter\Extensions\Servers\Domains\Services\PslTransport($offlinePsl));
 app(\Paymenter\Extensions\Servers\Domains\Services\ObservationWork::class)->enroll($server->id);
 DB::table('domains_runtime_turns')->insertOrIgnore(['server_id'=>$server->id,'account_fingerprint'=>$binding->fingerprint,'operation_cursor'=>0,'domain_cursor'=>0,'tld_cursor'=>0,'turn'=>0,'due_at'=>$clock->now()->getTimestamp()+3600,'finished_at'=>0]);

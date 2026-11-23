@@ -11,9 +11,8 @@ use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Facades\{Auth,DB,Route};
 use Filament\Facades\Filament;
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\PublicSuffixList;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\MonitoringSettings as Page;
+use Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites as Rights;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\DnsResolver as Page;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\DnsReader;
 use Paymenter\Extensions\Servers\Domains\Dns\{DohEndpoint,DohTransport,NativeDnsReader,DnsQuery,DnsContext};
@@ -52,14 +51,14 @@ foreach(['64:ff9b:0:ffff::1','64:ff9b:2::1','2606:4700:4700::1111'] as $ip){
     same($ip,(new DohEndpoint(DohEndpoint::URL,$ip))->ip,'Adjacent global prefix remains eligible: '.$ip);
 }
 
-staffPanel(); $panel = Filament::getCurrentPanel(); $panel->resources([WatchResource::class]);
-Route::name('filament.admin.')->prefix($panel->getPath())->middleware($panel->getMiddleware())->group(fn() => Route::middleware($panel->getAuthMiddleware())->group(fn() => WatchResource::registerRoutes($panel)));
+staffPanel(); $panel = Filament::getCurrentPanel(); $panel->pages([Page::class]);
+Route::name('filament.admin.')->prefix($panel->getPath())->middleware($panel->getMiddleware())->group(fn() => Route::middleware($panel->getAuthMiddleware())->group(fn() => Page::registerRoutes($panel)));
 app('router')->getRoutes()->refreshNameLookups(); app('router')->getRoutes()->refreshActionLookups();
-$rights = [Staff::VIEW, PublicSuffixList::VIEW, PublicSuffixList::MANAGE]; $staff = staffUser($rights); Auth::setUser($staff);
+$rights = [Staff::VIEW, Rights::VIEW, Rights::MANAGE]; $staff = staffUser($rights); Auth::setUser($staff);
 $setRights = function ($permissions) use ($staff) { $staff->role()->first()->update(['permissions' => $permissions]); };
 $setRights([]); Livewire::actingAs($staff)->test(Page::class)->assertForbidden();
-$setRights([Staff::VIEW, PublicSuffixList::MANAGE]); same(false, Page::canAccess(), 'Manage alone cannot view');
-$setRights([Staff::VIEW, PublicSuffixList::VIEW]);
+$setRights([Staff::VIEW, Rights::MANAGE]); same(false, Page::canAccess(), 'Manage alone cannot view');
+$setRights([Staff::VIEW, Rights::VIEW]);
 $configured=Livewire::actingAs($staff)->test(Page::class)->assertSee('cloudflare-dns.com')->assertSee(DohEndpoint::IP)->assertSee('Default nameservers')->assertActionHidden('configure')->assertActionHidden('check');
 expect(!str_contains(resolverSectionText($configured->html()),\Paymenter\Extensions\Servers\Domains\Presentation\State::NotSet->label()),'Saved resolver has no missing state in its section');
 same(0, $calls, 'Rendering no query'); $setRights($rights);
@@ -69,7 +68,7 @@ $hint = json_encode("If the resolver fails, checks retry once with the server's 
 Livewire::actingAs($staff)->test(Page::class)->assertSee(substr($hint, 1, -1), false)->assertDontSee('Connection and response failures use');
 $page = Livewire::actingAs($staff)->test(Page::class); $cachedCheck = $page->instance()->getAction('check')->getActionFunction();
 $cachedSave = $page->instance()->getAction('configure')->getActionFunction();
-$setRights([Staff::VIEW, PublicSuffixList::VIEW]);
+$setRights([Staff::VIEW, Rights::VIEW]);
 foreach ([fn() => $cachedCheck(), fn() => $cachedSave(['url' => DohEndpoint::URL, 'ip' => DohEndpoint::IP])] as $callback) {
     try { $callback(); expect(false, 'Revoked action denied'); } catch (Symfony\Component\HttpKernel\Exception\HttpException $e) { same(403, $e->getStatusCode(), 'Fresh permission check'); }
 }

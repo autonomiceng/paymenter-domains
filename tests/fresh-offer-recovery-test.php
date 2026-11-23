@@ -87,4 +87,8 @@ $entry->installed();
 same('active', CatalogueActivation::routeState()['state'], 'Retry resumes the proven partial install and commits checked activation');
 same(2, CatalogueActivation::generation(), 'Interrupted retries grant one activation generation');
 $entry->installed(); same(2, CatalogueActivation::generation(), 'Completed retry is idempotent');
+$tables=\Paymenter\Extensions\Servers\Domains\Services\Installation::tables();
+same(41,count($tables),'Fresh Domains-owned table inventory');
+$columns=array_sum(array_map(fn($table)=>count(Schema::getColumnListing($table)),$tables));
+echo count($tables)." owned tables, ".$columns." columns\n";
 $nativeSuccessful = true;

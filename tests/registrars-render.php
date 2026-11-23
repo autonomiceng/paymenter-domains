@@ -7,7 +7,7 @@ use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\HtmlString;
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\{PublicSuffixList as PslPage,RegistrarAccount,RegistrarSetup};
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,RegistrarSetup};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Data\Money;
 use Paymenter\Extensions\Servers\Domains\Services\{BalanceReads, StaffSettingsReview};
@@ -31,12 +31,9 @@ $pending->fill(['domain'=>'pending-alert.example.test','sld'=>'pending-alert','t
 $clock->instant=$clock->instant->modify('+2 minutes');BalanceReads::record(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($enom),new Money('7.99','USD'),$clock->now(),'manual');
 $save('list',Livewire::actingAs($staff)->test(RegistrarSetup::class));
 // Accounts render for staff with every setup permission and the public suffix list, so all buttons show.
-Paymenter\Extensions\Servers\Domains\Services\PslSchema::install();Paymenter\Extensions\Servers\Domains\Services\PslReviewSchema::install();
+Paymenter\Extensions\Servers\Domains\Services\PslReviewSchema::install();
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::class,new \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites(app(\Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue::class),app(\Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class),app(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class),true));
-$full=staffUser([Staff::VIEW,Staff::POLICY,...array_map([StaffSettingsReview::class,'permission'],array_keys(StaffSettingsReview::ACTIONS)),PslPage::VIEW,PslPage::MANAGE]);
+$full=staffUser([Staff::VIEW,Staff::POLICY,...array_map([StaffSettingsReview::class,'permission'],array_keys(StaffSettingsReview::ACTIONS))]);
 \Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::registerRoutes(Filament::getCurrentPanel());app('router')->getRoutes()->refreshNameLookups();
 foreach(['account-enom-test'=>$enom->server_id,'account-namesilo-test'=>$silo->server_id,'account-not-connected'=>$empty->id] as $name=>$id){$save($name,Livewire::actingAs($full)->test(RegistrarAccount::class,['account'=>$id]));}
-// Domain monitoring on with a queue timeout below 180 seconds: the Background worker row says so.
-app()->instance(Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new Paymenter\Extensions\Servers\Domains\Services\WatchWork(new Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(static fn()=>[]),new Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null),true));
-config(['queue.default'=>'database','queue.connections.database.retry_after'=>60]);$save('account-queue',Livewire::actingAs($full)->test(RegistrarAccount::class,['account'=>$enom->server_id]));
 echo "Registrars list and account pages rendered\n";$nativeSuccessful=true;

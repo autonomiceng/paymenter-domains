@@ -297,21 +297,12 @@ $excluded=[
     'RegistrarBalances.php'=>['rate_limited','configuration_unavailable','read_failed','test_call_refused'], // Balance facts.
     'AdoptionReader.php'=>['identity_unconfirmed','expiry_disagrees','read_failed','auto_renew_on','auto_renew_unknown',
         'expired','expiry_unconfirmed','state_unconfirmed'], // Adoption Review::LABELS presenter.
-    'PublicSuffixList.php'=>['not_modified','identical','updated','internal_error','rate_limited','stored_rules_rejected'], // PslFacts.
-    'PslRebaseline.php'=>['stored_rules_rejected','rules_lost'],
-    'WatchMaintenance.php'=>['waiting','dispatch_overdue','checks_unsuccessful','current'], // Health summary().
-    'WatchWork.php'=>['disabled','queue_configuration'],
     'PublicRegistryReader.php'=>['no_expiry','facts','endpoint_failed','deferred'], // Result reason, distinct safe_code.
-    'WatchRegistryObserver.php'=>['deferred'],
-    'WatchDiscovery.php'=>['hosting'], // Departure preview watch outcome, worded by DepartureConfirm::rows and subject() as "Not monitored after confirm" (mock 06).
     'DnsResolverSettings.php'=>['dns_rcode_'], // DNS response prefix, formatted locally.
     'DomainManagement.php'=>['owner_request','staff_correction','nameservers','lock','auto_renew_off','privacy','contacts','dns','ds','glue',
         'ds_add','glue_add','glue_update','privacy_enable','privacy_disable','privacy_purchase'], // Audit reasons and capability names.
     'ManagementProgress.php'=>['contacts','dns','privacy','ds','glue','privacy_enable','privacy_disable','privacy_purchase','ds_add','glue_add','glue_update','under_review','failed','disposed'], // Grouped settings and status keys.
 
-    'ManagedPublicEnrollment.php'=>['managed_enrollment'],
-    'ManagedDnsSetup.php'=>['external','platform'], // DNS intent values, not staff reason codes.
-    'WatchTemplateAssignment.php'=>['deployment','external','inherit','pin','platform','site','unset'], // Template choices and DNS intents.
     'NativeServiceRefusal.php'=>['identity','price'], // Structured log fields.
     'ProviderSendGuard.php'=>['not_callable','clock_failed','guard_threw'], // Structured log fields.
     'CartHandoffFailure.php'=>['unclassified','eligibility_unconfirmed'], // Structured cart handoff log keys, never request safe codes.
@@ -327,7 +318,6 @@ $excluded=[
     'ObservationWork.php'=>['holding'], // Work phase identity.
     'HoldingObservationWork.php'=>['holding','idle','configuration_restored','records_incomplete'], // Phase, turn result, audit event and HoldingReadRetry cause.
     'HoldingReadRetry.php'=>['records_incomplete'], // Read stop code, shown by its own read_cause.
-    'SiteDnsDefault.php'=>['platform'], // Inherited DNS intent, as in ManagedDnsSetup.
     'AccountComplimentaryRenewals.php'=>['account_complimentary'], // Funding authorization reason, not request safe_code.
     'RegistrarAnswers.php'=>['registrar_not_processed'], // Refund authorization audit reason, not request safe_code.
     'SellRule.php'=>['limit','sell','skipped','waiting'], // Row decisions, shown by What you sell.
@@ -341,9 +331,6 @@ foreach(new RecursiveIteratorIterator(new RecursiveDirectoryIterator(dirname(__D
     foreach(array_diff($inventory(file_get_contents($file->getPathname())),$excluded[$file->getBasename()]??[]) as $code){$emitted[$code][]=$file->getBasename();}
 }
 // These services forward codes from closed vocabularies rather than emitting literals at the write.
-$dnsReason=new ReflectionMethod(\Paymenter\Extensions\Servers\Domains\Dns\DnsReading::class,'safeCode');
-$dnsSource=implode('',array_slice(file($dnsReason->getFileName()),$dnsReason->getStartLine()-1,$dnsReason->getEndLine()-$dnsReason->getStartLine()+1));
-foreach($inventory('<?php class Diagnostic {'.$dnsSource.'}') as $code){$emitted[$code][]='DnsReading::safeCode';}
 preg_match_all('/[\'"]([a-z][a-z0-9_]*)[\'"]/D',file_get_contents(dirname(__DIR__).'/Domains/Services/WriteHeld.php'),$holds);
 foreach($holds[1] as $code){$emitted[$code][]='WriteHeld whitelist';}
 $missing=array_diff_key($emitted,$mapped);ksort($missing);

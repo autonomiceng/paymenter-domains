@@ -66,13 +66,4 @@ expect($testSetting->calls===1,'An invokable test-payments setting is resolved o
 expect($callableTooltip===$testPayments,'An invokable true setting has the same payment meaning as boolean true');
 config(['domains.test_payments'=>null]);
 
-// Hosting domains: the related list tags seeded watches (domain-portal-test covers their details and hosting pages). Watches never use a registrar test mode.
-$strings=DomainSummaryStrings::all();
-$watch=static fn(string $name,bool $demo)=>new DomainSummary($name,null,'watch','domain.registration.external',['domain.dns.unknown'],null,null,[],$strings,null,null,null,[],null,null,[],[],['detail'=>'/domains/checks/watch/1'],demo:$demo);
-foreach([true,false] as $demo){
-    $name=reservedFixtureName($demo?'demo-watch.example.com':'real-watch.example.com');$summary=$watch($name,$demo);
-    $empty=new Illuminate\Pagination\LengthAwarePaginator([],0,25);
-    $list=view('domains::index',['domains'=>new Illuminate\Pagination\LengthAwarePaginator([$summary],1,25)])->render();
-    $expectTags($list,$name,$demo?'Demo':'none','domains list hosting row');
-}
 $nativeSuccessful=true;echo "Customer Demo and Test tag checks passed.\n";

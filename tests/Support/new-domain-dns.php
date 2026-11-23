@@ -11,7 +11,7 @@ $nativeSuccessful=false;
 $account=Account::where('server_id',$binding->serverId)->sole();
 same([],NewDomainDns::nameservers($binding->serverId,'register'),'An unconfigured account keeps its existing DNS behavior');
 $template=DB::transaction(fn()=>WatchProfile::create(['name'=>'Registration nameservers','enabled'=>true,
-    'nameservers'=>['ns1.provider.example','ns2.provider.example'],'website_endpoints'=>[],'email_endpoints'=>[],
+    'nameservers'=>['ns1.provider.example','ns2.provider.example'],
     'edited_by'=>$user->id,'reason'=>'Synthetic registration default']));
 siteDnsFixture($template->id);
 same($template->id,\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::profile()->id,'Selected template is the site default');

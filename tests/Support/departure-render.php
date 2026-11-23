@@ -27,9 +27,6 @@ staffPanel();$actor=staffUser([Staff::VIEW,'admin.domains.manage','admin.domains
 panelTheme(getenv('PAYMENTER_TEST_FIXTURE'));
 $page=Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id]);
 writePanelPage($out.'/staff.html',$page);
-// Phase B: staff who may confirm see Confirm transferred away and the confirm step, and its dialog. The owner's watch
-// linked to this domain has no sources, so its row says it won't be monitored after confirm.
-DB::transaction(fn()=>Paymenter\Extensions\Servers\Domains\Models\WatchName::create(['user_id'=>$d->user_id,'canonical_name'=>$d->domain,'psl_revision'=>str_repeat('a',64),'notice_preferences'=>[],'state'=>'linked','registration'=>'platform','managed_domain_id'=>$d->id]));
 $departer=staffUser([Staff::VIEW,'admin.domains.manage','admin.domains.holdings.stop','admin.domains.holdings.depart']);Auth::setUser($departer);
 writePanelPage($out.'/staff-confirm.html',Livewire\Livewire::actingAs($departer)->test(ViewDomain::class,['record'=>$d->id]));
 writePanelPage($out.'/staff-confirm-dialog.html',Livewire\Livewire::actingAs($departer)->test(ViewDomain::class,['record'=>$d->id])->mountAction('confirm_departure'));
