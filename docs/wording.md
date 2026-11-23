@@ -30,7 +30,6 @@ One word list for every page. Customers and staff see the same word for the same
 | Import | adopt, adoption |
 | Test | TEST, OTE, sandbox, rehearsal |
 | This site | deployment, environment, server config |
-| Monitoring | watch, domain checks, public checks |
 | Auth code | transfer code, EPP code (named once, in help) |
 | WHOIS privacy | domain privacy, ID protection |
 | Transfer lock | registrar lock, reg lock |

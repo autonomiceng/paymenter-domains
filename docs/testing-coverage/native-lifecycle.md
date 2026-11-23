@@ -93,23 +93,13 @@ rendered notifications cover price, recalculated-price Save, identity and Delete
 1440/1024 in dark/light; they do not establish installed-theme or browser interaction
 acceptance. Native Active expiry validation remains an accepted upstream limitation.
 
-Public notice planner: `watch-notice-plan-test.php` covers expiry-window and DNS-episode policy
-with synthetic current/stale/revision inputs; persistence, delivery and installed acceptance remain separate.
-
-Watch notice delivery: independent native channels, queued versus uncertain states, render-before-claim,
-missing-only template installation, native and public preferences, urgent priority, owner/role changes,
-retirement, managed proof/claim continuity, accepted-only restoration and stale predecessor interleaving.
-
-Watch notice overflow: drift confirmed across more sources than one check reads still reserves mail.
-
 ## MySQL/MariaDB schema identifiers and native lifecycle
 
 `schema-identifiers-test.php` compiles the real migration/create/alter and retained-reference
 Blueprints with Laravel's MySQL grammar, without a MySQL server or PDO connection. It checks
 all quoted identifiers, every verifier call site and every migrated table, with index prefixes
 on/off and empty, short and maximum-fitting table prefixes. This runs in the ordinary native
-suite. It caught both the long verifier reference names and the 65-character watch-observation
-index; that index now has a table-derived `_facts_idx` name. Retained index names are not compared.
+suite. Retained index names are not compared.
 `schema-reference-safety-test.php` forces a reference collision and a failure after CREATE:
 foreign reference rows survive the collision, while owned partial DDL is cleaned up.
 

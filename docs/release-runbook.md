@@ -117,7 +117,7 @@ Live catalogue refresh follows TEST: staff must use **Sync TLD prices** before t
 Read-only recovery can hold queued work as **Registrar writes disabled** while write opt-ins are off. After re-enabling writes, review and release those holds before resuming processing.
 
 Each account's **Setup checklist** on Registrars reports saved local gates only; opening staff pages is not a provider
-probe. Leave NameSilo sales, adoption, public checks and watch notices off until their separate
+probe. Leave NameSilo sales and adoption off until their separate
 acceptance is complete. Native server-edit permission includes access to saved credentials.
 
 ## Feature acceptance before reopening

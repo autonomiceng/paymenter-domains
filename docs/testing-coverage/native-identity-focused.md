@@ -1,16 +1,10 @@
-# Focused checks for native marker identity and managed public enrollment
+# Focused checks for native marker identity
 
-Changes to native marker identity or managed public enrollment require the existing
-source consumers even when their test files are unchanged. Keep controlled writer
-refusals as `DomainException`; missing or duplicate native marker rows must leave
-public observation work available for repair and normal retry backoff. Transfer-only
-relink retains its null/deferred result and unresolved staff finding. Other invalid
-authority still follows the existing retirement path.
+Changes to native marker identity must preserve controlled writer refusals and fail closed when required native marker rows are missing or duplicated.
 
 | Source trigger | Consumer paths to inspect |
 | --- | --- |
 | `Services/HoldingNativeIdentity.php`, including its marker refusal subtype | Both `HoldingLocks` and `HoldingIdentityLock`, their writer/adoption/native model consumers and fixtures; preserve missing action, missing ending and duplicate-marker writer assertions. |
-| `Services/ManagedPublicEnrollment.php` | Managed public observers, reconciliation, scheduler/health and transfer relink; preserve `transfer-completion-test.php` and its `Support/transfer-watch.php` fixture. |
 | Changed test files or shared support fixtures | The tests themselves, every requiring registered consumer, fixture policy and runner discovery checks. |
 
 The conservative lexical inventory contains 289 registered tests, including the
@@ -44,8 +38,8 @@ python3 scripts/test.py --jobs 2 --only \
   tests/curl-transport-test.php \
   tests/customer-tags-test.php tests/demo-data-test.php \
   tests/doh-settings-test.php tests/domain-counts-test.php \
-  tests/domain-page-test.php tests/domain-portal-test.php \
-  tests/domain-summaries-test.php tests/domain-summary-managed-test.php \
+  tests/domain-page-test.php \
+  tests/domain-summary-managed-test.php \
   tests/domains-list-rows-test.php tests/domains-list-test.php \
   tests/enom-catalogue-test.php tests/enom-curl-test.php \
   tests/enom-exchange-test.php tests/enom-identity-test.php \
@@ -57,11 +51,6 @@ python3 scripts/test.py --jobs 2 --only \
   tests/holding-adoption-test.php tests/holding-identity-lock-test.php \
   tests/holding-identity-writers-test.php tests/holding-provenance-test.php \
   tests/invoice-binding-test.php \
-  tests/managed-public-confirmation-test.php tests/managed-public-observer-test.php \
-  tests/managed-public-overflow-test.php tests/managed-public-quota-test.php \
-  tests/managed-public-reconciliation-test.php tests/managed-public-relink-test.php \
-  tests/managed-public-source-drift-test.php tests/managed-public-stamp-test.php \
-  tests/managed-public-storage-test.php \
   tests/management-deadline-test.php tests/management-namesilo-boundary-test.php \
   tests/management-namesilo-contacts-test.php tests/management-namesilo-test.php \
   tests/management-preparation-test.php tests/management-privacy-retirement-test.php \
@@ -93,9 +82,8 @@ python3 scripts/test.py --jobs 2 --only \
   tests/paired-driver-test.php tests/paymenter-upgrade-tripwire-test.php \
   tests/php83-compatibility-test.php tests/policy-ending-reads-test.php \
   tests/pricing-rules-test.php tests/provider-send-guard-operation-test.php \
-  tests/provider-send-guard-test.php tests/psl-rebaseline-test.php \
-  tests/psl-review-staff-test.php tests/psl-staff-test.php \
-  tests/psl-test.php tests/rdap-quota-test.php \
+  tests/provider-send-guard-test.php \
+  tests/rdap-quota-test.php \
   tests/reconciliation-authority-test.php tests/reconciliation-enom-history-test.php \
   tests/reconciliation-namesilo-test.php tests/reconciliation-provider-test.php \
   tests/reconciliation-recovery-test.php tests/reconciliation-test.php \
@@ -130,7 +118,7 @@ python3 scripts/test.py --jobs 2 --only \
   tests/staff-contact-release-test.php \
   tests/staff-domain-page-test.php tests/staff-domains-list-test.php \
   tests/staff-domains-test.php tests/staff-hold-release-audit-test.php \
-  tests/staff-holding-test.php tests/staff-monitoring-test.php \
+  tests/staff-holding-test.php \
   tests/staff-navigation-test.php tests/staff-operation-actions-test.php \
   tests/staff-operation-lease-test.php tests/staff-operation-privacy-test.php \
   tests/staff-operation-reads-test.php tests/staff-operation-transfers-test.php \
@@ -142,8 +130,7 @@ python3 scripts/test.py --jobs 2 --only \
   tests/staff-tld-actions-test.php tests/staff-tld-grants-test.php \
   tests/staff-tld-page-test.php tests/staff-tld-reads-test.php \
   tests/staff-tld-writes-test.php tests/staff-transfer-release-parity-test.php \
-  tests/staff-ui-polish-test.php tests/staff-watch-findings-test.php \
-  tests/staff-watch-summary-owners-test.php tests/staff-watch-test.php \
+  tests/staff-ui-polish-test.php \
   tests/status-pages-test.php tests/status-pill-test.php \
   tests/status-sets-test.php tests/storefront-cache-test.php \
   tests/storefront-test.php tests/terminal-proof-test.php \
@@ -160,16 +147,7 @@ python3 scripts/test.py --jobs 2 --only \
   tests/transfer-input-evidence-test.php tests/transfer-inputs-test.php \
   tests/transfer-precheck-test.php tests/transfer-safety-namesilo-test.php \
   tests/transfer-status-test.php tests/user-deletion-test.php \
-  tests/watch-discovery-work-test.php tests/watch-dns-confirmation-test.php \
-  tests/watch-dns-observer-test.php tests/watch-dns-storage-test.php \
-  tests/watch-maintenance-test.php tests/watch-notice-delivery-test.php \
-  tests/watch-notice-managed-claim-test.php tests/watch-notice-managed-test.php \
-  tests/watch-notice-negative-test.php tests/watch-notice-overflow-test.php \
-  tests/watch-notice-pages-test.php tests/watch-notice-priority-test.php \
-  tests/watch-notice-snapshot-test.php tests/watch-notice-staff-delivery-test.php \
-  tests/watch-registry-observer-test.php tests/watch-registry-work-test.php \
-  tests/watch-scheduler-test.php tests/watch-storage-test.php \
-  tests/watch-transfer-test.php tests/write-boundary-test.php \
+  tests/write-boundary-test.php \
   tests/write-bridge-test.php tests/write-preflight-test.php
 ```
 

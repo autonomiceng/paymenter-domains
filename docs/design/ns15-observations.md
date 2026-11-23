@@ -37,9 +37,9 @@ and binding refusal use the existing request context. Local quota refusal still 
 - `OwnerRecords` uses only complete sequenced sections for editable inventories. NameSilo's existing
   `DnsForm`/`DnsSequence` keeps CAA/SRV read-only and preserves their exact bytes while other records change.
 
-This serves the approved NS15 customer/staff/monitoring/history/settings sheets in the Demo C pack.
+This serves the approved NS15 customer/staff/history/settings sheets in the Demo C pack.
 UI must keep public-DNS findings/timestamps separate from registrar observations. Public DNS cannot
-confirm registrar writes, renewals, billing or ownership. No watch/public tables or views change here.
+confirm registrar writes, renewals, billing or ownership.
 Last-good data never grants edit authority; contact facts belong only in the authorized domain view.
 
 ## Integration evidence still required

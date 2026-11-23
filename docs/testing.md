@@ -560,19 +560,6 @@ only explicit synthetic availability checks read the provider port.
 
 Holding provenance tests check billing, renewal proof, reminders, direct dispatch, observation and owner/staff presentation with purchased holdings and unverified imports.
 
-PSL updater tests use small synthetic ICANN/PRIVATE lists and injected clocks/transports.
-`psl-test.php` covers retained copies, validation refusals, conditional requests, shared daily admission,
-weekly eligibility and exact 30/90-day boundaries. `psl-transport-test.php` uses namespaced cURL
-fakes to verify public-address pinning, HTTPS, no redirects/retries, deadlines and response caps.
-No list download, discovery/resolver or provider acceptance is established.
-
-`psl-staff-test.php` mounts the installed native page, submits source/update actions,
-revokes permissions after mount, checks all age states and exercises weekly runtime work
-without accounts. It runs the registered scheduler callback with a frozen clock: fresh installs
-queue on the next minute, recent and failed attempts queue nothing over 1,440 minutes,
-weekly and daily network boundaries remain exact, and a missing status table queues nothing. Native fixture defaults inject a failing PSL transport so incidental ticks
-can never resolve DNS or download data.
-
 ### Runtime archive verification
 
 `python3 scripts/build.py --output-dir /fresh/output` builds the complete native runtime.
@@ -598,7 +585,7 @@ raw ledgers/settings and all prior migration records; only account update timest
 normalized because native pause touches them. Native server deletion calls disabled then
 refuses retained accounts; the separate uninstall hook also retains data. Upload-time schemas
 are verified before repeating the native upgrade command as an idempotency check.
-Customized notification templates and populated synthetic PSL state are retained too.
+Customized notification templates are retained on reinstall.
 Converter injection and a modified embedded manifest are rejected before native upload.
 
 ### Default-held registration from installed bytes
@@ -611,13 +598,6 @@ processing off without accepted runtime composition and shared workers. A backfi
 registration cannot reach a provider executor; the real registration writer refuses with
 `write_disabled` before engine resolution or wire calls. Transfer and renewal feature gates
 remain independent and default off. No provider requests or live acceptance are implied.
-
-Registrable-name tests use only synthetic PSL fixtures: ICANN longest matches, wildcard/exception,
-PRIVATE holds, ASCII A-labels, U-label holds, invalid hostnames and revision changes.
-PSL rebaseline tests bind acceptance to pending bytes, fresh staff rights, typed short hash and reason;
-current validation remains mandatory and acceptance retains encrypted append-only audit evidence.
-
-Watch storage tests use installed native SQLite fixtures. They cover disabled revisioned mappings, fresh/default-deny permissions, customer/name and service uniqueness, exact target invariants, immutable owner identities, encrypted evidence/audit, source retirement with retained service identity, lifecycle retention and missing migration history. No discovery runtime, public lookup or browser evidence is implied.
 
 Worker-deadline regressions in `operation-recovery-test.php` cover the 245-second last-send
 boundary, refusal beyond it and claim-lock waits that consume the same entry budget. Late contact
@@ -698,47 +678,8 @@ rechecks, exact claims, crash recovery, independent retry/circuit/429 policies a
 freshness transitions. RDAP and DNS reservations precede wire attempts; local deferral preserves
 fresh facts. Delegation tests cover TTL-spaced classification confirmation and overflow cohorts.
 
-Watch scheduling tests use synthetic local discovery and dispatch callbacks, an injected clock
-and an asynchronous queue configuration. They cover five-minute turns, bounded product/owner
-rotation, duplicate hints, queue timeouts, outage deduplication, and 90-day evidence retention.
-Activation and live/concurrent resolver/queue acceptance remain separate operator gates.
 
-Watch notice policy is exercised offline by `watch-notice-plan-test.php`: exact UTC windows,
-nearest discovery, bounded catch-up, retained correction keys, clock reversal, independent DNS
-confirmation and restoration only for previously handed-off channels. Pure inputs grant no
-owner, installed queue, public resolver or SMTP acceptance.
-
-Public notice delivery coverage uses independent native mail/app fakes, retained per-channel claims,
-opt-out and owner/role/retirement checks, daily priority, render failures, and managed relink proof.
-The owner preference page uses native web/auth, CSRF and one-use session keys with stale revisions refused.
-
-Domain summaries use batched native/ledger owner checks and local observation display stamps.
-Coverage checks source/property/order/profile changes, partial empty-label refusal, safe hosting
-links, constant query counts and no display writes. Public reads remain synthetic and offline.
-Managed cases also cover adopted generations, retired work, the expiry-day boundary and retained
-last-known values. Current badges require fresh evidence; historical values carry per-axis stale flags.
-
-The domain portal suite covers the registered/related section order, neutral unknown labels,
-read-only paused/retired detail, fresh preference eligibility, owner-safe hosting rows,
-local GETs and query-free extension Blade. The exact native service view adapter is pinned
-by the upgrade tripwire; it composes one named view and changes no native component state.
-
-The hosting Domain row uses an exact `services.show` view composer because native
-service fields have no documented append hook. It only changes view data, fails
-closed to an omitted row, and never mutates the native component. The test-only
-tripwire pins its template/component dependencies; upgrading requires rechecking
-this narrow adapter when those files change.
-
-Staff watch coverage uses native Filament pages, fresh permission checks and actor-bound one-use revision tickets.
-It exercises stale/revoked actions, local queue wakeup limits, retained leases, disabled configuration saves,
-separate reviewed enablement, archived source links, schema drift and read-only pending adoption.
-
-Staff watch summaries batch up to 250 watches across owners using the same local projection
-as customer summaries. `staff-watch-summary-owners-test` compares every DTO field against
-per-owner batches, checks constant queries for 25 rows across 1/5/25 customers, and injects
-foreign-owner DNS/registry/source/native identities to verify isolation. Fresh watch-view
-permission is required. The attention filter evaluates the first 1,000 active names in four
-bounded batches; the cap bounds local decryption and response work, with no provider reads.
+Domain summary tests check batched native and ledger ownership, registrar nameserver evidence and bounded query counts. DNS template actions check staff authorization, optimistic revisions and replay protection.
 
 ### Focused iteration and timing evidence
 
@@ -778,11 +719,6 @@ retained unsent evidence, staff release and later one-time dispatch without chan
 
 `staff-hold-release-audit-test.php` repeats a paid native request’s Hold and Livewire Release
 cycle, checking exact completed audit reasons/counts, no reason modal and its History request URL.
-
-`watch-notice-staff-delivery-test.php` queues a native watch notice to its staff owner and
-checks exact recipient, subject/body, native email evidence and the staff delivery review fields.
-The supplied site shell owns its branded card class and company branding assertions. Domains owns the
-mail presentation table, content/domain, recipient and native delivery evidence.
 
 OTE order regressions use synthetic identities with observed title-case descriptions and
 6.99/8.99 subtotals. `namesilo-read-test.php` and `ote-renewal-probe-test.php` retain

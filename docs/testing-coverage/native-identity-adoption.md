@@ -126,7 +126,7 @@ Adoption refuses marked owners before creating a holding. SQLite proves scheduli
 
 `test_user_deletion_mariadb.py` uses two native PHP processes against local, socket-only MariaDB, with plain and prefixed tables.
 It covers intent-first, checkout-first with an observed InnoDB user lock wait, and deletion from an older repeatable-read snapshot.
-This opt-in test makes no provider calls. Adoption stays off pending site checks of native edits, installed consumers, registrar acceptance and managed public DNS.
+the native owner mutex and registrar evidence remain protected.
 
 Post-delete User/Service observers inspect at most 25 retained domains and save a staff discrepancy;
 the existing durable runtime domain cursor inspects at most 25 domains per account turn to recover
@@ -187,15 +187,6 @@ native answers remain unknown: PHP empty arrays are ambiguous (including type-fi
 45-second context admits at most ten queries and rejects late results; it cannot interrupt
 a blocking system resolver call. DoH adapter for proven empty answers is a follow-up;
 proven NODATA/NXDOMAIN is supported without relaxing native unknowns. Worker isolation is deferred.
-
-Watch DNS storage tests cover default-off profiles/work, exact revision and owner/source stamps,
-claims/expired workers, encrypted retained facts, independent axes and failed-read stale projections.
-They use a disposable SQLite fixture; concurrent MariaDB activation and dispatch remain unqualified.
-
-DNS signal tests cover exact complete NS sets, proven NODATA/NXDOMAIN through a fake reader,
-null MX, mixed overlap, bounded CNAME chains, omitted hosts and failed-read empty-label refusal.
-TTL/order changes preserve the routing digest; source/profile changes discard in-flight results.
-The native reader stays conservative; see `docs/design/watch-dns.md` for activation limits.
 
 `native-lifecycle-test.php` covers both guard boot orders, numeric expiry refusal and numeric
 updates without expiry extras, native paid Active/null saves, explicit idempotent legacy-date
