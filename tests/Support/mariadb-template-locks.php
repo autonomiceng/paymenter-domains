@@ -1,6 +1,6 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Two native connections, no provider calls.
-// A holder takes the DNS template row lock as an assignment writer does; the staff turn off or delete waits on it.
+// Staff disable and delete actions wait for the registration default or template row lock.
 declare(strict_types=1);
 require __DIR__.'/mariadb-bootstrap.php';
 require_once __DIR__.'/FakeRegistrar.php';
@@ -47,8 +47,9 @@ $id=$ids[$name];$manager=User::findOrFail($ids['manager']);
 $writes=new Writes;
 if($phase==='hold'){
     // Verify the staff writer is blocked by this connection on the relevant row.
-    $lockTable='`'.DB::getDatabaseName().'`.`'.DB::getTablePrefix().($case==='late'?'domains_business_settings':'domains_dns_templates').'`';
-    $observe=static function()use($root,$name,$lockTable,$wait):void {
+    $table=$case==='late'?'domains_business_settings':'domains_dns_templates';
+    $lockTable='`'.DB::getDatabaseName().'`.`'.DB::getTablePrefix().$table.'`';
+    $observe=static function()use($root,$name,$table,$lockTable,$wait):void {
         $wait('started');$writer=(int)file_get_contents($root.'/'.$name.'-connection');
         $waits=static fn():int=>(int)DB::selectOne('SELECT COUNT(*) AS n FROM information_schema.INNODB_LOCK_WAITS w'
             .' JOIN information_schema.INNODB_TRX r ON r.trx_id=w.requesting_trx_id JOIN information_schema.INNODB_TRX b ON b.trx_id=w.blocking_trx_id'
@@ -57,7 +58,7 @@ if($phase==='hold'){
         // InnoDB refreshes these tables only after 0.1 s without a read; faster polls re-read the old state.
         $end=microtime(true)+20;
         while($waits()===0){if(microtime(true)>$end){throw new RuntimeException('The staff write did not wait on the expected lock.');}usleep(200000);}
-        file_put_contents($root.'/'.$name.'-lock-wait','proved');
+        file_put_contents($root.'/'.$name.'-lock-wait',$table);
     };
     if($case==='late'){
         // Save the registration default while the other connection holds its prior read view.
@@ -97,7 +98,7 @@ $run=static function()use($writes,$manager,$id,$action,$ticket,&$error,&$code):v
     catch(DomainException $e){$error=$e->getMessage();}catch(QueryException $e){$code=(int)($e->errorInfo[1]??0);}
 };
 if($case==='late'){
-    // The older read view comes first; the assignment commits while the write waits for the template lock.
+    // The older read view comes first; the assignment commits while the write waits for the registration default.
     DB::beginTransaction();
     $old=SiteDnsDefault::profile()?->id;
     file_put_contents($root.'/'.$name.'-connection',$connection);$signal('started');$signal('snapshot');$wait('assigned');
