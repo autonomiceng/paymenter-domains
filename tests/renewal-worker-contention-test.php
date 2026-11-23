@@ -24,6 +24,19 @@ try {
         try { return $second->run($op->id, $secondWriter); }
         finally { DB::setDefaultConnection('renew_first'); }
     };
+    // Commit a conflicting revision on the independent connection while the first worker is reading Enom.
+    $state->during = static function () use ($op): void {
+        DB::connection('renew_second')->transaction(static function () use ($op): void {
+            $row = Operation::on('renew_second')->lockForUpdate()->findOrFail($op->id);
+            $row->update(['transition_revision' => $row->transition_revision + 1]);
+        });
+    };
+    $conflict = $first->run($op->id, $firstWriter);
+    same(['awaiting_payment', 2, null, 0], [$conflict->state, $conflict->transition_revision, $conflict->renewal_attempt, $state->writes],
+        'An old admission cannot reserve, dispatch or release a newer revision');
+    expect($conflict->renewal_admission_until !== null, 'The new admission owns its full lease');
+    $clock->instant = $clock->now()->modify('+361 seconds');
+    \Illuminate\Support\Facades\Cache::flush();
     $duringAdmission = $afterExpiry = null;
     $state->during = static function () use ($runSecond, &$duringAdmission): void {
         $other = $runSecond();
@@ -36,8 +49,8 @@ try {
     };
     $money = nativeFinancialSnapshot($op->fresh());
     $reply = $first->run($op->id, $firstWriter);
-    same(['awaiting_payment', 1, []], $duringAdmission, 'The second worker preserves the first admission: '.json_encode([$duringAdmission, $reply->state, $reply->safe_code]));
-    same(['uncertain', 3, $reply->renewal_attempt], $afterExpiry, 'Expired reservation is quarantined before the first reply');
+    same(['awaiting_payment', 3, []], $duringAdmission, 'The second worker preserves the current admission');
+    same(['uncertain', 5, $reply->renewal_attempt], $afterExpiry, 'Expired reservation is quarantined before the first reply');
     same(['uncertain', 'stale_claim', 'accepted'], [$reply->state, $reply->safe_code, $reply->attempt['execution']['disposition']],
         'Late acknowledgement observes the original reservation without reviving it');
     same(['item' => [$op->invoice_item_id => PricingRule::minor($op->amount)],

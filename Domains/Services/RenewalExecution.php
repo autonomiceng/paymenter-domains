@@ -27,13 +27,14 @@ final class RenewalExecution
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         $capture = $this->decide($seed, $id, function (array $l) use ($id) {
             $op = $l['operations']->firstWhere('id', $id);
-            if ($op?->action === 'renew' && $op->state === 'running' && (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now())) {
+            if ($op?->action !== 'renew') { return null; }
+            $next = RenewalDecision::admission($op->state, $op->lease_expires_at, $op->renewal_admission_until, $this->clock->now());
+            if ($next === 'quarantine') {
                 $op->update(['state' => 'uncertain', 'lease_expires_at' => null, 'safe_code' => 'stale_claim',
                     'policy' => [...$op->policy, 'renewal_execution' => ['staff_alert' => true, 'reason' => 'stale_claim', 'refundable_later' => false]]]); return null;
             }
-            if (!$op || $op->action !== 'renew' || !RenewalDecision::canAdmit($op->state, RenewalCycles::registrarVirgin($op))) { return null; }
+            if ($next !== 'admit' || !RenewalCycles::registrarVirgin($op)) { return null; }
             if (FundsWaits::elapsed($op,$this->clock->now())) { return null; }
-            if ($op->renewal_admission_until > $this->clock->now()) { return null; }
             if ($op->funding_basis === 'paid_invoice' && $l['invoices']->firstWhere('id', $op->invoice_id)?->status === 'pending') { return null; }
             try { $this->configured($l); } catch (\PDOException|RenewalBusy $e) { throw $e; } catch (\Throwable) { $this->hold($op, $l, RenewalCode::Acceptance->value, true); return null; }
             try { $this->current($op, $l); } catch (RenewalHold $held) { $this->hold($op, $l, $held->reason, $held->reason===EnomLateRenewal::PAUSED); return null; } catch (RenewalRefused $refused) { $this->hold($op, $l, $refused->reason->value); return null; } catch (\PDOException|RenewalBusy $e) { throw $e; } catch (\Throwable) { $this->hold($op, $l, 'renewal_funding_or_authority'); return null; }
@@ -73,7 +74,7 @@ final class RenewalExecution
             [$descriptor, $context] = FreshTransaction::run(function () use ($seed, $id, $binding, $name, $stamp, $ready, $until, $writer, $admissionClaim,$reservedContext) {
                 $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
                 if ($l['stamp'] !== $stamp || !$op || $op->transition_revision !== $admissionClaim
-                    || $op->renewal_admission_until <= $this->clock->now() || !RenewalDecision::canAdmit($op->state, RenewalCycles::registrarVirgin($op))) { throw new \DomainException('Renewal changed.'); }
+                    || $op->renewal_admission_until <= $this->clock->now() || !RenewalDecision::awaitsAdmission($op->state) || !RenewalCycles::registrarVirgin($op)) { throw new \DomainException('Renewal changed.'); }
                 $funding = $this->current($op, $l); $writer->requirePolicy($binding, $this->features, $this->accepted);
                 // Both admissions proved sufficient registrar funds; a later hold has its own cause.
                 if(\Illuminate\Support\Facades\Schema::hasTable('domains_obligation_alerts')){
@@ -121,7 +122,7 @@ final class RenewalExecution
             }));
         } catch (\Throwable $error) {
             $this->decide($seed, $id, function (array $l) use ($id, $admissionClaim, $error, $refusals, $first, $ready): void { $op = $l['operations']->firstWhere('id', $id);
-                if ($op && RenewalDecision::canAdmit($op->state, RenewalCycles::registrarVirgin($op)) && $op->transition_revision === $admissionClaim && $op->renewal_admission_until !== null) {
+                if ($op && RenewalDecision::awaitsAdmission($op->state) && $op->transition_revision === $admissionClaim && $op->renewal_admission_until !== null && RenewalCycles::registrarVirgin($op)) {
                     $reason = $error instanceof RenewalRefused ? $error->reason : ($error instanceof ReadDeferred?RenewalCode::Rate:RenewalCode::Changed);
                     $retry = in_array($reason, [RenewalCode::Rate, RenewalCode::Reads, RenewalCode::Balance, RenewalCode::Changed, RenewalCode::Acceptance], true);
                     $cap=EnomTestRenewal::enabled(AccountBindings::binding($l['account']))&&($error instanceof EnomTestCallLimit||EnomTestCalls::refusedSince($refusals));

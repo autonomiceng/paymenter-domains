@@ -5,20 +5,23 @@ require __DIR__.'/bootstrap.php';
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, DateEvidence, Disposition, DomainSnapshot, Environment, ExpiryPrecision, Money, OrderEvidence, Query, SendState};
 use Paymenter\Extensions\Servers\Domains\Services\{RenewalDecision, RenewalHold};
 
+$now = new DateTimeImmutable('2027-10-01T12:00:00Z');
+$future = $now->modify('+1 second');
 foreach ([
-    ['awaiting_payment', true, true],
-    ['queued', true, true],
-    ['queued', false, false],
-    ['running', true, false],
-    ['pending', true, false],
-    ['uncertain', true, false],
-    ['held', true, false],
-    ['succeeded', true, false],
-] as [$state, $virgin, $allowed]) {
-    same($allowed, RenewalDecision::canAdmit($state, $virgin), "Admission for $state with virgin=".(int) $virgin);
+    ['awaiting_payment', null, null, 'admit'],
+    ['queued', null, $now, 'admit'],
+    ['queued', null, $future, null],
+    ['running', $future, null, null],
+    ['running', $now, null, 'quarantine'],
+    ['running', null, null, 'quarantine'],
+    ['pending', null, null, null],
+    ['uncertain', null, null, null],
+    ['held', null, null, null],
+    ['succeeded', null, null, null],
+] as [$state, $lease, $admissionUntil, $decision]) {
+    same($decision, RenewalDecision::admission($state, $lease, $admissionUntil, $now), $state.' admission');
 }
 
-$now = new DateTimeImmutable('2027-10-01T12:00:00Z');
 foreach ([
     ['current reservation', 4, 'running', true, true, '+1 second', '+25 seconds', true],
     ['superseded revision', 5, 'running', true, true, '+1 second', '+25 seconds', false],

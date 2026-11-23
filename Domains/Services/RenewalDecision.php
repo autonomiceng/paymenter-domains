@@ -8,9 +8,18 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Disposition, Doma
 /** Decisions for a worker holding the current operation facts. */
 final class RenewalDecision
 {
-    public static function canAdmit(string $state, bool $virgin): bool
+    public static function awaitsAdmission(string $state): bool
     {
-        return $virgin && in_array($state, ['awaiting_payment', 'queued'], true);
+        return in_array($state, ['awaiting_payment', 'queued'], true);
+    }
+
+    /** The caller reads registrar evidence only for work that can enter admission. */
+    public static function admission(string $state, ?\DateTimeInterface $lease, ?\DateTimeInterface $admissionUntil,
+        \DateTimeImmutable $now): ?string
+    {
+        if ($state === 'running' && ($lease === null || $lease <= $now)) { return 'quarantine'; }
+        if (self::awaitsAdmission($state) && ($admissionUntil === null || $admissionUntil <= $now)) { return 'admit'; }
+        return null;
     }
 
     public static function canSend(int $reservedRevision, int $currentRevision, string $state,
