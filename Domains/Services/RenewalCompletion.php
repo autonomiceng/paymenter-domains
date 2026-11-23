@@ -65,6 +65,7 @@ final readonly class RenewalCompletion
                         || $facts->domain->providerAutoRenew !== false);
                 $autoRenewConfirmed = $attempt->binding->registrarKey === 'namesilo' && !$autoRenewUnconfirmed;
                 $proof = $autoRenewUnconfirmed ? null : ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
+                if ($facts->domain) { $saved->saw($facts->domain); }
                 $check->observe($attempt,$facts,$proof!==null);
             }
         } catch (ReadDeferred) { $check->deferred = 'read_limit';

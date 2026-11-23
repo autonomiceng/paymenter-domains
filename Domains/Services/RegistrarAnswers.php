@@ -118,8 +118,6 @@ class RegistrarAnswers
         $capture = FreshTransaction::run(static function () use ($seed, $review, $input, $now, $clock): ?array {
             [$op, $d, $attempt] = self::reviewedAnswer($seed, $review, $input, $now, admitting: true);
             $instant = $clock->now();
-            RenewalProof::promote($op, $instant);
-            // Commit retained evidence before refusing the answer.
             if (self::renewalProof($op, $d)) { return null; }
             if (RenewalProof::claimed($op)) { throw new \DomainException(self::READ_UNRESOLVED); }
             $deadline = $instant->modify('+30 seconds');

@@ -15,7 +15,7 @@ final class RenewalProof
     private bool $pending = false;
     private bool $superseded = false;
 
-    private function __construct(private readonly int $operationId, private readonly string $identity, private readonly string $token,
+    private function __construct(private readonly int $operationId, private readonly string $identity, private readonly string $claimKey, private readonly string $token,
         private readonly AttemptEvidence $attempt, private readonly \DateTimeImmutable $deadline, private readonly Clock $clock) {}
 
     private static function claim(Operation $op): ?array
@@ -32,7 +32,7 @@ final class RenewalProof
     /** Call under the holding locks after admission. An expired claim may belong to a worker that saw unsaved proof. */
     public static function open(Operation $op, AttemptEvidence $attempt, \DateTimeImmutable $deadline, Clock $clock): self
     {
-        $read = new self((int) $op->id, RegistrarAnswers::identity($op), bin2hex(random_bytes(16)), $attempt, $deadline, $clock);
+        $read = new self((int) $op->id, RegistrarAnswers::identity($op), $op->attempt['claim_key'], bin2hex(random_bytes(16)), $attempt, $deadline, $clock);
         $op->policy = [...$op->policy, 'renewal_check' => ['identity' => $read->identity, 'token' => $read->token,
             'until' => $deadline->getTimestamp() + self::CLAIM_GRACE_SECONDS, 'unresolved' => self::claimed($op)]];
         if (!$op->save()) { throw new \RuntimeException('Renewal read claim could not be saved.'); }
@@ -105,11 +105,15 @@ final class RenewalProof
         if ($this->superseded) { return; }
         try {
             $this->saved = $this->withLockedOperation(function (Operation $op): bool {
-                if (!$this->matches($op)) { return false; }
+                if ((int) $op->id !== $this->operationId || ($op->attempt['claim_key'] ?? null) !== $this->claimKey
+                    || $op->account_fingerprint !== $this->attempt->binding->fingerprint || (int) $op->server_id !== $this->attempt->binding->serverId) { return false; }
                 $account = Account::where('server_id', $op->server_id)->first();
                 if (!$account || !AccountBindings::binding($account)->matches($this->attempt->binding)) { return false; }
                 // A late reply can still prove this attempt even if a different worker now owns its read claim.
-                if (!self::persisted($op, $this->identity)) { self::retain($op, $this->identity, $this->clock->now()); }
+                if (!self::held($op)) {
+                    self::savePolicy($op, [...$op->policy, 'renewal_proof' => ['claim_key' => $this->claimKey,
+                        'identity' => $this->identity, 'at' => $this->clock->now()->format(DATE_ATOM)]]);
+                }
                 return true;
             });
             $this->superseded = !$this->saved;
@@ -132,9 +136,6 @@ final class RenewalProof
         }
     }
 
-    private static function retain(Operation $op, string $identity, \DateTimeImmutable $now): void
-    { self::savePolicy($op, [...$op->policy, 'renewal_proof' => ['identity' => $identity, 'at' => $now->format(DATE_ATOM)]]); }
-
     private static function savePolicy(Operation $op, array $policy): void
     {
         $timestamps = $op->timestamps;
@@ -147,58 +148,12 @@ final class RenewalProof
 
     public static function held(Operation $op): bool
     {
-        $identity = RegistrarAnswers::identity($op);
-        return self::persisted($op, $identity) || self::legacyPositive($op, $identity);
-    }
-
-    private static function persisted(Operation $op, string $identity): bool
-    { return self::sameIdentity($op->policy['renewal_proof'] ?? null, 'identity', $identity); }
-
-    /** Retain pre-upgrade positive observations before a status overwrite or a staff credit decision. */
-    public static function promote(Operation $op, \DateTimeImmutable $now): void
-    {
-        if ($op->action !== 'renew' || ($op->attempt['seal'] ?? null) !== 'sealed') { return; }
-        $identity = RegistrarAnswers::identity($op);
-        if (!self::persisted($op, $identity) && self::legacyPositive($op, $identity)) { self::retain($op, $identity, $now); }
+        $claimKey = $op->attempt['claim_key'] ?? null;
+        return is_string($claimKey) && self::sameIdentity($op->policy['renewal_proof'] ?? null, 'claim_key', $claimKey);
     }
 
     private static function sameIdentity(mixed $saved, string $key, string $identity): bool
     { return is_array($saved) && is_string($saved[$key] ?? null) && hash_equals($identity, $saved[$key]); }
-
-    private static function legacyPositive(Operation $op, string $identity): bool
-    {
-        if ($op->action !== 'renew' || ($op->attempt['seal'] ?? null) !== 'sealed') { return false; }
-        $before = $op->base_expires_at?->format('Y-m-d');
-        $status = $op->policy['status_check'] ?? null;
-        if (self::sameIdentity($status, 'attempt_identity', $identity)) {
-            $facts = $status['facts'] ?? null;
-            if (($facts['owned'] ?? null) === true && (($facts['charge_confirmed'] ?? null) === true
-                || self::laterDate($facts['expiry'] ?? null, $before, $facts['expiry_precision'] ?? null))) { return true; }
-        }
-
-        $order = $op->policy['order_unproven'] ?? null;
-        if ($op->registrar_key !== 'enom' || !self::sameIdentity($order, 'identity', $identity) || ($order['owned'] ?? null) !== true
-            || $op->provider_order_id === null || ($order['order_reference'] ?? null) !== $op->provider_order_id
-            || ($op->attempt['renewal']['order_reference'] ?? null) !== $op->provider_order_id) { return false; }
-        $reads = $order['expiry_reads'] ?? null;
-        foreach ([$order['expiry'] ?? null, ...(is_array($reads) ? $reads : [])] as $expiry) {
-            if (self::laterDate($expiry, $before, 'date')) { return true; }
-        }
-        return false;
-    }
-
-    private static function laterDate(mixed $expiry, ?string $before, mixed $precision): bool
-    {
-        $format = match ($precision) {
-            'date' => 'Y-m-d',
-            'local' => 'Y-m-d\TH:i:s',
-            'instant' => 'Y-m-d\TH:i:sP',
-            default => null,
-        };
-        if ($before === null || !is_string($expiry) || $format === null || str_contains($expiry, "\0")) { return false; }
-        $date = \DateTimeImmutable::createFromFormat('!'.$format, $expiry, new \DateTimeZone('UTC'));
-        return $date !== false && $date->format($format) === $expiry && $date->format('Y-m-d') > $before;
-    }
 
     /** Holding and review stamps omit proof, so a check's own proof write never makes its save stale. */
     public static function stampRow(Operation $op): array

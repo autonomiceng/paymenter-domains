@@ -101,7 +101,7 @@ class Operation extends Model
             }
             // Saved renewal proof for the current attempt only ever stays (RenewalProof).
             if(is_string($before['renewal_proof']['identity']??null)&&($after['renewal_proof']??null)!==$before['renewal_proof']
-                &&hash_equals(\Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers::identity($operation),$before['renewal_proof']['identity'])){
+                &&($operation->attempt['claim_key']??null)===($before['renewal_proof']['claim_key']??null)){
                 throw new \DomainException('Renewal proof is retained.');
             }
             $history = $before['reconciliation_resumptions'] ?? []; $next = $after['reconciliation_resumptions'] ?? [];

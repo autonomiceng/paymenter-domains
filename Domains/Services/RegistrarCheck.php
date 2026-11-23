@@ -54,9 +54,7 @@ final class RegistrarCheck
             // A check, resume or answer saved after this check began is newer. This result must not replace it.
             $stored=$op->policy['status_check']??null;
             if ($stored!==$this->seen && $this->newer($stored)) { return $op; }
-            $instant = $this->clock->now();
-            RenewalProof::promote($op, $instant);
-            $now = $instant->getTimestamp();
+            $now = $this->clock->now()->getTimestamp();
             if ($op->state==='succeeded') { $this->awaitingAnswer=null; }
             $outcome = $this->awaitingAnswer !== null ? 'awaiting_answer' : ($this->deferred !== null ? 'deferred' : (($this->context?->completedReads() ?? 0) > 0 ? 'checked' : 'unavailable'));
             // A completed read of a lost reply counts toward the same read limit as any other check, once.
@@ -92,7 +90,6 @@ final class RegistrarCheck
         if (Schema::hasTable('domains_runtime_operations')) {
             DB::table('domains_runtime_operations')->updateOrInsert(['operation_id' => $op->id], ['due_at' => $now]);
         }
-        RenewalProof::promote($op, new \DateTimeImmutable('@'.$now));
         // An earlier read of this same attempt still counts, so staff can record the registrar's answer after a resume.
         $kept=self::attempted($op)?['attempt_identity'=>$op->policy['status_check']['attempt_identity'],'read_attempted'=>true]:[];
         $order=self::nextOrder($op);

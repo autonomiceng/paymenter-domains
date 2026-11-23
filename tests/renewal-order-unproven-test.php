@@ -72,53 +72,10 @@ foreach (array_keys($shapes) as $n => $shape) {
     $readUntilStopped($op, $completion, $shape);
 }
 
-// Pre-upgrade rows kept two forms of positive proof. Exercise direct admission and the first status overwrites.
-$legacyResults = [];
-foreach (['individual expiry' => 'order_unproven', 'aggregate expiry' => 'order_unproven',
-    'status expiry' => 'status_check', 'status charge' => 'status_check'] as $case => $key) {
-    [$legacy, , , $legacyCompletion] = $sent('renew-legacy-'.str_replace(' ', '-', $case).'-placeholder.com', '2027-10-18', 'another order');
-    $readUntilStopped($legacy, $legacyCompletion, $case);
-    $legacy = $legacy->fresh(); $identity = RegistrarAnswers::identity($legacy);
-    if ($key === 'order_unproven') {
-        $legacyProof = ['identity' => $identity, 'read_at' => $clock->now()->format(DATE_ATOM),
-            'order_reference' => $legacy->provider_order_id, 'owned' => true,
-            'expiry' => $case === 'aggregate expiry' ? '2028-10-18' : '2027-10-18',
-            'expiry_reads' => $case === 'individual expiry' ? ['2028-10-18', '2028-10-18', '2027-10-18'] : []];
-    } else {
-        $legacyProof = [...$legacy->policy['status_check'], 'attempt_identity' => $identity, 'facts' => [
-            'owned' => true, 'expiry' => $case === 'status expiry' ? '2028-10-18T05:00:00' : '2027-10-18T05:00:00',
-            'expiry_precision' => 'local', 'charge_confirmed' => $case === 'status charge',
-        ]];
-    }
-    $legacy->update(['policy' => [...$legacy->policy, $key => $legacyProof]]);
-    if ($case === 'status expiry') {
-        // Another stopped check can still replace the visible status, even when it makes no registrar calls.
-        $legacyCompletion->run($legacy->id);
-    }
-    if ($case === 'status charge') {
-        $d = $legacy->domain()->firstOrFail();
-        (new StaffOperations($clock))->run($full, (int) $d->id, (int) $legacy->id, 'resume_reads',
-            StaffOperationReview::ticket((int) $full->id, (int) $d->id, (int) $legacy->id, 'resume_reads',
-                StaffOperationReview::stamp($legacy->fresh(), $d), $clock), 'Check the registrar again.');
-        $readUntilStopped($legacy, $legacyCompletion, $case);
-    }
-    $before = $credit(); $writes = $state->writes;
-    $refusedLegacy = $record($legacy, $full, 'not_processed') !== null;
-    $afterLegacy = $legacy->fresh();
-    $legacyResults[$case] = [$refusedLegacy, $afterLegacy->state === $legacy->state, $afterLegacy->funding['refund_authorization'] ?? null,
-        $afterLegacy->policy['enom_answer'] ?? null, $credit() === $before, $state->writes === $writes,
-        ($afterLegacy->policy['renewal_proof']['identity'] ?? null) === $identity];
-}
-same(array_fill_keys(array_keys($legacyResults), [true, true, null, null, true, true, true]), $legacyResults,
-    'Legacy positives are retained before a refund, check or resume: '.json_encode($legacyResults));
-
 // 2. Not processed returns the payment once as account credit. No case number is needed.
 [$op, $engine, $writer, $completion] = $sent('renew-unproven-placeholder.com', '2027-10-18', 'failed order read');
 $readUntilStopped($op, $completion, 'credit once');
 $op = $op->fresh();
-$op->update(['policy' => [...$op->policy, 'order_unproven' => ['identity' => $identity, 'order_reference' => $op->provider_order_id,
-    'owned' => true, 'expiry' => '2028-10-18', 'expiry_reads' => ['2028-10-18']],
-    'status_check' => [...$op->policy['status_check'], 'facts' => ['owned' => true, 'expiry' => '2028-02-31', 'expiry_precision' => 'date']]]]);
 $before = $credit(); $writes = $state->writes;
 expect($record($op, $answerOnly, 'not_processed') !== null, 'Not processed needs refund permission');
 same([null, $before], [$op->fresh()->funding['refund_authorization'] ?? null, $credit()], 'A refused answer moves no money');
