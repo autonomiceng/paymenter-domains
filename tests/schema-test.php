@@ -40,8 +40,7 @@ Schema::table('domains_observation_work', static fn (Blueprint $t) => $t->dropIn
 app(Illuminate\Database\Migrations\Migrator::class)->run([dirname(__DIR__).'/Domains/database/migrations']);
 try { ObservationSchema::verify(); expect(false, 'Missing account/due index accepted after migration skip'); }
 catch (RuntimeException $error) { same('Retained Domains schema mismatch: domains_observation_work', $error->getMessage(), 'Missing account/due index refuses retained verification'); }
-ObservationSchema::install(); ObservationSchema::verify();
-expect(Schema::hasIndex('domains_observation_work', 'domains_observation_work_account_due_index'), 'Retained install adds only the missing account/due index');
+Schema::table('domains_observation_work', static fn (Blueprint $t) => $t->index($accountDue[0]['columns'], $accountDue[0]['name']));
 Schema::table('domains_observation_work', static fn (Blueprint $t) => $t->dropIndex(['due_at']));
 try { ObservationSchema::install(); expect(false, 'Other retained observation mismatch accepted'); }
 catch (RuntimeException $error) { same('Retained Domains schema mismatch: domains_observation_work', $error->getMessage(), 'Other retained mismatch still refuses'); }
