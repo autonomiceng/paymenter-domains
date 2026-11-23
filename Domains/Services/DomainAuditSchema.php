@@ -6,12 +6,12 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Illuminate\Database\Schema\Blueprint;
 
-final class PslReviewSchema extends TableSchema
+final class DomainAuditSchema extends TableSchema
 {
     protected static function definitions(): array
     {
         return [
-            'domains_watch_audit' => static function (Blueprint $t): void {
+            'domains_audit' => static function (Blueprint $t): void {
                 $t->id();
                 $t->string('subject_type', 40);
                 $t->unsignedBigInteger('subject_id');

@@ -1,13 +1,13 @@
 <?php
 // DNS template staff pages over synthetic registration settings.
 declare(strict_types=1);
-require __DIR__.'/watch-dns.php';require __DIR__.'/domain-name-cell.php';require __DIR__.'/storefront.php';
+require __DIR__.'/dns-template.php';require __DIR__.'/domain-name-cell.php';require __DIR__.'/storefront.php';
 use Illuminate\Support\Facades\{Auth,Crypt,DB,Route};
 use Livewire\Livewire;
 use Filament\Facades\Filament;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-use Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites as Writes;
+use Paymenter\Extensions\Servers\Domains\Services\DnsTemplateWrites as Writes;
 require dirname(__DIR__,2).'/Domains/routes/web.php';require dirname(__DIR__,2).'/Domains/routes/owned.php';
 extract(dnsFixture()); DB::transaction(fn()=> $profile->update(['enabled'=>true,'revision'=>2,'reason'=>'Synthetic template enabled']));
 staffPanel();$panel=Filament::getCurrentPanel();$resources=[RoutingProfileResource::class];$panel->resources($resources);

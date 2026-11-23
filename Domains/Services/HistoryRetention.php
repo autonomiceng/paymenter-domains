@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Domain;
 final class HistoryRetention
 {
     public const TABLES=['test_sends'=>'domains_enom_test_sends',
-        'watch_audit'=>'domains_watch_audit','audit_events'=>'domains_audit_archives','reminders'=>'domains_reminder_deliveries'];
+        'domain_audit'=>'domains_audit','audit_events'=>'domains_audit_archives','reminders'=>'domains_reminder_deliveries'];
     public static function cutoff(int $now,int $months): int
     {return \Carbon\CarbonImmutable::createFromTimestampUTC($now)->subMonthsNoOverflow($months)->getTimestamp();}
     public static function replayed(string $family,string $key): bool

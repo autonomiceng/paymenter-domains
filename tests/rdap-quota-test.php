@@ -1,7 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/Support/watch-dns.php';
+require __DIR__.'/Support/dns-template.php';
 require __DIR__.'/Support/FakeDnsReader.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{RdapQuota,PublicDnsQuota};

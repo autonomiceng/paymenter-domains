@@ -4,9 +4,9 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Filament\Resources\Resource;
 use Illuminate\Database\Eloquent\{Builder,Model};
-use Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites as Writes;
+use Paymenter\Extensions\Servers\Domains\Services\DnsTemplateWrites as Writes;
 /** Read-only resource boundary; configuration writes use a separate reviewed action. */
-abstract class WatchReadResource extends Resource
+abstract class DomainReadResource extends Resource
 {
     protected static string|\UnitEnum|null $navigationGroup='Domains';
     protected static string|\BackedEnum|null $navigationIcon='heroicon-o-eye';

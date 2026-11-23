@@ -5,8 +5,8 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{Setting,User};
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Dns\RoutingProfile;
-use Paymenter\Extensions\Servers\Domains\Models\{Account,WatchProfile,WatchAudit};
-/** One live site reference. Null domain/watch assignments inherit it without being rewritten. */
+use Paymenter\Extensions\Servers\Domains\Models\{Account,DnsTemplate,DomainAudit};
+/** The DNS template selected for new registrations. */
 final class SiteDnsDefault
 {
     public const KEY='domains_site_dns_template';
@@ -18,16 +18,16 @@ final class SiteDnsDefault
     public const ASK='Ask staff who can change the default nameservers.';
     private static function row(bool $lock=false): ?object
     { return BusinessSetting::row(self::KEY,$lock); }
-    private static function usable(?object $row,bool $lock=false): ?WatchProfile
+    private static function usable(?object $row,bool $lock=false): ?DnsTemplate
     {
         if($row===null || $row->type!=='string' || $row->encrypted){return null;}
         $id=$row->value;
-        $p=is_string($id)&&ctype_digit($id)?WatchProfile::whereKey($id)->when($lock,fn($q)=>$q->lockForUpdate())->first():null;
+        $p=is_string($id)&&ctype_digit($id)?DnsTemplate::whereKey($id)->when($lock,fn($q)=>$q->lockForUpdate())->first():null;
         return ($p?->enabled && $p->readProfile() !== null)?$p:null;
     }
     private static function saves(?object $row,int $id): bool
     { return $id>0 && $row?->type==='string' && !$row->encrypted && $row->value===(string)$id; }
-    public static function profile(bool $lock=false): ?WatchProfile
+    public static function profile(bool $lock=false): ?DnsTemplate
     { return self::usable(self::row($lock),$lock); }
     public static function uses(int $id,bool $lock=false): bool
     { return self::saves(self::row($lock),$id); }
@@ -60,10 +60,10 @@ final class SiteDnsDefault
                 try{$routing=new RoutingProfile($names);}catch(\InvalidArgumentException|\TypeError){return false;}
                 try{self::validateRegistrars($routing->nameservers);}catch(\DomainException){return false;}
                 // System installation has no staff actor. Quiet maintenance preserves normal staff validation.
-                $p=new WatchProfile(['name'=>'Site DNS','nameservers'=>$routing->nameservers,'enabled'=>true,'edited_by'=>0,'reason'=>'Deployment DNS default']);
+                $p=new DnsTemplate(['name'=>'Site DNS','nameservers'=>$routing->nameservers,'enabled'=>true,'edited_by'=>0,'reason'=>'Deployment DNS default']);
                 $p->saveQuietly();
                 self::write($p);
-                WatchAudit::create(['subject_type'=>'dns_profile','subject_id'=>$p->id,'event'=>'deployment_dns_default',
+                DomainAudit::create(['subject_type'=>'dns_profile','subject_id'=>$p->id,'event'=>'deployment_dns_default',
                     'reason'=>'Deployment DNS default','after_revision'=>'1','data'=>['profile_id'=>$p->id],'created_at'=>now()]);
                 return true;
             });
@@ -80,11 +80,11 @@ final class SiteDnsDefault
         Cache::lock('domains-site-dns-default',30)->block(5,static function()use($actor,$id):void {
             DB::transaction(static function()use($actor,$id):void {
                 self::authorize($actor);BusinessSetting::singleton(true);
-                $p=WatchProfile::whereKey($id)->lockForUpdate()->first();
+                $p=DnsTemplate::whereKey($id)->lockForUpdate()->first();
                 if(!($p?->enabled && $p->readProfile() !== null)){throw new \DomainException('Choose an enabled DNS template.');}
                 self::validateRegistrars($p->nameservers);
                 $before=self::profile()?->id;self::write($p);
-                WatchAudit::create(['subject_type'=>'site_dns','subject_id'=>0,'actor_id'=>$actor->id,'event'=>'site_dns_default_changed',
+                DomainAudit::create(['subject_type'=>'site_dns','subject_id'=>0,'actor_id'=>$actor->id,'event'=>'site_dns_default_changed',
                     'reason'=>'Site DNS default changed','before_revision'=>(string)$before,'after_revision'=>(string)$id,
                     'data'=>['profile_id'=>$id],'created_at'=>now()]);
             });
@@ -117,7 +117,7 @@ final class SiteDnsDefault
         return count($hosts)>13?'Deployment DNS default lists more than 13 nameservers.':'Deployment nameserver hostnames are invalid.';
     }
     /** Re-evaluate connected accounts on every read, including accounts added after installation.
-     * Keep the saved reference and all domain/watch choices intact; only staff can replace the default.
+     * Keep the saved reference intact; only staff can replace the default.
      */
     public static function refusal(bool $canEdit=true): ?string
     {
@@ -133,7 +133,7 @@ final class SiteDnsDefault
         // Staff without the settings permission keep the cause and are sent to someone who can fix it.
         return $cause===null?null:$cause.' '.($canEdit?$fix:self::ASK);
     }
-    private static function write(WatchProfile $p): void
+    private static function write(DnsTemplate $p): void
     {
         BusinessSetting::saveLocked(self::KEY,(string)$p->id);
     }

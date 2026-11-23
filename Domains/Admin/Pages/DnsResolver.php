@@ -11,16 +11,16 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head,Row,SettingsR
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{SettingsPage,Section};
 use Paymenter\Extensions\Servers\Domains\Dns\DohEndpoint;
 use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Plain,Reader,RecordFamilies,State};
-use Paymenter\Extensions\Servers\Domains\Services\{ContactStepRetries,DnsResolverSettings,FundsWaits,SiteDnsDefault,StaffWatchWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{ContactStepRetries,DnsResolverSettings,FundsWaits,SiteDnsDefault,DnsTemplateWrites};
 class DnsResolver extends SettingsPage
 {
     protected static string|\UnitEnum|null $navigationGroup='Domains';
     protected static bool $shouldRegisterNavigation=false;
     protected static ?string $slug='dns-resolver';
-    public static function canAccess(): bool{return Staff::can(StaffWatchWrites::VIEW);}
+    public static function canAccess(): bool{return Staff::can(DnsTemplateWrites::VIEW);}
     public function mount(): void{abort_unless(self::canAccess(),403);}
     public function getSubNavigation(): array{return StaffTabs::domains('DNS resolver');}
-    private static function requireManage(): void{abort_unless(self::canAccess()&&Staff::can(StaffWatchWrites::MANAGE),403);}
+    private static function requireManage(): void{abort_unless(self::canAccess()&&Staff::can(DnsTemplateWrites::MANAGE),403);}
     /** One resolver form: in the header once a resolver is saved, otherwise as the fix in the Resolver row. */
     private function edit(string $name): Action
     {
@@ -40,8 +40,8 @@ class DnsResolver extends SettingsPage
     }
     private function getHeaderActionsList(): array
     {
-        return [$this->edit('configure')->color('gray')->visible(fn()=>Staff::can(StaffWatchWrites::MANAGE)&&app(DnsResolverSettings::class)->configuration()[0]!==null),
-            Action::make('check')->label('Test resolver')->color('gray')->visible(fn()=>Staff::can(StaffWatchWrites::MANAGE)&&app(DnsResolverSettings::class)->configuration()[0]!==null)
+        return [$this->edit('configure')->color('gray')->visible(fn()=>Staff::can(DnsTemplateWrites::MANAGE)&&app(DnsResolverSettings::class)->configuration()[0]!==null),
+            Action::make('check')->label('Test resolver')->color('gray')->visible(fn()=>Staff::can(DnsTemplateWrites::MANAGE)&&app(DnsResolverSettings::class)->configuration()[0]!==null)
                 ->action(function(): void{
                     self::requireManage();$result=app(DnsResolverSettings::class)->check();
                     $notice=Notification::make()->title($result['message']);($result['ok']?$notice->success():$notice->warning())->send();
@@ -68,7 +68,7 @@ class DnsResolver extends SettingsPage
         [$endpoint,$reason,$forced]=app(DnsResolverSettings::class)->configuration();
         $default=SiteDnsDefault::profile();$staff=Reader::Staff;$who='Set by staff.';$system='Set by the system.';
         $canEdit=Staff::canEditDefaultDns();$refusal=SiteDnsDefault::refusal($canEdit);
-        $fix=Staff::can(StaffWatchWrites::MANAGE)?$this->edit('edit')->link():null;
+        $fix=Staff::can(DnsTemplateWrites::MANAGE)?$this->edit('edit')->link():null;
         $missingDefault=!$default||$refusal;
         $nameservers=SettingsRow::setting(DefaultNameservers::TITLE,$refusal===null&&$default?Value::fact(Fact::names([$default->name]),implode(', ',$default->nameservers).'.'):Value::state(State::NotSet,$staff,$refusal??'New domains have no nameservers to use.'),'Set by staff in Domains > DNS templates.')
             ->actions(Sheet::link('defaults',$canEdit?'Change':'View',DefaultNameservers::url())->extraAttributes(['aria-label'=>($canEdit?'Change':'View').' default nameservers in DNS templates']));

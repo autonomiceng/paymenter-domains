@@ -12,7 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts,RenewalCycle
 
 staffPanel();Auth::login($staff);
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
-\Paymenter\Extensions\Servers\Domains\Services\PslReviewSchema::install();
+\Paymenter\Extensions\Servers\Domains\Services\DomainAuditSchema::install();
 [$d,$oldInvoice,$old]=$make(placeholderComFixtureName('renewal-invoice-status-placeholder.com'));
 $cycles=new RenewalCycles($bindings,$clock);
 $cycles->retireUnpaid($old->id);

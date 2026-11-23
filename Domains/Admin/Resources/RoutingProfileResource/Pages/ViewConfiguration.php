@@ -5,15 +5,15 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileRes
 use Filament\Actions\Action;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Sheet;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Trace;
-use Paymenter\Extensions\Servers\Domains\Models\WatchAudit;
+use Paymenter\Extensions\Servers\Domains\Models\DomainAudit;
 use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,WatchActions};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,DnsTemplateActions};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head,Row,Value};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{RecordDetailPage,Section};
 use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Plain,Reader,State};
-use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,StaffWatchWrites};
-/** A DNS template: its records and where it is used, with the monitoring switch on its own row. Edit and Delete are
+use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,DnsTemplateWrites};
+/** A DNS template: its nameservers and availability for new registrations. Edit and Delete are
  * the page's native header actions. */
 class ViewConfiguration extends RecordDetailPage
 {
@@ -31,31 +31,31 @@ class ViewConfiguration extends RecordDetailPage
     protected function actions(): array
     {
         $profile = $this->getRecord();
-        return [Action::make('save')->label('Edit')->color('gray')->visible(fn () => WatchActions::canEditTemplate($profile))
-            ->disabled(!$profile->readProfile())->tooltip(!$profile->readProfile() ? StaffWatchWrites::UNREADABLE : null)
+        return [Action::make('save')->label('Edit')->color('gray')->visible(fn () => DnsTemplateActions::canEditTemplate($profile))
+            ->disabled(!$profile->readProfile())->tooltip(!$profile->readProfile() ? DnsTemplateWrites::UNREADABLE : null)
             ->url(RoutingProfileResource::getUrl('edit', ['record' => $profile])), $this->deleteAction()];
     }
-    public function deleteAction(): Action { return WatchActions::deleteTemplate($this->getRecord(),$this->revision); }
+    public function deleteAction(): Action { return DnsTemplateActions::deleteTemplate($this->getRecord(),$this->revision); }
     public function refreshTemplate(): void
     {
         $this->record=$this->getRecord()->fresh();$this->revision=(int)$this->record->revision;
         unset($this->cachedSchemas['infolist'],$this->cachedSchemas['content']);$this->cachedActions=[];$this->cachedHeaderActions=[];$this->cacheInteractsWithHeaderActions();
     }
-    public function enableAction(): Action{return WatchActions::enable($this->getRecord(),$this->revision);}
-    public function disableAction(): Action{return WatchActions::disable($this->getRecord(),$this->revision);}
+    public function enableAction(): Action{return DnsTemplateActions::enable($this->getRecord(),$this->revision);}
+    public function disableAction(): Action{return DnsTemplateActions::disable($this->getRecord(),$this->revision);}
     private static function list(array $items): Value{return ($fact=Fact::lines($items))===null?Value::plain(Plain::None):Value::fact($fact);}
     protected function sections(): array
     {
         $r=$this->getRecord();$profile=$r->readProfile();$staff=Reader::Staff;
         $unreadable=Value::state(State::CouldntRead,$staff);
-        $records=$profile===null?[Row::notice('template',Value::state(State::CouldntRead,$staff,StaffWatchWrites::UNREADABLE)),
+        $records=$profile===null?[Row::notice('template',Value::state(State::CouldntRead,$staff,DnsTemplateWrites::UNREADABLE)),
                 Row::make('Nameservers',$unreadable)] : [Row::make('Nameservers',self::list($profile->nameservers))];
         $refusal = SiteDnsDefault::usesRefusal($r->id);
         $reason = $r->enabled ? $refusal : null;
         $enabled = Row::make('Enabled', Value::plain($r->enabled ? Plain::On : Plain::Off, $reason))
             ->actions($this->enableAction(), $this->disableAction());
         $controls = [$enabled];
-        if ($refusal && Staff::can(StaffWatchWrites::MANAGE)) {
+        if ($refusal && Staff::can(DnsTemplateWrites::MANAGE)) {
             $controls[] = Row::make('Can delete', Value::plain(Plain::No, $refusal));
         }
         return [Section::make('Records', $records), Section::make('Template', $controls)];
@@ -71,7 +71,7 @@ class ViewConfiguration extends RecordDetailPage
             $new->actions(Sheet::link('default_template', $default->name.' is used', RoutingProfileResource::getUrl('view', ['record' => $default])));
         }
         $trace = Trace::make(Reader::Staff);
-        $events = WatchAudit::where('subject_type', 'dns_profile')->where('subject_id', $r->id)->latest('id')->limit(Sheet::RAIL_STEPS)->get();
+        $events = DomainAudit::where('subject_type', 'dns_profile')->where('subject_id', $r->id)->latest('id')->limit(Sheet::RAIL_STEPS)->get();
         foreach ($events as $event) {
             $trace->step($event->event === 'deployment_dns_default' ? 'Deployment template added' : 'Template saved', null, $event->created_at);
         }

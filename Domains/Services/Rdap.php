@@ -146,7 +146,7 @@ final class Rdap
         } catch (Throwable) { return false; }
     }
 
-    /** Public-only watch transport: the bounded reader has already resolved and validated these pins. */
+    /** Public RDAP transport: the bounded reader has already resolved and validated these pins. */
     public function pinned(string $url, int $timeout, array $addresses): array
     {
         if (!self::safeUrl($url) || $timeout < 1 || !$addresses) { throw new RuntimeException('Lookup endpoint is unavailable.'); }

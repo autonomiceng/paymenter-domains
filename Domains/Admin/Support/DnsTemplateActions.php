@@ -11,10 +11,10 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Support\Enums\Width;
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
-use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
-use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,StaffWatchWrites as Writes};
+use Paymenter\Extensions\Servers\Domains\Models\DnsTemplate;
+use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,DnsTemplateWrites as Writes};
 /** Staff actions bind the DNS template revision loaded by the page. */
-final class WatchActions
+final class DnsTemplateActions
 {
     /** The DNS template form says this once, for every box. */
     public const ONE_PER_LINE='Enter one value per line.';
@@ -51,7 +51,7 @@ final class WatchActions
             Writes::UNREADABLE=>Writes::UNREADABLE,
             default=>$e->getMessage()};
     }
-    public static function enable(WatchProfile $row,int $revision): Action
+    public static function enable(DnsTemplate $row,int $revision): Action
     {
         return self::templateGuard(self::action((int)$row->id,$revision,'enable','Turn on')->view('domains::admin.template-switch')
             ->arguments(['on'=>false,'blocked'=>$row->readProfile()===null])->requiresConfirmation()->modalHeading('Turn on DNS template?')
@@ -64,14 +64,14 @@ final class WatchActions
         return $reason?$action->tooltip($reason)->livewireClickHandlerEnabled(false)
             ->extraAttributes(['aria-disabled'=>'true','aria-label'=>'DNS template. '.$reason,'class'=>'domains-blocked']):$action;
     }
-    public static function disable(WatchProfile $row,int $revision): Action
+    public static function disable(DnsTemplate $row,int $revision): Action
     {
         $reason=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::usesRefusal((int)$row->id)??($row->readProfile()===null?Writes::UNREADABLE:null);
         return self::templateGuard(self::action((int)$row->id,$revision,'disable','Turn off')->view('domains::admin.template-switch')
             ->arguments(['on'=>true,'blocked'=>$reason!==null])->requiresConfirmation()->modalHeading('Turn off DNS template?')
             ->modalSubmitActionLabel('Turn off')->visible(fn()=>$row->enabled && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE)),$reason);
     }
-    public static function deleteTemplate(WatchProfile $row,int $revision): Action
+    public static function deleteTemplate(DnsTemplate $row,int $revision): Action
     {
         $reason=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::usesRefusal((int)$row->id);
         if($reason){return Sheet::blocked('delete','Delete','DNS template',$reason)->color('danger')
@@ -87,13 +87,13 @@ final class WatchActions
             ->modalDescription(self::ONE_PER_LINE)->modalWidth(Width::Medium)->modalSubmitActionLabel('Save');
     }
 
-    public static function canEditTemplate(WatchProfile $row): bool
+    public static function canEditTemplate(DnsTemplate $row): bool
     {
         return Staff::can(Writes::VIEW) && Staff::can(Writes::MANAGE)
             && (!SiteDnsDefault::uses((int) $row->id) || Staff::canEditDefaultDns());
     }
 
-    public static function templateFields(?WatchProfile $row = null): array
+    public static function templateFields(?DnsTemplate $row = null): array
     {
         $fields = [
             TextInput::make('name')->label('Name')->default($row?->name)->required()->maxLength(128)

@@ -6,12 +6,12 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Illuminate\Database\Schema\Blueprint;
 
-final class StaffWatchSchema extends TableSchema
+final class DnsTemplateClaimsSchema extends TableSchema
 {
     protected static function definitions(): array
     {
         return [
-            'domains_watch_staff_claims' => static function (Blueprint $t): void {
+            'domains_dns_template_claims' => static function (Blueprint $t): void {
                 $t->string('claim', 64)->primary();
                 $t->unsignedBigInteger('subject_id');
                 $t->string('action', 16);

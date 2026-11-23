@@ -14,7 +14,7 @@ final class InitializationInterrupted extends RuntimeException {}
 $entry = new Domains; $commit = false; $competing = false;
 $interrupts = ['create index "domains_domains_user_id_index"', 'create table "domains_operations"',
     'create table "domains_observation_queues"', 'create table "domains_reminder_deliveries"',
-    'create table "domains_watch_audit"', 'create table "domains_watch_profiles"',
+    'create table "domains_audit"', 'create table "domains_dns_templates"',
     'create table "domains_public_dns_pool"', 'create table "domains_public_rdap_pool"',
     'create table "domains_audit_archives"',
     'create table "domains_enom_test_sends"'];

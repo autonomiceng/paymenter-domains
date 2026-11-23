@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 if (!getenv('DOMAINS_PANEL_SETUP') || !getenv('SKIN_RENDER_MARKER')) { throw new RuntimeException('Run through skin-render.'); }
-require __DIR__.'/staff-monitoring.php';
+require __DIR__.'/staff-templates.php';
 require_once __DIR__.'/site-dns-default.php';
 require_once __DIR__.'/panel-render.php';
 require_once __DIR__.'/render-artifacts.php';
@@ -10,9 +10,9 @@ use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\{EditConfiguration, ListConfiguration, ViewConfiguration};
-use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
+use Paymenter\Extensions\Servers\Domains\Models\DnsTemplate;
 
-$off = DB::transaction(fn () => WatchProfile::create(['name'=>'Previous hosting template','nameservers'=>['ns1.old.test','ns2.old.test'],
+$off = DB::transaction(fn () => DnsTemplate::create(['name'=>'Previous hosting template','nameservers'=>['ns1.old.test','ns2.old.test'],
     'edited_by'=>$manager->id,'reason'=>'Synthetic former template']));
 config(['domains.site_dns_default.nameservers'=>$profile->nameservers]);
 siteDnsFixture($profile->id);

@@ -613,7 +613,7 @@ class ViewDomain extends RecordDetailPage
             ->modalHeading('Complimentary renewal')->modalSubmitActionLabel('Confirm complimentary renewal')->modalWidth('3xl')->modalFooterActionsAlignment(\Filament\Support\Enums\Alignment::End)
             ->schema(function()use($d):array {
                 try{$options=app(\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::class)->complimentaryOptions((int)$d->id,Auth::user());}catch(\Throwable){$options=['terms'=>[]];}
-                $terms=self::complimentaryTerms($d);$company=\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
+                $terms=self::complimentaryTerms($d);$company=\Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels::company();
                 // The domain's linked service owns its displayed annual price, even when owner requests are closed.
                 try{$service=$d->service;$annual=$service?->currency_code==='USD'?\Paymenter\Extensions\Servers\Domains\Services\PriceCatalogue::retail((string)$service->price):null;}catch(\Throwable){$annual=null;}
                 $term=fn(\Filament\Schemas\Components\Utilities\Get $get)=>$terms[(int)$get('years')]??null;

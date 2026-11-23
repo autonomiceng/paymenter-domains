@@ -22,7 +22,7 @@ final class DomainDecisions
     public const LINKS=['Registrar'=>'Open registrar','Open invoice'=>'Open invoice','Customer'=>'Open customer','Service'=>'Open service','Invoice to check'=>'Open invoice'];
     public static function help(): array
     {
-        $company = \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
+        $company = \Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels::company();
         return ['Transfer lock'=>'Registrar lock that blocks transfers to another registrar.',
             'Registrar auto-renew'=>"The registrar's own auto-renew. Keep it off: ".($company !== '' ? $company.' renews' : 'we renew').' after the customer pays.',
             'Renewal'=>($company !== '' ? $company.' sends' : 'We send').' a renewal invoice before this domain expires. Auto Pay is a separate setting.'];
@@ -31,7 +31,7 @@ final class DomainDecisions
     private static function registrarRenewOff(Domain $d): string
     {
         if (self::accountRenewalsOff($d)) { return self::REGISTRAR_RENEW_HELD; }
-        $company = \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
+        $company = \Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels::company();
         if (\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::suspected($d)) { return 'Off on purpose. '.($company !== '' ? $company.' renews' : 'We renew').' after the invoice is paid, not while under review.'; }
         return 'Off on purpose. '.($company !== '' ? $company.' renews' : 'We renew').' the domain after the invoice is paid, so you are never charged by the registrar directly.';
     }
@@ -450,7 +450,7 @@ final class DomainDecisions
         if (!in_array($d->price_mode,['standard','complimentary'],true)) { return Facts::row(null,sub:'No renewal price set. Check the linked service.'); }
         $code=$observation['adoption_review']['price']??null;
         if ($code==='retained_renewal') { $code=null; }
-        $company=\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
+        $company=\Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels::company();
         $value=null;
         if ($d->price_mode==='complimentary') {
             $value='Standard renewal price '.($service->currency_code==='USD'?'$':$service->currency_code.' ').number_format((float)$service->price,2).' / year, complimentary';

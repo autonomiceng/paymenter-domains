@@ -31,7 +31,7 @@ $pending->fill(['domain'=>'pending-alert.example.test','sld'=>'pending-alert','t
 $clock->instant=$clock->instant->modify('+2 minutes');BalanceReads::record(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($enom),new Money('7.99','USD'),$clock->now(),'manual');
 $save('list',Livewire::actingAs($staff)->test(RegistrarSetup::class));
 // Accounts render for staff with every setup permission and the public suffix list, so all buttons show.
-Paymenter\Extensions\Servers\Domains\Services\PslReviewSchema::install();
+Paymenter\Extensions\Servers\Domains\Services\DomainAuditSchema::install();
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::class,new \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites(app(\Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue::class),app(\Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class),app(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class),true));
 $full=staffUser([Staff::VIEW,Staff::POLICY,...array_map([StaffSettingsReview::class,'permission'],array_keys(StaffSettingsReview::ACTIONS))]);
 \Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::registerRoutes(Filament::getCurrentPanel());app('router')->getRoutes()->refreshNameLookups();

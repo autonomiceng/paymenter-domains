@@ -142,7 +142,7 @@ final class HoldingDeparture
             $data=['domain'=>$d->domain,'deleted'=>$record['reason']==='deleted','same_registrar'=>$record['reason']==='other_account',
                 'date'=>$now->setTimezone($zone)->format('M j, Y'),'renewals'=>$renewals,'dns'=>$record['dns_case'],
                 'domain_url'=>url('/domains/'.$d->id),
-                'support_url'=>\Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl()??'','company'=>\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company()];
+                'support_url'=>\Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl()??'','company'=>\Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels::company()];
             $claim=ReminderDelivery::reserve((int)$d->id,$identity,'domains_domain_departed',$data,$user,$now->getTimestamp());
             if(!$claim){return null;}
             return ['delivery_key'=>hash('sha256',$d->id.':'.$identity),'subject'=>$claim['mail']?->envelope()->subject,'to'=>$claim['mail']?(string)$user->email:null];

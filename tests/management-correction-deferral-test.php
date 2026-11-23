@@ -4,10 +4,10 @@ declare(strict_types=1);
 $fixtureRegistrars=['enom'];
 require __DIR__.'/Support/management.php';
 use Illuminate\Support\Facades\{Cache,DB};
-use Paymenter\Extensions\Servers\Domains\Models\{Operation,WatchProfile};
+use Paymenter\Extensions\Servers\Domains\Models\{Operation,DnsTemplate};
 use Paymenter\Extensions\Servers\Domains\Services\{CorrectionWork,SiteDnsDefault};
 
-$profile=DB::transaction(fn()=>WatchProfile::create(['name'=>'Correction DNS','nameservers'=>['ns1.example.com','ns2.example.com'],
+$profile=DB::transaction(fn()=>DnsTemplate::create(['name'=>'Correction DNS','nameservers'=>['ns1.example.com','ns2.example.com'],
     'enabled'=>true,'edited_by'=>$user->id,'reason'=>'Synthetic registration default']));
 fixtureBusinessChoice(SiteDnsDefault::KEY,(string)$profile->id,'string');
 [$d,$driver,$original]=$holding(placeholderComFixtureName('correction-prior-renewal-placeholder.com'));

@@ -5,7 +5,7 @@ require_once __DIR__.'/../native-app.php';
 require_once __DIR__.'/staff-panel.php';
 use App\Models\{Category,Currency,Product,Server,Service,Order};
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
+use Paymenter\Extensions\Servers\Domains\Models\DnsTemplate;
 function dnsFixture(): array
 {
     $entry = new Paymenter\Extensions\Servers\Domains\Domains([]); $entry->installed();
@@ -18,7 +18,7 @@ function dnsFixture(): array
     $order = Order::create(['user_id'=>$owner->id,'currency_code'=>'USD']);
     $service = Service::create(['user_id'=>$owner->id,'order_id'=>$order->id,'product_id'=>$product->id,'plan_id'=>$plan->id,'status'=>'active','quantity'=>1,'price'=>'5.00','currency_code'=>'USD']);
     $property = $service->properties()->create(['key'=>'domain','name'=>'Domain','value'=>'www.example.com']);
-    $profile = DB::transaction(fn()=>WatchProfile::create(['name'=>'Synthetic defaults','nameservers'=>['NS2.platform.test.','ns1.platform.test'],
+    $profile = DB::transaction(fn()=>DnsTemplate::create(['name'=>'Synthetic defaults','nameservers'=>['NS2.platform.test.','ns1.platform.test'],
         'edited_by'=>$owner->id,'reason'=>'Synthetic composition']));
     return compact('entry','owner','other','server','product','plan','order','service','property','profile');
 }

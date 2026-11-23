@@ -69,7 +69,7 @@ final class DepartedPage
             $owner = $d->user; $name = $owner ? (trim($owner->first_name.' '.$owner->last_name) ?: (string) $owner->email) : $email['to'];
             $rows[] = Row::make('Email', Value::fact(Fact::entered('Sent to '.$name.', '.StaffTime::at($email['at'])), 'Subject “'.$email['subject'].'”.'));
         }
-        $registration = $alerts ? [$alerts] : []; $us = \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company() ?: 'us';
+        $registration = $alerts ? [$alerts] : []; $us = \Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels::company() ?: 'us';
         $from = $d->created_at; $zone = new \DateTimeZone(config('domains.time_zone') ?: config('app.timezone'));
         if ($from !== null && $at !== null) { $registration[] = Row::make('With '.$us, Value::fact(Fact::entered(\Carbon\Carbon::parse($from)->setTimezone($zone)->format('M j, Y').' to '.(new \DateTimeImmutable('@'.$at))->setTimezone($zone)->format('M j, Y')))); }
         if ($d->provider_expires_at !== null) { $registration[] = Row::make('Last known expiry', Value::fact(Fact::entered($d->provider_expires_at->format('M j, Y')), 'From the last registrar read.')); }

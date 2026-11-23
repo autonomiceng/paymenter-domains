@@ -158,7 +158,7 @@ final class DepartureConfirm
             if(!$t||!$t->enabled||$d->user===null||config('settings.mail_disable')){return null;}
             // The same mail checks the departure email reserves with: a customer who turned the email off gets none.
             if(!$t->isEnabledForPreference($d->user->notificationsPreferences()->where('notification_template_id',$t->id)->first(),'mail')){return null;}
-            return trim(\Illuminate\View\Compilers\BladeCompiler::render((string)$t->subject,['domain'=>$d->domain,'deleted'=>$reason==='deleted','company'=>\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company()]));
+            return trim(\Illuminate\View\Compilers\BladeCompiler::render((string)$t->subject,['domain'=>$d->domain,'deleted'=>$reason==='deleted','company'=>\Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels::company()]));
         }catch(\Throwable){return null;}
     }
     /** The customer's name as the Billing Customer row shows it. */

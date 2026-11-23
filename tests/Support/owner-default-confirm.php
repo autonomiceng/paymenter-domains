@@ -10,7 +10,7 @@ $readAt=$clock->now()->format(DATE_ATOM);
 $d->update(['observation'=>[...($d->observation??[]),'records'=>['identity'=>\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d),
     'at'=>$readAt,'last_complete_at'=>$readAt,'sequence'=>0,'families'=>[]]]]);
 storefrontViews();
-$profile=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create(['name'=>'Current default','enabled'=>true,'nameservers'=>['ns3.example.net','ns4.example.net'],'edited_by'=>$user->id,'reason'=>'Synthetic DNS default']));
+$profile=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\DnsTemplate::create(['name'=>'Current default','enabled'=>true,'nameservers'=>['ns3.example.net','ns4.example.net'],'edited_by'=>$user->id,'reason'=>'Synthetic DNS default']));
 fixtureBusinessChoice(SiteDnsDefault::KEY,(string)$profile->id,'string');
 $controller=new OwnerActionController($owners,new OwnerSetup($clock,$ports),new TransferInputs($clock,app(Refunds::class)),$management,$ports);
 $session=app('session')->driver();app('request')->setLaravelSession($session);

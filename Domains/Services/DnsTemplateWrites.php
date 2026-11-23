@@ -6,11 +6,11 @@ use App\Models\User;
 use Paymenter\Extensions\Servers\Domains\Dns\RoutingProfile;
 use Illuminate\Support\Facades\{Crypt,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-use Paymenter\Extensions\Servers\Domains\Models\{WatchAudit,WatchProfile};
+use Paymenter\Extensions\Servers\Domains\Models\{DomainAudit,DnsTemplate};
 /** Revision-checked DNS template edits and replay protection. */
-final class StaffWatchWrites
+final class DnsTemplateWrites
 {
-    public const VIEW='admin.domains.watch.view',MANAGE='admin.domains.watch.manage';
+    public const VIEW='admin.domains.dns.view',MANAGE='admin.domains.dns.manage';
     public const UNREADABLE='Saved DNS records cannot be read. Ask your site admin to restore this template.';
     public static function ticket(int $actor,int $id,int $revision,string $action,?int $defaultId=null): string
     { return Crypt::encryptString(json_encode(compact('actor','id','revision','action','defaultId')+['until'=>time()+600,'key'=>bin2hex(random_bytes(16))],JSON_THROW_ON_ERROR)); }
@@ -25,9 +25,9 @@ final class StaffWatchWrites
         DB::transaction(function()use($actor,$id,$action,$ticket,$reason,$input,$t):void {
             self::authorize($actor);
             $claim=hash('sha256',$ticket);
-            if(!DB::table('domains_watch_staff_claims')->insertOrIgnore(['claim'=>$claim,'subject_id'=>$id,'action'=>$action,'created_at'=>time()])){throw new \DomainException('Reload and try again.');}
+            if(!DB::table('domains_dns_template_claims')->insertOrIgnore(['claim'=>$claim,'subject_id'=>$id,'action'=>$action,'created_at'=>time()])){throw new \DomainException('Reload and try again.');}
             BusinessSetting::singleton(true);
-            $row=$id?WatchProfile::whereKey($id)->lockForUpdate()->firstOrFail():new WatchProfile;
+            $row=$id?DnsTemplate::whereKey($id)->lockForUpdate()->firstOrFail():new DnsTemplate;
             if(($row->exists?(int)$row->revision:0)!==($t['revision']??null)){throw new \DomainException('The saved details changed. Reload and try again.');}
             if($action==='save'){
                 if(($t['defaultId']??null)!==null && (SiteDnsDefault::uses($id,true) ? $id : 0) !== $t['defaultId']){throw new \DomainException('The default nameservers changed. Reload the page and try again.');}
@@ -42,7 +42,7 @@ final class StaffWatchWrites
                 if($reasonBlocked=SiteDnsDefault::usesRefusal((int)$row->id,true)){throw new \DomainException($reasonBlocked);}
                 if($action==='delete'){
                     // Delete only an unreferenced template here; the audit remains append-only.
-                    WatchAudit::create(['subject_type'=>'dns_profile','subject_id'=>$row->id,'actor_id'=>$actor->id,
+                    DomainAudit::create(['subject_type'=>'dns_profile','subject_id'=>$row->id,'actor_id'=>$actor->id,
                         'event'=>'dns_profile_deleted','reason'=>$reason,'before_revision'=>(string)$before,
                         'after_revision'=>(string)($before+1),'data'=>['name'=>$row->name],'created_at'=>now()]);
                     $row->newQuery()->whereKey($row->id)->delete();self::authorize($actor);return;
@@ -65,7 +65,7 @@ final class StaffWatchWrites
     public static function requireUniqueName(string $name,?int $except=null): void
     {
         $key=self::nameKey($name);
-        foreach(WatchProfile::when($except,fn($q)=>$q->whereKeyNot($except))->pluck('name') as $other){
+        foreach(DnsTemplate::when($except,fn($q)=>$q->whereKeyNot($except))->pluck('name') as $other){
             if(self::nameKey((string)$other)===$key){throw new \DomainException('A DNS template named "'.trim($name).'" already exists. Choose another name.');}
         }
     }

@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\{Auth,Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnedDomainController,OwnerAutoRenewController};
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
-use Paymenter\Extensions\Servers\Domains\Models\{Operation,WatchAudit};
+use Paymenter\Extensions\Servers\Domains\Models\{Operation,DomainAudit};
 use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaries,OwnerAutoRenew,RenewalStop,RuntimeIneligible,RuntimeReason};
 // Hard stops retain their current authority and hide the switch, including when owner Off is also set.
 foreach(['staff','cancellation'] as $stop){
@@ -57,19 +57,19 @@ same('owner',$owners->present($second->fresh())->renewalOff,'Staff resume retain
 // A rejected domain save never creates a false audit entry.
 [$saveDomain]=$holder('owner-save-failure-placeholder.com');$saveVeto=true;
 \Paymenter\Extensions\Servers\Domains\Models\Domain::updating(static function($row)use(&$saveVeto,$saveDomain){if($row->id===$saveDomain->id&&$saveVeto){return false;}});
-$beforeAudit=WatchAudit::where('event','owner_auto_renew')->count();
+$beforeAudit=DomainAudit::where('event','owner_auto_renew')->count();
 commerceReject(fn()=>$preference->set($user,$saveDomain->id,false));
 same(null,$saveDomain->fresh()->renewal_policy['owner_auto_renew']??null,'Domain veto leaves preference unchanged');
-same($beforeAudit,WatchAudit::where('event','owner_auto_renew')->count(),'Rejected save creates no audit');$saveVeto=false;
+same($beforeAudit,DomainAudit::where('event','owner_auto_renew')->count(),'Rejected save creates no audit');$saveVeto=false;
 $preference->set($user,$saveDomain->id,false);
 // Audit failure rolls back the preference. Repeated attempts need no permanent marker.
 [$auditDomain]=$holder('owner-audit-failure-placeholder.com');$veto=true;$auditThrows=false;
-WatchAudit::creating(static function($row)use(&$veto,&$auditThrows){if($row->event==='owner_auto_renew'){if($auditThrows){throw new RuntimeException('Synthetic audit storage unavailable');}if($veto){return false;}}});
+DomainAudit::creating(static function($row)use(&$veto,&$auditThrows){if($row->event==='owner_auto_renew'){if($auditThrows){throw new RuntimeException('Synthetic audit storage unavailable');}if($veto){return false;}}});
 commerceReject(fn()=>$preference->set($user,$auditDomain->id,false));
 same(null,$auditDomain->fresh()->renewal_policy['owner_auto_renew']??null,'Audit veto rolls back preference');$veto=false;
 $auditThrows=true;$session->forget('errors');$controller->save($req($auditDomain,['enabled'=>'0','confirmed'=>'1']),$auditDomain->id);
 expect($session->get('errors')?->has('auto-renew')===true,'Audit exception returns safe HTTP error');
 same(null,$auditDomain->fresh()->renewal_policy['owner_auto_renew']??null,'Audit exception rolls back preference');$auditThrows=false;
 $preference->set($user,$auditDomain->id,false);same(false,$auditDomain->fresh()->renewal_policy['owner_auto_renew'],'Retry succeeds after audit storage recovers');
-$raw=DB::table('domains_watch_audit')->where('event','owner_auto_renew')->first()->data;expect(!str_contains($raw,'enabled'),'Audit details encrypted');
+$raw=DB::table('domains_audit')->where('event','owner_auto_renew')->first()->data;expect(!str_contains($raw,'enabled'),'Audit details encrypted');
 echo "Owner renewal hard stops and save rollback passed.\n";$nativeSuccessful=true;

@@ -6,12 +6,12 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Illuminate\Database\Schema\Blueprint;
 
-final class WatchDnsSchema extends TableSchema
+final class DnsTemplatesSchema extends TableSchema
 {
     protected static function definitions(): array
     {
         return [
-            'domains_watch_profiles' => static function (Blueprint $t): void {
+            'domains_dns_templates' => static function (Blueprint $t): void {
                 $t->id();
                 $t->string('name', 128);
                 $t->json('nameservers');

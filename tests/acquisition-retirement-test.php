@@ -16,7 +16,7 @@ $invoicePresenter=new \Paymenter\Extensions\Servers\Domains\Services\NativePrese
 $closed=$invoicePresenter->invoiceOutcome($user,(int)$solo->invoice_id);same(['acquisition_cancelled_unpaid','pending',[$solo->domain->domain]],[$closed->kind,$closed->money,$closed->domains],'Retired acquisition is visible before any late payment or return note');
 // The customer's list leaves out a name that was never paid for, under every chip. Staff keep the record.
 $keptCancelled=$new(placeholderComFixtureName('paid-cancelled-placeholder.com'));DB::table('services')->where('id',$keptCancelled->service_id)->update(['status'=>'cancelled']);DB::table('domains_domains')->where('id',$keptCancelled->domain_id)->update(['status'=>'cancelled']);
-foreach(['PslReviewSchema','WatchDnsSchema','ManagedPublicSchema','WatchScheduleSchema','AdoptionSchema','NativeIntentSchema'] as $schema){('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$schema)::install();}
+foreach(['DomainAuditSchema','DnsTemplatesSchema','DnsQuotaSchema','RdapQuotaSchema','AdoptionSchema','NativeIntentSchema'] as $schema){('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$schema)::install();}
 require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();view()->addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 $listed=static function(string $query='')use($user):array {
     $request=Illuminate\Http\Request::create('/domains'.$query);$request->setUserResolver(static fn()=>$user);

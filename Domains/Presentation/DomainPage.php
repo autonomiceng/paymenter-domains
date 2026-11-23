@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
 use Carbon\CarbonImmutable;
-use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
+use Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels;
 use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,RenewalRepeatWait};
 /** The client domain page: its one notice and the Renewal card rows, from the page DTOs alone. */
 final class DomainPage

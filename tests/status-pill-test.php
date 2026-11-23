@@ -6,7 +6,7 @@ require __DIR__.'/Support/storefront.php';
 require __DIR__.'/../Domains/routes/web.php';
 require __DIR__.'/../Domains/routes/owned.php';
 use Illuminate\Pagination\LengthAwarePaginator;
-use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
+use Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController;
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus, DomainSummary, OwnedDomain, StatusPill};
 use Paymenter\Extensions\Servers\Domains\Services\{DomainStates, DomainSummaryStrings, OwnedDomains};

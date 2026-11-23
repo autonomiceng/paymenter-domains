@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering. The native field action fills the shared explicit request.
 declare(strict_types=1);
 $siteServers=['ns1.staff.example.org','ns2.staff.example.org'];
-$profile=Illuminate\Support\Facades\DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create([
+$profile=Illuminate\Support\Facades\DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\DnsTemplate::create([
     'name'=>'Saved staff DNS','nameservers'=>$siteServers,
     'enabled'=>true,'edited_by'=>$staff->id,'reason'=>'Synthetic site default']));
 fixtureClearBusinessChoice(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::KEY);

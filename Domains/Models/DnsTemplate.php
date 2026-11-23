@@ -4,9 +4,9 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Models;
 use Paymenter\Extensions\Servers\Domains\Dns\RoutingProfile;
 /** Routing rules edited through the scoped staff action; discovery remains default off. */
-final class WatchProfile extends WatchRecord
+final class DnsTemplate extends RevisionedRecord
 {
-    protected $table = 'domains_watch_profiles';
+    protected $table = 'domains_dns_templates';
     protected $attributes = ['revision' => 1, 'enabled' => false];
     protected array $identity = ['id'];
     protected $hidden = ['reason'];
@@ -42,7 +42,7 @@ final class WatchProfile extends WatchRecord
         });
         parent::booted();
         static::saved(static function (self $row): void {
-            WatchAudit::create(['subject_type' => 'dns_profile', 'subject_id' => $row->id, 'actor_id' => $row->edited_by,
+            DomainAudit::create(['subject_type' => 'dns_profile', 'subject_id' => $row->id, 'actor_id' => $row->edited_by,
                 'event' => 'dns_profile_saved', 'reason' => $row->reason, 'before_revision' => (string) ($row->revision - 1),
                 'after_revision' => (string) $row->revision, 'data' => ['nameservers' => $row->nameservers,
                     'enabled' => $row->enabled], 'created_at' => now()]);

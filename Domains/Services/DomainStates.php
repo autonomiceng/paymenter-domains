@@ -2,12 +2,12 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
+use Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus;
 /** The one DomainStatus state for a customer domain. The Domains list, the domain page, the service card and
  * /services all resolve through here, so a domain carries the same label on every page.
- * managed() and watch() return [state, reason]; a null reason keeps the status set's default.
+ * Managed registrations use [state, reason]; a null reason keeps the status set's default.
  * project() builds the whole customer state (status, order, renewal and its invoice) the list and the page share. */
 final class DomainStates
 {

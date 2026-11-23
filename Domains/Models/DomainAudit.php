@@ -3,10 +3,10 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Models;
 use Illuminate\Database\Eloquent\Model;
-final class WatchAudit extends Model
+final class DomainAudit extends Model
 {
     public $timestamps = false;
-    protected $table = 'domains_watch_audit';
+    protected $table = 'domains_audit';
     protected $guarded = [];
     protected $hidden = ['data', 'reason'];
     protected $casts = ['reason' => \Paymenter\Extensions\Servers\Domains\Casts\LegacyEncryptedString::class, 'data' => 'encrypted:array'];
@@ -27,7 +27,7 @@ final class WatchAudit extends Model
             $row->attributes['time_zone']='UTC';
         });
         static::created(static function (self $row): void {
-            \Paymenter\Extensions\Servers\Domains\Services\HistoryRetention::recorded('watch_audit',(int)$row->id,time());
+            \Paymenter\Extensions\Servers\Domains\Services\HistoryRetention::recorded('domain_audit',(int)$row->id,time());
         });
         static::updating(static function (): never { throw new \DomainException('Watch audit is append-only.'); });
         static::deleting(static function (): never { throw new \DomainException('Watch audit is retained.'); });

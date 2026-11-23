@@ -12,7 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Dns\{DnsAnswer,DnsContext,DnsQuery};
 require_once __DIR__.'/Support/staff-panel.php';
 require_once __DIR__.'/Support/staff-alerts.php';
 use App\Models\Notification as NativeNotification;
-staffPanel();staffAlertFixture();$viewer=staffUser([Staff::VIEW]);$blind=staffUser(['admin.domains.watch.view']);
+staffPanel();staffAlertFixture();$viewer=staffUser([Staff::VIEW]);$blind=staffUser(['admin.domains.dns.view']);
 $eligible=static fn()=>App\Models\User::whereHas('role')->get()->filter(static fn($u)=>Staff::allows($u,Staff::VIEW))->values()->all();
 $noticeUrl=route('filament.admin.resources.domains.view',['record'=>$d->id]);
 $bell=static fn($user)=>NativeNotification::where('user_id',$user->id)->where('url',$noticeUrl)->count();

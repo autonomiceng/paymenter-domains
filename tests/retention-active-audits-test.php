@@ -1,7 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/Support/watch-dns.php';
+require __DIR__.'/Support/dns-template.php';
 use Illuminate\Support\Facades\{Crypt,DB};
 use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,AuditEvents,HistoryRetention,RetentionSchema,StaffSettingsReview};
 extract(dnsFixture());$now=1800000000;$at=Carbon\CarbonImmutable::createFromTimestampUTC($now)->addMonthsNoOverflow(13)->getTimestamp()+1;

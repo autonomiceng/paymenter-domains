@@ -2,12 +2,12 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\WatchReadResource;
-use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\DomainReadResource;
+use Paymenter\Extensions\Servers\Domains\Models\DnsTemplate;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\{EditConfiguration,ListConfiguration,ViewConfiguration};
-class RoutingProfileResource extends WatchReadResource
+class RoutingProfileResource extends DomainReadResource
 {
-    protected static ?string $model=WatchProfile::class;
+    protected static ?string $model=DnsTemplate::class;
     protected static ?string $navigationLabel='DNS templates';
     protected static string|\BackedEnum|null $navigationIcon='heroicon-o-document-duplicate';
     protected static bool $shouldRegisterNavigation=false;

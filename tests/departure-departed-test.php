@@ -19,7 +19,7 @@ expect($row!==null,'The departed domain stays with its owner');
 $pill=StatusPill::summary($row);
 same(['Transferred away','Moved to another registrar'],[$pill['label']??null,$pill['reason']??null],'Customers read the saved departure as transferred away with its reason');
 // The customer list shows it in All and in the Inactive tab.
-foreach(['PslReviewSchema','WatchDnsSchema','ManagedPublicSchema','WatchScheduleSchema','AdoptionSchema','NativeIntentSchema'] as $schema){('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$schema)::install();}
+foreach(['DomainAuditSchema','DnsTemplatesSchema','DnsQuotaSchema','RdapQuotaSchema','AdoptionSchema','NativeIntentSchema'] as $schema){('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$schema)::install();}
 require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();view()->addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 $listed=static function(string $query)use($owner):array{
     $request=Illuminate\Http\Request::create('/domains'.$query);$request->setUserResolver(static fn()=>$owner);

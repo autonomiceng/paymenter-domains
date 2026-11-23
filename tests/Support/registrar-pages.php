@@ -578,7 +578,7 @@ if ($registrarsPart === 'dns') {
 // Global pricing saves reload Paymenter settings; keep this branding fixture in the same persisted source.
 App\Models\Setting::updateOrCreate(['key'=>'company_name','settingable_type'=>null,'settingable_id'=>null],['type'=>'string','encrypted'=>false,'value'=>'Example Hosting']);
 config(['settings.company_name'=>'Example Hosting','app.name'=>'Generic app']);
-$template=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create(['name'=>'Shared registration DNS','enabled'=>true,
+$template=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\DnsTemplate::create(['name'=>'Shared registration DNS','enabled'=>true,
     'nameservers'=>['ns1.provider.example','ns2.provider.example'],
     'edited_by'=>$admin->id,'reason'=>'Synthetic registration template']));
 App\Models\Server::findOrFail($enom->server_id)->settings()->create(['key'=>'domains_new_domain_dns_template','type'=>'string','encrypted'=>false,'value'=>'']);

@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering. Real Blade customer presentation cases.
 declare(strict_types=1);
 require_once __DIR__.'/reserved-fixtures.php';
-use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
+use Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels;
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary;
 use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
 (function (): void {

@@ -9,8 +9,8 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\{Artisan,DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Models\{WatchAudit,WatchProfile};
-use Paymenter\Extensions\Servers\Domains\Services\{BusinessSetting,Installation,SiteDnsDefault,StaffWatchWrites as Writes};
+use Paymenter\Extensions\Servers\Domains\Models\{DomainAudit,DnsTemplate};
+use Paymenter\Extensions\Servers\Domains\Services\{BusinessSetting,Installation,SiteDnsDefault,DnsTemplateWrites as Writes};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 $root=(string)getenv('TPL_BARRIERS');expect(is_dir($root),'Private barriers required');
 $phase=getenv('TPL_PHASE');$case=(string)getenv('TPL_CASE');$action=(string)getenv('TPL_ACTION');$prefix=(string)getenv('SCHEMA_PREFIX');
@@ -30,7 +30,7 @@ if($phase==='seed'){
     DB::transaction(static fn()=>BusinessSetting::saveLocked(SiteDnsDefault::KEY,''));
     $role=Role::create(['name'=>'Synthetic template staff','permissions'=>[Staff::VIEW,Staff::POLICY,SiteDnsDefault::MANAGE,Writes::VIEW,Writes::MANAGE]]);
     $manager=User::create(['first_name'=>'Synthetic','last_name'=>'Staff','email'=>'template-staff@example.test','password'=>'synthetic-password','role_id'=>$role->id]);
-    $template=static fn(string $label)=>(int)DB::transaction(fn()=>WatchProfile::create(['name'=>$label,'enabled'=>true,
+    $template=static fn(string $label)=>(int)DB::transaction(fn()=>DnsTemplate::create(['name'=>$label,'enabled'=>true,
         'nameservers'=>['ns1.spare.test','ns2.spare.test'],
         'edited_by'=>$manager->id,'reason'=>'Synthetic template setup']))->id;
     $ids=['manager'=>$manager->id,'other'=>$template('Current registration default')];
@@ -47,7 +47,7 @@ $id=$ids[$name];$manager=User::findOrFail($ids['manager']);
 $writes=new Writes;
 if($phase==='hold'){
     // Only the waiting staff write blocked on this connection's template row lock counts.
-    $profiles='`'.DB::getDatabaseName().'`.`'.DB::getTablePrefix().($case==='late'?'domains_business_settings':'domains_watch_profiles').'`';
+    $profiles='`'.DB::getDatabaseName().'`.`'.DB::getTablePrefix().($case==='late'?'domains_business_settings':'domains_dns_templates').'`';
     $observe=static function()use($root,$name,$profiles,$wait):void {
         $wait('started');$writer=(int)file_get_contents($root.'/'.$name.'-connection');
         $waits=static fn():int=>(int)DB::selectOne('SELECT COUNT(*) AS n FROM information_schema.INNODB_LOCK_WAITS w'
@@ -69,9 +69,9 @@ if($phase==='hold'){
         if($case==='deadlock'){
             // Enough undo makes InnoDB choose the lighter staff write as the deadlock victim.
             $rows=array_map(static fn($i)=>['claim'=>hash('sha256','ballast-'.$name.'-'.$i),'subject_id'=>$i,'action'=>'ballast','created_at'=>1],range(1,300));
-            foreach(array_chunk($rows,100)as$chunk){DB::table('domains_watch_staff_claims')->insert($chunk);}
+            foreach(array_chunk($rows,100)as$chunk){DB::table('domains_dns_template_claims')->insert($chunk);}
         }
-        WatchProfile::whereKey($id)->lockForUpdate()->firstOrFail();
+        DnsTemplate::whereKey($id)->lockForUpdate()->firstOrFail();
         $signal('locked');$observe();
         if($case==='deadlock'){
             // Deliberately reverse the supported order to prove rollback on an external deadlock.
@@ -83,9 +83,9 @@ if($phase==='hold'){
     echo json_encode(['complete'=>true,'phase'=>$phase,'case'=>$case,'action'=>$action])."\n";$nativeSuccessful=true;return;
 }
 expect($phase==='mutate','Known fixture phase');
-$state=static fn():array=>['template'=>(array)DB::table('domains_watch_profiles')->where('id',$id)->first(),
-    'audit'=>WatchAudit::where('subject_type','dns_profile')->where('subject_id',$id)->count(),
-    'claims'=>DB::table('domains_watch_staff_claims')->where('subject_id',$id)->count()];
+$state=static fn():array=>['template'=>(array)DB::table('domains_dns_templates')->where('id',$id)->first(),
+    'audit'=>DomainAudit::where('subject_type','dns_profile')->where('subject_id',$id)->count(),
+    'claims'=>DB::table('domains_dns_template_claims')->where('subject_id',$id)->count()];
 $before=$state();same(1,(int)$before['template']['enabled'],'The template starts on');
 $ticket=Writes::ticket((int)$manager->id,$id,(int)$before['template']['revision'],$action);
 $connection=(string)DB::selectOne('SELECT CONNECTION_ID() AS id')->id;

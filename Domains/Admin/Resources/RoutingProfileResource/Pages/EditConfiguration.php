@@ -7,11 +7,11 @@ use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\WatchActions;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\DnsTemplateActions;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head,Partial,Row,Value};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{RecordDetailPage,Section};
 use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Plain,Reader,State};
-use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,StaffWatchWrites as Writes};
+use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,DnsTemplateWrites as Writes};
 
 class EditConfiguration extends RecordDetailPage
 {
@@ -33,7 +33,7 @@ class EditConfiguration extends RecordDetailPage
     protected function authorizeAccess(): void
     {
         parent::authorizeAccess();
-        abort_unless(WatchActions::canEditTemplate($this->getRecord()), 403);
+        abort_unless(DnsTemplateActions::canEditTemplate($this->getRecord()), 403);
         abort_unless($this->getRecord()->readProfile(), 409, Writes::UNREADABLE);
     }
 
@@ -45,7 +45,7 @@ class EditConfiguration extends RecordDetailPage
     }
     public function form(Schema $schema): Schema
     {
-        return $schema->statePath('data')->live(debounce: 300)->components(WatchActions::templateFields($this->getRecord()));
+        return $schema->statePath('data')->live(debounce: 300)->components(DnsTemplateActions::templateFields($this->getRecord()));
     }
     protected function sections(): array
     {

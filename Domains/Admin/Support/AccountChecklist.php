@@ -283,7 +283,7 @@ final class AccountChecklist
     public static function whois(Account $a): ?array
     {
         if($a->registrar_key!=='enom'){return null;}
-        return self::row('WHOIS privacy','Not offered. '.TldFacts::registrar($a->registrar_key).' charges for it and '.\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company().' does not sell it yet.');
+        return self::row('WHOIS privacy','Not offered. '.TldFacts::registrar($a->registrar_key).' charges for it and '.\Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels::company().' does not sell it yet.');
     }
     /** Failing checks first. @return array{failing:list<array>,passing:list<array>} */
     public static function system(): array

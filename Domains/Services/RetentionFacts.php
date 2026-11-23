@@ -14,7 +14,7 @@ final class RetentionFacts
             if(!in_array($r->state,['accepted','suppressed'],true)){return 'unknown_reminder_state';}
             return self::epoch($r->state==='accepted'?$r->accepted_at:$r->created_at);
         }
-        if($family==='watch_audit'){
+        if($family==='domain_audit'){
             // Old wall times have mixed provenance (DM-04). Never infer their zone from today's site setting.
             $at=DB::table(RetentionSchema::MARKS)->where('family',$family)->where('source_id',$r->id)->value('recorded_at');
             if($at===null&&($r->time_zone??null)==='UTC'){

@@ -11,7 +11,7 @@ use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Facades\{Auth,DB,Route};
 use Filament\Facades\Filament;
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites as Rights;
+use Paymenter\Extensions\Servers\Domains\Services\DnsTemplateWrites as Rights;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\DnsResolver as Page;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\DnsReader;

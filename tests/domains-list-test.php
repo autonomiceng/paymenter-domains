@@ -6,7 +6,7 @@ require_once __DIR__.'/Support/reserved-fixtures.php';
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\{Crypt, DB};
-use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
+use Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController;
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary;
 use Paymenter\Extensions\Servers\Domains\Services\{AdoptionSchema, DomainSummaryStrings, HistoryLinkSchema};
@@ -105,15 +105,15 @@ expect(str_contains((string)$norm(storefrontDom($filtered)->query('//div[@class=
 
 // Configured names, application fallback and environment suffixes share one rule.
 config(['settings.company_name'=>'Example Hosting','app.name'=>'Example App (testing)']);
-same('Example Hosting',DnsSignalLabels::company(),'Configured company');
-same('Example Hosting',DnsSignalLabels::company(' Example Hosting (local) '),'Environment suffix removed');
-same('Example Technologies',DnsSignalLabels::company('Example Technologies (staging)'),'Staging suffix removed');
-same('Example App',DnsSignalLabels::company('  '),'Empty company uses the trimmed app name');
+same('Example Hosting',CompanyLabels::company(),'Configured company');
+same('Example Hosting',CompanyLabels::company(' Example Hosting (local) '),'Environment suffix removed');
+same('Example Technologies',CompanyLabels::company('Example Technologies (staging)'),'Staging suffix removed');
+same('Example App',CompanyLabels::company('  '),'Empty company uses the trimmed app name');
 config(['settings.company_name'=>null]);
-same('Example App',DnsSignalLabels::company(),'Unset company uses app name');
+same('Example App',CompanyLabels::company(),'Unset company uses app name');
 config(['app.name'=>' (testing) ']);
-same('',DnsSignalLabels::company(),'Both names empty');
-same('our nameservers',DnsSignalLabels::nameservers(),'Unnamed nameservers');
+same('',CompanyLabels::company(),'Both names empty');
+same('our nameservers',CompanyLabels::nameservers(),'Unnamed nameservers');
 config(['settings.company_name'=>'Example Hosting']);
-same('Example (Hosting)',DnsSignalLabels::company('Example (Hosting)'),'Other brackets are kept');
+same('Example (Hosting)',CompanyLabels::company('Example (Hosting)'),'Other brackets are kept');
 $nativeSuccessful=true;

@@ -1,6 +1,6 @@
 {{-- Shared progressive enhancement adapted from Enom 444f31c; MIT, Copyright (c) 2026 Autonomic Engineering. --}}
 @once
-<p class="domains-sr" aria-live="polite" id="domains-live" data-nameservers-filled="{{ ucfirst(\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::nameservers()).' filled in. Save to apply them.' }}"></p>
+<p class="domains-sr" aria-live="polite" id="domains-live" data-nameservers-filled="{{ ucfirst(\Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels::nameservers()).' filled in. Save to apply them.' }}"></p>
 @verbatim
 <script>
 (() => {

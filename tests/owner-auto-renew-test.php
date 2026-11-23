@@ -9,10 +9,10 @@ use Illuminate\Support\Facades\{Auth,Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnedDomainController,OwnerAutoRenewController};
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
-use Paymenter\Extensions\Servers\Domains\Models\{Operation,WatchAudit};
+use Paymenter\Extensions\Servers\Domains\Models\{Operation,DomainAudit};
 use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaries,OwnerAutoRenew,RenewalStop,RuntimeIneligible,RuntimeReason};
 [$d,$binding]=$holder('owner-switch-placeholder.com');$clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');
-$audit=static fn()=>WatchAudit::where('subject_type','domain')->where('subject_id',$d->id)->where('event','owner_auto_renew')->count();
+$audit=static fn()=>DomainAudit::where('subject_type','domain')->where('subject_id',$d->id)->where('event','owner_auto_renew')->count();
 $dto=$owners->present($d->fresh());same(['On',null,true],[$dto->renewal,$dto->renewalOff,$dto->autoRenew['enabled']??null],'Legacy absence means On');
 // The Auto Pay line follows what renewal collection can do, not the saved id on the service.
 $gateway=App\Models\Gateway::create(['name'=>'Saved method','extension'=>'AutoPayLine','type'=>'gateway','enabled'=>true]);

@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\User;
 use Illuminate\Support\HtmlString;
-use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, WatchAudit};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, DomainAudit};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\{HoldingDeparture,ReceiptReturns,StaffOperationReview};
 /** One domain's history: registrar requests, staff holds, releases and renewal changes, customer auto-renew changes and departure reads, newest first. Read by the History tab and the Activity rail. */
@@ -56,7 +56,7 @@ final class DomainHistory
         $holdings=[]; $audits=[];
         try { $holdings=$domain->renewal_policy['staff_holdings']??[]; } catch (\Throwable) {}
         $holdings=is_array($holdings)&&array_is_list($holdings)?array_filter($holdings,'is_array'):[];
-        try { $audits=WatchAudit::query()->where('subject_type','domain')->where('subject_id',$domain->id)->where('event','owner_auto_renew')->orderByDesc('id')->limit(100)->get(); }
+        try { $audits=DomainAudit::query()->where('subject_type','domain')->where('subject_id',$domain->id)->where('event','owner_auto_renew')->orderByDesc('id')->limit(100)->get(); }
         catch (\Throwable) { $audits=collect(); }
         try { $sync=$domain->observation['sync_history']??[]; } catch (\Throwable) { $sync=[]; }
         $sync=is_array($sync)?array_filter(array_slice($sync,-20),'is_array'):[];

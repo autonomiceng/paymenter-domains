@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
 use App\Models\Invoice;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DepartedPage,DepartureConfirm};
-use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
+use Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Services\HoldingDeparture;
 /** The customer page of a confirmed departure (mocks 02, 02b, 02c), read from its saved record and the confirmation's
@@ -17,7 +17,7 @@ final class DepartedOwnerPage
     {
         $r = DepartedPage::record($d);
         if ($r === null) { return null; }
-        $deleted = $r['reason'] === 'deleted'; $company = DnsSignalLabels::company() ?: 'us';
+        $deleted = $r['reason'] === 'deleted'; $company = CompanyLabels::company() ?: 'us';
         $zone = new \DateTimeZone(config('domains.time_zone') ?: config('app.timezone'));
         $at = is_string($r['confirmed_at'] ?? null) && ($t = strtotime($r['confirmed_at'])) !== false ? (new \DateTimeImmutable('@'.$t))->setTimezone($zone) : null;
         $rows = [];

@@ -7,7 +7,7 @@ use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\{Artisan,DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Domains;
-use Paymenter\Extensions\Servers\Domains\Services\{AdoptionSchema,Installation,PslReviewSchema,SchemaVerifier};
+use Paymenter\Extensions\Servers\Domains\Services\{AdoptionSchema,Installation,DomainAuditSchema,SchemaVerifier};
 
 same(getenv('DB_SOCKET'), DB::connection()->getConfig('unix_socket'), 'Resolved socket belongs to this disposable fixture');
 same(getenv('DB_DATABASE'), DB::connection()->getDatabaseName(), 'Resolved database belongs to this disposable fixture');

@@ -7,12 +7,12 @@ use App\Models\{Server,Setting};
 use Illuminate\Support\Facades\{DB,Route};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\DnsResolver;
-use Paymenter\Extensions\Servers\Domains\Models\{Account,WatchProfile,WatchAudit};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,DnsTemplate,DomainAudit};
 use Paymenter\Extensions\Servers\Domains\Services\{Installation,SiteDnsDefault};
 use Paymenter\Extensions\Servers\Domains\Presentation\{State,Tone};
 // Native lifecycle, encrypted account bindings and rendered Missing rows need the real installed fixture.
 $entry=new \Paymenter\Extensions\Servers\Domains\Domains([]);$entry->installed();
-$staff=staffUser(['admin.domains.view','admin.domains.watch.view','admin.domains.watch.manage']);
+$staff=staffUser(['admin.domains.view','admin.domains.dns.view','admin.domains.dns.manage']);
 staffPanel();$panel=\Filament\Facades\Filament::getCurrentPanel();$panel->pages([DnsResolver::class]);
 Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>DnsResolver::registerRoutes($panel));
 app('router')->getRoutes()->refreshNameLookups();
@@ -25,11 +25,11 @@ $names=static fn(int $n)=>array_map(fn($i)=>sprintf('ns%02d.seed.test',$i),range
 $unset=static fn()=>fixtureClearBusinessChoice(SiteDnsDefault::KEY);
 $reject=static function(int $n,string $rule)use($names,$staff):void {
     config(['domains.site_dns_default.nameservers'=>$names($n)]);
-    $before=[WatchProfile::count(),WatchAudit::count()];
+    $before=[DnsTemplate::count(),DomainAudit::count()];
     app(Installation::class)->install();
     same(null,SiteDnsDefault::profile(),'Normal installation refuses an incompatible deployment default: '.$rule);
     same(null,fixtureBusinessRaw(SiteDnsDefault::KEY),'Rejected deployment leaves the default unset');
-    same($before,[WatchProfile::count(),WatchAudit::count()],'Rejected deployment creates no template or audit');
+    same($before,[DnsTemplate::count(),DomainAudit::count()],'Rejected deployment creates no template or audit');
     $row=settingsRowValue(Livewire::actingAs($staff)->test(DnsResolver::class)->assertSee($rule)->html(),'Default nameservers');
     same([State::NotSet->label(),Tone::Attention->value],[$row['word']??null,$row['tone']??null],'Rejected seed reads Not set on the actual settings row');
     unset($row);gc_collect_cycles();gc_mem_caches();
@@ -40,10 +40,10 @@ $reject(1,'NameSilo takes 2 to 13 nameservers. Ask staff who can change the defa
 $reject(14,'Deployment DNS default lists more than 13 nameservers. Ask staff who can change the default nameservers.');
 config(['domains.site_dns_default.nameservers'=>$names(13)]);app(Installation::class)->install();
 $seeded=SiteDnsDefault::profile();same($names(13),$seeded?->nameservers,'NameSilo accepts its upper limit at installation');
-$count=WatchProfile::count();$audit=WatchAudit::count();
+$count=DnsTemplate::count();$audit=DomainAudit::count();
 config(['domains.site_dns_default.nameservers'=>$names(1)]);app(Installation::class)->install();
 same($seeded->id,SiteDnsDefault::profile()?->id,'Configuration never replaces a saved choice');
-same([$count,$audit],[WatchProfile::count(),WatchAudit::count()],'Repeated installation remains idempotent');
+same([$count,$audit],[DnsTemplate::count(),DomainAudit::count()],'Repeated installation remains idempotent');
 $unset();$connect('enom');
 foreach([1,13]as$n){$reject($n,'Enom takes 2 to 12 nameservers. Ask staff who can change the default nameservers.');}
 foreach([2,12]as$n){

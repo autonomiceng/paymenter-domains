@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,Registrar
 function tldPanel(): void
 {
     \Paymenter\Extensions\Servers\Domains\Services\ReminderSchema::install();\Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::install();
-    \Paymenter\Extensions\Servers\Domains\Services\WatchDnsSchema::install();
+    \Paymenter\Extensions\Servers\Domains\Services\DnsTemplatesSchema::install();
     // The Registrars list reads balances; bind the clock as Services/Runtime.php does when nothing else did.
     if(!app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)){app()->singleton(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,\Paymenter\Extensions\Servers\Domains\Data\SystemClock::class);}
     \Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__,2).'/Domains/resources/views');

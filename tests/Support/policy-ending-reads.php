@@ -2,7 +2,7 @@
 // Synthetic input-bounded policy reads; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/reserved-fixtures.php';
-require __DIR__.'/watch-dns.php';
+require __DIR__.'/dns-template.php';
 require __DIR__.'/commerce.php';
 require __DIR__.'/native-commerce.php';
 require __DIR__.'/storefront.php';

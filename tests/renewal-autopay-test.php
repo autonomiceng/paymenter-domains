@@ -154,7 +154,7 @@ same(['service_id'=>(int)$ctxDomain->service_id,'agreement_id'=>(int)$agreement-
     'generation'=>$ctxDomain->authority_generation,'cutoff'=>(new DateTimeImmutable($ctxOp->policy['calendar']['due'].'T00:00:00Z'))->getTimestamp()],$context,'Minimal current retained authority and strict cutoff');
 // The existing native fixture exercises the real owner write and SQL lock modes, which model fakes cannot prove.
 // A gateway freezes context before its payment transaction; owner revocation must block its retry.
-\Paymenter\Extensions\Servers\Domains\Services\PslReviewSchema::install();
+\Paymenter\Extensions\Servers\Domains\Services\DomainAuditSchema::install();
 $ownerAutoRenew=new \Paymenter\Extensions\Servers\Domains\Services\OwnerAutoRenew($clock);
 $queries=[];$capture=true;DB::listen(static function($query)use(&$queries,&$capture):void{if($capture){$queries[]=$query->sql;}});
 same(true,DB::transaction(fn()=>$autopay->renewalAutoPayStillAllowed($ctxInvoice->id,$context)),'Frozen renewal context permits the payment-time read');

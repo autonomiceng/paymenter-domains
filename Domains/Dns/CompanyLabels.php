@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Dns;
 /** Company and nameserver labels shared by customer and staff pages. */
-final class DnsSignalLabels
+final class CompanyLabels
 {
     /** Use the configured company, then the app name, without a trailing environment suffix. */
     public static function company(mixed $setting = null): string

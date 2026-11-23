@@ -2,7 +2,7 @@
 // Staff navigation, the one Domains area with its tabs, the Monitoring settings tab and its maintenance notice. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/doh-environment.php';
-require __DIR__.'/Support/watch-dns.php';
+require __DIR__.'/Support/dns-template.php';
 use Illuminate\Support\Facades\{Auth,DB,Route};
 use Livewire\Livewire;
 use Filament\Facades\Filament;
@@ -11,8 +11,8 @@ use Paymenter\Extensions\Servers\Domains\Admin\Pages\{ActivationStatus,DnsResolv
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,OperationResource,PendingAdoptionResource,RoutingProfileResource,TldResource};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Dns\DohEndpoint;
-use Paymenter\Extensions\Servers\Domains\Services\{DnsResolverSettings,StaffWatchWrites as Writes};
-require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';extract(dnsFixture());\Paymenter\Extensions\Servers\Domains\Services\StaffWatchSchema::install();staffPanel();$panel=Filament::getCurrentPanel();
+use Paymenter\Extensions\Servers\Domains\Services\{DnsResolverSettings,DnsTemplateWrites as Writes};
+require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';extract(dnsFixture());\Paymenter\Extensions\Servers\Domains\Services\DnsTemplateClaimsSchema::install();staffPanel();$panel=Filament::getCurrentPanel();
 $resources=[TldResource::class,RoutingProfileResource::class,\App\Admin\Resources\FailedJobResource::class];$pages=[DnsResolver::class,RegistrarSetup::class,WhatYouSell::class];$panel->resources($resources)->pages($pages);
 Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($resources,$pages,$panel){foreach([...$resources,...$pages] as$r){$r::registerRoutes($panel);}});app('router')->getRoutes()->refreshNameLookups();
 

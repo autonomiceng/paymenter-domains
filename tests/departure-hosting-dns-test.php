@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/Support/departure-fixture.php';
 $invoice=$issueDepartureRenewal();
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Models\{WatchProductMap,WatchProfile,WatchSource};
+use Paymenter\Extensions\Servers\Domains\Models\{WatchProductMap,DnsTemplate,WatchSource};
 use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,ObservationProjection,RegistrationDns,SiteDnsDefault};
 
 $nativeSuccessful=false;
@@ -15,7 +15,7 @@ $fresh=$d->fresh();$read=ObservationProjection::nameservers($fresh);
 same(true,DepartureChecks::suspected($fresh),'The holding is under departure review');
 same(['observed',$site],[$read?->state,$read?->nameservers],'The last registrar read lists the site nameservers');
 same(false,RegistrationDns::registrarDns($fresh),'The read nameservers are not the registrar DNS');
-$profile=DB::transaction(fn()=>WatchProfile::create(['name'=>'Site DNS','nameservers'=>$site,
+$profile=DB::transaction(fn()=>DnsTemplate::create(['name'=>'Site DNS','nameservers'=>$site,
     'enabled'=>true,'edited_by'=>$user->id,'reason'=>'Synthetic site default']));
 fixtureClearBusinessChoice(SiteDnsDefault::KEY);fixtureBusinessChoice(SiteDnsDefault::KEY,(string)$profile->id,'string');
 // Without a hosting service nothing keeps the records working, so no page claims a hosting plan.

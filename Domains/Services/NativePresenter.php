@@ -23,7 +23,7 @@ final readonly class NativePresenter
                 $result[(int)$d->service_id]=new OwnedDomain(...[...get_object_vars($dto),'actions'=>$actions,'serviceStatus'=>$d->service->status==='cancelled'?'Cancelled':null]);}
         return $result;
     }
-    /** Neutral watch/managed summaries for hosting rows; preserve the original domain-only adapter. */
+    /** Ownership-checked registration summaries keyed by native service ID. */
     public function domainSummaries(User $owner,array $serviceIds): array
     { return (new DomainSummaries())->services($owner,$serviceIds); }
     /** Exact invoice-item binding; a current service alone cannot impersonate an issued domain line. */

@@ -11,7 +11,7 @@ use App\Models\Notification as NativeNotification;
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 staffPanel();staffAlertFixture();
-$viewer=staffUser([Staff::VIEW]);$blind=staffUser(['admin.domains.watch.view']);
+$viewer=staffUser([Staff::VIEW]);$blind=staffUser(['admin.domains.dns.view']);
 $notices=static fn($user,string $title)=>NativeNotification::where('user_id',$user->id)->where('title',$title)->get()->map(static fn($row)=>[$row->body,$row->url])->all();
 $link=static fn($op)=>route('filament.admin.resources.registrar-requests.view',['record'=>$op->id]);
 $noRequestNotice=static function($op,string $case)use($viewer,$link):void {

@@ -6,7 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Illuminate\Database\Schema\Blueprint;
 
-final class WatchScheduleSchema extends TableSchema
+final class RdapQuotaSchema extends TableSchema
 {
     protected static function definitions(): array
     {

@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/storefront.php';
 require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';
 use Illuminate\Pagination\LengthAwarePaginator;
-use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
+use Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels;
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary;
 use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
 storefrontViews();$out=$argv[1]??'';expect(is_dir($out),'Output directory required');

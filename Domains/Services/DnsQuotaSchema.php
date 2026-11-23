@@ -6,7 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Illuminate\Database\Schema\Blueprint;
 
-final class ManagedPublicSchema extends TableSchema
+final class DnsQuotaSchema extends TableSchema
 {
     protected static function definitions(): array
     {
