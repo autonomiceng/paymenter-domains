@@ -13,10 +13,6 @@ final class DnsTemplateClaimsSchema extends TableSchema
         return [
             'domains_dns_template_claims' => static function (Blueprint $t): void {
                 $t->string('claim', 64)->primary();
-                $t->unsignedBigInteger('subject_id');
-                $t->string('action', 16);
-                $t->unsignedBigInteger('created_at');
-                $t->index(['subject_id', 'action', 'created_at'], 'dws_'.substr(hash('sha256', $t->getTable()), 0, 16));
             },
         ];
     }

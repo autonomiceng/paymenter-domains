@@ -25,7 +25,7 @@ final class DnsTemplateWrites
         DB::transaction(function()use($actor,$id,$action,$ticket,$reason,$input,$t):void {
             self::authorize($actor);
             $claim=hash('sha256',$ticket);
-            if(!DB::table('domains_dns_template_claims')->insertOrIgnore(['claim'=>$claim,'subject_id'=>$id,'action'=>$action,'created_at'=>time()])){throw new \DomainException('Reload and try again.');}
+            if(!DB::table('domains_dns_template_claims')->insertOrIgnore(['claim'=>$claim])){throw new \DomainException('Reload and try again.');}
             BusinessSetting::singleton(true);
             $row=$id?DnsTemplate::whereKey($id)->lockForUpdate()->firstOrFail():new DnsTemplate;
             if(($row->exists?(int)$row->revision:0)!==($t['revision']??null)){throw new \DomainException('The saved details changed. Reload and try again.');}

@@ -46,17 +46,17 @@ $ids=json_decode(file_get_contents($root.'/ids.json'),true,512,JSON_THROW_ON_ERR
 $id=$ids[$name];$manager=User::findOrFail($ids['manager']);
 $writes=new Writes;
 if($phase==='hold'){
-    // Only the waiting staff write blocked on this connection's template row lock counts.
-    $profiles='`'.DB::getDatabaseName().'`.`'.DB::getTablePrefix().($case==='late'?'domains_business_settings':'domains_dns_templates').'`';
-    $observe=static function()use($root,$name,$profiles,$wait):void {
+    // Verify the staff writer is blocked by this connection on the relevant row.
+    $lockTable='`'.DB::getDatabaseName().'`.`'.DB::getTablePrefix().($case==='late'?'domains_business_settings':'domains_dns_templates').'`';
+    $observe=static function()use($root,$name,$lockTable,$wait):void {
         $wait('started');$writer=(int)file_get_contents($root.'/'.$name.'-connection');
         $waits=static fn():int=>(int)DB::selectOne('SELECT COUNT(*) AS n FROM information_schema.INNODB_LOCK_WAITS w'
             .' JOIN information_schema.INNODB_TRX r ON r.trx_id=w.requesting_trx_id JOIN information_schema.INNODB_TRX b ON b.trx_id=w.blocking_trx_id'
             .' JOIN information_schema.INNODB_LOCKS l ON l.lock_id=w.requested_lock_id'
-            .' WHERE r.trx_mysql_thread_id=? AND b.trx_mysql_thread_id=CONNECTION_ID() AND l.lock_table=?',[$writer,$profiles])->n;
+            .' WHERE r.trx_mysql_thread_id=? AND b.trx_mysql_thread_id=CONNECTION_ID() AND l.lock_table=?',[$writer,$lockTable])->n;
         // InnoDB refreshes these tables only after 0.1 s without a read; faster polls re-read the old state.
         $end=microtime(true)+20;
-        while($waits()===0){if(microtime(true)>$end){throw new RuntimeException('The staff write did not wait on the template lock.');}usleep(200000);}
+        while($waits()===0){if(microtime(true)>$end){throw new RuntimeException('The staff write did not wait on the expected lock.');}usleep(200000);}
         file_put_contents($root.'/'.$name.'-lock-wait','proved');
     };
     if($case==='late'){
@@ -68,7 +68,7 @@ if($phase==='hold'){
         DB::beginTransaction();
         if($case==='deadlock'){
             // Enough undo makes InnoDB choose the lighter staff write as the deadlock victim.
-            $rows=array_map(static fn($i)=>['claim'=>hash('sha256','ballast-'.$name.'-'.$i),'subject_id'=>$i,'action'=>'ballast','created_at'=>1],range(1,300));
+            $rows=array_map(static fn($i)=>['claim'=>hash('sha256','ballast-'.$name.'-'.$i)],range(1,300));
             foreach(array_chunk($rows,100)as$chunk){DB::table('domains_dns_template_claims')->insert($chunk);}
         }
         DnsTemplate::whereKey($id)->lockForUpdate()->firstOrFail();
@@ -85,7 +85,7 @@ if($phase==='hold'){
 expect($phase==='mutate','Known fixture phase');
 $state=static fn():array=>['template'=>(array)DB::table('domains_dns_templates')->where('id',$id)->first(),
     'audit'=>DomainAudit::where('subject_type','dns_profile')->where('subject_id',$id)->count(),
-    'claims'=>DB::table('domains_dns_template_claims')->where('subject_id',$id)->count()];
+    'claims'=>DB::table('domains_dns_template_claims')->count()];
 $before=$state();same(1,(int)$before['template']['enabled'],'The template starts on');
 $ticket=Writes::ticket((int)$manager->id,$id,(int)$before['template']['revision'],$action);
 $connection=(string)DB::selectOne('SELECT CONNECTION_ID() AS id')->id;
