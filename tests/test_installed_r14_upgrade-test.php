@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Models\{DnsTemplate,DomainAudit};
 use Paymenter\Extensions\Servers\Domains\Services\{Installation,SiteDnsDefault,ComplimentaryAccountSchema};
 // Same-version local setup calls Installation, not the uploader's upgraded hook.
-// Native settings, schema history and encrypted watch rows cannot be proved by a stub.
+// Native settings, schema history and encrypted audit rows cannot be proved by a stub.
 $entry=new \Paymenter\Extensions\Servers\Domains\Domains([]);$entry->installed();
 same(null,SiteDnsDefault::profile(),'Old installation has no deployment default');
 config(['domains.site_dns_default.nameservers'=>['ns1.example.test','ns2.example.test']]);

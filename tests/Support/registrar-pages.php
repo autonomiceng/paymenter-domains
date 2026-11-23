@@ -222,7 +222,7 @@ foreach(['Account','API connection','OK','Test connection','Sales','What you sel
 foreach(['Connected','Working','View price history'] as $needle){$page->assertDontSee($needle);}
 $html=$page->html();
 foreach(['Catalogue acceptance','Account binding','Worker cadence','Native server settings','Registrar setup','(defaults)','Read capacity','Runtime account','Notification safety',
-    'Verify identity','Read balance','Enable processing','Pause processing','Missing Paymenter records','Transfer watch relinks','Start after payment','Change recorded','Confirm'] as $needle){
+    'Verify identity','Read balance','Enable processing','Pause processing','Missing Paymenter records','Start after payment','Change recorded','Confirm'] as $needle){
     expect(!str_contains($html,$needle),'Account page never shows: '.$needle);}
 // Legacy fixtures have no authenticated local NameSilo runtime. They cannot acquire send permission.
 config(['domains.namesilo_test.management'=>false,'domains.namesilo_test.renewal'=>false]);

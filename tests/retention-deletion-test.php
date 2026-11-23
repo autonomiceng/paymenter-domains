@@ -25,6 +25,6 @@ $invoice=App\Models\Invoice::create(['user_id'=>$other->id,'currency_code'=>'USD
 try{$other->fresh()->delete();expect(false,'Financial owner deletion must refuse');}catch(DomainException $e){same(NativeUserDeletion::RETAINED,$e->getMessage(),'Financial evidence has the existing refusal');}
 expect(App\Models\Invoice::whereKey($invoice->id)->exists(),'Invoice survives deletion attempt');
 expect($other->properties()->where('key','phone')->exists(),'Refusal preserves contact details');
-echo "Watch-only deletion, contact removal, rollback and native invoice retention passed.\n";
+echo "Customer deletion, contact removal, rollback and native invoice retention passed.\n";
 
 $nativeSuccessful=true;

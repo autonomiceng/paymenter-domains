@@ -11,5 +11,5 @@ try{$owner->fresh()->delete();expect(false,'Later native listener must fail');}c
 expect(User::whereKey($owner->id)->exists(),'Failed native deletion retains owner');
 expect(DB::table(UserDeletionSchema::TABLE)->where('user_id',$owner->id)->exists(),'Deletion intent committed before later native failure');
 $fail=false;$owner->fresh()->delete();expect(!User::whereKey($owner->id)->exists(),'Retry finishes native deletion');
-echo "Later native failure retains the deletion fence and discovery cannot restore erased watch data.\n";
+echo "Later native failure retains the deletion fence and the retry finishes deletion.\n";
 $nativeSuccessful=true;

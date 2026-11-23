@@ -46,7 +46,6 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
     $rows[0]['terms'] = [1];
     expect(!str_contains($render($rows, false), 'Longer terms are priced'), 'D7 absent registration terms do not invent longer terms');
     // The index describes the visible page, including filtered/empty pages, not hidden accounts.
-    $strings0 = DomainSummaryStrings::all();
     foreach ([[true, true], [true, false], [false, false], []] as $flags) {
         $dtos = [];
         foreach ($flags as $i => $flag) {
@@ -63,7 +62,7 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
     }
     $emptyFiltered = view('domains::index', ['domains' => new \Illuminate\Pagination\LengthAwarePaginator([], 50, 25)])->render();
     same(0, storefrontDom($emptyFiltered)->query('//*[@class="domains-testbar"]')->length, 'D7 empty visible page ignores hidden totals');
-    // One status pill per domain. Registration, DNS, renewal and check state are plain text in their own sections.
+    // One status pill per domain. Registration and renewal details have their own sections.
     $strings = DomainSummaryStrings::all();
     $dto = static fn (string $name, string $kind, string $registration, array $states, ?string $state = null) => new DomainSummary($name, null, $kind,
         $registration, $states, $strings, null, null, null, null, null, ['detail' => '/domains/'.$name], renewalOff: in_array('adopt.renewal_off', $states, true),

@@ -55,7 +55,7 @@ foreach ($cases as $case=>[$domain,$acquisition,$expires,$renewal,$sub,$expiresT
     expect(!preg_match('/\b(enom|namesilo)\b/i',$page),'No registrar names in the list: '.$case);
 }
 
-// Hosting, demo and test-mode rows render from the same DTOs; the list never queries in Blade.
+// Demo and test-mode rows render from the same DTOs; the list never queries in Blade.
 $strings=DomainSummaryStrings::all();
 $dto=static fn(string $name,string $kind,array $more)=>new DomainSummary($name,null,$kind,'domain.registration.unknown',[],$strings,...[
     'expiry'=>null,'expiryPrecision'=>null,'expirySource'=>null,'renewalDueAt'=>null,'renewalPrice'=>null,

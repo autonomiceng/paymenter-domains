@@ -35,6 +35,11 @@ $summaries=new DomainSummaries;
 $request = static function (array $data = []) use ($owner, $session): Request {
     $r = Request::create('/domains/check', 'POST', $data); $r->setLaravelSession($session); $r->setUserResolver(fn () => $owner); return $r;
 };
+$product = $native->product($tlds[0], 'register');
+$plan = $product->plans()->where('billing_period', 1)->sole();
+$order = \App\Models\Order::create(['user_id'=>$owner->id,'currency_code'=>'USD']);
+$service = \App\Models\Service::create(['user_id'=>$owner->id,'order_id'=>$order->id,'product_id'=>$product->id,'plan_id'=>$plan->id,
+    'status'=>'active','quantity'=>1,'price'=>'5.00','currency_code'=>'USD']);
 $managed = DB::table('domains_domains')->insertGetId(['service_id' => $service->id, 'user_id' => $owner->id,
     'server_id' => $tlds[0]->server_id, 'registrar_key' => 'enom', 'account_fingerprint' => $tlds[0]->account_fingerprint,
     'domain' => 'managed-placeholder.com', 'reservation_name' => 'managed-placeholder.com', 'sld' => 'managed-placeholder', 'tld' => 'com', 'status' => 'active']);
@@ -85,8 +90,8 @@ $paths = [
     'portal-batch' => static function () use ($summaries,$owner,$managed,$at) {
         same(1,count($summaries->batch($owner,[$managed],$at+2)),'Page retains its owned domain');
     },
-    'hosting-summary' => static function () use ($summaries, $owner, $service, $at) {
-        same(1, count($summaries->services($owner, [$service->id], $at + 2)), 'Native hosting summary remains owner scoped');
+    'service-summary' => static function () use ($summaries, $owner, $service, $at) {
+        same(1, count($summaries->services($owner, [$service->id], $at + 2)), 'Native service summary remains owner scoped');
     },
 ];
 // The intent table check runs once per connection; warm it so both sizes compare steady reads.
