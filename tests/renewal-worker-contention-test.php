@@ -57,6 +57,9 @@ try {
     same(['item' => [$op->invoice_item_id => PricingRule::minor($op->amount)],
         'payment' => [$invoice->transactions()->sole()->id => PricingRule::minor($op->amount)]],
         RenewalFundingLedger::entries($reply), 'One original invoice line and signed payment are reserved');
+    commerceReject(static fn () => $reply->fresh()->update(['renewal_attempt' => null]));
+    commerceReject(static fn () => $reply->fresh()->update(['attempt' => [...$reply->attempt, 'claim_key' => 'replacement']]));
+    same($reply->renewal_attempt, $reply->fresh()->renewal_attempt, 'The original reservation remains immutable after a late reply');
     $runSecond();
     same(1, $state->writes, 'Both database workers and replay share one registrar send');
     same($money, nativeFinancialSnapshot($op->fresh()), 'Quarantine and replay preserve native customer money');

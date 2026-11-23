@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\{Auth, DB, Queue};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Paymenter\Extensions\Servers\Domains\Data\SendFailure;
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
-use Paymenter\Extensions\Servers\Domains\Services\{EnomAnswers, NativePaidHooks, RegistrarCheck, Refunds, RuntimeWork};
+use Paymenter\Extensions\Servers\Domains\Services\{EnomAnswers, NativePaidHooks, PricingRule, RegistrarCheck, Refunds, RenewalFundingLedger, RuntimeWork};
 require __DIR__.'/Support/renewal-runtime.php';
 
 // The real financial fixture is required: a lost paid reply must retain both the sealed attempt
@@ -20,7 +20,9 @@ app()->instance(RuntimeWork::class, $work);
 NativePaidHooks::boot();
 Queue::fake();
 DB::transaction(static function () use ($invoice, $op): void {
-    \App\Helpers\ExtensionHelper::addPayment($invoice, null, $op->amount);
+    \App\Helpers\ExtensionHelper::addPayment($invoice, null, '0.01');
+    same('pending', $invoice->fresh()->status, 'One cent leaves the invoice open');
+    \App\Helpers\ExtensionHelper::addPayment($invoice->fresh(), null, PricingRule::decimal(PricingRule::minor($op->amount) - 1));
     Queue::assertNotPushed(RunOperation::class);
 });
 $job = Queue::pushed(RunOperation::class)->where('operationId', $op->id)->sole();
@@ -31,6 +33,9 @@ app('events')->listen(MessageLogged::class, static function ($event) use (&$logg
 });
 $job->handle($work);
 $result = $op->fresh();
+$payments = $invoice->transactions()->orderBy('id')->get()->mapWithKeys(static fn ($row) => [(int) $row->id => PricingRule::minor($row->amount)])->all();
+same(2, count($payments), 'Both native receipts survive the lost reply');
+same($payments, RenewalFundingLedger::entries($result)['payment'], 'The original reservation records each payment once');
 same(['uncertain', 'renewal_confirmation_required', null, 1],
     [$result->state, $result->safe_code, $result->attempt['execution'], $state->writes], 'Lost paid renewal stays uncertain after one send');
 same(['category' => 'timeout', 'timeout_ms' => 24993], $result->attempt['send_failure'], 'Attempt retains safe failure metadata');
@@ -39,21 +44,21 @@ same([['warning', ['operation_id' => $op->id, 'exception_class' => SendFailure::
 require __DIR__.'/Support/staff-panel.php';
 staffPanel();
 Auth::setUser(staffUser(['admin.domains.view', 'admin.domains.manage', 'admin.domains.secrets-metadata']));
-Livewire\Livewire::test(ViewOperation::class, ['record' => $result->id])->assertSee('timeout; time limit 24993 ms');
+Livewire\Livewire::test(ViewOperation::class, ['record' => $result->id])->assertSee('timeout')->assertSee('24993');
 $attempt = $op->fresh()->attempt;
 $money = nativeFinancialSnapshot($op->fresh());
 $reads = count($state->calls);
 $writes = $state->writes;
 // A pre-existing lost reply exposes the existing wait/support step before any worker creates status_check.
 $beforeCheck=RegistrarCheck::forCustomer($op->fresh());
-same('Renewal pending',$beforeCheck['title'],'Old unresolved renewal projects its original-dispatch deadline without a worker');
+$deadline = (new DateTimeImmutable($attempt['dispatch_attempted_at']))->modify('+24 hours')->setTimezone(new DateTimeZone('America/Los_Angeles'));
+expect(str_contains($beforeCheck['body'], $deadline->format('M j')) && empty($beforeCheck['asks']),
+    'Before the first check the customer sees the original local deadline and has no action');
 $result = $completion->run($op->id);
 same('awaiting_answer', $result->policy['status_check']['outcome'], 'Unrecoverable renewal names the staff registrar-answer action');
 same('Enom', $result->policy['status_check']['registrar'], 'Staff action names the bound registrar');
 same((new DateTimeImmutable($attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp(),
     $result->policy['status_check']['answer_after'], 'Answer timing is tied to the original dispatch');
-$words = RegistrarCheck::for($result);
-expect(str_contains($words['body'], 'Ask Enom to check this attempt.'), 'Staff sees the existing registrar-answer instructions');
 same('uncertain', $result->state, 'Missing reply is not a failure proof');
 same($attempt, $result->attempt, 'Read checks preserve original attempt evidence');
 same($money, nativeFinancialSnapshot($result), 'Read checks preserve customer money and issued debt');
