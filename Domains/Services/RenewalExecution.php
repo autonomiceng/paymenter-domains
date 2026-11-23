@@ -106,11 +106,11 @@ final class RenewalExecution
                     'renewal_mode' => $ready->status->value];
                 if ($op->funding_basis === 'paid_invoice') {
                     RenewalFundingLedger::reserve($op, $funding['entries']);
-                    $reservation = ['renewal_attempt' => $attempt];
+                    $reservation = ['renewal_reserved_revision' => $op->transition_revision + 1];
                 } else {
-                    $reservation = ['attempt' => $attempt, 'funding' => [...($op->funding ?? []), 'claim' => $funding, 'seal' => $funding]];
+                    $reservation = ['funding' => [...($op->funding ?? []), 'claim' => $funding, 'seal' => $funding]];
                 }
-                $op->update([...$reservation, 'renewal_admission_until' => null, 'state' => 'running', 'started_at' => $now, 'lease_expires_at' => $now->modify('+360 seconds'),
+                $op->update([...$reservation, 'attempt' => $attempt, 'renewal_admission_until' => null, 'state' => 'running', 'started_at' => $now, 'lease_expires_at' => $now->modify('+360 seconds'),
                     'request_fingerprint' => $digest]);
                 $descriptor = new AdmittedOperation($binding, new Query($name, Action::Renew, (int) $op->term), $op->operation_key, $claim,
                     $d->authority_generation, $claim, $digest, $ready->cost, new DateEvidence($op->base_expires_at->format('Y-m-d'), ExpiryPrecision::Date, 'renewal_base'));

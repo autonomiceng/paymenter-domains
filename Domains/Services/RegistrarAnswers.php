@@ -84,7 +84,7 @@ class RegistrarAnswers
             $reader->readRenewalDomain($name, $ctx);
             $info = $ctx->highestExpiry();
             $expiry = method_exists($reader, 'expiry') ? $reader->expiry($name, $ctx) : null;
-            $expiryAnswered = $expiry?->status === 'success' && isset($expiry->facts()['expiry']);
+            $expiryAnswered = $binding->registrarKey !== 'enom' || ($expiry?->status === 'success' && isset($expiry->facts()['expiry']));
             $finishedInTime = $clock->now() < $deadline;
         } catch (\PDOException $error) { throw $error; }
         catch (\Throwable) { /* An earlier positive reply still rules out a return. */ }

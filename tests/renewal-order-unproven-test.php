@@ -66,8 +66,8 @@ $readUntilStopped = static function ($op, $completion, string $shape) use ($stat
     same($calls, count($state->calls), "{$shape}: a check after the limit reads nothing more");
 };
 
-// 1. Checks stop at the limit whatever the reply looks like, and Record answer appears.
-foreach (array_keys($shapes) as $n => $shape) {
+// Exercise the remaining Enom reply shapes. The credit and retained-proof cases below also check the poll limit.
+foreach (['failed domain read', 'missing detail', 'unreadable detail', 'charge in another currency'] as $n => $shape) {
     [$op, , , $completion] = $sent("renew-shape-{$n}-placeholder.com", '2027-10-18', $shape);
     $readUntilStopped($op, $completion, $shape);
 }
