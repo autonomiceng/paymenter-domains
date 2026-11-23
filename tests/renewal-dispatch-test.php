@@ -3,7 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
 use Paymenter\Extensions\Servers\Domains\Data\{Disposition, SendState};
-use Paymenter\Extensions\Servers\Domains\Services\{RenewalDispatch, RenewalHold};
+use Paymenter\Extensions\Servers\Domains\Services\{RenewalDecision, RenewalHold};
 
 foreach ([
     ['awaiting_payment', true, true],
@@ -15,7 +15,7 @@ foreach ([
     ['held', true, false],
     ['succeeded', true, false],
 ] as [$state, $virgin, $allowed]) {
-    same($allowed, RenewalDispatch::canAdmit($state, $virgin), "Admission for $state with virgin=".(int) $virgin);
+    same($allowed, RenewalDecision::canAdmit($state, $virgin), "Admission for $state with virgin=".(int) $virgin);
 }
 
 $now = new DateTimeImmutable('2027-10-01T12:00:00Z');
@@ -29,7 +29,7 @@ foreach ([
     ['expired lease', 4, 'running', true, true, '+0 seconds', '+25 seconds', false],
     ['insufficient wire time', 4, 'running', true, true, '+1 second', '+24999 milliseconds', false],
 ] as [$case, $revision, $state, $matches, $funded, $lease, $deadline, $expected]) {
-    same($expected, RenewalDispatch::canSend(4, $revision, $state, $matches, $funded,
+    same($expected, RenewalDecision::canSend(4, $revision, $state, $matches, $funded,
         $lease === null ? null : $now->modify($lease), $now->modify($deadline), $now), $case.' wire authority');
 }
 
@@ -43,7 +43,7 @@ foreach ([
     ['quarantined claim', 'uncertain', SendState::Sent, Disposition::Accepted, true, 'uncertain', 'stale_claim'],
 ] as [$case, $state, $send, $disposition, $inTime, $next, $reason]) {
     same(['state' => $next, 'safe_code' => $reason],
-        RenewalDispatch::reply($state, 'stale_claim', $send, $disposition, $inTime), $case);
+        RenewalDecision::reply($state, 'stale_claim', $send, $disposition, $inTime), $case);
 }
 
 foreach ([
@@ -53,7 +53,7 @@ foreach ([
     ['no payment', 1000, 0, false],
 ] as [$case, $total, $net, $funded]) {
     try {
-        RenewalDispatch::requireFunding($total, $net);
+        RenewalDecision::requireFunding($total, $net);
         $actual = true;
     } catch (RenewalHold $hold) {
         same('renewal_invoice_unpaid', $hold->reason, $case.' funding refusal');
@@ -61,4 +61,36 @@ foreach ([
     }
     same($funded, $actual, $case.' funding authority');
 }
-echo "Paid renewal admission, funding and reply decisions passed.\n";
+foreach ([
+    ['partial reversal', '2027-10-18', 'paid', 999, 'held', 'renewal_invoice_unpaid', true],
+    ['changed due date', '2027-10-19', 'paid', 1000, 'held', 'renewal_funding_or_authority', true],
+    ['missing due date', null, 'paid', 1000, 'held', 'renewal_funding_or_authority', true],
+    ['unfunded receipt', '2027-10-18', 'cancelled', 0, 'held', 'renewal_invoice_unpaid', false],
+] as [$case, $due, $status, $net, $state, $code, $returnable]) {
+    $reason = RenewalDecision::invoiceRefusal($due, '2027-10-18', $status);
+    if ($reason === null) {
+        try { RenewalDecision::requireFunding(1000, $net); }
+        catch (RenewalHold $hold) { $reason = $hold->reason; }
+    }
+    same($code, $reason, $case.' refuses dispatch');
+    $hold = RenewalDecision::hold($reason, false, $net > 0);
+    same([$state, $code, true, $returnable],
+        [$hold['state'], $hold['safe_code'], $hold['renewal_execution']['staff_alert'], $hold['renewal_execution']['refundable_later']],
+        $case.' retains the paid obligation');
+}
+foreach ([
+    ['ordinary charge', 'enom', 1, '8.00', '8.00', '10.00', '12.00', false, 'succeeded', null, 'confirmed', false, false],
+    ['below cost', 'enom', 1, '8.00', '8.00', '10.00', '1.00', false, 'succeeded', null, 'below_cost', true, false],
+    ['registrar correction', 'enom', 1, '8.00', '8.00', '10.00', '12.00', true, 'succeeded', null, 'confirmed', true, false],
+    ['discount', 'enom', 2, '7.00', '8.00', '10.00', '12.00', false, 'succeeded', 'actual_charge_changed', 'actual_charge_changed', true, false],
+    ['one-year overrun', 'enom', 1, '9.00', '8.00', '8.00', '12.00', false, 'succeeded', 'actual_charge_changed', 'actual_cost_overrun', true, true],
+    ['multi-year charge drift', 'enom', 2, '9.00', '8.00', '10.00', '12.00', false, 'uncertain', 'actual_charge_changed', 'actual_charge_changed', true, true],
+    ['multi-year overrun', 'enom', 2, '11.00', '8.00', '10.00', '12.00', false, 'uncertain', 'actual_cost_overrun', 'actual_cost_overrun', true, true],
+    ['NameSilo multi-year', 'namesilo', 2, '9.00', '8.00', '10.00', '12.00', false, 'succeeded', 'actual_charge_changed', 'actual_charge_changed', true, false],
+] as [$case, $registrar, $years, $actual, $authorized, $cap, $retail, $corrections, $state, $code, $reason, $alert, $pause]) {
+    $result = RenewalDecision::settlement($registrar, $years, $actual, $authorized, $cap, $retail, $corrections);
+    same([$state, $code, $reason, $alert, $pause, false], [$result['state'], $result['safe_code'],
+        $result['renewal_execution']['reason'], $result['renewal_execution']['staff_alert'], $result['pause'],
+        $result['renewal_execution']['refundable_later']], $case.' settlement');
+}
+echo "Paid renewal admission, funding, send, reply and settlement decisions passed.\n";

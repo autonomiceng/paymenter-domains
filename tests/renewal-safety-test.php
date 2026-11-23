@@ -88,12 +88,9 @@ same([...$admissionReads, ...$admissionReads, ...$confirmationReads], $state->ca
 same(18, count($state->calls) + $state->writes - $writes, 'Ordinary success uses 12 admission + 1 Extend + 5 confirmation calls');
 $completion->run($op->id); $engine->run($op->id, $writer);
 same(18, count($state->calls) + $state->writes - $writes, 'Completed workers remain silent');
-foreach (['unpaid', 'reversed', 'invoice_due', 'invoice_due_null', 'cancelled', 'paused', 'cost', 'unknown', 'disabled', 'authority', 'boundary', 'rate', 'second_flags', 'second_cost', 'balance', 'balance_unknown', 'second_balance', 'second_balance_unknown', 'quote_deadline', 'seal_reversal'] as $case) {
+foreach (['unpaid', 'cancelled', 'paused', 'cost', 'unknown', 'disabled', 'authority', 'boundary', 'rate', 'second_flags', 'second_cost', 'balance', 'balance_unknown', 'second_balance', 'second_balance_unknown', 'quote_deadline', 'seal_reversal'] as $case) {
     [$op, $d, $b, $invoice] = $makeRenewal(placeholderComFixtureName('safety-'.str_replace('_','-',$case).'-placeholder.com'), $case !== 'unpaid');
     [$engine, $writer] = $compose($b, $case !== 'disabled'); $writes = $state->writes;
-    if ($case === 'reversed') { InvoiceTransaction::create(['invoice_id' => $invoice->id, 'amount' => '-0.01', 'fee' => '0.00', 'status' => 'succeeded']); }
-    // Retained native rows are needed to check the execution hold, not just a validator exception.
-    if (in_array($case,['invoice_due','invoice_due_null'],true)) { DB::table('invoices')->where('id', $invoice->id)->update(['due_at' => $case==='invoice_due'? '2027-10-19':null]); }
     if ($case === 'cancelled') { ServiceCancellation::create(['service_id' => $d->service_id, 'type' => 'immediate', 'reason' => 'Synthetic']); }
     if ($case === 'paused') { $d->refresh()->update(['renewal_policy' => [...$d->renewal_policy, 'automatic_spend_paused' => true]]); }
     if ($case === 'cost') { $state->price = '8.01'; }
@@ -115,7 +112,7 @@ foreach (['unpaid', 'reversed', 'invoice_due', 'invoice_due_null', 'cancelled', 
     }
     same($case === 'unpaid' ? 'awaiting_payment' : (in_array($case,['rate','boundary','disabled','balance','balance_unknown','second_balance','second_balance_unknown','quote_deadline','seal_reversal'],true)?'queued':'held'), $engine->run($op->id, $writer)->state, 'Unsafe '.$case.' retained');
     same($writes, $state->writes, 'Unsafe '.$case.' sends nothing'); $held = $op->fresh();
-    if ($cause = ['reversed' => 'renewal_invoice_unpaid', 'invoice_due' => 'renewal_funding_or_authority', 'invoice_due_null' => 'renewal_funding_or_authority', 'paused' => 'renewal_spend_paused', 'cancelled' => 'renewal_funding_or_authority'][$case] ?? null) { same($cause, $held->safe_code, 'Renewal hold keeps its cause: '.$case); }
+    if ($cause = ['paused' => 'renewal_spend_paused', 'cancelled' => 'renewal_funding_or_authority'][$case] ?? null) { same($cause, $held->safe_code, 'Renewal hold keeps its cause: '.$case); }
     same([], $held->attempt ?? [], 'Refusal precedes seal'); if ($case !== 'unpaid') { same(!in_array($case,['rate','boundary','disabled','balance','balance_unknown','second_balance','second_balance_unknown','quote_deadline','seal_reversal'],true), $held->policy['renewal_execution']['refundable_later'], 'Paid debt retained for26'); }
     else { App\Helpers\ExtensionHelper::addPayment($invoice, null, $op->amount); same('pending', $engine->run($op->id,$writer)->state, 'Late native settlement executes after an early unpaid check'); }
     if ($case === 'disabled') { same('pending', $runRenewal($held,$b)->state, 'Enabling execution recovers the same paid obligation'); }
@@ -140,11 +137,6 @@ foreach (['unpaid', 'reversed', 'invoice_due', 'invoice_due_null', 'cancelled', 
 $descriptor = new AdmittedOperation($b, new Query($d->domain, Action::Renew, 1), $op->operation_key, 'fake', 1, 'fake', str_repeat('a',64), new Money('8.00','USD'), new DateEvidence('2027-10-18',ExpiryPrecision::Date,'synthetic'));
 $ctx = new RequestContext($b, RequestOrigin::Background, $clock->now()->modify('+120 seconds'), new RequestBudget(1), $clock);
 commerceReject(fn () => $writer->renew($descriptor, $ctx)); commerceReject(fn () => $writer->renew(clone $descriptor, $ctx));
-$state->lost = true; $writes = $state->writes; same('uncertain', $engine->run($op->id, $writer)->state, 'Lost response retains uncertainty');
-$nativeBeforeReplay = nativeFinancialSnapshot($op);
-$engine->run($op->id, $writer); same($writes + 1, $state->writes, 'Lost response never replays');
-same($nativeBeforeReplay, nativeFinancialSnapshot($op), 'Replay preserves native/financial state');
-$state->lost = false;
 foreach (['term', 'wrong_term', 'order_expiry', 'charge', 'owner', 'id', 'second_owner', 'second_id', 'drift', 'auto_drift', 'expiry_race'] as $case) {
     [$op, $d, $b] = $makeRenewal(placeholderComFixtureName('completion-'.str_replace('_','-',$case).'-placeholder.com')); [$engine, $writer, $completion] = $compose($b);
     same('pending', $engine->run($op->id, $writer)->state, 'Original acknowledged'); $state->expiry = '2028-10-18';

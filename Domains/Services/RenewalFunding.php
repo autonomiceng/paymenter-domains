@@ -61,9 +61,9 @@ final class RenewalFunding
             || (int) $invoice->user_id !== (int) $d->user_id || $invoice->currency_code !== 'USD'
             || (int) $item->invoice_id !== (int) $invoice->id || $item->reference_type !== null || $item->reference_id !== null
             || (string) $item->quantity !== '1' || PricingRule::minor($op->amount) <= 0
-            || PricingRule::minor($item->price) !== PricingRule::minor($op->amount)
-            || $invoice->due_at === null || $invoice->due_at->format('Y-m-d') !== ($op->policy['calendar']['due'] ?? null)) { throw new \DomainException('Renewal invoice authority changed.'); }
-        if ($invoice->status !== 'paid') { throw new RenewalHold('renewal_invoice_unpaid', 'Renewal invoice is not funded.'); }
+            || PricingRule::minor($item->price) !== PricingRule::minor($op->amount)) { throw new \DomainException('Renewal invoice authority changed.'); }
+        $refusal = RenewalDecision::invoiceRefusal($invoice->due_at?->format('Y-m-d'), $op->policy['calendar']['due'] ?? null, $invoice->status);
+        if ($refusal !== null) { throw new RenewalHold($refusal, 'Renewal invoice authority changed.'); }
         $items = [];
         foreach ($l['items']->where('invoice_id', $invoice->id) as $row) {
             if (!ctype_digit((string) $row->quantity) || (int) $row->quantity < 1) { throw new \DomainException('Invalid renewal invoice.'); }
@@ -72,7 +72,7 @@ final class RenewalFunding
         $payments = self::payments($op, $l);
         $total = array_sum($items);
         $paid = array_sum($payments);
-        RenewalDispatch::requireFunding($total, $paid);
+        RenewalDecision::requireFunding($total, $paid);
         return ['basis' => 'paid_invoice', 'invoice_id' => $invoice->id, 'invoice_item_id' => $item->id,
             'invoice_total_minor' => $total, 'succeeded_net_minor' => $paid, 'transaction_ids' => array_keys($payments),
             'entries' => ['item' => $items, 'payment' => $payments], 'currency' => 'USD'];

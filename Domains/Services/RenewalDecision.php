@@ -6,7 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Data\{Disposition, SendState};
 
 /** Decisions for a worker holding the current operation facts. */
-final class RenewalDispatch
+final class RenewalDecision
 {
     public static function canAdmit(string $state, bool $virgin): bool
     {
@@ -32,6 +32,39 @@ final class RenewalDispatch
         }
         $accepted = $inTime && in_array($disposition, [Disposition::Accepted, Disposition::Pending], true);
         return ['state' => $accepted ? 'pending' : 'uncertain', 'safe_code' => 'renewal_confirmation_required'];
+    }
+
+    public static function invoiceRefusal(?string $due, ?string $issuedDue, string $status): ?string
+    {
+        if ($due === null || $due !== $issuedDue) { return 'renewal_funding_or_authority'; }
+        return $status === 'paid' ? null : 'renewal_invoice_unpaid';
+    }
+
+    public static function hold(string $reason, bool $retry, bool $hasPayment): array
+    {
+        return ['state' => $retry ? 'queued' : 'held', 'safe_code' => $reason,
+            'renewal_execution' => ['reason' => $reason, 'staff_alert' => true, 'refundable_later' => !$retry && $hasPayment]];
+    }
+
+    /** Charge and owned expiry have already been proved against this reservation. */
+    public static function settlement(string $registrar, int $years, string $actual, string $authorized,
+        string $cap, ?string $retail, bool $corrections): array
+    {
+        $change = WriteMoney::compare($actual, $authorized);
+        $over = WriteMoney::compare($actual, $cap) > 0;
+        $belowCost = $retail !== null && WriteMoney::compare($actual, $retail) > 0;
+        $reason = match (true) {
+            $over => 'actual_cost_overrun',
+            $change !== 0 => 'actual_charge_changed',
+            $belowCost => 'below_cost',
+            default => 'confirmed',
+        };
+        // Enom's multi-year annual-rate rule requires review of any larger incurred charge.
+        $review = $registrar === 'enom' && $years > 1 && $change > 0;
+        return ['state' => $review ? 'uncertain' : 'succeeded',
+            'safe_code' => $review ? $reason : ($change !== 0 ? 'actual_charge_changed' : null),
+            'pause' => $review || $over, 'renewal_execution' => ['reason' => $reason,
+                'staff_alert' => $over || $change !== 0 || $belowCost || $corrections, 'refundable_later' => false]];
     }
 
     public static function requireFunding(int $totalMinor, int $netMinor): void

@@ -31,7 +31,7 @@ final class RenewalExecution
                 $op->update(['state' => 'uncertain', 'lease_expires_at' => null, 'safe_code' => 'stale_claim',
                     'policy' => [...$op->policy, 'renewal_execution' => ['staff_alert' => true, 'reason' => 'stale_claim', 'refundable_later' => false]]]); return null;
             }
-            if (!$op || $op->action !== 'renew' || !RenewalDispatch::canAdmit($op->state, RenewalCycles::registrarVirgin($op))) { return null; }
+            if (!$op || $op->action !== 'renew' || !RenewalDecision::canAdmit($op->state, RenewalCycles::registrarVirgin($op))) { return null; }
             if (FundsWaits::elapsed($op,$this->clock->now())) { return null; }
             if ($op->renewal_admission_until > $this->clock->now()) { return null; }
             if ($op->funding_basis === 'paid_invoice' && $l['invoices']->firstWhere('id', $op->invoice_id)?->status === 'pending') { return null; }
@@ -73,7 +73,7 @@ final class RenewalExecution
             [$descriptor, $context] = FreshTransaction::run(function () use ($seed, $id, $binding, $name, $stamp, $ready, $until, $writer, $admissionClaim,$reservedContext) {
                 $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
                 if ($l['stamp'] !== $stamp || !$op || $op->transition_revision !== $admissionClaim
-                    || $op->renewal_admission_until <= $this->clock->now() || !RenewalDispatch::canAdmit($op->state, RenewalCycles::registrarVirgin($op))) { throw new \DomainException('Renewal changed.'); }
+                    || $op->renewal_admission_until <= $this->clock->now() || !RenewalDecision::canAdmit($op->state, RenewalCycles::registrarVirgin($op))) { throw new \DomainException('Renewal changed.'); }
                 $funding = $this->current($op, $l); $writer->requirePolicy($binding, $this->features, $this->accepted);
                 // Both admissions proved sufficient registrar funds; a later hold has its own cause.
                 if(\Illuminate\Support\Facades\Schema::hasTable('domains_obligation_alerts')){
@@ -121,7 +121,7 @@ final class RenewalExecution
             }));
         } catch (\Throwable $error) {
             $this->decide($seed, $id, function (array $l) use ($id, $admissionClaim, $error, $refusals, $first, $ready): void { $op = $l['operations']->firstWhere('id', $id);
-                if ($op && RenewalDispatch::canAdmit($op->state, RenewalCycles::registrarVirgin($op)) && $op->transition_revision === $admissionClaim && $op->renewal_admission_until !== null) {
+                if ($op && RenewalDecision::canAdmit($op->state, RenewalCycles::registrarVirgin($op)) && $op->transition_revision === $admissionClaim && $op->renewal_admission_until !== null) {
                     $reason = $error instanceof RenewalRefused ? $error->reason : ($error instanceof ReadDeferred?RenewalCode::Rate:RenewalCode::Changed);
                     $retry = in_array($reason, [RenewalCode::Rate, RenewalCode::Reads, RenewalCode::Balance, RenewalCode::Changed, RenewalCode::Acceptance], true);
                     $cap=EnomTestRenewal::enabled(AccountBindings::binding($l['account']))&&($error instanceof EnomTestCallLimit||EnomTestCalls::refusedSince($refusals));
@@ -155,7 +155,7 @@ final class RenewalExecution
             $facts = $result?->evidence()->renewalExecution;
             if ($facts && $facts->query->matches($descriptor->query)) { $a['renewal'] = ['query' => ['name' => $facts->query->name, 'years' => $facts->query->years], 'order_reference' => $facts->orderReference]; }
             $unsent = $result?->sendState === SendState::DefinitelyUnsent;
-            $transition = RenewalDispatch::reply($op->state, $op->safe_code, $result?->sendState, $result?->disposition,
+            $transition = RenewalDecision::reply($op->state, $op->safe_code, $result?->sendState, $result?->disposition,
                 $context->deadline > $this->clock->now());
             $op->update(['attempt' => $a, 'provider_order_id' => $facts?->orderReference, ...$transition, 'lease_expires_at' => null,
                 'policy' => [...$op->policy, 'renewal_execution' => ['staff_alert' => true, 'reason' => $unsent ? 'renewal_definitely_unsent' : 'awaiting_unique_charge', 'refundable_later' => $unsent && $this->hasPayment($op, $l)]]]); return $op;
@@ -182,7 +182,7 @@ final class RenewalExecution
             $attempt = $row->attempt;
             $reservationMatches = $l['stamp'] === $grant['stamp'] && ($attempt['seal'] ?? null) === 'sealed'
                 && ($attempt['claim_key'] ?? null) === $op->claimKey && $row->request_fingerprint === $op->desiredStateDigest;
-            if (!RenewalDispatch::canSend($grant['revision'], $row->transition_revision, $row->state,
+            if (!RenewalDecision::canSend($grant['revision'], $row->transition_revision, $row->state,
                 $reservationMatches, $matchesFunding, $row->lease_expires_at, $context->deadline, $this->clock->now())) {
                 throw new \DomainException('Sealed renewal authority changed.');
             }
@@ -214,7 +214,8 @@ final class RenewalExecution
     private function hold(Operation $op, array $l, string $reason, bool $retry = false, array $facts = []): void
     {
         if($reason===RenewalCode::Balance->value&&\Illuminate\Support\Facades\Schema::hasTable('domains_obligation_alerts')){ObligationAlerts::record($op->domain,'renewal_funds',$this->clock->now()->getTimestamp(),(int)$op->id);}
-        $op->update(['renewal_admission_until' => null, 'state' => $retry ? 'queued' : 'held', 'safe_code' => $reason, 'policy' => [...$op->policy,
-            'renewal_execution' => [...['staff_alert' => true, 'reason' => $reason, 'refundable_later' => !$retry && $this->hasPayment($op, $l)], ...$facts]]]);
+        $hold = RenewalDecision::hold($reason, $retry, !$retry && $this->hasPayment($op, $l));
+        $op->update(['renewal_admission_until' => null, 'state' => $hold['state'], 'safe_code' => $hold['safe_code'],
+            'policy' => [...$op->policy, 'renewal_execution' => [...$hold['renewal_execution'], ...$facts]]]);
     }
 }
