@@ -13,6 +13,14 @@ final class RenewalDispatch
         return $virgin && in_array($state, ['awaiting_payment', 'queued'], true);
     }
 
+    public static function canSend(int $reservedRevision, int $currentRevision, string $state,
+        bool $reservationMatches, bool $fundingMatches, ?\DateTimeInterface $lease,
+        \DateTimeImmutable $deadline, \DateTimeImmutable $now): bool
+    {
+        return $reservedRevision === $currentRevision && $state === 'running' && $reservationMatches && $fundingMatches
+            && $lease !== null && $lease > $now && $deadline >= $now->modify('+25 seconds');
+    }
+
     public static function reply(string $state, ?string $code, ?SendState $send, ?Disposition $disposition,
         bool $inTime): array
     {
