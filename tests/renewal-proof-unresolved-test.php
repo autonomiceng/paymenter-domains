@@ -75,10 +75,10 @@ $state->after = '2028-10-18'; $state->duringCommand = ReadCommand::Expiry;
 $state->during = static function () use (&$failing): void { $failing = 6; };
 $stopped = false; try { Cache::flush(); $completion->run($op->id); } catch (RuntimeException) { $stopped = true; }
 $fresh = $op->fresh();
-$failed = [$stopped, $failing, isset($fresh->policy['renewal_proof']), isset($fresh->policy['renewal_check']), $polls($op)];
+$failed = [$stopped, $failing, isset($fresh->renewal_proof), isset($fresh->renewal_check), $polls($op)];
 $state->after = '2027-10-18'; $state->duringCommand = null; $clock->instant = $clock->now()->modify('+1 hour');
 $check($op, $completion); $fresh = $op->fresh();
-$taken = [$polls($op), $fresh->policy['renewal_check']['unresolved'] ?? null, isset($fresh->policy['renewal_check']['token']),
+$taken = [$polls($op), $fresh->renewal_check['unresolved'] ?? null, isset($fresh->renewal_check['token']),
     $record($op), $credit() - $before, $op->fresh()->state, $state->writes - $writes];
 // Both windows are compared together, so a failure shows each one.
 $windows = ['live' => $live, 'failed' => $failed, 'taken' => $taken];

@@ -72,6 +72,8 @@ final class FoundationSchema extends TableSchema
                 $t->unsignedBigInteger('transition_revision')->default(0);
                 $t->timestamp('renewal_admission_until')->nullable();
                 $t->longText('renewal_attempt')->nullable();
+                $t->longText('renewal_proof')->nullable();
+                $t->longText('renewal_check')->nullable();
                 $t->longText('attempt')->nullable();
                 $t->longText('funding')->nullable();
                 $t->string('provider_order_id', 128)->nullable();

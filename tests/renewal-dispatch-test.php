@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
-use Paymenter\Extensions\Servers\Domains\Data\{Disposition, SendState};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, DateEvidence, Disposition, DomainSnapshot, Environment, ExpiryPrecision, Money, OrderEvidence, Query, SendState};
 use Paymenter\Extensions\Servers\Domains\Services\{RenewalDecision, RenewalHold};
 
 foreach ([
@@ -92,5 +92,26 @@ foreach ([
     same([$state, $code, $reason, $alert, $pause, false], [$result['state'], $result['safe_code'],
         $result['renewal_execution']['reason'], $result['renewal_execution']['staff_alert'], $result['pause'],
         $result['renewal_execution']['refundable_later']], $case.' settlement');
+}
+$name = 'holding.example';
+$binding = new AccountBinding('enom', 1, Environment::Test, 'fixture-account');
+$foreign = new AccountBinding('enom', 2, Environment::Test, 'fixture-account');
+$expiry = static fn (string $date) => new DateEvidence($date, ExpiryPrecision::Date, 'provider');
+$query = new Query($name, Action::Renew, 1);
+foreach ([
+    ['unchanged expiry', new DomainSnapshot($binding, $name, true, $expiry('2027-10-18')), null],
+    ['foreign account', new DomainSnapshot($foreign, $name, true, $expiry('2028-10-18')), null],
+    ['different name', new DomainSnapshot($binding, 'other.example', true, $expiry('2028-10-18')), null],
+    ['unowned', new DomainSnapshot($binding, $name, false, $expiry('2028-10-18')), null],
+    ['unknown ownership', new DomainSnapshot($binding, $name, null, $expiry('2028-10-18')), null],
+    ['no dated observation', new DomainSnapshot($binding, $name, true), null],
+    ['later owned expiry', new DomainSnapshot($binding, $name, true, $expiry('2028-10-18')),
+        ['kind' => 'advanced_expiry', 'expiry' => '2028-10-18', 'precision' => 'date']],
+    ['matching order without charge', new OrderEvidence($binding, $query), null],
+    ['charge on another account', new OrderEvidence($foreign, $query, new Money('8.00', 'USD')), null],
+    ['observed charge', new OrderEvidence($binding, $query, new Money('8.00', 'USD'), 'order-123'),
+        ['kind' => 'charged_order', 'amount' => '8.00', 'currency' => 'USD', 'reference' => 'order-123']],
+] as [$case, $seen, $expected]) {
+    same($expected, RenewalDecision::positiveObservation($binding, $name, '2027-10-18', $seen), $case.' retained proof');
 }
 echo "Paid renewal admission, funding, send, reply and settlement decisions passed.\n";

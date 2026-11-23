@@ -15,8 +15,8 @@ class Operation extends Model
 
     protected $table = 'domains_operations';
     protected $guarded = [];
-    protected $hidden = ['account_fingerprint', 'payload', 'policy', 'cost', 'attempt', 'renewal_attempt', 'renewal_admission_until', 'transition_revision', 'funding', 'funding_reason', 'authorized_by', 'request_fingerprint', 'management_pending'];
-    protected $casts = ['transition_revision' => 'integer', 'renewal_attempt' => 'encrypted:array', 'renewal_admission_until' => 'immutable_datetime', 'retry_number'=>'integer', 'attempt' => 'encrypted:array', 'funding' => 'encrypted:array', 'authority_generation' => 'integer', 'payload' => 'encrypted:array', 'policy' => 'encrypted:array', 'cost' => 'encrypted:array', 'amount' => 'decimal:2', 'base_expires_at' => 'immutable_date', 'expected_expires_at' => 'immutable_date', 'confirmed_expires_at' => 'immutable_date', 'lease_expires_at' => 'immutable_datetime', 'started_at' => 'immutable_datetime', 'completed_at' => 'immutable_datetime'];
+    protected $hidden = ['account_fingerprint', 'payload', 'policy', 'cost', 'attempt', 'renewal_attempt', 'renewal_proof', 'renewal_check', 'renewal_admission_until', 'transition_revision', 'funding', 'funding_reason', 'authorized_by', 'request_fingerprint', 'management_pending'];
+    protected $casts = ['transition_revision' => 'integer', 'renewal_attempt' => 'encrypted:array', 'renewal_proof' => 'encrypted:array', 'renewal_check' => 'encrypted:array', 'renewal_admission_until' => 'immutable_datetime', 'retry_number'=>'integer', 'attempt' => 'encrypted:array', 'funding' => 'encrypted:array', 'authority_generation' => 'integer', 'payload' => 'encrypted:array', 'policy' => 'encrypted:array', 'cost' => 'encrypted:array', 'amount' => 'decimal:2', 'base_expires_at' => 'immutable_date', 'expected_expires_at' => 'immutable_date', 'confirmed_expires_at' => 'immutable_date', 'lease_expires_at' => 'immutable_datetime', 'started_at' => 'immutable_datetime', 'completed_at' => 'immutable_datetime'];
 
     /** Shared operation readers see the immutable reservation followed by its write-once observations. */
     public function getAttemptAttribute($value): ?array
@@ -53,6 +53,9 @@ class Operation extends Model
         static::updating(static function (self $operation): void {
             if ($operation->action === 'renew' && $operation->isDirty('state')) {
                 $operation->transition_revision = (int) $operation->getOriginal('transition_revision') + 1;
+            }
+            if ($operation->getRawOriginal('renewal_proof') !== null && $operation->isDirty('renewal_proof')) {
+                throw new \DomainException('Renewal proof is retained.');
             }
             if ($operation->getRawOriginal('renewal_attempt') !== null && $operation->isDirty('renewal_attempt')) {
                 throw new \DomainException('Renewal reservation is immutable.');
@@ -98,11 +101,6 @@ class Operation extends Model
             }
             if(array_key_exists('renewal_replacement',$before)&&($after['renewal_replacement']??null)!==$before['renewal_replacement']){
                 throw new \DomainException('Renewal replacement review is retained.');
-            }
-            // Saved renewal proof for the current attempt only ever stays (RenewalProof).
-            if(is_string($before['renewal_proof']['identity']??null)&&($after['renewal_proof']??null)!==$before['renewal_proof']
-                &&($operation->attempt['claim_key']??null)===($before['renewal_proof']['claim_key']??null)){
-                throw new \DomainException('Renewal proof is retained.');
             }
             $history = $before['reconciliation_resumptions'] ?? []; $next = $after['reconciliation_resumptions'] ?? [];
             if (!is_array($history) || !is_array($next) || !array_is_list($next) || count($next) > 20

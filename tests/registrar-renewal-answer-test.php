@@ -47,7 +47,7 @@ $wire->commands=[];$completion=new RenewalCompletion($renewBindings,$clock);
 $wire->expiry='2027-10-18';$wire->orderCredit=['credited_amount'=>'8.95','credited_date'=>'2027-10-16 05:01:00'];
 $creditedOrder=$completion->run($renewal->id);
 expect(in_array('orderDetails',$wire->commands,true),'Renewal recovery receives the exact credited NameSilo order');
-same(['pending',null],[$creditedOrder->state,$creditedOrder->policy['renewal_proof']??null],
+same(['pending',null],[$creditedOrder->state,$creditedOrder->renewal_proof??null],
     'A credited renewal order with unchanged expiry cannot establish positive renewal proof');
 $wire->commands=[];$wire->expiry='2028-10-18';$wire->orderCredit=[];Cache::flush();
 same('succeeded',$completion->run($renewal->id)->state,'Exact readback completes the supported renewal without history acceptance');

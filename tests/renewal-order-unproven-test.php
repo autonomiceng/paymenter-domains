@@ -162,7 +162,7 @@ foreach (['a fresh expiry read showing the renewal' => static function ($s) { $s
 // whose reads all lag again is still refused.
 [$op, , , $completion] = $sent('renew-proof-kept-placeholder.com', '2027-10-18', 'another order');
 $readUntilStopped($op, $completion, 'kept'); $state->expiry = '10/18/2028 5:00:00 AM'; $state->fail = ReadCommand::Expiry;
-$first = $refused($op); $kept = isset($op->fresh()->policy['renewal_proof']); $state->expiry = '10/18/2027 5:00:00 AM'; $state->fail = null;
+$first = $refused($op); $kept = isset($op->fresh()->renewal_proof); $state->expiry = '10/18/2027 5:00:00 AM'; $state->fail = null;
 $seen['a fresh later expiry kept for a lagging retry'] = $first && $kept && $refused($op);
 foreach (['a matching charge' => ['matching charge', '2027-10-18'], 'an advanced expiry' => ['failed order read', '2028-10-18'],
     'an advanced expiry before a failed expiry read' => ['later info, failed expiry read', '2027-10-18'],

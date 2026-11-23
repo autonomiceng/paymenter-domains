@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
-use Paymenter\Extensions\Servers\Domains\Data\{Disposition, SendState};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Disposition, DomainSnapshot, OrderEvidence, SendState};
 
 /** Decisions for a worker holding the current operation facts. */
 final class RenewalDecision
@@ -44,6 +44,21 @@ final class RenewalDecision
     {
         return ['state' => $retry ? 'queued' : 'held', 'safe_code' => $reason,
             'renewal_execution' => ['reason' => $reason, 'staff_alert' => true, 'refundable_later' => !$retry && $hasPayment]];
+    }
+
+    /** A single positive reply blocks an automatic return even when it cannot prove completion. */
+    public static function positiveObservation(AccountBinding $account, string $name, ?string $beforeExpiry,
+        DomainSnapshot|OrderEvidence $seen): ?array
+    {
+        if (!$seen->binding->matches($account)) { return null; }
+        if ($seen instanceof OrderEvidence) {
+            if ($seen->query->name !== $name || $seen->charge === null) { return null; }
+            return ['kind' => 'charged_order', 'amount' => $seen->charge->amount, 'currency' => $seen->charge->currency,
+                'reference' => $seen->providerReference];
+        }
+        if ($seen->name !== $name || $seen->owned !== true || $beforeExpiry === null || $seen->expiry === null
+            || substr($seen->expiry->value, 0, 10) <= substr($beforeExpiry, 0, 10)) { return null; }
+        return ['kind' => 'advanced_expiry', 'expiry' => $seen->expiry->value, 'precision' => $seen->expiry->precision->value];
     }
 
     /** Charge and owned expiry have already been proved against this reservation. */

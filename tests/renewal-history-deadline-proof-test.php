@@ -65,7 +65,7 @@ $state->after = '2027-10-18'; $clock->instant = $sent->modify('+25 hours'); Cach
 $before = $credit(); $writes = $state->writes;
 $completion->run($op->id);
 same([1, 'uncertain', null], [$wire->details, $op->fresh()->state, $op->fresh()->attempt['reconciliation'] ?? null], 'A matching charge arrived too late to complete the renewal');
-$proof = $op->fresh()->policy['renewal_proof'] ?? null;
+$proof = $op->fresh()->renewal_proof ?? null;
 $wire->unavailable = true;
 for ($i = 1; $i < OperationReconciliation::POLL_LIMIT; $i++) {
     $clock->instant = $clock->now()->modify('+10 minutes'); Cache::flush(); $completion->run($op->id);
@@ -77,7 +77,7 @@ $actual = [$credit() - $before, $fresh->state, $fresh->funding['refund_authoriza
     $fresh->policy['enom_answer'] ?? null, $refused, is_array($proof) && ($proof['identity'] ?? null) === RegistrarAnswers::identity($fresh), $state->writes - $writes];
 same([0, 'uncertain', null, null, true, true, 0], $actual,
     'A matching history charge at the deadline remains proof and prevents returning its payment: '.json_encode($actual));
-$saved = $fresh->policy['renewal_proof'] ?? null;
+$saved = $fresh->renewal_proof ?? null;
 same([$proof, true], [$saved, is_array($saved) && is_string($saved['identity'] ?? null) && hash_equals(RegistrarAnswers::identity($fresh), $saved['identity'])],
     'After the refused answer, the saved proof is unchanged and still names the current attempt');
 echo "Late matching history charge protects renewal money.\n"; $nativeSuccessful = true;

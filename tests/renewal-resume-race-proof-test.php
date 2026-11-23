@@ -49,7 +49,7 @@ $resume($op); $polls = $op->fresh()->policy['renewal_polls'] ?? null;
 $state->after = '2028-10-18'; $state->duringCommand = ReadCommand::Info; $state->during = static fn () => $resume($op);
 Cache::flush(); $raced = $completion->run($op->id);
 $fresh = $op->fresh();
-same([0, 2, true, false], [$polls, count($fresh->policy['renewal_resumptions'] ?? []), ($fresh->policy['renewal_proof']['identity'] ?? null) === RegistrarAnswers::identity($fresh),
+same([0, 2, true, false], [$polls, count($fresh->policy['renewal_resumptions'] ?? []), ($fresh->renewal_proof['identity'] ?? null) === RegistrarAnswers::identity($fresh),
     $raced->state === 'succeeded'], 'The raced check keeps the advanced expiry it saw and completes nothing');
 $state->after = '2027-10-18'; $clock->instant = $clock->now()->modify('+10 minutes'); $stop($op, $completion);
 app()->instance(AccountBindings::class, $renewBindings);

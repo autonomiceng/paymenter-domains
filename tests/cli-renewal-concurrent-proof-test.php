@@ -70,7 +70,7 @@ same([0, $priorState, null, null, null, true], $interleaved,
     'An overlapping lagging check and staff answer cannot return a funded renewal payment: '.json_encode($interleaved));
 $actual = [$cash() - $before, $fresh->state, $fresh->funding['refund_authorization'] ?? null,
     $fresh->funding['refund'] ?? null, $fresh->policy['enom_answer'] ?? null, $refused,
-    RegistrarAnswers::renewalProof($fresh, $domain->fresh()), $fresh->policy['renewal_proof']['identity'] ?? null,
+    RegistrarAnswers::renewalProof($fresh, $domain->fresh()), $fresh->renewal_proof['identity'] ?? null,
     $state->writes - $writes, $invoice->fresh()->status, $domain->fresh()->provider_expires_at == $priorExpiry];
 same([0, $priorState, null, null, null, true, true, $identity, 0, 'paid', true], $actual,
     'The older check retains same-attempt proof and refuses later Not processed answers without credit, refund or another send: '.json_encode($actual));

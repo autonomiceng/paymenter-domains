@@ -12,7 +12,7 @@ final class RenewalProof
 {
     private const CLAIM_GRACE_SECONDS = 300;
     private bool $saved = false;
-    private bool $pending = false;
+    private ?array $observation = null;
     private bool $superseded = false;
 
     private function __construct(private readonly int $operationId, private readonly string $identity, private readonly string $claimKey, private readonly string $token,
@@ -20,7 +20,7 @@ final class RenewalProof
 
     private static function claim(Operation $op): ?array
     {
-        $claim = $op->policy['renewal_check'] ?? null;
+        $claim = $op->renewal_check;
         return self::sameIdentity($claim, 'identity', RegistrarAnswers::identity($op)) ? $claim : null;
     }
 
@@ -33,8 +33,8 @@ final class RenewalProof
     public static function open(Operation $op, AttemptEvidence $attempt, \DateTimeImmutable $deadline, Clock $clock): self
     {
         $read = new self((int) $op->id, RegistrarAnswers::identity($op), $op->attempt['claim_key'], bin2hex(random_bytes(16)), $attempt, $deadline, $clock);
-        $op->policy = [...$op->policy, 'renewal_check' => ['identity' => $read->identity, 'token' => $read->token,
-            'until' => $deadline->getTimestamp() + self::CLAIM_GRACE_SECONDS, 'unresolved' => self::claimed($op)]];
+        $op->renewal_check = ['identity' => $read->identity, 'token' => $read->token,
+            'until' => $deadline->getTimestamp() + self::CLAIM_GRACE_SECONDS, 'unresolved' => self::claimed($op)];
         if (!$op->save()) { throw new \RuntimeException('Renewal read claim could not be saved.'); }
         return $read;
     }
@@ -48,7 +48,7 @@ final class RenewalProof
 
     private function ownedClaim(Operation $op): ?array
     {
-        $claim = $op->policy['renewal_check'] ?? null;
+        $claim = $op->renewal_check;
         return $this->matches($op) && self::sameIdentity($claim, 'identity', $this->identity)
             && ($claim['token'] ?? null) === $this->token ? $claim : null;
     }
@@ -67,12 +67,9 @@ final class RenewalProof
     {
         $claim = $this->ownedClaim($op);
         if ($claim === null) { return false; }
-        $policy = $op->policy;
-        unset($policy['renewal_check']);
-        if (($claim['unresolved'] ?? false) === true) {
-            $policy['renewal_check'] = ['identity' => $this->identity, 'unresolved' => true];
-        }
-        self::savePolicy($op, $policy);
+        $op->renewal_check = ($claim['unresolved'] ?? false) === true
+            ? ['identity' => $this->identity, 'unresolved' => true] : null;
+        self::saveEvidence($op);
         return true;
     }
 
@@ -83,19 +80,16 @@ final class RenewalProof
     /** Observe each reply before a later exchange can fail or run out of time. */
     public function saw(DomainSnapshot|OrderEvidence $seen): void
     {
-        if ($this->saved || $this->superseded || !$seen->binding->matches($this->attempt->binding)) { return; }
-        $name = $this->attempt->query->name;
-        $before = $this->attempt->beforeExpiry?->value;
-        $positive = $seen instanceof OrderEvidence ? $seen->query->name === $name && $seen->charge !== null
-            : $seen->name === $name && $seen->owned === true && $before !== null && $seen->expiry !== null
-                && substr($seen->expiry->value, 0, 10) > substr($before, 0, 10);
-        if ($positive) { $this->pending = true; $this->write(); }
+        if ($this->saved || $this->superseded) { return; }
+        $this->observation ??= RenewalDecision::positiveObservation($this->attempt->binding, $this->attempt->query->name,
+            $this->attempt->beforeExpiry?->value, $seen);
+        if ($this->observation !== null) { $this->write(); }
     }
 
     /** Retry a failed proof write before settling the read. Unsaved evidence leaves the claim in place. */
     public function requireSaved(): void
     {
-        if (!$this->pending || $this->saved) { return; }
+        if ($this->observation === null || $this->saved) { return; }
         $this->write();
         if (!$this->saved) { throw new \RuntimeException('Renewal proof could not be saved.'); }
     }
@@ -111,8 +105,9 @@ final class RenewalProof
                 if (!$account || !AccountBindings::binding($account)->matches($this->attempt->binding)) { return false; }
                 // A late reply can still prove this attempt even if a different worker now owns its read claim.
                 if (!self::held($op)) {
-                    self::savePolicy($op, [...$op->policy, 'renewal_proof' => ['claim_key' => $this->claimKey,
-                        'identity' => $this->identity, 'at' => $this->clock->now()->format(DATE_ATOM)]]);
+                    $op->renewal_proof = ['claim_key' => $this->claimKey, 'identity' => $this->identity,
+                        'at' => $this->clock->now()->format(DATE_ATOM), 'observation' => $this->observation];
+                    self::saveEvidence($op);
                 }
                 return true;
             });
@@ -136,12 +131,11 @@ final class RenewalProof
         }
     }
 
-    private static function savePolicy(Operation $op, array $policy): void
+    private static function saveEvidence(Operation $op): void
     {
         $timestamps = $op->timestamps;
         $op->timestamps = false;
         try {
-            $op->policy = $policy;
             if (!$op->saveQuietly()) { throw new \RuntimeException('Renewal read evidence could not be saved.'); }
         } finally { $op->timestamps = $timestamps; }
     }
@@ -149,7 +143,7 @@ final class RenewalProof
     public static function held(Operation $op): bool
     {
         $claimKey = $op->attempt['claim_key'] ?? null;
-        return is_string($claimKey) && self::sameIdentity($op->policy['renewal_proof'] ?? null, 'claim_key', $claimKey);
+        return is_string($claimKey) && self::sameIdentity($op->renewal_proof, 'claim_key', $claimKey);
     }
 
     private static function sameIdentity(mixed $saved, string $key, string $identity): bool
@@ -159,8 +153,7 @@ final class RenewalProof
     public static function stampRow(Operation $op): array
     {
         $row = $op->getRawOriginal();
-        try { $policy = $op->policy; } catch (\Illuminate\Contracts\Encryption\DecryptException) { return $row; }
-        if (is_array($policy)) { unset($policy['renewal_proof']); $row['policy'] = $policy; }
+        unset($row['renewal_proof']);
         return $row;
     }
 }
