@@ -52,9 +52,7 @@ final class RefundProof
         if (array_diff(array_keys($a), $allowed)) { throw new \DomainException('Unresolved attempt facts prevent refund.'); }
         if ($sealed) {
             $funded = $op->action === 'renew' && $op->funding_basis === 'paid_invoice'
-                ? $op->renewal_attempt !== null && ($f['seal']['basis'] ?? null) === 'paid_invoice'
-                    && ($f['seal']['invoice_total_minor'] ?? 0) > 0
-                    && array_sum(RenewalFundingLedger::payments($op)) >= $f['seal']['invoice_total_minor']
+                ? $op->renewal_attempt !== null && RenewalFundingLedger::funded($op)
                 : isset($f['claim'], $f['seal']) && $f['claim'] === $f['seal'];
             // Slice25 commits possibly_sent at seal; ONLY its exact typed local prewire result can override it.
             if (!in_array($op->safe_code, [$acquisition?'acquisition_definitely_unsent':'renewal_definitely_unsent', 'refund_approved'], true) || (!$acquisition&&$op->action !== 'renew') || ($a['send_state'] ?? null) !== 'possibly_sent'

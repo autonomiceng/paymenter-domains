@@ -33,7 +33,7 @@ final class RenewalExecution
             }
             if (!$op || $op->action !== 'renew' || !RenewalDispatch::canAdmit($op->state, RenewalCycles::registrarVirgin($op))) { return null; }
             if (FundsWaits::elapsed($op,$this->clock->now())) { return null; }
-            if (isset($op->policy['renewal_admission']['until']) && new \DateTimeImmutable($op->policy['renewal_admission']['until']) > $this->clock->now()) { return null; }
+            if ($op->renewal_admission_until > $this->clock->now()) { return null; }
             if ($op->funding_basis === 'paid_invoice' && $l['invoices']->firstWhere('id', $op->invoice_id)?->status === 'pending') { return null; }
             try { $this->configured($l); } catch (\PDOException|RenewalBusy $e) { throw $e; } catch (\Throwable) { $this->hold($op, RenewalCode::Acceptance->value, true); return null; }
             try { $this->current($op, $l); } catch (RenewalHold $held) { $this->hold($op, $held->reason, $held->reason===EnomLateRenewal::PAUSED); return null; } catch (RenewalRefused $refused) { $this->hold($op, $refused->reason->value); return null; } catch (\PDOException|RenewalBusy $e) { throw $e; } catch (\Throwable) { $this->hold($op, 'renewal_funding_or_authority'); return null; }
@@ -45,8 +45,7 @@ final class RenewalExecution
                 return null;
             }
             $claim = $op->transition_revision + 1;
-            $op->update(['transition_revision' => $claim, 'policy' => [...$op->policy, 'renewal_admission' => [
-                'until' => $this->clock->now()->modify('+360 seconds')->format(DATE_ATOM)]]]);
+            $op->update(['transition_revision' => $claim, 'renewal_admission_until' => $this->clock->now()->modify('+360 seconds')]);
             $d = $l['domain']; return [new RenewalRequest($d->id, $d->authority_generation, $d->confirmed_revision,
                 $d->provider_expires_at->format('Y-m-d'), $d->provider_domain_id, (int) $op->term, $op->operation_key), $claim];
         });
@@ -73,8 +72,8 @@ final class RenewalExecution
             $writer->reservePurchase($name,(int)Operation::findOrFail($id)->term,$ready->cost);
             [$descriptor, $context] = FreshTransaction::run(function () use ($seed, $id, $binding, $name, $stamp, $ready, $until, $writer, $admissionClaim,$reservedContext) {
                 $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
-                if ($l['stamp'] !== $stamp || !$op || $op->transition_revision !== $admissionClaim || !isset($op->policy['renewal_admission']['until'])
-                    || new \DateTimeImmutable($op->policy['renewal_admission']['until']) <= $this->clock->now() || !RenewalDispatch::canAdmit($op->state, RenewalCycles::registrarVirgin($op))) { throw new \DomainException('Renewal changed.'); }
+                if ($l['stamp'] !== $stamp || !$op || $op->transition_revision !== $admissionClaim
+                    || $op->renewal_admission_until <= $this->clock->now() || !RenewalDispatch::canAdmit($op->state, RenewalCycles::registrarVirgin($op))) { throw new \DomainException('Renewal changed.'); }
                 $funding = $this->current($op, $l); $writer->requirePolicy($binding, $this->features, $this->accepted);
                 // Both admissions proved sufficient registrar funds; a later hold has its own cause.
                 if(\Illuminate\Support\Facades\Schema::hasTable('domains_obligation_alerts')){
@@ -102,13 +101,12 @@ final class RenewalExecution
                     'send_state' => 'possibly_sent', 'authorized_cost' => ['amount' => $ready->cost->amount, 'currency' => 'USD'],
                     'renewal_mode' => $ready->status->value];
                 if ($op->funding_basis === 'paid_invoice') {
-                    RenewalFundingLedger::reserve($op, $funding['payments']);
-                    $seal = ['basis' => 'paid_invoice', 'invoice_total_minor' => $funding['invoice_total_minor']];
-                    $reservation = ['renewal_attempt' => $attempt, 'funding' => [...($op->funding ?? []), 'seal' => $seal]];
+                    RenewalFundingLedger::reserve($op, $funding['entries']);
+                    $reservation = ['renewal_attempt' => $attempt];
                 } else {
                     $reservation = ['attempt' => $attempt, 'funding' => [...($op->funding ?? []), 'claim' => $funding, 'seal' => $funding]];
                 }
-                $op->update([...$reservation, 'state' => 'running', 'started_at' => $now, 'lease_expires_at' => $now->modify('+360 seconds'),
+                $op->update([...$reservation, 'renewal_admission_until' => null, 'state' => 'running', 'started_at' => $now, 'lease_expires_at' => $now->modify('+360 seconds'),
                     'request_fingerprint' => $digest]);
                 $descriptor = new AdmittedOperation($binding, new Query($name, Action::Renew, (int) $op->term), $op->operation_key, $claim,
                     $d->authority_generation, $claim, $digest, $ready->cost, new DateEvidence($op->base_expires_at->format('Y-m-d'), ExpiryPrecision::Date, 'renewal_base'));
@@ -120,10 +118,9 @@ final class RenewalExecution
             }));
         } catch (\Throwable $error) {
             $this->decide($seed, $id, function (array $l) use ($id, $admissionClaim, $error, $refusals, $first, $ready): void { $op = $l['operations']->firstWhere('id', $id);
-                if ($op && RenewalDispatch::canAdmit($op->state, RenewalCycles::registrarVirgin($op)) && $op->transition_revision === $admissionClaim && isset($op->policy['renewal_admission']['until'])) {
+                if ($op && RenewalDispatch::canAdmit($op->state, RenewalCycles::registrarVirgin($op)) && $op->transition_revision === $admissionClaim && $op->renewal_admission_until !== null) {
                     $reason = $error instanceof RenewalRefused ? $error->reason : ($error instanceof ReadDeferred?RenewalCode::Rate:RenewalCode::Changed);
                     $retry = in_array($reason, [RenewalCode::Rate, RenewalCode::Reads, RenewalCode::Balance, RenewalCode::Changed, RenewalCode::Acceptance], true);
-                    $policy = $op->policy; unset($policy['renewal_admission']); $op->update(['policy' => $policy]);
                     $cap=EnomTestRenewal::enabled(AccountBindings::binding($l['account']))&&($error instanceof EnomTestCallLimit||EnomTestCalls::refusedSince($refusals));
                     $guard=$error instanceof WriteHeld&&$error->reason==='namesilo_account_guard';
                     if($reason===RenewalCode::Balance&&($until=($ready??$first)->renewalUntil)!==null){
@@ -177,8 +174,7 @@ final class RenewalExecution
             $row = Operation::findOrFail($grant[2]); $l = HoldingLocks::take($row->domain()->firstOrFail()); $row = $l['operations']->firstWhere('id', $row->id);
             $funding = $this->current($row, $l); $writer->requirePolicy($op->binding, $this->features, $this->accepted);
             $matchesFunding = $row->funding_basis === 'paid_invoice'
-                ? ($row->funding['seal']['invoice_total_minor'] ?? null) === $funding['invoice_total_minor']
-                    && RenewalFundingLedger::payments($row) === $funding['payments']
+                ? RenewalFundingLedger::entries($row) === $funding['entries']
                 : $row->funding['seal'] === $funding;
             if ($l['stamp'] !== $grant[1] || $row->state !== 'running' || ($row->attempt['seal'] ?? null) !== 'sealed'
                 || !$matchesFunding || $row->attempt['claim_key'] !== $op->claimKey
@@ -212,7 +208,7 @@ final class RenewalExecution
     private function hold(Operation $op, string $reason, bool $retry = false, array $facts = []): void
     {
         if($reason===RenewalCode::Balance->value&&\Illuminate\Support\Facades\Schema::hasTable('domains_obligation_alerts')){ObligationAlerts::record($op->domain,'renewal_funds',$this->clock->now()->getTimestamp(),(int)$op->id);}
-        $op->update(['state' => $retry ? 'queued' : 'held', 'safe_code' => $reason, 'policy' => [...$op->policy,
+        $op->update(['renewal_admission_until' => null, 'state' => $retry ? 'queued' : 'held', 'safe_code' => $reason, 'policy' => [...$op->policy,
             'renewal_execution' => [...['staff_alert' => true, 'reason' => $reason, 'refundable_later' => !$retry && $this->hasPayment($op)], ...$facts]]]);
     }
 }

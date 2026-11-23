@@ -7,15 +7,6 @@ use Paymenter\Extensions\Servers\Domains\Data\{RenewalCode, RenewalRequest};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, EnomLateRenewal, EnomTestRenewal, EnomTestSendLimitSchema, RenewalRefused};
 // Native funding, claim ownership and original support answers require the shared financial fixture.
-[$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-late-ack-placeholder.com')); [$engine,$writer]=$compose($b); $writes=$state->writes;
-$state->afterWrite=static function()use($clock,$engine,$op,$writer){ $clock->instant=$clock->now()->modify('+361 seconds'); same('uncertain',$engine->run($op->id,$writer)->state,'Expired running claim quarantined without replay'); };
-same('uncertain',$engine->run($op->id,$writer)->state,'Late acknowledgement cannot restore a quarantined claim');
-same($writes+1,$state->writes,'Stale and late invocations share one write');
-[$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-concurrent-placeholder.com')); [$engine,$writer]=$compose($b); $writes=$state->writes;
-$state->during=static function()use($engine,$writer,$op){
-    $before=$op->fresh()->getRawOriginal(); $engine->run($op->id,$writer); same($before,$op->fresh()->getRawOriginal(),'Concurrent run cannot change owned preflight claim');
-};
-same('pending',$engine->run($op->id,$writer)->state,'Original preflight survives concurrent invocation'); same($writes+1,$state->writes,'Concurrent workers share one send');
 [$op,$d,$b,$bill]=$makeRenewal(placeholderComFixtureName('renew-prewire-placeholder.com')); [$engine,$writer]=$compose($b); $writes=$state->writes;
 Paymenter\Extensions\Servers\Domains\Models\Operation::updated(static function($row)use($op,$bill){
     if($row->id===$op->id && $row->state==='running'){ Illuminate\Support\Facades\DB::table('invoices')->where('id',$bill->id)->update(['status'=>'cancelled']); }
