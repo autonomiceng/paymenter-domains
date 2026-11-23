@@ -8,7 +8,7 @@ use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
 use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
-use Paymenter\Extensions\Servers\Domains\Services\{ManagedDnsSetup,SiteDnsDefault};
+use Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault;
 /** The default nameservers for new domains, shown and changed at the top of Domains > DNS templates, beside the templates they come from.
  * Hosting-plan DNS zones are served by the hosting control panel (Plesk), provisioned by the hosting server
  * extension and never seen by this extension. DNS templates only name those nameservers.
@@ -32,7 +32,7 @@ final class DefaultNameservers
     {
         $out=[];
         foreach(WatchProfile::where('enabled',true)->orderBy('name')->get() as $p){
-            if(!ManagedDnsSetup::usable($p) || !SiteDnsDefault::fits($p->nameservers)){continue;}
+            if(!$p->enabled || !$p->readProfile() || !SiteDnsDefault::fits($p->nameservers)){continue;}
             $out[(int)$p->id]=$p->name.': '.implode(', ',$p->nameservers).(self::testNames($p->nameservers)?' (test names, not for real domains)':'');
         }
         return $out;

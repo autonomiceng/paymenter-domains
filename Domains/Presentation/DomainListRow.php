@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
 use Carbon\CarbonImmutable;
-use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts, RenewalRepeatWait};
+use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts,RenewalRepeatWait};
 /** Cells of the client Domains list, from the summary alone. Domains your hosting uses renew at their registrar. */
 final class DomainListRow
 {
@@ -13,15 +13,6 @@ final class DomainListRow
     /** Expires while a transfer runs. support false: there is nothing to ask us about. */
     public static function afterTransfer(): array
     { return ['missing' => false, 'tone' => null, 'value' => self::AFTER_TRANSFER, 'note' => null, 'support' => false]; }
-    /** "Hosting: {first}" or "Hosting: {first} and {n} more". */
-    public static function hosting(DomainSummary $s): ?string
-    {
-        if (!$s->relatedServices) { return null; }
-        $more = self::moreHosting($s);
-        return 'Hosting: '.$s->relatedServices[0]['label'].($more > 0 ? ' and '.$more.' more' : '');
-    }
-    /** Usable hosting links after the first. The summary lists every one; its overflow counts those past its first three. */
-    public static function moreHosting(DomainSummary $s): int { return max(0, count($s->relatedServices) - 1); }
     /** Missing Expires while an order is open: the pay button, that it's paid, or support. Null when the order doesn't decide it.
      * $funding false: the page notice already says Complimentary, so the cause doesn't say it again. */
     public static function orderExpires(array $order, ?string $support, bool $funding = true): ?array
@@ -50,9 +41,9 @@ final class DomainListRow
         if ($s->expiry === null) {
             if ($s->statusState === 'cancelled') { return ['missing' => false, 'tone' => null, 'note' => null]; } // Nothing left to fill in.
             if ($order = self::orderExpires($s->order, $s->urls['support'] ?? null)) { return $order; }
-            if ($s->kind !== 'watch' && $s->expiryWaits === 'transfer') { return self::afterTransfer(); }
+            if ($s->expiryWaits === 'transfer') { return self::afterTransfer(); }
             $wait = self::WAITS[$s->expiryWaits ?? ''] ?? null;
-            $cause = $s->kind === 'watch' ? 'Check at your registrar' : ($wait ? Missing::fills($wait) : null);
+            $cause = $wait ? Missing::fills($wait) : null;
             return ['missing' => true, 'cause' => $cause, 'fix' => $cause === null ? Missing::support($s->urls['support'] ?? null) : null];
         }
         $days = $s->daysLeft;
@@ -62,7 +53,6 @@ final class DomainListRow
     /** Empty for a domain renewed at its own registrar (we send no invoices), or Auto-renew on/off with the price, the cancel date or a missing next invoice. */
     public static function renewal(DomainSummary $s): array
     {
-        if ($s->kind === 'watch') { return ['value' => '', 'note' => null, 'invoiceMissing' => false, 'invoiceCause' => null, 'invoiceFix' => null]; }
         if ($s->expiry===null && (in_array($s->statusState,['registration_rejected','transfer_rejected','cancelled'],true)||in_array($s->order['state']??null,['failed','cancelled'],true))) { return ['value'=>'','note'=>null,'invoiceMissing'=>false,'invoiceCause'=>null,'invoiceFix'=>null]; }
         if ($s->renewalOffShown() && !$s->renewalInvoicePaid && !$s->renewalInvoiceReview && !$s->renewalInvoiceCancelled && !$s->renewalClosed) {
             return ['value' => 'Off', 'note' => $s->expiry ? 'Cancels '.CarbonImmutable::parse(substr($s->expiry, 0, 10), 'UTC')->format('M j, Y') : null, 'invoiceMissing' => false, 'invoiceCause' => null, 'invoiceFix' => null];

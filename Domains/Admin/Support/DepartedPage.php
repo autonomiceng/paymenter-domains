@@ -3,18 +3,16 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\User;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Row,Value};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\Section;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Reader,StaffTime,State};
-use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,HoldingDeparture,ManagementNameservers};
+use Paymenter\Extensions\Servers\Domains\Services\{HoldingDeparture,ManagementNameservers};
 /** The staff page of a confirmed departure (mock 07), read from its saved record and the confirmation's history entry
  * only. The suspected review's sections, notices and steps no longer apply, so the page shows Departure, Registration and
  * Billing. */
 final class DepartedPage
 {
-    private const WATCH = ['active' => ['Monitored as an external domain', null], 'paused' => ['Monitored domain stays paused', null], 'retired' => ['Not monitored', 'Its sources are off.']];
     public static function record(Domain $d): ?array
     {
         try { $r = $d->status === 'departed' ? ($d->renewal_policy['departure'] ?? null) : null; } catch (\Throwable) { return null; }
@@ -35,7 +33,6 @@ final class DepartedPage
         $codes = array_values(array_diff(array_unique(array_column(StaffDomainInputs::for([$d])[$d->id]['alerts'] ?? [], 'code')), ['account_money_hold']));
         $causes = array_map(fn (string $code) => DomainFacts::alertCause($code, $d), $codes);
         $tone = array_filter($codes, fn (string $code) => (DomainFacts::ALERTS[$code][1] ?? 'warning') === 'danger') ? 'danger' : 'warning';
-        if ($failed = NoticeHealth::open('managed', (int) $d->id, (string) $d->domain)) { $causes[] = $failed['text']; $tone = $failed['tone'] === 'danger' ? 'danger' : $tone; }
         if ($reminderCheck && $causes === []) { $causes[] = 'A reminder needs a check.'; }
         return $causes === [] ? null : ['value' => array_values(array_unique($causes)), 'sub' => null, 'url' => null, 'tone' => $tone, 'help' => null, 'demo' => false];
     }
@@ -63,17 +60,11 @@ final class DepartedPage
         $rows[] = Row::make('Service', Value::state(State::Cancelled, Reader::Staff, 'Service #'.$d->service_id.'.'));
         $registrar = ManagementNameservers::registrar($d);
         $product = match ($d->registrar_key) { 'enom' => 'Enom DNS', 'namesilo' => 'NameSilo DNSOwl', default => $registrar.' DNS' };
-        $dns = match (DepartureChecks::savedDnsCase($d, $r['dns_case'] ?? null)) {
+        $dns = match ($r['dns_case'] ?? null) {
             'registrar' => Value::fact(Fact::entered("Our registrar's DNS"), $product.', from the last registrar read. '.$registrar.' stopped serving it when the transfer completed.'),
-            'hosting' => Value::fact(Fact::entered('Hosting plan'), 'From the last registrar read. DNS records on the hosting plan keep working while the plan is active.'),
             'other' => Value::fact(Fact::entered('Other nameservers'), 'From the last registrar read. The transfer does not change them.'),
             default => null };
         if ($dns !== null) { $rows[] = Row::make('DNS records', $dns); }
-        if (isset(self::WATCH[$state = $entry['watch']['state'] ?? ''])) {
-            [$word, $why] = self::WATCH[$state]; $id = (int) ($entry['watch']['id'] ?? 0);
-            $rows[] = Row::make('Monitoring', Value::fact(Fact::entered($word), $why))
-                ->actions(Sheet::link('departed_watch', 'Open monitored domain', $id > 0 ? Facts::url(fn() => WatchResource::getUrl('view', ['record' => $id])) : null));
-        }
         if ($email = DepartedHistory::email($d, $entry)) {
             $owner = $d->user; $name = $owner ? (trim($owner->first_name.' '.$owner->last_name) ?: (string) $owner->email) : $email['to'];
             $rows[] = Row::make('Email', Value::fact(Fact::entered('Sent to '.$name.', '.StaffTime::at($email['at'])), 'Subject “'.$email['subject'].'”.'));

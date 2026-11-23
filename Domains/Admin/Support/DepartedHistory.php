@@ -11,7 +11,6 @@ use Paymenter\Extensions\Servers\Domains\Services\HoldingDeparture;
 final class DepartedHistory
 {
     public const CANCELLED = 'Domain transferred away.';
-    private const WATCH = ['active' => 'Monitored as an external domain.', 'paused' => 'Monitored domain stays paused.', 'retired' => 'Not monitored. Its sources are off.'];
     /** The departure email once its delivery was accepted, from the confirmation's history entry and its delivery row.
      * @return array{subject:string,to:string,at:int}|null */
     public static function email(Domain $d, array $entry): ?array
@@ -64,7 +63,6 @@ final class DepartedHistory
             }
         }
         $rows = [...$rows, ...$credits, ['event' => 'Name released', 'sub' => 'The name is available to order.', 'status' => $done, 'by' => 'System']];
-        if (isset(self::WATCH[$entry['watch']['state'] ?? ''])) { $rows[] = ['event' => 'Monitoring', 'sub' => self::WATCH[$entry['watch']['state']], 'status' => $done, 'by' => 'System']; }
         if ($email = self::email($d, $entry)) { $rows[] = ['time' => (new \DateTimeImmutable())->setTimestamp($email['at']), 'event' => 'Email sent', 'sub' => '“'.$email['subject'].'” to '.$email['to'].'.', 'status' => $done, 'by' => 'System']; }
         // Above any registrar read saved in the same second, in this order.
         $count = count($rows);

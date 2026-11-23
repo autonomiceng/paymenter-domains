@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
-use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus;
 /** The one DomainStatus state for a customer domain. The Domains list, the domain page, the service card and
  * /services all resolve through here, so a domain carries the same label on every page.
@@ -124,18 +124,6 @@ final class DomainStates
         $until = RenewalRepeatWait::until($cycle);
         return $until ? ['goes' => $until->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM)] : [];
     }
-    /** A monitored domain: registry and nameserver findings first; Active only with a current registry expiry; otherwise no status.
-     * @return array{0:string,1:?string}|null */
-    public static function watch(array $stateKeys, ?string $expiry, bool $current): ?array
-    {
-        foreach (['watch.not_registered', 'watch.redemption', 'watch.expired', 'watch.ns_changed'] as $key) {
-            if (in_array($key, $stateKeys, true)) { return [$key, $key === 'watch.ns_changed' ? self::nameservers() : null]; }
-        }
-        return $expiry && $current ? ['active', null] : null;
-    }
-    /** "Not using {company} nameservers". */
-    private static function nameservers(): string
-    { return 'Not using '.DnsSignalLabels::nameservers(); }
     /** The acquisition still describes this holding: same service, server, registrar, generation and account. */
     private static function current(Operation $op, Domain $d): bool
     {

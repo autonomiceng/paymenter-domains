@@ -2,11 +2,11 @@
 // Enom 444f31c DomainController/DomainManager owner projection; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use App\Models\{Invoice, User};
+use App\Models\{Invoice,User};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{Capabilities, PrivacyMode, Support};
-use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Presentation\{OwnedDomain, RequestStatus, StatusPill};
+use Paymenter\Extensions\Servers\Domains\Data\{Capabilities,PrivacyMode,Support};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Presentation\{OwnedDomain,RequestStatus,StatusPill};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Dns;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 final readonly class OwnedDomains
@@ -310,7 +310,7 @@ final readonly class OwnedDomains
             $recordCheckHeld=$forms&&$management&&ObservationRecords::stopped($d)&&!DepartureChecks::suspected($d);
             foreach ($management as &$section) { $section['recordCheckHeld']=$recordCheckHeld; } unset($section);
             foreach (['dns','srv','ds','glue'] as $kind) {
-                if (isset($management[$kind])) { $management[$kind]['records']=$records[$kind]??null; $management[$kind]['asOf']=$kind==='glue'?GlueRecords::asOf($d,$sections):($sections[$kind]['at']??null); if ($kind==='glue') { $management[$kind]['ipv4Only']=$d->registrar_key==='namesilo'; $management[$kind]['warnings']=GlueDrift::warnings($d,known:$sections['known_glue']??[]); } }
+                if (isset($management[$kind])) { $management[$kind]['records']=$records[$kind]??null; $management[$kind]['asOf']=$kind==='glue'?GlueRecords::asOf($d,$sections):($sections[$kind]['at']??null); if ($kind==='glue') { $management[$kind]['ipv4Only']=$d->registrar_key==='namesilo'; } }
                 if (isset($management[$kind])&&in_array($kind,['dns','srv'],true)&&isset($records[$kind])&&$d->registrar_key==='enom') { $management[$kind]['digest']=ManagementPayload::digest($records[$kind],$kind); }
             }
             // NameSilo: standard rows are editable, others are shown as read; the digest covers the whole saved list.

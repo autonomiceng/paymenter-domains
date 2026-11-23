@@ -19,7 +19,7 @@ final readonly class OwnedDomainController
         if (in_array($filter,DomainStatus::INACTIVE,true)) { $filter='inactive'; }
         $sort=in_array($request->query('sort'),['expiry','-expiry','name','-name'],true)?$request->query('sort'):'expiry';
         $perPage=in_array((int)$request->query('per_page'),[25,50,100],true)?(int)$request->query('per_page'):25;
-        // One list: registered domains and the domains your hosting uses. Status depends on the order, renewal stops
+        // One list: registered domains and pending orders. Status depends on the order, renewal stops
         // and expiry, not only the status column, so chips, filters and sorting work on resolved rows.
         $rows=(new DomainSummaries())->listed($request->user(),now('UTC')->getTimestamp());
         $key=fn($row)=>$row->statusState===null?null:\Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::key($row->statusState);
@@ -59,7 +59,7 @@ final readonly class OwnedDomainController
     private function page(Request $request,int $id,string $page)
     {
         $holding=$this->owners->owned($request->user(),$id);
-        $summary=$page==='show'?(new DomainSummaries())->one($request->user(),'managed',$id,now('UTC')->getTimestamp()):null;
+        $summary=$page==='show'?(new DomainSummaries())->one($request->user(),$id,now('UTC')->getTimestamp()):null;
         $domain=$this->owners->present($holding);
         // A confirmed departure shows its saved record read-only (mocks 02, 02b, 02c); its outcomes lead History.
         $departed=$page==='show'?\Paymenter\Extensions\Servers\Domains\Presentation\DepartedOwnerPage::of($holding,$summary):null;

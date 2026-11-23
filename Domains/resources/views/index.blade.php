@@ -32,7 +32,7 @@
 <div class="domains-tablewrap"><table class="domains-tbl domains-stackable domains-list"><thead><tr><th scope="col" aria-sort="{{ $order('name') }}"><a href="{{ $sorted('name') }}">Domain</a></th><th scope="col">Status</th><th scope="col" aria-sort="{{ $order('expiry') }}"><a href="{{ $sorted('expiry') }}">Expires</a></th><th scope="col">Auto-renew</th></tr></thead><tbody>
 @foreach ($domains as $domain)
 @php
-    $hosting=$row::hosting($domain); $expires=$row::expires($domain); $renewal=$row::renewal($domain);
+    $expires=$row::expires($domain); $renewal=$row::renewal($domain);
     $status=$values::status($domain->statusState, $domain->statusReason);
     $expiresValue=match (true) {
         $expires['missing'] => $values::unread($expires['cause']),
@@ -50,7 +50,7 @@
     $ended=$domain->statusState!==null&&in_array(\Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::key($domain->statusState),\Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::INACTIVE,true);
     if ($ended) { [$expiresValue,$fix,$invoice,$renewal]=[$value::plain($plain::NotApplicable),null,null,['value'=>'','note'=>null,'at'=>null,'invoiceMissing'=>false]]; $expires=['missing'=>false]; }
 @endphp
-<tr class="domains-linkrow"><td class="domains-name-cell"><a class="domains-domain domains-row-link domains-wrap" href="{{ $domain->urls['detail'] }}">{{ $domain->name }}</a>{{ \Paymenter\Extensions\Servers\Domains\Support\DemoData::label($domain->demo, $domain->testEnvironment) }}@if ($hosting) <span class="domains-cell-sub">{{ $hosting }}</span>@endif</td>
+<tr class="domains-linkrow"><td class="domains-name-cell"><a class="domains-domain domains-row-link domains-wrap" href="{{ $domain->urls['detail'] }}">{{ $domain->name }}</a>{{ \Paymenter\Extensions\Servers\Domains\Support\DemoData::label($domain->demo, $domain->testEnvironment) }}</td>
 <td class="domains-cell-wide" data-label="Status">{{ $status }}</td>
 <td class="domains-cell-wide" data-label="Expires">@if ($expiresValue){{ $expiresValue }}@elseif (isset($expires['value']))<span class="domains-cell-main">{{ $expires['value'] }}</span>@endif @if (is_array($fix) && ($fix['url'] ?? null)) <a class="{{ ($fix['button'] ?? false) ? 'domains-btn domains-btn--primary domains-btn--sm' : 'domains-a' }}" href="{{ $fix['url'] }}">{{ $fix['label'] }}</a>@elseif (is_array($fix) && ($fix['label'] ?? null)) <span class="domains-cell-sub">{{ $fix['label'] }}</span>@endif</td>
 <td class="domains-cell-wide" data-label="Auto-renew">@if ($ended){{ $value::plain($plain::NotApplicable) }}@elseif ($renewal['value'] !== ''){{ $value::plain($renewal['value'] === 'Off' ? $plain::Off : $plain::On, $invoice === null && $renewal['note'] && !($renewal['at'] ?? null) ? $renewal['note'] : null) }}@endif

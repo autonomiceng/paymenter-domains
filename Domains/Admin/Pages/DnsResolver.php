@@ -2,19 +2,93 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Pages;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Head;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\SettingsPage;
-use Paymenter\Extensions\Servers\Domains\Presentation\Reader;
-/** The DNS resolver moved to Domains > Monitoring settings; this address redirects there, so it shows no sections. */
+use Filament\Actions\Action;
+use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\Auth;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DefaultNameservers,HelpHint,Sheet,Staff,StaffTabs};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head,Row,SettingsRow,Value};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{SettingsPage,Section};
+use Paymenter\Extensions\Servers\Domains\Dns\DohEndpoint;
+use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Plain,Reader,RecordFamilies,State};
+use Paymenter\Extensions\Servers\Domains\Services\{ContactStepRetries,DnsResolverSettings,FundsWaits,SiteDnsDefault,StaffWatchWrites};
 class DnsResolver extends SettingsPage
 {
-    protected static string|\UnitEnum|null $navigationGroup = 'Domains';
-    protected static bool $shouldRegisterNavigation = false;
-    protected static ?string $slug = 'dns-resolver';
-    public static function canAccess(): bool { return Staff::can(PublicSuffixList::VIEW); }
-    public function mount(): void { abort_unless(self::canAccess(), 403); $this->redirect(WatchResource::getUrl('settings')); }
-    protected function head(): Head { return Head::make('DNS resolver', Reader::Staff); }
-    protected function sections(): array { return []; }
+    protected static string|\UnitEnum|null $navigationGroup='Domains';
+    protected static bool $shouldRegisterNavigation=false;
+    protected static ?string $slug='dns-resolver';
+    public static function canAccess(): bool{return Staff::can(StaffWatchWrites::VIEW);}
+    public function mount(): void{abort_unless(self::canAccess(),403);}
+    public function getSubNavigation(): array{return StaffTabs::domains('DNS resolver');}
+    private static function requireManage(): void{abort_unless(self::canAccess()&&Staff::can(StaffWatchWrites::MANAGE),403);}
+    /** One resolver form: in the header once a resolver is saved, otherwise as the fix in the Resolver row. */
+    private function edit(string $name): Action
+    {
+        $saved=fn()=>app(DnsResolverSettings::class)->configuration()[0];
+        return Action::make($name)->label('Edit resolver')->modalHeading('Edit resolver')->modalSubmitActionLabel('Save')
+            ->schema([
+                TextInput::make('url')->label('Resolver URL (DNS over HTTPS)')->required()->maxLength(2048)->default(fn()=>$saved()?->url??DohEndpoint::URL)
+                    ->helperText('Default: '.DohEndpoint::URL)->hintAction(HelpHint::make('Checked domain names are sent to this resolver.'))
+                    ->rules([fn()=>function($attribute,$value,$fail): void{try{new DohEndpoint($value,DohEndpoint::IP);}catch(\Throwable){$fail('Use an HTTPS URL with a public hostname.');}}]),
+                TextInput::make('ip')->label('Resolver IP address')->required()->maxLength(45)->default(fn()=>$saved()?->ip??DohEndpoint::IP)
+                    ->helperText('Default: '.DohEndpoint::IP.". The resolver's public IP.")
+                    ->rules([fn()=>function($attribute,$value,$fail): void{try{if(!is_string($value)){throw new \InvalidArgumentException;}new DohEndpoint(DohEndpoint::URL,$value);}catch(\InvalidArgumentException){$fail('Use a public IPv4 or IPv6 address.');}}]),
+            ])->action(function(array $data): void{
+                self::requireManage();app(DnsResolverSettings::class)->save($data['url'],$data['ip']);
+                unset($this->cachedSchemas['content']);Notification::make()->title('Resolver saved')->success()->send();
+            });
+    }
+    private function getHeaderActionsList(): array
+    {
+        return [$this->edit('configure')->color('gray')->visible(fn()=>Staff::can(StaffWatchWrites::MANAGE)&&app(DnsResolverSettings::class)->configuration()[0]!==null),
+            Action::make('check')->label('Test resolver')->color('gray')->visible(fn()=>Staff::can(StaffWatchWrites::MANAGE)&&app(DnsResolverSettings::class)->configuration()[0]!==null)
+                ->action(function(): void{
+                    self::requireManage();$result=app(DnsResolverSettings::class)->check();
+                    $notice=Notification::make()->title($result['message']);($result['ok']?$notice->success():$notice->warning())->send();
+                })];
+    }
+    /** What the system does with a paid order on its own (Ilya, Nov 13, 2026). Read-only: each timing is the constant the
+     * scheduler uses, so the page can't drift from the code. */
+    private function automaticActions(): Section
+    {
+        $system='Set by the system.';$tries=count(ContactStepRetries::WAITS);
+        return Section::make('Automatic actions',[
+            SettingsRow::setting('Name taken',Value::plain(Plain::On,'The customer gets account credit on the next check. The same goes for premium names and names the registrar refuses.'),$system),
+            SettingsRow::setting('Registrar balance short',Value::fact(Fact::waits([FundsWaits::WAIT_DAYS*86400]),'Then the customer gets account credit.'),$system),
+            // General on purpose (Ilya, Nov 14, 2026): today only a contact step feeds it (ContactStepRetries::candidate).
+            SettingsRow::setting('Held by our checks',Value::fact(Fact::waits(ContactStepRetries::WAITS),'Orders our own checks stopped before they reached the registrar, such as when the contact details couldn\'t be set up. We try '.$tries.' more times, then the order waits for staff to release it, or cancel and refund it.'),$system),
+            SettingsRow::setting('Orders turned on',Value::plain(Plain::On,'Held orders go back to the queue when Orders turn on.'),$system),
+        ],'What happens to a paid order without a staff step.','automatic-actions');
+    }
+    protected function head(): Head { return Head::make('Domains', Reader::Staff); }
+    protected function actions(): array { return $this->getHeaderActionsList(); }
+    protected function sections(): array
+    {
+        abort_unless(self::canAccess(),403);
+        [$endpoint,$reason,$forced]=app(DnsResolverSettings::class)->configuration();
+        $default=SiteDnsDefault::profile();$staff=Reader::Staff;$who='Set by staff.';$system='Set by the system.';
+        $canEdit=Staff::canEditDefaultDns();$refusal=SiteDnsDefault::refusal($canEdit);
+        $fix=Staff::can(StaffWatchWrites::MANAGE)?$this->edit('edit')->link():null;
+        $missingDefault=!$default||$refusal;
+        $nameservers=SettingsRow::setting(DefaultNameservers::TITLE,$refusal===null&&$default?Value::fact(Fact::names([$default->name]),implode(', ',$default->nameservers).'.'):Value::state(State::NotSet,$staff,$refusal??'New domains have no nameservers to use.'),'Set by staff in Domains > DNS templates.')
+            ->actions(Sheet::link('defaults',$canEdit?'Change':'View',DefaultNameservers::url())->extraAttributes(['aria-label'=>($canEdit?'Change':'View').' default nameservers in DNS templates']));
+        $resolver=SettingsRow::setting('Resolver',$endpoint?Value::fact(Fact::names([$endpoint->host])):($forced?Value::plain(Plain::ServerDefault):Value::state(State::NotSet,$staff,$reason)),$who)
+            ->help("If the resolver fails, checks retry once with the server's resolver.");
+        if(!$endpoint&&!$forced&&$fix!==null){$resolver->actions($fix);}
+        return [
+            Section::make('Registrar settings',[
+                ...($missingDefault?[Row::notice('default-nameservers',Value::state(State::NotSet,$staff,$refusal??($canEdit?SiteDnsDefault::NONE:'New domains have no nameservers to use. '.SiteDnsDefault::ASK)))]:[]),
+                $nameservers,
+                SettingsRow::setting('Registrar refresh',Value::plain(Plain::Daily,'Daily refresh reads domain facts. Use Sync now on a domain to read DNS, SRV, DS and glue records. Unsupported families remain unsupported.'),$system)
+                    ->help('Registrar changes come from the registrar only. '.RecordFamilies::EVIDENCE),
+                SettingsRow::setting('Registrar read failure emails',Value::plain(Plain::None,'Shown on the domain page, beside Resume sync. There is no email alert for them.'),$system),
+            ]),
+            $this->automaticActions(),
+            Section::make('DNS resolver',[
+                ...($forced?[Row::notice('resolver-forced',Value::state(State::NotSupported,$staff,$reason))]:[]),
+                $resolver,
+                ...($endpoint!==null?[SettingsRow::setting('Resolver IP address',Value::fact(Fact::ip($endpoint->ip)??Fact::code($endpoint->ip)),$who)]:[]),
+            ]),
+        ];
+    }
 }

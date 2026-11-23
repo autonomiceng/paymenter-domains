@@ -4,7 +4,7 @@
     $on = (bool) ($arguments['on'] ?? false);
     $blocked = (bool) ($arguments['blocked'] ?? false) || $action->isDisabled();
     $reason = $blocked ? $action->getTooltip() : null;
-    $why = $reason ? 'template-monitoring-why' : null;
+    $why = $reason ? 'template-enabled-why' : null;
 @endphp
-@include('domains::components.panel.switch', ['on' => $on, 'name' => 'Monitoring', 'why' => $why])
+@include('domains::components.panel.switch', ['on' => $on, 'name' => 'Enabled', 'why' => $why])
 @if ($reason)<span class="fi-sr-only" id="{{ $why }}">{{ $reason }}</span>@endif
