@@ -21,8 +21,9 @@ $fact=$c->page(collect([$t->fresh()]))[$t->id];$check($fact['refresh']['selected
 foreach([null,'not-a-date']as$undated){DB::table('domains_sales_policies')->where('id',$p['id'])->update(['updated_at'=>$undated]);
  $fact=$c->page(collect([$t->fresh()]))[$t->id];$fact['prices']=[];$fact['selected']=true;
  $check(!str_contains(TldFacts::priceState($fact)['cause']??'',"Not in the registrar's price feed"),'Undated selection does not accept historical feed success');}
-(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();$checkpoint=strtotime((string)DB::table('domains_sales_policies')->where('id',$p['id'])->value('updated_at'));
-$check($checkpoint===$now->getTimestamp(),'Upgrade establishes a conservative legacy selection checkpoint');
+activeFixtureSeller($sellers, $t->tld, (int) $p['revision'], (int) $t->server_id, true, true, $now);
+$checkpoint=strtotime((string)DB::table('domains_sales_policies')->where('id',$p['id'])->value('updated_at'));
+$check($checkpoint===$now->getTimestamp(),'A seller selection establishes the feed checkpoint');
 DB::table('domains_observation_queues')->where('server_id',$t->server_id)->update(['offer_feed_succeeded_at'=>$now->getTimestamp()+1]);
 $fact=$c->page(collect([$t->fresh()]))[$t->id];$fact['prices']=[];$fact['selected']=true;
 $check(str_contains(TldFacts::priceState($fact)['cause']??'',"Not in the registrar's price feed"),'Feed success after checkpoint confirms absence');
