@@ -51,8 +51,15 @@ class Operation extends Model
             if(array_key_exists('management_unsent',$operation->attempt??[])){throw new \DomainException('Unsent management proof requires a live dispatched operation.');}
         });
         static::updating(static function (self $operation): void {
-            if ($operation->action === 'renew' && $operation->isDirty('state')) {
-                $operation->transition_revision = (int) $operation->getOriginal('transition_revision') + 1;
+            if ($operation->action === 'renew') {
+                $next = (int) $operation->getOriginal('transition_revision') + 1;
+                $newReply = $operation->isDirty('attempt') && array_key_exists('execution', $operation->attempt ?? [])
+                    && !array_key_exists('execution', $operation->getOriginal('attempt') ?? []);
+                if ($newReply || $operation->isDirty(['state', 'renewal_admission_until'])) {
+                    $operation->transition_revision = $next;
+                } elseif ($operation->isDirty('transition_revision') && $operation->transition_revision !== $next) {
+                    throw new \DomainException('Renewal revision must advance by one.');
+                }
             }
             if ($operation->getRawOriginal('renewal_proof') !== null && $operation->isDirty('renewal_proof')) {
                 throw new \DomainException('Renewal proof is retained.');

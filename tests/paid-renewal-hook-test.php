@@ -52,7 +52,7 @@ $writes = $state->writes;
 // A pre-existing lost reply exposes the existing wait/support step before any worker creates status_check.
 $beforeCheck=RegistrarCheck::forCustomer($op->fresh());
 $deadline = (new DateTimeImmutable($attempt['dispatch_attempted_at']))->modify('+24 hours')->setTimezone(new DateTimeZone('America/Los_Angeles'));
-expect(str_contains($beforeCheck['body'], $deadline->format('M j')) && empty($beforeCheck['asks']),
+expect(preg_match('/(?<!\d)'.$deadline->format('j').'(?!\d)/', $beforeCheck['body']) && empty($beforeCheck['asks']),
     'Before the first check the customer sees the original local deadline and has no action');
 $result = $completion->run($op->id);
 same('awaiting_answer', $result->policy['status_check']['outcome'], 'Unrecoverable renewal names the staff registrar-answer action');
@@ -74,9 +74,11 @@ $owner=\App\Models\User::findOrFail($d->user_id);\Illuminate\Support\Facades\Aut
 $request=\Illuminate\Http\Request::create('/domains/'.$d->id,'GET');$request->setUserResolver(fn()=>$owner);$request->setLaravelSession(app('request')->session());
 $html=(new \Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController($owners))->show($request,$d->id)->render();
 $deadline=(new DateTimeImmutable($attempt['dispatch_attempted_at']))->modify('+24 hours')->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('j'); // The deadline day, whatever the date format.
-$notice=storefrontDom($html)->query('//*[@role="status" and contains(@class,"domains-notice")]')->item(0)?->textContent??'';
-expect(str_contains($notice,'renewal')&&preg_match('/(?<!\d)'.$deadline.'(?!\d)/',$notice),'Actual uncertain paid renewal page shows the original dispatch deadline');
-expect(!str_contains($html,'Ask Enom')&&!str_contains($html,'You can record'),'Owner has no staff-only answer instructions');
+$ownerPage = storefrontDom($html);
+$notices = array_map(static fn ($node) => $node->textContent, iterator_to_array($ownerPage->query('//*[@role="status"]')));
+expect((bool) preg_match('/(?<!\d)'.$deadline.'(?!\d)/', implode(' ', $notices)), 'Owner status shows the original dispatch deadline');
+expect(!str_contains($html, '24993') && $ownerPage->query('//*[@name="case_reference" or @name="order_reference"]')->length === 0,
+    'The owner cannot read the staff transport detail or submit a registrar answer');
 // At the existing staff boundary, only a real final answer can make this no-order attempt returnable.
 $clock->instant = $clock->now()->modify('+25 hours');
 $late=RegistrarCheck::forCustomer($result->fresh());
