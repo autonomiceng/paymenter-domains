@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\{Cache, DB, Queue};
 use Paymenter\Extensions\Servers\Domains\Data\{HistoryAcceptance, Money};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation, Price, SalesPolicy};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, DomainBilling, HistoryAcceptances, HolderPricing, HoldingAdoptionSchema, HoldingProvenanceSchema, NativeDomainGuard, RenewalAcceptance, RenewalAdmission, RenewalAuthority, RenewalCompletion, RenewalCycles, RenewalExecution, RenewalWriter, WriteFeatures};
-HoldingProvenanceSchema::install(); HoldingAdoptionSchema::install(); Queue::fake();
+  Queue::fake();
 $renewBindings = new AccountBindings($registry); $authority = new RenewalAuthority($renewBindings, $clock,offers: $GLOBALS['caps']??null);
 $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot();
 $billing = new DomainBilling($bindings, $guard, $clock,catalogue: $GLOBALS['caps']??null); $cycles = new RenewalCycles($bindings, $clock); $holding = $result->domain->fresh();

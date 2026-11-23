@@ -57,7 +57,7 @@ expect($reminders->remind($appOnly->id),'Mail-disable preserves in-app notice');
 same($count+1,\App\Models\Notification::where('user_id',$appOnly->user_id)->count(),'Native app channel delivered');
 same($before,Mail::queued(DomainNotice::class)->count(),'Global mail-disable queues no mail');config(['settings.mail_disable'=>false]);
 // Deliberately customized schedules and templates survive retained migration rollback/reinstall.
-$m=require dirname(__DIR__).'/Domains/database/migrations/2026_10_18_000005_create_reminder_tables.php';$m->down();ReminderSchema::install();
+$m=require dirname(__DIR__).'/Domains/database/migrations/2026_11_23_000001_create_domains_schema.php';$m->down();ReminderSchema::install();
 $row=DB::table('domains_reminder_schedules')->where('server_id',$d->server_id)->sole();same(true,(bool)$row->enabled,'Downgrade retains customized schedule');
 $enable(1);$staff->role->update(['permissions'=>[\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW]]);
 commerceReject(fn()=>ReminderSchedules::save($staff,$d->server_id,$row->revision,true,'1','3','revoked_role'));

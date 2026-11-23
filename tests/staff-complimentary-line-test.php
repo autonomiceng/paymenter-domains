@@ -20,7 +20,7 @@ final class ComplimentaryMenuUserPage extends EditUser
 }
 config(['audit.enabled'=>true,'audit.console'=>true,'settings.company_name'=>'Example Hosting (test)']);
 app()->instance(Clock::class,new class implements Clock {public function now():DateTimeImmutable{return new DateTimeImmutable('2026-11-06T18:52:00Z');}});
-staffPanel();FoundationSchema::install();ComplimentaryAccountSchema::install();ComplimentaryTimeSchema::install();ComplimentaryAccountSetting::boot();
+staffPanel();FoundationSchema::install();ComplimentaryAccountSchema::install();ComplimentaryAccountSetting::boot();
 $staff=staffUser(['admin.domains.fund','admin.users.viewAny','admin.users.view','admin.users.update']);$staff->update(['first_name'=>'Ilya','last_name'=>'Kravchenko']);
 $customer=App\Models\User::create(['first_name'=>'Demo','last_name'=>'Sandbox','email'=>'demo-sandbox@example.test','password'=>'synthetic-password']);
 $line=fn()=>Livewire::actingAs($staff)->test(ComplimentaryAccountSetting::class,['customer'=>$customer->id]);

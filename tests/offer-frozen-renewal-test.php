@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities, CallerPorts, Projection};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{ObservationSchema, OfferSchema, OfferWorkSchema};
-ObservationSchema::install(); OfferSchema::install(); OfferWorkSchema::install();
+ObservationSchema::install();
 [$pending,,$binding]=$makeRenewal(placeholderComFixtureName('offer-paid-renewal-placeholder.com'));
 
 // Annual renewal must use the daily bulk row plus separately dated registry metadata, not invented terms.

@@ -51,7 +51,7 @@ function assertInstalledMigrationOrder(string $migrations,?string $upgraded=null
     $actual=DB::table('migrations')->whereIn('migration',$expected)->orderBy('id')->pluck('migration')->all();
     if($upgraded!==null){$expected=[...array_values(array_diff($expected,[$upgraded])),$upgraded];}
     same($expected,$actual,'Installed migrations applied exactly once in filename order'.($upgraded!==null?', then '.$upgraded:''));
-    $index=$migrations.'/2026_10_24_000040_index_operation_services.php';
+    $index=$migrations.'/2026_11_23_000001_create_domains_schema.php';
     if(is_file($index)){
         expect(Schema::hasIndex('domains_operations',['service_id']),'Installed upgrade indexes retained service operations');
         $indexes=Schema::getIndexes('domains_operations');

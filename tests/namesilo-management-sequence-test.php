@@ -126,7 +126,7 @@ foreach(['owner','profile'] as $drift){
 }
 // A sealed but unconsumed prerequisite is replaced, never replayed, by an ordinary fresh save.
 require __DIR__.'/Support/namesilo-write-wire.php';
-\Paymenter\Extensions\Servers\Domains\Services\LiveReservationSchema::install();
+\Paymenter\Extensions\Servers\Domains\Services\EnomLiveCallSchema::install();
 [$d,,$original]=$holding('contact-sequence-wire');$ms->route='apibatch';$transport=nsWriteTransport($binding,$clock);
 $driver=new Management($binding,$transport->exchange());$driver->useReservation($transport->reservation);
 $GLOBALS['nsReply']=static function($cmd,$p)use($managementExchange):string {

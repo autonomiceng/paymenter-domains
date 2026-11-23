@@ -80,8 +80,8 @@ expect(count(Review::historyRows($server))<=2*Review::HISTORY_LIMIT,'Both histor
 same($stamp,Review::stamp($t->server_id,$t->id),'Audit growth leaves the reviewed state unchanged');
 tldRefusal(fn()=>$first->local(static fn()=>null),'Review key used.');
 $keyRows=DB::table(Review::KEYS)->get()->toJson();$archiveRows=DB::table(AuditArchives::TABLE)->orderBy('id')->get()->toJson();
-$migration=require dirname(__DIR__).'/Domains/database/migrations/2026_10_21_000034_create_staff_audit_storage.php';
-$migration->down();$migration->up();StaffAuditSchema::verify();
+$migration=require dirname(__DIR__).'/Domains/database/migrations/2026_11_23_000001_create_domains_schema.php';
+$migration->down();StaffAuditSchema::verify();
 same($keyRows,DB::table(Review::KEYS)->get()->toJson(),'Reinstall retains used keys');
 same($archiveRows,DB::table(AuditArchives::TABLE)->orderBy('id')->get()->toJson(),'Reinstall retains encrypted archive bytes');
 foreach([Review::KEYS,AuditArchives::TABLE] as $table){

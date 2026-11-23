@@ -59,8 +59,8 @@ final class LiveReservations
             $day=self::day();$key=$this->account($binding);
             $catalogue=isset(self::$catalogue[$key])?CatalogueShare::limit($limit):null;
             if(isset(self::$checkoutHeadroom[$key])){$limit=CatalogueShare::limit($limit,self::$checkoutHeadroom[$key]);}
-            DB::table(LiveReservationSchema::TABLE)->insertOrIgnore(['account'=>$key,'day'=>$day,'used'=>0,'spend_micros'=>0]);
-            $query=DB::table(LiveReservationSchema::TABLE)->where(['account'=>$key,'day'=>$day])->where('used','<',$limit)
+            DB::table(EnomLiveCallSchema::TABLE)->insertOrIgnore(['account'=>$key,'day'=>$day,'used'=>0,'spend_micros'=>0]);
+            $query=DB::table(EnomLiveCallSchema::TABLE)->where(['account'=>$key,'day'=>$day])->where('used','<',$limit)
                 ->where('spend_micros','<=',$ceiling-$amount);
             $values=['used'=>DB::raw('used + 1'),'spend_micros'=>DB::raw('spend_micros + '.$amount)];
             if($catalogue!==null){$query->where('catalogue_used','<',$catalogue);$values['catalogue_used']=DB::raw('catalogue_used + 1');}
@@ -74,7 +74,7 @@ final class LiveReservations
         try {
             $limit=$this->policy->limits($binding)['daily_call_cap']??null;
             if(!is_int($limit)||$limit<1||$limit>100000){throw new LiveReservationLimit;}
-            $query=DB::table(LiveReservationSchema::TABLE)->where(['account'=>$this->account($binding),'day'=>self::day()]);
+            $query=DB::table(EnomLiveCallSchema::TABLE)->where(['account'=>$this->account($binding),'day'=>self::day()]);
             $row=$query->first(['used','catalogue_used']);
             return max(0,min($limit-(int)($row->used??0),CatalogueShare::limit($limit)-(int)($row->catalogue_used??0)));
         }catch(\Throwable){throw new LiveReservationLimit;}
@@ -84,7 +84,7 @@ final class LiveReservations
     {
         try {
             $this->policy->limits($binding);
-            $row=DB::table(LiveReservationSchema::TABLE)->where(['account'=>$this->account($binding),'day'=>self::day()])->first();
+            $row=DB::table(EnomLiveCallSchema::TABLE)->where(['account'=>$this->account($binding),'day'=>self::day()])->first();
             return ['used'=>(int)($row->used??0),'spend_micros'=>(int)($row->spend_micros??0)];
         }catch(\Throwable){throw new LiveReservationLimit;}
     }

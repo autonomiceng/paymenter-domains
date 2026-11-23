@@ -17,7 +17,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligib
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 $fixtureEnding = 'test';
 extract(commerceFixture(true, ending: $fixtureEnding)); ContactProfileSchema::install(); ContactProfileSchema::verify();
-$migration = require dirname(__DIR__).'/Domains/database/migrations/2026_10_18_000003_create_domains_contact_profiles.php';
+$migration = require dirname(__DIR__).'/Domains/database/migrations/2026_11_23_000001_create_domains_schema.php';
 $migration->down(); ContactProfileSchema::verify();
 $clock ??= new FakeClock($now); $admission = activeFixtureAdmission($native, $sellers, activeFixtureEligibility($bindings, $clock), $clock);
 $admission->boot(); $invoiceBinding=new InvoiceBinding($admission,$native,$prices,$clock);$invoiceBinding->boot();app()->instance(InvoiceBinding::class,$invoiceBinding);

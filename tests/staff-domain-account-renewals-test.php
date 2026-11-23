@@ -9,7 +9,7 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ListDomains;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainDecisions,DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Services\RenewalBillingSettings;
-staffPanel();[$held,$active]=staffData();Paymenter\Extensions\Servers\Domains\Services\HoldingProvenanceSchema::install();Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
+staffPanel();[$held,$active]=staffData();Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 $viewer=staffUser([Staff::VIEW]);Auth::setUser($viewer);
 $switch=function(bool $on)use($active){
     $server=App\Models\Server::findOrFail($active->server_id);

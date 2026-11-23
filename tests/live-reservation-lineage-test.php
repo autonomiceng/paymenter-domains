@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{Environment,Money};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Registrars\{Enom\EnomLiveReservationPolicy,NameSilo\NameSiloLiveReservationPolicy};
-use Paymenter\Extensions\Servers\Domains\Services\{LiveReservationLimit,LiveReservations,LiveReservationSchema};
+use Paymenter\Extensions\Servers\Domains\Services\{LiveReservationLimit,LiveReservations,EnomLiveCallSchema};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
 $clock=new FakeClock(new DateTimeImmutable('2026-11-11T12:00:00Z'));app()->instance(Clock::class,$clock);
@@ -52,6 +52,6 @@ foreach(['enom','namesilo'] as $provider){
     $refuses(fn()=>$ledger->reserve($replaced));
     same(['used'=>3,'spend_micros'=>1000000],$ledger->usage($replaced),$provider.' same-key replacement restores neither call nor spend capacity');
 }
-same(2,DB::table(LiveReservationSchema::TABLE)->count(),'Both providers keep one daily row through repeated rotation');
+same(2,DB::table(EnomLiveCallSchema::TABLE)->count(),'Both providers keep one daily row through repeated rotation');
 echo "Live reservations retain call and spend usage through Enom and NameSilo credential rotation.\n";
 $nativeSuccessful=true;

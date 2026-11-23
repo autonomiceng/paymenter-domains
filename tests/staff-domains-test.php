@@ -56,7 +56,7 @@ expect(Staff::can(Staff::COSTS)&&Staff::can(Staff::METADATA)&&$policy->managePol
 expect(!$policy->update($wild,$held),'Wildcard cannot add staff writes in this slice');
 $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
 staffDomainFilterLookalikes($viewer, $active);
-\Paymenter\Extensions\Servers\Domains\Services\HoldingProvenanceSchema::install();
+
 DB::beginTransaction();
 try {
     $peers=[];

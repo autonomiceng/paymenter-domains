@@ -28,7 +28,7 @@ $new=App\Models\Server::where('name','Enom live account')->sole();
 same(['Domains','server',true],[$new->extension,$new->type,(bool)$new->enabled],'The new account is a Domains server');
 $page->assertRedirect(RegistrarAccount::getUrl(['account'=>$new->id]));
 // A failed enabled hook leaves the account available for repair, with no success notice.
-$receipt=Illuminate\Support\Facades\DB::table('migrations')->where('migration','2026_10_19_000014_add_holding_adoption')->sole();
+$receipt=Illuminate\Support\Facades\DB::table('migrations')->where('migration','2026_11_23_000001_create_domains_schema')->sole();
 App\Models\Server::created(static function($server)use($receipt):void{if($server->name==='Account needing setup'){Illuminate\Support\Facades\DB::table('migrations')->where('id',$receipt->id)->delete();}});
 $before=App\Models\Server::count();$levels=[];
 Illuminate\Support\Facades\DB::listen(static function($query)use(&$levels):void{if(str_contains($query->sql,'migrations')){$levels[]=Illuminate\Support\Facades\DB::transactionLevel();}});

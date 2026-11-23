@@ -3,7 +3,7 @@
 declare(strict_types=1);
 function convertedHoldingFixture(\Paymenter\Extensions\Servers\Domains\Models\Operation $original): array
 {
-    \Paymenter\Extensions\Servers\Domains\Services\HoldingProvenanceSchema::install();
+
     $d=$original->domain->fresh();
     \Illuminate\Support\Facades\DB::table('domains_domains')->where('id',$d->id)->update(['provenance'=>'converted_purchase']);
     \Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$original->id)->update(['action'=>'renew']);

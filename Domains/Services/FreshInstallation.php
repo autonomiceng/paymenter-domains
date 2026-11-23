@@ -162,14 +162,10 @@ final class FreshInstallation
     /** The source-bound package owns only this storage, not every empty domains_* table. */
     private static function progress(): void
     {
-        $allowed = [BusinessSettingsSchema::TABLE,'domains_complimentary_accounts','domains_complimentary_approvals','domains_domains','domains_operations','domains_tlds','domains_accounts','domains_prices',
-            'domains_sales_policies','domains_contact_profiles','domains_read_budgets','domains_observation_queues','domains_observation_work',
-            'domains_reminder_schedules','domains_reminder_deliveries','domains_obligation_alerts','domains_runtime_turns','domains_runtime_operations',
-            'domains_psl_snapshots','domains_psl_status','domains_psl_candidates','domains_watch_audit',
-            ...WatchSchema::tables(),'domains_adoptions','domains_history_links',...WatchDnsSchema::tables(),'domains_native_intents',
-            BalanceSchema::TABLE,ManagedPublicWorkSchema::TABLE,...ManagedPublicSchema::tables(),...WatchScheduleSchema::tables(),
-            ...WatchNoticeSchema::tables(),'domains_watch_staff_claims',...StaffAuditSchema::tables(),...RetentionSchema::tables(),UserDeletionSchema::TABLE,
-            EnomLiveCallSchema::TABLE,LiveReservationSchema::TABLE,ProfileContactSchema::TABLE,StaffAlertSchema::TABLE,BalanceAlertSchema::TABLE,MoneyWorkSchema::TABLE,...EnomTestSendLimitSchema::tables(),...OfferRetirement::TABLES];
+        $allowed = [];
+        foreach (Installation::SCHEMAS as $schema) {
+            array_push($allowed, ...$schema::tables());
+        }
         $expected = array_keys(self::files());
         $ran = DB::table('migrations')->orderBy('id')->lockForUpdate()->pluck('migration')->all();
         $extra = array_filter($ran, static fn ($name) => str_contains(strtolower($name),'domains') && !in_array($name,$expected,true));

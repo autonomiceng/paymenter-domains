@@ -15,7 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AdoptionMapping, AdoptionReader, AdoptionSchema, HoldingProvenanceSchema, PslReviewSchema, WatchSchema, RegistrarRegistry};
 function adoptionFixture(Environment $environment = Environment::Test, array $registrars = ['enom','namesilo'], bool $nameSiloLocal = true): array
 {
-    Queue::fake(); extract(commerceFixture(environment: $environment, registrars: $registrars, nameSiloLocal: $nameSiloLocal)); AdoptionSchema::install(); HoldingProvenanceSchema::install(); PslReviewSchema::install(); WatchSchema::install();
+    Queue::fake(); extract(commerceFixture(environment: $environment, registrars: $registrars, nameSiloLocal: $nameSiloLocal)); AdoptionSchema::install();  PslReviewSchema::install(); WatchSchema::install();
     $owner = commerceUser(); $other = commerceUser(); $staff = staffUser(['admin.domains.view', 'admin.domains.adopt.preview']);
     $tld = $tlds[0]; $product = $native->product($tld, 'register'); $plan = $native->annualPlan($product);
     $order = Order::create(['user_id' => $owner->id, 'currency_code' => 'USD']);

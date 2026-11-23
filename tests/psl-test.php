@@ -129,7 +129,7 @@ same($beforeBaseline,DB::table('domains_psl_snapshots')->orderBy('id')->get()->t
 DB::table('domains_psl_snapshots')->where('state','current')->update(['compressed_body'=>'broken']);$clock->at+=86400;
 same('stored_copy_invalid',$raised->update(),'Stored baseline failure is distinct from rejected download');
 // Retained down(), missing status and partial schemas fail closed.
-$migration = require dirname(__DIR__).'/Domains/database/migrations/2026_10_19_000007_create_psl_snapshots.php'; $migration->down(); PslSchema::verify();
+$migration = require dirname(__DIR__).'/Domains/database/migrations/2026_11_23_000001_create_domains_schema.php'; $migration->down(); PslSchema::verify();
 DB::table('domains_psl_status')->delete();
 $refused=false;try { PslSchema::verify(); } catch(RuntimeException $e) { $refused=str_contains($e->getMessage(),'status'); }expect($refused,'Missing singleton refused');
 Schema::drop('domains_psl_status');

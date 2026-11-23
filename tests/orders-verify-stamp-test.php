@@ -43,7 +43,7 @@ foreach([['domains_domains',['reservation_name']],['domains_operations',['operat
 }
 $drift(static fn()=>Schema::table('domains_operations',static fn($t)=>$t->renameColumn('attempt','fixture_attempt')),
     static fn()=>Schema::table('domains_operations',static fn($t)=>$t->renameColumn('fixture_attempt','attempt')),'a changed evidence column');
-$migration=DB::table('migrations')->where('migration','2026_10_18_000001_create_domains_foundation')->sole();
+$migration=DB::table('migrations')->where('migration','2026_11_23_000001_create_domains_schema')->sole();
 DB::table('migrations')->where('id',$migration->id)->delete();$refused=false;
 try{
     try{$toggle(true);}catch(RuntimeException $error){$refused=true;}

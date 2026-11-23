@@ -13,7 +13,7 @@ $indexes=[
 ];
 $install=new Installation;$install->install();
 foreach($indexes as $table=>$columns){expect(Schema::hasIndex($table,$columns),'Fresh history/account index: '.$table);}
-$migration='2026_11_11_000059_index_history_account_scans';
+$migration='2026_11_23_000001_create_domains_schema';
 DB::table('domains_watch_audit')->insert(['subject_type'=>'watch','subject_id'=>7,'event'=>'staff_pause','after_revision'=>'2','data'=>'retained encrypted bytes','created_at'=>'2026-11-01 01:30:00']);
 $before=DB::table('domains_watch_audit')->get()->toJson();
 foreach($indexes as $table=>$columns){Schema::table($table,fn($t)=>$t->dropIndex($columns));}

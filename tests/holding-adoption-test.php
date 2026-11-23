@@ -75,11 +75,11 @@ $d->update(['confirmed_revision' => 3, 'provider_expires_at' => '2028-10-20', 'o
     'renewal_policy' => [...$d->renewal_policy, 'billing_anchor' => ['operation_key' => 'renew:synthetic', 'expiry' => '2028-10-20']]]);
 same($holding, $d->fresh()->snapshot['holding'], 'Evolution retains original holding identity');
 same($a->id, $d->fresh()->adoption_id, 'Evolution retains original pointer');
-HoldingAdoptionSchema::install(); HoldingAdoptionSchema::verify();
-$m = require dirname(__DIR__).'/Domains/database/migrations/2026_10_19_000014_add_holding_adoption.php'; $m->down();
+ \Paymenter\Extensions\Servers\Domains\Services\FoundationSchema::verify();
+$m = require dirname(__DIR__).'/Domains/database/migrations/2026_11_23_000001_create_domains_schema.php'; $m->down();
 same($holding, $d->fresh()->snapshot['holding'], 'Retained migration preserves original proof');
 Schema::table('domains_domains', fn ($t) => $t->dropColumn('adoption_id'));
-$failed = false; try { HoldingAdoptionSchema::verify(); } catch (RuntimeException) { $failed = true; }
+$failed = false; try { \Paymenter\Extensions\Servers\Domains\Services\FoundationSchema::verify(); } catch (RuntimeException) { $failed = true; }
 expect($failed, 'Recorded missing pointer refuses verification');
 echo "Holding adoption attachment, two-way linkage, pointer/identity freeze and ordinary evolution passed.\n";
 $nativeSuccessful = true;

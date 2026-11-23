@@ -8,12 +8,12 @@ use Illuminate\Support\Facades\{DB,Schema,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Services\{HoldingProvenanceSchema,Installation,RuntimeDispatch,DomainObservation,RenewalAuthority,RenewalReminders,DomainReservations};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts;
-HoldingProvenanceSchema::install();$enable();
+$enable();
 [$d,$invoice,$debt]=$make(reservedFixtureName('example.com'));
 $original=$d->getRawOriginal();$nativeBefore=$nativeMoney();
 // An existing purchase remains untouched by the additive migration and reinstall.
 same(null,$d->provenance,'No purchase provenance fabricated for preexisting rows');
-HoldingProvenanceSchema::install();same($original,$d->fresh()->getRawOriginal(),'Migration rerun preserves original ciphertext/history');
+same($original,$d->fresh()->getRawOriginal(),'Migration rerun preserves original ciphertext/history');
 $dispatch=new RuntimeDispatch($clock);expect($dispatch->current($debt),'Purchased holding remains eligible for dispatch checks');
 $l=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d));
 $alerts=[];$schedule=(object)['before_days'=>'[7]','after_days'=>'[3]'];
@@ -84,5 +84,5 @@ same($nativeBefore,$nativeMoney(),'Native invoices/items/transactions/credits pr
 // A pending reservation continues to block checkout for the same canonical name.
 commerceReject(fn()=>$new($d->domain));
 Schema::table('domains_domains',fn($t)=>$t->dropColumn('provenance'));
-try{HoldingProvenanceSchema::verify();throw new LogicException('Missing provenance accepted');}catch(RuntimeException $e){expect(str_contains($e->getMessage(),'migration required'),'Missing additive schema refuses');}
+try{\Paymenter\Extensions\Servers\Domains\Services\FoundationSchema::verify();throw new LogicException('Missing provenance accepted');}catch(RuntimeException $e){expect(str_contains($e->getMessage(),'schema mismatch'),'Missing additive schema refuses');}
 echo "Pending and purchased paired authority, reminder, dispatch, observer, presentation and retained schema checks passed.\n";$nativeSuccessful=true;

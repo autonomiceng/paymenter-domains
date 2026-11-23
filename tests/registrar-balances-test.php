@@ -224,8 +224,8 @@ $manyChunk=$queryCount();same($oneChunk,$manyChunk,'Forecast read count stays bo
 same(13,$forecast()['count'],'Issued and unproven sent obligations retain their distinct forecast semantics');
 // Retained adoption stops are loaded once for the same bounded chunk.
 Paymenter\Extensions\Servers\Domains\Services\AdoptionSchema::install();
-Paymenter\Extensions\Servers\Domains\Services\HoldingProvenanceSchema::install();
-Paymenter\Extensions\Servers\Domains\Services\HoldingAdoptionSchema::install();
+
+
 $adoptStop=static function(Domain $h,bool $stop)use($clock,$user):void{
     $record=new Paymenter\Extensions\Servers\Domains\Models\Adoption([...$h->only(['service_id','user_id','server_id','registrar_key','account_fingerprint','authority_generation']),
         'request_key'=>'forecast-adoption-'.$h->id,'request_digest'=>str_repeat('b',64),'domain_id'=>$h->id,'state'=>'committed','origin'=>'staff','environment'=>'test',
@@ -442,5 +442,5 @@ same($midnightReads+2,$readState->calls,'Next due daily read still happens after
 same($midnightStart->getTimestamp()+172800,(int)$row($a)->daily_due_at,'Next daily read retains full provider spacing');
 $role=$staff->role;$role->update(['permissions'=>[]]);try{$balances->refresh($a->server_id);expect(false,'Permission revoked between renders must refuse');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Current permission reloaded');}
 BalanceSchema::install();same('6.00',$row($a)->amount,'Schema reinstall retains balance');
-$migration=require dirname(__DIR__).'/Domains/database/migrations/2026_10_19_000015_create_registrar_balances.php';$migration->down();expect(Schema::hasTable(BalanceSchema::TABLE),'Rollback retains ledger');
+$migration=require dirname(__DIR__).'/Domains/database/migrations/2026_11_23_000001_create_domains_schema.php';$migration->down();expect(Schema::hasTable(BalanceSchema::TABLE),'Rollback retains ledger');
 echo "Registrar balances, forecast, exact money, permissions, daily spacing and Filament rendering passed\n";$nativeSuccessful=true;

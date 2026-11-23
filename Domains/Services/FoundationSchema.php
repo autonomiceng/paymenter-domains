@@ -1,176 +1,154 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-// Column declarations adapted from Enom d2c55e2 migration; retained IDs and meanings.
+
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
+// Column declarations adapted from Enom d2c55e2.
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\{DB,Schema};
 
-final class FoundationSchema
+final class FoundationSchema extends TableSchema
 {
-    private const TABLES = ['domains_domains', 'domains_operations', 'domains_tlds', 'domains_accounts', 'domains_prices'];
-
-    public static function install(bool $legacyServiceIndex = false): void
+    protected static function definitions(): array
     {
-        $present = array_filter(self::TABLES, static fn (string $table): bool => Schema::hasTable($table));
-        if (($present !== [] && count($present) !== count(self::TABLES)) && !FreshInstallation::recovering()) {
-            throw new \RuntimeException('Partial retained Domains schema; restore and verify history before reinstall.');
-        }
-        self::table('domains_domains', function (Blueprint $table) {
-            $table->id();
-            $table->unsignedBigInteger('service_id')->unique();
-            $table->unsignedBigInteger('user_id')->index();
-            self::binding($table);
-            HistoryAccountIndex::define($table,'domains_domains');
-            $table->string('domain', 253)->index();
-            $table->string('reservation_name', 253)->nullable()->unique();
-            $table->string('sld', 63);
-            $table->string('tld', 63);
-            $table->string('status', 32);
-            $table->date('provider_expires_at')->nullable();
-            $table->string('provider_order_id', 128)->nullable();
-            $table->longText('snapshot')->nullable();
-            $table->json('capabilities')->nullable();
-            $table->timestamp('last_synced_at')->nullable();
-            $table->string('provider_domain_id', 128)->nullable();
-            $table->boolean('billing_managed')->default(true);
-            $table->longText('renewal_policy')->nullable();
-            $table->longText('observation')->nullable();
-            $table->unsignedBigInteger('authority_generation')->default(0);
-            $table->unsignedBigInteger('confirmed_revision')->default(0);
-            $table->string('price_mode', 32)->default('standard');
-            $table->longText('reminders')->nullable();
-            $table->timestamps();
-            // The additive provenance migration follows the original retained declaration.
-            if (Schema::hasColumn('domains_domains', 'provenance')) { $table->string('provenance', 32)->nullable(); }
-            if (Schema::hasColumn('domains_domains', 'adoption_id')) { $table->unsignedBigInteger('adoption_id')->nullable(); }
-        });
-        $columns=Schema::hasTable('domains_operations')?Schema::getColumnListing('domains_operations'):[];
-        // A retained retry column precedes the progress column added by the later upgrade.
-        $progressLast=in_array('management_pending',$columns,true) && in_array('retry_number',$columns,true)
-            && array_search('retry_number',$columns,true)<array_search('management_pending',$columns,true);
-        self::table('domains_operations', function (Blueprint $table) use ($legacyServiceIndex,$progressLast) {
-            $table->id();
-            self::binding($table, true);
-            HistoryAccountIndex::define($table,'domains_operations');
-            $table->unsignedBigInteger('authority_generation')->nullable();
-            $table->unsignedBigInteger('domain_id')->index();
-            $service = $table->unsignedBigInteger('service_id');
-            if (!$legacyServiceIndex) { $service->index(); }
-            $table->unsignedBigInteger('invoice_id')->nullable()->index();
-            $table->unsignedBigInteger('invoice_item_id')->nullable();
-            $table->string('operation_key', 191)->unique();
-            $table->string('action', 32);
-            $table->unsignedSmallInteger('term')->default(1);
-            $table->string('funding_basis', 32)->default('paid_invoice');
-            $table->string('state', 32)->index();
-            $table->decimal('amount', 12, 2)->default(0);
-            $table->string('currency', 3);
-            $table->date('base_expires_at')->nullable();
-            $table->date('expected_expires_at')->nullable();
-            $table->date('confirmed_expires_at')->nullable();
-            $table->longText('payload')->nullable();
-            $table->longText('policy')->nullable();
-            $table->longText('cost')->nullable();
-            $table->string('request_fingerprint', 64)->nullable();
-            $table->string('safe_code', 64)->nullable();
-            $table->longText('attempt')->nullable();
-            $table->longText('funding')->nullable();
-            $table->string('provider_order_id', 128)->nullable();
-            $table->unsignedBigInteger('authorized_by')->nullable();
-            $table->string('funding_reason', 500)->nullable();
-            $table->timestamp('started_at')->nullable();
-            $table->timestamp('lease_expires_at')->nullable();
-            $table->timestamp('completed_at')->nullable();
-            $table->timestamps();
-            if (!$progressLast && (!Schema::hasTable('domains_operations') || Schema::hasColumn('domains_operations','management_pending'))) {
-                ManagementProgressIndex::definition($table);
-            }
-            if(Schema::hasColumn('domains_operations','retry_number')){
-                $table->unsignedTinyInteger('retry_number')->default(0);
-                $table->unique(['invoice_item_id','action','retry_number'],$table->getTable().'_debt_retry_u');
-            }else{$table->unique(['invoice_item_id', 'action']);}
-            if ($progressLast) { ManagementProgressIndex::definition($table); }
-        });
-        self::table('domains_tlds', function (Blueprint $table) {
-            $table->id();
-            self::binding($table);
-            $table->string('tld', 63);
-            if(!CatalogueMirrorRetirement::omitted('domains_tlds','enabled')){$table->boolean('enabled')->default(false);}
-            foreach (['register', 'renew', 'transfer'] as $action) { if(!CatalogueMirrorRetirement::omitted('domains_tlds',$action.'_enabled')){$table->boolean($action.'_enabled')->default(false);} }
-            $table->boolean('use_default_rule')->default(true);
-            $table->string('round_up', 16)->default('none');
-            $table->string('pricing_mode', 32)->default('markup_percent');
-            $table->decimal('markup', 12, 2)->nullable();
-            foreach (['register', 'renew', 'transfer'] as $action) { $table->decimal('fixed_'.$action, 12, 2)->nullable(); }
-            if (!OfferRetirement::omitted('domains_tlds', 'cost_register_terms')) { $table->json('cost_register_terms')->nullable(); }
-            if (!OfferRetirement::omitted('domains_tlds', 'sale_holds')) { $table->json('sale_holds')->nullable(); }
-            if (!OfferRetirement::omitted('domains_tlds', 'renew_price')) { $table->decimal('renew_price', 12, 2)->nullable(); }
-            if (!OfferRetirement::omitted('domains_tlds', 'cost_renew')) { $table->decimal('cost_renew', 12, 4)->nullable(); }
-            if (!OfferRetirement::omitted('domains_tlds', 'cost_transfer')) { $table->decimal('cost_transfer', 12, 4)->nullable(); }
-            if (!OfferRetirement::omitted('domains_tlds', 'costs_synced_at')) { $table->timestamp('costs_synced_at')->nullable(); }
-            $table->unsignedInteger('sort_order')->default(100);
-            if(!CatalogueMirrorRetirement::omitted('domains_tlds','min_years')){$table->unsignedTinyInteger('min_years')->default(1);}
-            if(!CatalogueMirrorRetirement::omitted('domains_tlds','max_years')){$table->unsignedTinyInteger('max_years')->default(10);}
-            $table->json('registry_fields')->nullable();
-            $table->timestamps();
-            $table->unique(['server_id', 'tld']);
-            OfferSchema::retained($table, 'domains_tlds');
-        });
-        self::table('domains_accounts', function (Blueprint $table) {
-            $table->id(); self::binding($table);
-            $table->unique('server_id');
-            $table->string('identity_fingerprint', 64)->unique();
-            $table->string('environment', 16);
-            $table->longText('stable_identity');
-            $table->string('live_site', 255)->nullable();
-            $table->boolean('processing_enabled')->default(false);
-            $table->timestamps();
-            OfferSchema::retained($table, 'domains_accounts');
-        });
-        self::table('domains_prices', function (Blueprint $table) {
-            $table->id(); self::binding($table);
-            $table->string('tld', 63); $table->string('action', 32);
-            $table->unsignedSmallInteger('term'); $table->string('currency', 3);
-            $table->unsignedBigInteger('revision')->default(1);
-            $table->decimal('wholesale', 20, 8)->nullable();
-            $table->decimal('retail', 20, 8)->nullable();
-            $table->string('unit', 32); $table->string('source', 128);
-            $table->dateTime('observed_at'); $table->timestamp('fresh_until')->nullable();
-            if (!OfferRetirement::omitted('domains_prices', 'eligibility')) { $table->json('eligibility')->nullable(); } if (!OfferRetirement::omitted('domains_prices', 'hold_reason')) { $table->string('hold_reason', 64)->nullable(); }
-            $table->timestamps();
-            $table->unique(['server_id', 'tld', 'action', 'term', 'currency'], $table->getTable().'_price_unique');
-            OfferSchema::retained($table, 'domains_prices');
-            CurrentCostSchema::retained($table);
-        });
-    }
-
-    /** Call after Migrator on every native install/upgrade, even when migration history skips up(). */
-    public static function verify(): void
-    {
-        foreach (self::TABLES as $table) {
-            if (!Schema::hasTable($table)) { throw new \RuntimeException('Incomplete retained Domains schema.'); }
-        }
-        try { self::install(); }
-        catch (\RuntimeException $error) {
-            // Only a pending additive migration may verify the exact earlier index set.
-            if (!Schema::hasTable('migrations') || DB::table('migrations')->where('migration', '2026_10_24_000040_index_operation_services')->exists()) { throw $error; }
-            self::install(true);
-        }
-    }
-
-    private static function binding(Blueprint $table, bool $historical = false): void
-    {
-        $table->unsignedBigInteger('server_id');
-        $table->string('registrar_key', 32);
-        $table->string('account_fingerprint', 64)->nullable($historical);
-    }
-
-    /** Verify retained tables against the same declarations, using an isolated empty reference. */
-    private static function table(string $name, \Closure $definition): void
-    {
-        if (!Schema::hasTable($name)) { Schema::create($name, $definition); return; }
-        SchemaVerifier::verify($name, $definition);
+        return [
+            'domains_domains' => static function (Blueprint $t): void {
+                $t->id();
+                $t->unsignedBigInteger('service_id')->unique();
+                $t->unsignedBigInteger('user_id')->index();
+                $t->unsignedBigInteger('server_id');
+                $t->string('registrar_key', 32);
+                $t->string('account_fingerprint', 64);
+                $t->string('domain', 253)->index();
+                $t->string('reservation_name', 253)->nullable()->unique();
+                $t->string('sld', 63);
+                $t->string('tld', 63);
+                $t->string('status', 32);
+                $t->date('provider_expires_at')->nullable();
+                $t->string('provider_order_id', 128)->nullable();
+                $t->longText('snapshot')->nullable();
+                $t->json('capabilities')->nullable();
+                $t->timestamp('last_synced_at')->nullable();
+                $t->string('provider_domain_id', 128)->nullable();
+                $t->boolean('billing_managed')->default(true);
+                $t->longText('renewal_policy')->nullable();
+                $t->longText('observation')->nullable();
+                $t->unsignedBigInteger('authority_generation')->default(0);
+                $t->unsignedBigInteger('confirmed_revision')->default(0);
+                $t->string('price_mode', 32)->default('standard');
+                $t->longText('reminders')->nullable();
+                $t->timestamp('created_at')->nullable();
+                $t->timestamp('updated_at')->nullable();
+                $t->string('provenance', 32)->nullable();
+                $t->unsignedBigInteger('adoption_id')->nullable();
+                $t->index(['server_id', 'id']);
+            },
+            'domains_operations' => static function (Blueprint $t): void {
+                $t->id();
+                $t->unsignedBigInteger('server_id');
+                $t->string('registrar_key', 32);
+                $t->string('account_fingerprint', 64)->nullable();
+                $t->unsignedBigInteger('authority_generation')->nullable();
+                $t->unsignedBigInteger('domain_id')->index();
+                $t->unsignedBigInteger('service_id')->index();
+                $t->unsignedBigInteger('invoice_id')->nullable()->index();
+                $t->unsignedBigInteger('invoice_item_id')->nullable();
+                $t->string('operation_key', 191)->unique();
+                $t->string('action', 32);
+                $t->unsignedSmallInteger('term')->default(1);
+                $t->string('funding_basis', 32)->default('paid_invoice');
+                $t->string('state', 32)->index();
+                $t->decimal('amount', 12, 2)->default(0);
+                $t->string('currency', 3);
+                $t->date('base_expires_at')->nullable();
+                $t->date('expected_expires_at')->nullable();
+                $t->date('confirmed_expires_at')->nullable();
+                $t->longText('payload')->nullable();
+                $t->longText('policy')->nullable();
+                $t->longText('cost')->nullable();
+                $t->string('request_fingerprint', 64)->nullable();
+                $t->string('safe_code', 64)->nullable();
+                $t->longText('attempt')->nullable();
+                $t->longText('funding')->nullable();
+                $t->string('provider_order_id', 128)->nullable();
+                $t->unsignedBigInteger('authorized_by')->nullable();
+                $t->string('funding_reason', 500)->nullable();
+                $t->timestamp('started_at')->nullable();
+                $t->timestamp('lease_expires_at')->nullable();
+                $t->timestamp('completed_at')->nullable();
+                $t->timestamp('created_at')->nullable();
+                $t->timestamp('updated_at')->nullable();
+                $t->boolean('management_pending')->nullable();
+                $t->unsignedTinyInteger('retry_number')->default(0);
+                $t->index(['server_id', 'account_fingerprint', 'id']);
+                $t->index(['domain_id', 'authority_generation', 'account_fingerprint', 'action', 'management_pending', 'id'], $t->getTable().'_management_progress_i');
+                $t->unique(['invoice_item_id', 'action', 'retry_number'], $t->getTable().'_debt_retry_u');
+            },
+            'domains_tlds' => static function (Blueprint $t): void {
+                $t->id();
+                $t->unsignedBigInteger('server_id');
+                $t->string('registrar_key', 32);
+                $t->string('account_fingerprint', 64);
+                $t->string('tld', 63);
+                $t->boolean('use_default_rule')->default(true);
+                $t->string('round_up', 16)->default('none');
+                $t->string('pricing_mode', 32)->default('markup_percent');
+                $t->decimal('markup', 12, 2)->nullable();
+                $t->decimal('fixed_register', 12, 2)->nullable();
+                $t->decimal('fixed_renew', 12, 2)->nullable();
+                $t->decimal('fixed_transfer', 12, 2)->nullable();
+                $t->unsignedInteger('sort_order')->default(100);
+                $t->json('registry_fields')->nullable();
+                $t->timestamp('created_at')->nullable();
+                $t->timestamp('updated_at')->nullable();
+                $t->json('catalogue_intent')->nullable();
+                $t->json('catalogue_facts')->nullable();
+                $t->unsignedBigInteger('catalogue_revision')->default(0);
+                $t->json('catalogue_published_revision')->nullable();
+                $t->decimal('catalogue_retained_annual_retail', 12, 2)->nullable();
+                $t->boolean('catalogue_converted')->default(false);
+                $t->boolean('catalogue_created')->default(false);
+                $t->json('catalogue_issues')->nullable();
+                $t->unique(['server_id', 'tld']);
+            },
+            'domains_accounts' => static function (Blueprint $t): void {
+                $t->id();
+                $t->unsignedBigInteger('server_id');
+                $t->string('registrar_key', 32);
+                $t->string('account_fingerprint', 64);
+                $t->string('identity_fingerprint', 64)->unique();
+                $t->string('environment', 16);
+                $t->longText('stable_identity');
+                $t->string('live_site')->nullable();
+                $t->boolean('processing_enabled')->default(false);
+                $t->timestamp('created_at')->nullable();
+                $t->timestamp('updated_at')->nullable();
+                $t->json('catalogue_defaults')->nullable();
+                $t->unique(['server_id']);
+            },
+            'domains_prices' => static function (Blueprint $t): void {
+                $t->id();
+                $t->unsignedBigInteger('server_id');
+                $t->string('registrar_key', 32);
+                $t->string('account_fingerprint', 64);
+                $t->string('tld', 63);
+                $t->string('action', 32);
+                $t->unsignedSmallInteger('term');
+                $t->string('currency', 3);
+                $t->unsignedBigInteger('revision')->default(1);
+                $t->decimal('wholesale', 20, 8)->nullable();
+                $t->decimal('retail', 20, 8)->nullable();
+                $t->string('unit', 32);
+                $t->string('source', 128);
+                $t->dateTime('observed_at');
+                $t->timestamp('fresh_until')->nullable();
+                $t->timestamp('created_at')->nullable();
+                $t->timestamp('updated_at')->nullable();
+                $t->boolean('catalogue_created')->default(false);
+                $t->boolean('cost_enabled')->nullable();
+                $t->string('cost_source_unit', 32)->nullable();
+                $t->unique(['server_id', 'tld', 'action', 'term', 'currency'], $t->getTable().'_price_unique');
+            },
+        ];
     }
 }

@@ -58,5 +58,5 @@ $body=str_replace("\ncom\n","\n",pslFixture(6,6));$clock->at+=86400;same('sentin
 DB::table('domains_psl_snapshots')->where('state','current')->update(['compressed_body'=>'damaged']);$body=pslFixture(40,40);$clock->at+=86400;
 same('Saved list damaged',\Paymenter\Extensions\Servers\Domains\Admin\Support\PslFacts::state($lists),'Damaged bytes have distinct recovery state');
 same('stored_copy_invalid',$lists->update(),'Damaged saved copy is not parser recovery');same(null,$reviews->pending(),'Damaged saved copy yields no candidate');
-$m=require dirname(__DIR__).'/Domains/database/migrations/2026_10_19_000008_create_psl_reviews.php';$m->down();PslReviewSchema::verify();same(4,WatchAudit::count(),'Retain acceptance history');
+$m=require dirname(__DIR__).'/Domains/database/migrations/2026_11_23_000001_create_domains_schema.php';$m->down();PslReviewSchema::verify();same(4,WatchAudit::count(),'Retain acceptance history');
 echo "PSL pending bytes, exact hash, permission, sentinel refusal, rebaseline and retained audit passed.\n";$nativeSuccessful=true;

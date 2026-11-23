@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement, HoldingProvenanceSchema, PslReviewSchema};
 $out=$argv[1]??'';
 expect(is_dir($out)&&is_writable($out),'Output directory argument required');
-staffPanel(); [, $active]=staffData(ordinaryCompleted:true); HoldingProvenanceSchema::install(); PslReviewSchema::install();
+staffPanel(); [, $active]=staffData(ordinaryCompleted:true);  PslReviewSchema::install();
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new Paymenter\Extensions\Servers\Domains\Data\SystemClock);
 $customer=App\Models\User::create(['first_name'=>'Ada','last_name'=>'Lovelace','email'=>'ada@example.test','password'=>'synthetic-password']);

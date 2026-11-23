@@ -14,8 +14,8 @@ $legacyServerId=(int)$oldMissing->id;
 Paymenter\Extensions\Servers\Domains\Models\Account::withVerifiedBindingWrite(static fn()=>Paymenter\Extensions\Servers\Domains\Models\Account::create(['server_id'=>$legacyServerId,'registrar_key'=>'enom','environment'=>'test','stable_identity'=>'existing-no-reminder']));
 // The shared fixture is now a full install. Recreate this one pre-migration history boundary
 // so the native migrator actually upgrades the existing account and preserves saved choices.
-$upgradePaths=glob(dirname(__DIR__,2).'/Domains/database/migrations/2026_11_01_000047_preserve_reminder_defaults.php');
-if($upgradePaths!==[]){DB::table('migrations')->where('migration','2026_11_01_000047_preserve_reminder_defaults')->delete();}
+$upgradePaths=glob(dirname(__DIR__,2).'/Domains/database/migrations/2026_11_23_000001_create_domains_schema.php');
+if($upgradePaths!==[]){DB::table('migrations')->where('migration','2026_11_23_000001_create_domains_schema')->delete();}
 $legacyAudit=legacyReminderAuditColumn();
 try{app(Illuminate\Database\Migrations\Migrator::class)->run($upgradePaths,['force'=>true]);}finally{
     if($legacyAudit){Illuminate\Support\Facades\Schema::table('domains_reminder_schedules',static fn($t)=>$t->dropColumn('audit'));}

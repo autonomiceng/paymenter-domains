@@ -9,8 +9,8 @@ use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Services\{DomainOperations, RegistrationPreflight, WriteFeatures};
 
-Paymenter\Extensions\Servers\Domains\Services\HoldingProvenanceSchema::install();
-Paymenter\Extensions\Servers\Domains\Services\HoldingAdoptionSchema::install();
+
+
 
 $scenarioNew = static function (int $i, string $action, string $name, bool $paid = true) use ($newTransfer, $user, $native, $tlds, $sellers, $clock, $state) {
     if ($action === 'transfer') { return $newTransfer($name, $i, $paid); }

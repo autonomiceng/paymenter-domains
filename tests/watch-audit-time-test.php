@@ -23,7 +23,7 @@ try{
     }
     WatchNoticeHealth::record(7,7,'watch','clock_reversal',1793525400);
     same(1793525400,WatchAudit::where('event','notice_health')->sole()->created_at->timestamp,'Health elapsed-time input retains its instant');
-    $migration='2026_11_11_000060_add_watch_audit_time_zone';
+    $migration='2026_11_23_000001_create_domains_schema';
     Schema::table('domains_watch_audit',fn($t)=>$t->dropColumn('time_zone'));
     DB::table('migrations')->where('migration',$migration)->delete();
     DB::table('domains_watch_audit')->delete();

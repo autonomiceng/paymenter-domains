@@ -15,7 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnedDomainController
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Models\{Operation,WatchAudit};
 use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaries,OwnerAutoRenew,RenewalStop,RuntimeIneligible,RuntimeReason};
-\Paymenter\Extensions\Servers\Domains\Services\HoldingProvenanceSchema::install();
+
 \Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 \Paymenter\Extensions\Servers\Domains\Services\ReminderSchema::install();
 $preference=new OwnerAutoRenew($clock);$controller=new OwnerAutoRenewController($owners,$preference);

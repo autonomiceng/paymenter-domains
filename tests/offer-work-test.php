@@ -321,12 +321,5 @@ $worker->accountTurn($n->serverId);
 same($clock->now()->getTimestamp(),$worker->status($n,'com')['due_at'],'Worker save preserves an earlier facts hint created during republication');
 $worker->accountTurn($n->serverId);
 same('unsupported',$worker->status($n,'com')['state'],'The promoted hint reaches the existing unsupported-reader path');
-// Upgrade an actual retained B2 schema, preserving all catalogue/native identities.
-$ids = Tld::orderBy('id')->pluck('id')->all();
-// B2 predates the later complimentary closure cursor too, so the upgrade adds both in migration order.
-Schema::table('domains_observation_queues', static fn ($t) => $t->dropColumn(['offer_work', 'offer_claim', 'offer_lease', 'offer_turn', ClosureCursorSchema::COLUMN]));
-DB::table('migrations')->whereIn('migration', [OfferWorkSchema::MIGRATION, ClosureCursorSchema::MIGRATION])->delete();
-(new Installation)->install(); (new Installation)->install();
-same($ids, Tld::orderBy('id')->pluck('id')->all(), 'Retained upgrade and repeated install preserve offer IDs');
 $nativeSuccessful = true;
 echo "Dormant offer queue and lazy facts checks passed.\n";

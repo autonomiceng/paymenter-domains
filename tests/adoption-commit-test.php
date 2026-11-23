@@ -14,7 +14,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Adoption, Domain, Operation, Pr
 use Paymenter\Extensions\Servers\Domains\Services\{AdoptionCommit, HoldingAdoptionSchema, NativeDomainGuard, HolderPricing, RegistrarFactories, RegistrarRegistry};
 config(['app.url' => 'https://domains-tests.invalid']);
 // The alternate-provider contract below uses a synthetic provider identity, not local enrollment lineage.
-extract(adoptionFixture(Environment::Live,nameSiloLocal:false)); HoldingAdoptionSchema::install(); \Paymenter\Extensions\Servers\Domains\Services\HistoryLinkSchema::install();
+extract(adoptionFixture(Environment::Live,nameSiloLocal:false));  \Paymenter\Extensions\Servers\Domains\Services\HistoryLinkSchema::install();
 same(false, \Paymenter\Extensions\Servers\Domains\Services\LocalAccountEnrollment::enrolled(
     \Paymenter\Extensions\Servers\Domains\Models\Account::where('registrar_key', 'namesilo')->sole()),
     'Alternate-provider fixture retains provider identity without local enrollment lineage');

@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities, CallerPorts, Projection};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{OfferSchema, OfferWorkSchema};
-OfferSchema::install(); OfferWorkSchema::install();
+
 $pending=$prepare(placeholderComFixtureName('offer-paid-transfer-placeholder.com'));
 $observe->fault='pending'; $waiting=$reconcile->run($pending->id);
 same('transfer_pending',$waiting->domain->status,'Paid transfer remains pending without invented completion');
