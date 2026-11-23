@@ -12,7 +12,11 @@ final class RenewalFunding
     {
         FinancialAdjustments::requireHistory($op, $l);
         // Retry debt keeps its original native adjustments on the sealed predecessor.
-        foreach($l['operations'] as $peer){if(isset($peer->policy['unsent_retry']['next_key'])){FinancialAdjustments::requireHistory($peer,$l);}}
+        foreach ($l['operations'] as $peer) {
+            if ($peer->state === 'rejected' && $peer->safe_code === 'renewal_definitely_unsent' && RenewalRetries::successor($peer, $l['operations'])) {
+                FinancialAdjustments::requireHistory($peer, $l);
+            }
+        }
         $d = $l['domain']; $s = $l['service']; $r = $op->policy['renewal'] ?? [];
         $binding = AccountBindings::binding($l['account']);
         $anchor = HoldingAnchor::resolve($l);

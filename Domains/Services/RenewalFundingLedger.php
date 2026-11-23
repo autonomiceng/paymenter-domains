@@ -16,7 +16,8 @@ final class RenewalFundingLedger
         $rows = [];
         foreach ($entries as $source => $postings) {
             foreach ($postings as $id => $amount) {
-                $rows[] = ['operation_id' => $op->id, 'source' => $source, 'source_id' => $id, 'amount_minor' => $amount];
+                $rows[] = ['invoice_item_id' => $op->invoice_item_id, 'retry_number' => $op->retry_number,
+                    'source' => $source, 'source_id' => $id, 'amount_minor' => $amount];
             }
         }
         // Bound each statement even for an invoice settled by many small payments.
@@ -28,7 +29,7 @@ final class RenewalFundingLedger
     public static function entries(Operation $op): array
     {
         $entries = ['item' => [], 'payment' => []];
-        foreach (DB::table(self::TABLE)->where('operation_id', $op->id)->orderBy('source_id')->get() as $row) {
+        foreach (DB::table(self::TABLE)->where(['invoice_item_id' => $op->invoice_item_id, 'retry_number' => $op->retry_number])->orderBy('source_id')->get() as $row) {
             $entries[$row->source][(int) $row->source_id] = (int) $row->amount_minor;
         }
         return $entries;

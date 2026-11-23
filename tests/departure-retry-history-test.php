@@ -5,7 +5,7 @@ require __DIR__.'/Support/departure-fixture.php';
 $invoice=$issueDepartureRenewal();
 require_once __DIR__.'/Support/staff-panel.php';
 use App\Models\Credit;
-use Illuminate\Support\Facades\{Crypt,DB};
+use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\{EnomAnswers,HoldingDeparture,HoldingLocks,MoneyOutcome,PricingRule,RenewalRetries,StaffHoldingReview};
@@ -19,11 +19,10 @@ App\Helpers\ExtensionHelper::addPayment($invoice->fresh(),null,$first->amount,'0
 $childKey=$first->operation_key.':replacement:1';
 $row=$first->fresh()->getRawOriginal();unset($row['id']);
 $row=[...$row,'operation_key'=>$childKey,'retry_number'=>1,'state'=>'succeeded',
-    'policy'=>Crypt::encryptString(json_encode([...($first->policy??[]),'unsent_retry'=>['number'=>1,'previous_key'=>$first->operation_key,'at'=>$clock->now()->format(DATE_ATOM)]],JSON_THROW_ON_ERROR))];
+    'renewal_previous_proof'=>EnomAnswers::identity($first)];
 DB::table('domains_operations')->insert($row);
 $child=Operation::where('operation_key',$childKey)->sole();
-$first->fresh()->update(['state'=>'rejected','safe_code'=>'renewal_definitely_unsent','policy'=>[...($first->policy??[]),
-    'unsent_retry'=>['number'=>0,'next_key'=>$childKey,'proof_hash'=>EnomAnswers::identity($first),'next_at'=>$clock->now()->format(DATE_ATOM)]]]);
+$first->fresh()->update(['state'=>'rejected','safe_code'=>'renewal_definitely_unsent']);
 same(true,RenewalRetries::resolved($first->fresh(),$d->fresh()),'The first attempt is resolved retry history');
 $owner=(int)$d->user_id;$before=$cash($owner);
 

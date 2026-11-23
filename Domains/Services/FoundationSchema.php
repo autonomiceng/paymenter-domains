@@ -86,16 +86,18 @@ final class FoundationSchema extends TableSchema
                 $t->timestamp('updated_at')->nullable();
                 $t->boolean('management_pending')->nullable();
                 $t->unsignedTinyInteger('retry_number')->default(0);
+                $t->char('renewal_previous_proof', 64)->nullable();
                 $t->index(['server_id', 'account_fingerprint', 'id']);
                 $t->index(['domain_id', 'authority_generation', 'account_fingerprint', 'action', 'management_pending', 'id'], $t->getTable().'_management_progress_i');
                 $t->unique(['invoice_item_id', 'action', 'retry_number'], $t->getTable().'_debt_retry_u');
             },
             RenewalFundingLedger::TABLE => static function (Blueprint $t): void {
-                $t->unsignedBigInteger('operation_id');
-                $t->string('source', 16);
+                $t->unsignedBigInteger('invoice_item_id');
+                $t->unsignedTinyInteger('retry_number');
+                $t->enum('source', ['item', 'payment']);
                 $t->unsignedBigInteger('source_id');
                 $t->bigInteger('amount_minor');
-                $t->primary(['operation_id', 'source', 'source_id']);
+                $t->primary(['invoice_item_id', 'retry_number', 'source', 'source_id']);
             },
             'domains_tlds' => static function (Blueprint $t): void {
                 $t->id();

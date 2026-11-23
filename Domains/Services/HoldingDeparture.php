@@ -247,8 +247,8 @@ final class HoldingDeparture
     private static function retriedToSuccess(Operation $op,array $l): bool
     {
         for($i=0;$i<=3&&$op->state==='rejected';$i++){
-            if(!RenewalRetries::resolved($op,$l['domain'])){return false;}
-            $op=$l['operations']->firstWhere('operation_key',$op->policy['unsent_retry']['next_key']);
+            if(!RenewalRetries::resolved($op,$l['domain'],$l['operations'])){return false;}
+            $op=RenewalRetries::successor($op,$l['operations']);
             if(!$op){return false;}
         }
         return $op->state==='succeeded';

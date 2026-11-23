@@ -15,7 +15,7 @@ class Operation extends Model
 
     protected $table = 'domains_operations';
     protected $guarded = [];
-    protected $hidden = ['account_fingerprint', 'payload', 'policy', 'cost', 'attempt', 'renewal_attempt', 'renewal_proof', 'renewal_check', 'renewal_admission_until', 'transition_revision', 'funding', 'funding_reason', 'authorized_by', 'request_fingerprint', 'management_pending'];
+    protected $hidden = ['account_fingerprint', 'payload', 'policy', 'cost', 'attempt', 'renewal_attempt', 'renewal_previous_proof', 'renewal_proof', 'renewal_check', 'renewal_admission_until', 'transition_revision', 'funding', 'funding_reason', 'authorized_by', 'request_fingerprint', 'management_pending'];
     protected $casts = ['transition_revision' => 'integer', 'renewal_attempt' => 'encrypted:array', 'renewal_proof' => 'encrypted:array', 'renewal_check' => 'encrypted:array', 'renewal_admission_until' => 'immutable_datetime', 'retry_number'=>'integer', 'attempt' => 'encrypted:array', 'funding' => 'encrypted:array', 'authority_generation' => 'integer', 'payload' => 'encrypted:array', 'policy' => 'encrypted:array', 'cost' => 'encrypted:array', 'amount' => 'decimal:2', 'base_expires_at' => 'immutable_date', 'expected_expires_at' => 'immutable_date', 'confirmed_expires_at' => 'immutable_date', 'lease_expires_at' => 'immutable_datetime', 'started_at' => 'immutable_datetime', 'completed_at' => 'immutable_datetime'];
 
     /** Shared operation readers see the immutable reservation followed by its write-once observations. */
@@ -60,16 +60,13 @@ class Operation extends Model
             if ($operation->getRawOriginal('renewal_attempt') !== null && $operation->isDirty('renewal_attempt')) {
                 throw new \DomainException('Renewal reservation is immutable.');
             }
-            if ($operation->isDirty(['id', 'domain_id', 'service_id', 'server_id', 'registrar_key', 'account_fingerprint', 'authority_generation', 'action', 'term', 'currency', 'amount', 'invoice_id', 'invoice_item_id', 'operation_key', 'funding_basis', 'authorized_by', 'funding_reason', 'retry_number'])) {
+            if ($operation->isDirty(['id', 'domain_id', 'service_id', 'server_id', 'registrar_key', 'account_fingerprint', 'authority_generation', 'action', 'term', 'currency', 'amount', 'invoice_id', 'invoice_item_id', 'operation_key', 'funding_basis', 'authorized_by', 'funding_reason', 'retry_number', 'renewal_previous_proof'])) {
                 throw new \DomainException('Operation binding and action are immutable.');
             }
         });
         static::updating(static function (self $operation): void {
             \Paymenter\Extensions\Servers\Domains\Services\EnomAnswers::guard($operation);
             $old = $operation->getOriginal('policy') ?? []; $new = $operation->policy ?? [];
-            if(isset($old['unsent_retry'])){
-                foreach($old['unsent_retry'] as $key=>$value){if(($new['unsent_retry'][$key]??null)!==$value){throw new \DomainException('Renewal retry identity is retained.');}}
-            }
             if (isset($old['renewal']) && $operation->isDirty(['base_expires_at', 'expected_expires_at'])) {
                 throw new \DomainException('Issued renewal expiry obligations are frozen.');
             }
