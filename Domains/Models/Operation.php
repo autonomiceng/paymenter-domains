@@ -15,8 +15,30 @@ class Operation extends Model
 
     protected $table = 'domains_operations';
     protected $guarded = [];
-    protected $hidden = ['account_fingerprint', 'payload', 'policy', 'cost', 'attempt', 'funding', 'funding_reason', 'authorized_by', 'request_fingerprint', 'management_pending'];
-    protected $casts = ['retry_number'=>'integer', 'attempt' => 'encrypted:array', 'funding' => 'encrypted:array', 'authority_generation' => 'integer', 'payload' => 'encrypted:array', 'policy' => 'encrypted:array', 'cost' => 'encrypted:array', 'amount' => 'decimal:2', 'base_expires_at' => 'immutable_date', 'expected_expires_at' => 'immutable_date', 'confirmed_expires_at' => 'immutable_date', 'lease_expires_at' => 'immutable_datetime', 'started_at' => 'immutable_datetime', 'completed_at' => 'immutable_datetime'];
+    protected $hidden = ['account_fingerprint', 'payload', 'policy', 'cost', 'attempt', 'renewal_attempt', 'funding', 'funding_reason', 'authorized_by', 'request_fingerprint', 'management_pending'];
+    protected $casts = ['transition_revision' => 'integer', 'renewal_attempt' => 'encrypted:array', 'retry_number'=>'integer', 'attempt' => 'encrypted:array', 'funding' => 'encrypted:array', 'authority_generation' => 'integer', 'payload' => 'encrypted:array', 'policy' => 'encrypted:array', 'cost' => 'encrypted:array', 'amount' => 'decimal:2', 'base_expires_at' => 'immutable_date', 'expected_expires_at' => 'immutable_date', 'confirmed_expires_at' => 'immutable_date', 'lease_expires_at' => 'immutable_datetime', 'started_at' => 'immutable_datetime', 'completed_at' => 'immutable_datetime'];
+
+    /** Shared operation readers see the immutable reservation followed by its write-once observations. */
+    public function getAttemptAttribute($value): ?array
+    {
+        $observations = $this->castAttribute('attempt', $value);
+        if (!isset($this->attributes['renewal_attempt'])) { return $observations; }
+        return $this->renewal_attempt + ($observations ?? []);
+    }
+
+    public function setAttribute($key, $value)
+    {
+        if ($key === 'attempt' && isset($this->attributes['renewal_attempt'])) {
+            $reservation = $this->renewal_attempt;
+            foreach ($reservation as $field => $fact) {
+                if (!is_array($value) || !array_key_exists($field, $value) || $value[$field] !== $fact) {
+                    throw new \DomainException('Renewal reservation is immutable.');
+                }
+            }
+            $value = array_diff_key($value, $reservation);
+        }
+        return parent::setAttribute($key, $value);
+    }
 
     protected static function booted(): void
     {
@@ -29,6 +51,12 @@ class Operation extends Model
             if(array_key_exists('management_unsent',$operation->attempt??[])){throw new \DomainException('Unsent management proof requires a live dispatched operation.');}
         });
         static::updating(static function (self $operation): void {
+            if ($operation->action === 'renew' && $operation->isDirty('state')) {
+                $operation->transition_revision = (int) $operation->getOriginal('transition_revision') + 1;
+            }
+            if ($operation->getRawOriginal('renewal_attempt') !== null && $operation->isDirty('renewal_attempt')) {
+                throw new \DomainException('Renewal reservation is immutable.');
+            }
             if ($operation->isDirty(['id', 'domain_id', 'service_id', 'server_id', 'registrar_key', 'account_fingerprint', 'authority_generation', 'action', 'term', 'currency', 'amount', 'invoice_id', 'invoice_item_id', 'operation_key', 'funding_basis', 'authorized_by', 'funding_reason', 'retry_number'])) {
                 throw new \DomainException('Operation binding and action are immutable.');
             }

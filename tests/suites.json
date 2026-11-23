@@ -25,6 +25,7 @@
     "tests/namesilo-default-contact-test.php"
   ],
   "contracts": [
+    "tests/renewal-dispatch-test.php",
     "tests/demo-c-record-readers-test.php",
     "tests/demo-c-contracts-test.php",
     "tests/demo-c-terms-test.php",

@@ -69,6 +69,8 @@ final class FoundationSchema extends TableSchema
                 $t->longText('cost')->nullable();
                 $t->string('request_fingerprint', 64)->nullable();
                 $t->string('safe_code', 64)->nullable();
+                $t->unsignedBigInteger('transition_revision')->default(0);
+                $t->longText('renewal_attempt')->nullable();
                 $t->longText('attempt')->nullable();
                 $t->longText('funding')->nullable();
                 $t->string('provider_order_id', 128)->nullable();
@@ -84,6 +86,12 @@ final class FoundationSchema extends TableSchema
                 $t->index(['server_id', 'account_fingerprint', 'id']);
                 $t->index(['domain_id', 'authority_generation', 'account_fingerprint', 'action', 'management_pending', 'id'], $t->getTable().'_management_progress_i');
                 $t->unique(['invoice_item_id', 'action', 'retry_number'], $t->getTable().'_debt_retry_u');
+            },
+            RenewalFundingLedger::TABLE => static function (Blueprint $t): void {
+                $t->unsignedBigInteger('operation_id');
+                $t->unsignedBigInteger('payment_id');
+                $t->bigInteger('amount_minor');
+                $t->primary(['operation_id', 'payment_id']);
             },
             'domains_tlds' => static function (Blueprint $t): void {
                 $t->id();
