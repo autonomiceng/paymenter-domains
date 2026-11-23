@@ -42,7 +42,7 @@ DB::table('domains_observation_queues')->insert(['server_id'=>$enom->server_id,'
     'catalogue_hold'=>'catalogue_reader_unavailable','catalogue_audit'=>json_encode([['code'=>'catalogue_reader_unavailable','server_id'=>$enom->server_id,
         'account_fingerprint'=>$enom->account_fingerprint,'at'=>'2026-10-18T13:05:00+00:00']])]);
 DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->update([
-    'offer_work'=>json_encode(['upgrade_generation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation::generation(),'feed_due'=>$now->modify('+1 day')->getTimestamp()]),
+    'offer_work'=>json_encode(['catalogue_generation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation::generation(),'feed_due'=>$now->modify('+1 day')->getTimestamp()]),
     'offer_feed_succeeded_at'=>$now->getTimestamp(),'offer_feed_failure'=>'catalogue_reader_unavailable',
     'offer_feed_failed_at'=>(new DateTimeImmutable('2026-10-18T13:05:00+00:00'))->getTimestamp()]);
 $render(WhatYouSell::class,['allTlds'=>true],'list-sync-failed');$render(ViewTld::class,['record'=>$enom->id],'tld-sync-failed');

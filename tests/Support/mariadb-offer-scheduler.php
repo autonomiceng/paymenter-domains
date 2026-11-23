@@ -74,7 +74,7 @@ elseif ($phase === 'second') {
     expect(!is_file(dirname(__DIR__,2).'/Domains/Services/PriceSync.php'),'Legacy account consumer is deleted');
     $staff = User::sole();
     expect(Staff::allows($staff,'admin.domains.settings.import'),'Old queued job retains actual staff permission');
-    $old = new SyncPrices($staff->id,$b->serverId,$b->fingerprint); $old->upgradeGeneration = 0; $old->handle();
+    $old = new SyncPrices($staff->id,$b->serverId,$b->fingerprint); $old->catalogueGeneration = 0; $old->handle();
     same("Couldn't sync prices",\App\Models\Notification::where('user_id',$staff->id)->latest('id')->value('title'),'Queued old job refuses inside the same installed race');
 } elseif ($phase === 'verify') {
     same(1,DB::table('offer_fixture_reads')->count(),'Two connections start only one physical synthetic feed');

@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{ PricingRules, PricingRule, StaffSettingsReview, StorefrontCatalogueCache};
 
-/** Dormant single writer. Never registered or called by an active path before checked cutover.
+/** Catalogue writer selected by the active installation.
  * Callbacks authorize server-side commands/contexts and check LOCAL readiness, without provider I/O. */
 final class Writer implements Catalogue
 {
@@ -467,7 +467,7 @@ final class Writer implements Catalogue
                 $snapshot = OfferState::snapshot($b, $offer, $d, $policy, $prices, $servers[$id]->enabled && ($this->ready)($b, $servers[$id], $account), $published);
                 $this->projection->write($offer, $snapshot, $now, $native, $published && $retailUpgrade);
                 $offer->catalogue_published_revision = $published ? OfferState::json($snapshot->revision) : null;
-                // Raw update: dormant staging does not invoke active legacy model observers.
+                // Persist the checked revisions without firing model observers.
                 DB::table('domains_tlds')->where('id', $offer->id)->update([
                     'catalogue_intent' => $offer->catalogue_intent, 'catalogue_facts' => $offer->catalogue_facts,
                     'catalogue_revision' => $offer->catalogue_revision, 'catalogue_published_revision' => $offer->catalogue_published_revision,

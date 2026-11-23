@@ -22,5 +22,5 @@ DB::listen(static function($event)use(&$armed):void {
 });
 $job->handle();same(false,$armed,'Race crosses the real delivery account lookup');
 same($before,$reads->calls,'Generation change after delivery validation cannot reach provider');
-same(CatalogueActivation::generation(),(new SyncPrices($actor->id,$b->serverId,$b->fingerprint))->upgradeGeneration,'Next job captures the current generation');
+same(CatalogueActivation::generation(),(new SyncPrices($actor->id,$b->serverId,$b->fingerprint))->catalogueGeneration,'Next job captures the current generation');
 $nativeSuccessful=true;

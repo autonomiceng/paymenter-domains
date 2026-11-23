@@ -67,7 +67,7 @@ class Storefront
                 ->pluck('plan')->sortBy('billing_period')->values();
             return ['plans'=>$plans, 'failed'=>false, 'persistent'=>false];
         } catch (\Throwable $error) {
-            // Allowlisted cause only; never exception text. Invalid saved upgrade state survives a reload.
+            // Allowlisted cause only; never exception text. Invalid saved activation state survives a reload.
             $cause = CartHandoffFailure::key($error);
             try {
                 if (\Illuminate\Support\Facades\Cache::add('domains.cart.choices:'.$product->id.':'.$cause, true, 60)) {

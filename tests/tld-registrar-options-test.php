@@ -30,7 +30,7 @@ DB::table('domains_tlds')->where('id',$enom->id)->update(['catalogue_facts'=>Off
 $feed=static function(array $work=[],array $result=[])use($silo,$now):void {
     DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$silo->server_id],[
         'account_fingerprint'=>$silo->account_fingerprint,
-        'offer_work'=>OfferState::json(['upgrade_generation'=>CatalogueActivation::generation(),'feed_due'=>$now->modify('+1 day')->getTimestamp(),...$work]),
+        'offer_work'=>OfferState::json(['catalogue_generation'=>CatalogueActivation::generation(),'feed_due'=>$now->modify('+1 day')->getTimestamp(),...$work]),
         'offer_feed_succeeded_at'=>null,'offer_feed_failed_at'=>null,'offer_feed_failure'=>null,...$result]);
 };
 $feed();

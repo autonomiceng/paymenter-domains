@@ -1,10 +1,7 @@
-# Offer contract (B1)
+# Offer contract
 
-`Domains/Catalogue` is dormant. Nothing registers it in the container or calls it from current sales,
-billing, staff pages, provider drivers or jobs. B2 supplies conversion/schema; B3 adapters; B4 the writer;
-B5 scheduling; B6 the checked caller cutover. Existing catalogue writers remain unchanged until then.
-
-`Catalogue::apply(command, expectedRevision)` is the sole future persistence boundary. `Feed` returns
+The current installation activates the catalogue after verifying its schema and local contract.
+The writer checks the expected revision when applying a command. `Feed` returns
 account/TLD-bound `FeedObserved` and `FactsObserved` commands outside locks. It does not write tables.
 Costs are exact-term USD totals, normalized from an explicitly evidenced annual rate or term total.
 A one-year rate alone never creates another term. Positive disabled observations carry `enabled=false`
@@ -12,7 +9,7 @@ and no amount. Omitted/malformed rows and failed reads never withdraw good obser
 commands do nothing. The writer must compare observation times, recheck binding and reject stale revisions.
 Feed commands never refresh facts. Facts have their own source/time/freshness on the offer.
 
-`Snapshot` is the future batch/locked loader result, containing typed defaults/overrides, current costs,
+`Snapshot` is the batch/locked loader result, containing typed defaults/overrides, current costs,
 facts, published retail, retained annual retail, selected seller and revisions. `accountReady` means the
 loader has checked the account's existing binding, processing and feature gates; its default is false.
 The loader also supplies configured hidden endings. No account-wide acceptance list or copied price proof
@@ -39,17 +36,15 @@ is not a registrar quote or spending grant. Fresh per-order/lifecycle quotes, ow
 checks and historical invoice/operation snapshots remain separate and unchanged.
 
 
-## C1 shared caller preparation
+## Caller routing
 
-`CallerRouting::legacy(body)` selects only its supplied, unchanged legacy body. PriceCatalogue,
-HolderPricing and SellerPolicies use this fixed seam; no active target, activation, container binding,
-bootstrap or scheduler registration exists. B1's staged Catalogue packaging exception remains.
+`CallerRouting` selects the installed ports using the active catalogue receipt. Writers check
+the saved generation while holding the account and native locks.
 
 `CallerPorts` explicitly composes Writer and OfferReader with trusted authorization and a required local
 feature/runtime gate. AccountBindings checks the batch's current account/processing/configuration rows;
 the feature gate reuses existing local acceptance, never a price summary or provider factory. Neither
 callback may perform provider I/O. Composition does not itself accept NameSilo runtime or Live spending.
-C6 must provide the complete, checked deployment composition; C1 exposes no production opt-in.
 
 `readBatch(queries, context, lock)` preserves query/ending order and caps the whole batch at 500 endings.
 With native item/product/plan/price locks already held, it locks ALL servers by ID, ALL accounts by

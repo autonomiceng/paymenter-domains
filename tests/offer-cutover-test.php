@@ -144,7 +144,7 @@ same(true,$held,'Installed locked spending checks current facts rather than lega
 same('10.40',$prices->renewal($binding->serverId,$binding->fingerprint,'com','USD',$now)->retail,'Withdrawal retains holder retail');
 same([Runtime::class,'initialManagedRecordObservations'],app(RuntimePorts::class)->initialManagedRecordProducer(),'Only the installed named initial-record producer is registered');
 // Old jobs and the actual manual/callback routes cannot restart legacy catalogue reads.
-$job=new Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices((int)$staff->id,$binding->serverId,$binding->fingerprint);$job->upgradeGeneration=0;$before=$reads->calls;$job->handle();same($before,$reads->calls,'Old queued generation cannot read');
+$job=new Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices((int)$staff->id,$binding->serverId,$binding->fingerprint);$job->catalogueGeneration=0;$before=$reads->calls;$job->handle();same($before,$reads->calls,'Old queued generation cannot read');
 $manual=new Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices((int)$staff->id,$binding->serverId,$binding->fingerprint);$manual->handle();
 expect(is_array($scheduler->status($binding,'com')),'Actual status entry reads the shared consumer');
 $frozen=DB::table('domains_operations')->orderBy('id')->get()->toJson();Runtime::initialManagedRecordObservations();same($frozen,DB::table('domains_operations')->orderBy('id')->get()->toJson(),'Initial-record callback preserves paid/pending/uncertain attempts');same($before,$reads->calls,'Sole active callback never invokes the legacy account reader');

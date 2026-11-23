@@ -10,6 +10,8 @@ use Paymenter\Extensions\Servers\Domains\Services\{FreshInstallation, Storefront
 final class CatalogueActivation
 {
     public const KEY = 'domains_catalogue_activation';
+    public const INVALID_STATE = 'Catalogue activation state is invalid; keep maintenance active.';
+
     private static function query(): \Illuminate\Database\Eloquent\Builder
     { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key', self::KEY); }
 
@@ -19,13 +21,13 @@ final class CatalogueActivation
         $rows ??= DB::transactionLevel() > 0 ? self::query()->lockForUpdate()->get() : self::query()->get();
         if ($rows->isEmpty()) { return ['state' => 'absent', 'generation' => 0]; }
         if ($rows->count() !== 1 || !$rows[0]->encrypted || $rows[0]->type !== 'string') {
-            throw new \DomainException('Catalogue activation state is invalid; keep maintenance active.');
+            throw new \DomainException(self::INVALID_STATE);
         }
         try { $state = json_decode($rows[0]->value, true, 8, JSON_THROW_ON_ERROR); }
-        catch (\Throwable) { throw new \DomainException('Catalogue activation state is invalid; keep maintenance active.'); }
+        catch (\Throwable) { throw new \DomainException(self::INVALID_STATE); }
         if (!is_array($state) || !in_array($state['state'] ?? null, ['active', 'initializing'], true)
             || !is_int($state['generation'] ?? null) || $state['generation'] < 1) {
-            throw new \DomainException('Catalogue activation state is invalid; keep maintenance active.');
+            throw new \DomainException(self::INVALID_STATE);
         }
         if ($state['state'] === 'active' && (!is_string($state['contract'] ?? null) || !is_string($state['digest'] ?? null) || !preg_match('/^[a-f0-9]{64}$/D', $state['contract']) || !preg_match('/^[a-f0-9]{64}$/D', $state['digest']))) { throw new \DomainException('Invalid active catalogue contract.'); }
         if ($state['state'] === 'initializing' && (!is_string($state['intent'] ?? null) || !preg_match('/^[a-f0-9]{32}$/D', $state['intent'])

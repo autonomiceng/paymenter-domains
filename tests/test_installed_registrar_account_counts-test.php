@@ -85,7 +85,7 @@ $retryAt=now()->getTimestamp()+600;
 $failRead=static function(string $code)use($server,$account,$retryAt):void {
     DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$server],['account_fingerprint'=>$account->account_fingerprint,'offer_lease'=>0,
         'offer_feed_failure'=>$code,'offer_feed_failed_at'=>now()->getTimestamp(),'offer_feed_succeeded_at'=>null,
-        'offer_work'=>json_encode(['feed_due'=>$retryAt,'tries'=>1,'upgrade_generation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation::generation()])]);
+        'offer_work'=>json_encode(['feed_due'=>$retryAt,'tries'=>1,'catalogue_generation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation::generation()])]);
 };
 $failRead('read_deadline');
 $progress=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()?->progress($server)??[];
