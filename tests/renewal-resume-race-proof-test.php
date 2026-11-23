@@ -43,6 +43,7 @@ app()->instance(AccountBindings::class, $bindings);
 [$op, $d, $b] = $makeRenewal(placeholderComFixtureName('resume-race-proof-placeholder.com'));
 [$engine, $writer, $completion] = $compose($b);
 same('pending', $engine->run($op->id, $writer)->state, 'The renewal was sent once');
+$originalMoney = nativeFinancialSnapshot($op); $sentCount = $state->writes;
 $state->after = '2027-10-18'; $state->fail = ReadCommand::Order;
 $clock->instant = $clock->now()->modify('+25 hours'); $stop($op, $completion);
 $resume($op); $polls = $op->fresh()->policy['renewal_polls'] ?? null;
@@ -57,4 +58,5 @@ $before = $credit(); $writes = $state->writes; $priorState = $op->fresh()->state
 $refused = $record($op); $fresh = $op->fresh();
 $actual = [$refused, $credit() - $before, $fresh->state, $fresh->funding['refund_authorization'] ?? null, $fresh->policy['enom_answer'] ?? null, $state->writes - $writes];
 same([true, 0, $priorState, null, null, 0], $actual, 'Not processed stays refused after the resume race: '.json_encode($actual));
+same([$sentCount, $originalMoney], [$state->writes, nativeFinancialSnapshot($op)], 'A refused answer preserves expiry, receipts and customer funds without another send');
 echo "A resume race keeps the renewal proof the stale check saw.\n"; $nativeSuccessful = true;

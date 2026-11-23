@@ -46,6 +46,7 @@ app()->instance(AccountBindings::class, $bindings);
 [$op, $d, $b] = $makeRenewal(placeholderComFixtureName('proof-observed-placeholder.com'));
 [$engine, $writer, $completion] = $compose($b);
 same('pending', $engine->run($op->id, $writer)->state, 'The renewal was sent once');
+$originalMoney = nativeFinancialSnapshot($op); $sentCount = $state->writes;
 $state->after = '2027-10-18'; $state->fail = ReadCommand::Order; $clock->instant = $clock->now()->modify('+25 hours');
 for ($i = 1; $i < OperationReconciliation::POLL_LIMIT; $i++) { $check($op, $completion); }
 $before = $credit(); $priorState = $op->fresh()->state; $writes = $state->writes; $identity = RegistrarAnswers::identity($op->fresh());
@@ -75,4 +76,5 @@ $fresh = $op->fresh();
 $resumed = [$polls($op), $fresh->renewal_proof['identity'] ?? null, $record($op), $credit() - $before, $op->fresh()->state, $state->writes - $writes];
 same([OperationReconciliation::POLL_LIMIT, $identity, true, 0, $priorState, 0], $resumed,
     'Proof survives a staff resume and later lagging checks: '.json_encode($resumed));
+same([$sentCount, $originalMoney], [$state->writes, nativeFinancialSnapshot($op)], 'A refused answer preserves expiry, receipts and customer funds without another send');
 echo "Renewal proof is saved as each read returns it and survives deferral, a later check and resume.\n"; $nativeSuccessful = true;

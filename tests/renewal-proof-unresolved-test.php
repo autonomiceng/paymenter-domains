@@ -47,6 +47,7 @@ same([false, true, 'rejected'], $clean, 'After a clean check that found nothing,
 
 // Window 1: Not processed arrives while a live check still waits on the reply that shows the renewal.
 [$op, $completion] = $lost('proof-unresolved-live-placeholder.com');
+$originalMoney = nativeFinancialSnapshot($op);
 $before = $credit(); $priorState = $op->fresh()->state; $writes = $state->writes; $inner = null;
 $state->duringCommand = ReadCommand::Info;
 $state->during = static function () use ($op, $record, $state, &$inner): void {
@@ -54,6 +55,7 @@ $state->during = static function () use ($op, $record, $state, &$inner): void {
 };
 Cache::flush(); $completion->run($op->id); $state->expiry = '10/18/2027 5:00:00 AM';
 $live = [$inner, $credit() - $before, $op->fresh()->state, RegistrarAnswers::renewalProof($op->fresh(), $op->fresh()->domain()->firstOrFail()), $record($op), $credit() - $before, $state->writes - $writes];
+same($originalMoney, nativeFinancialSnapshot($op), 'The unresolved check leaves the original receipts and expiry intact');
 $liveExpected = [true, 0, $priorState, true, true, 0, 0];
 
 // Window 2: the check's Expiry reply shows the renewal, and every save of that proof meets a lock wait timeout. The check stops,
@@ -68,6 +70,7 @@ app()->instance(AccountBindings::class, $bindings);
 [$op, $d, $b] = $makeRenewal(placeholderComFixtureName('proof-unresolved-failed-placeholder.com'));
 [$engine, $writer, $completion] = $compose($b);
 same('pending', $engine->run($op->id, $writer)->state, 'The renewal was sent once');
+$originalMoney = nativeFinancialSnapshot($op);
 $state->after = '2027-10-18'; $state->fail = ReadCommand::Order; $clock->instant = $clock->now()->modify('+25 hours');
 for ($i = 1; $i < OperationReconciliation::POLL_LIMIT; $i++) { $check($op, $completion); }
 $before = $credit(); $priorState = $op->fresh()->state; $writes = $state->writes;
@@ -80,6 +83,7 @@ $state->after = '2027-10-18'; $state->duringCommand = null; $clock->instant = $c
 $check($op, $completion); $fresh = $op->fresh();
 $taken = [$polls($op), $fresh->renewal_check['unresolved'] ?? null, isset($fresh->renewal_check['token']),
     $record($op), $credit() - $before, $op->fresh()->state, $state->writes - $writes];
+same($originalMoney, nativeFinancialSnapshot($op), 'The unresolved check leaves the original receipts and expiry intact');
 // Both windows are compared together, so a failure shows each one.
 $windows = ['live' => $live, 'failed' => $failed, 'taken' => $taken];
 same(['live' => $liveExpected, 'failed' => [true, 0, false, true, OperationReconciliation::POLL_LIMIT - 1],

@@ -154,6 +154,11 @@ final class RenewalProof
     {
         $row = $op->getRawOriginal();
         unset($row['renewal_proof']);
+        // Equivalent re-encryption of policy or the read claim preserves the review stamp.
+        try {
+            $row['policy'] = $op->policy;
+            $row['renewal_check'] = $op->renewal_check;
+        } catch (\Illuminate\Contracts\Encryption\DecryptException) { return $row; }
         return $row;
     }
 }

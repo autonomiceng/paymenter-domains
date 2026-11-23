@@ -36,8 +36,11 @@ final class RenewalExecution
             if ($next !== 'admit' || !RenewalCycles::registrarVirgin($op)) { return null; }
             if (FundsWaits::elapsed($op,$this->clock->now())) { return null; }
             if ($op->funding_basis === 'paid_invoice' && $l['invoices']->firstWhere('id', $op->invoice_id)?->status === 'pending') { return null; }
-            try { $this->configured($l); } catch (\PDOException|RenewalBusy $e) { throw $e; } catch (\Throwable) { $this->hold($op, $l, RenewalCode::Acceptance->value, true); return null; }
-            try { $this->current($op, $l); } catch (RenewalHold $held) { $this->hold($op, $l, $held->reason, $held->reason===EnomLateRenewal::PAUSED); return null; } catch (RenewalRefused $refused) { $this->hold($op, $l, $refused->reason->value); return null; } catch (\PDOException|RenewalBusy $e) { throw $e; } catch (\Throwable) { $this->hold($op, $l, 'renewal_funding_or_authority'); return null; }
+            try { $this->current($op, $l); }
+            catch (RenewalHold $held) { $this->hold($op, $l, $held->reason, $held->reason === EnomLateRenewal::PAUSED); return null; }
+            catch (RenewalRefused $refused) { $this->hold($op, $l, $refused->reason->value, $refused->reason === RenewalCode::Acceptance); return null; }
+            catch (\PDOException|RenewalBusy $e) { throw $e; }
+            catch (\Throwable) { $this->hold($op, $l, 'renewal_funding_or_authority'); return null; }
             // Enom's Extend contract requires OverrideOrder for another renewal within 24 hours.
             // Wait from confirmed completion (later than the send), never bypass replay protection.
             // The time it may go is the latest such completion + 24 hours, stored once so pages show a fixed time.

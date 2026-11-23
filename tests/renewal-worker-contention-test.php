@@ -24,6 +24,7 @@ try {
         try { return $second->run($op->id, $secondWriter); }
         finally { DB::setDefaultConnection('renew_first'); }
     };
+    $clock->instant = $clock->now()->modify('-361 seconds');
     // Commit a conflicting revision on the independent connection while the first worker is reading Enom.
     $state->during = static function () use ($op): void {
         DB::connection('renew_second')->transaction(static function () use ($op): void {

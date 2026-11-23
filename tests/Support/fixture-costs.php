@@ -36,6 +36,10 @@ final class FixtureSetup
 
     public static function report(): void
     {
+        if (($GLOBALS['nativeSuccessful'] ?? true) !== true
+            || in_array(error_get_last()['type'] ?? null, [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR], true)) {
+            return;
+        }
         fwrite(STDERR, 'DOMAINS_FIXTURE_COSTS '.json_encode([
             'core_migrations' => self::$migrations,
             'core_snapshot_replays' => self::$replays,

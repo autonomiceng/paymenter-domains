@@ -44,6 +44,7 @@ app()->instance(AccountBindings::class, $bindings);
 [$op, $d, $b] = $makeRenewal(placeholderComFixtureName('check-claim-race-placeholder.com'));
 [$engine, $writer, $completion] = $compose($b);
 same('pending', $engine->run($op->id, $writer)->state, 'The renewal was sent once');
+$originalMoney = nativeFinancialSnapshot($op); $sentCount = $state->writes;
 $state->after = '2027-10-18'; $state->fail = ReadCommand::Order; $clock->instant = $clock->now()->modify('+25 hours');
 for ($i = 1; $i < OperationReconciliation::POLL_LIMIT; $i++) { $check($op, $completion); }
 same(OperationReconciliation::POLL_LIMIT - 1, $polls($op), 'Four lagging checks counted');
@@ -64,6 +65,7 @@ same([['cron' => [0, 4], 'staff' => true, 'not_processed_refused' => true], 5, t
 $state->after = '2027-10-18';
 same([true, 0], [$record($op), $credit() - $before], 'Later lagging reads cannot record Not processed for the observed renewal');
 
+same([$sentCount, $originalMoney], [$state->writes, nativeFinancialSnapshot($op)], 'A refused answer preserves expiry, receipts and customer funds without another send');
 // A check that died after its Expiry reply showed the renewal: other checks wait while its claim is live, the proof saved with
 // that reply refuses Not processed once the claim expires, and the next check takes the claim over and counts its poll. The claim
 // stays as an unresolved mark, so Not processed stays refused.
