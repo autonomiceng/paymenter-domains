@@ -48,6 +48,6 @@ function adoptionPendingFixture(App\Models\Service $service, AccountBinding $bin
         'reservation_name' => 'example.com', 'server_id' => $binding->serverId, 'registrar_key' => 'enom', 'account_fingerprint' => $binding->fingerprint,
         'user_id' => $service->user_id, 'service_id' => $service->id, 'status' => 'adoption_pending', 'provenance' => 'adoption_pending',
         'authority_generation' => 1, 'confirmed_revision' => 0, 'billing_managed' => false, 'price_mode' => 'standard',
-        'renewal_policy' => encrypt(json_encode(['conversion_source_expiry' => '2027-10-20', 'conversion_hold_reason' => 'billing_not_managed']), false)], $overrides));
+        'renewal_policy' => encrypt(json_encode(['source_expiry' => '2027-10-20']), false)], $overrides));
     return \Paymenter\Extensions\Servers\Domains\Models\Domain::findOrFail($id);
 }

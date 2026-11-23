@@ -57,9 +57,9 @@ final class AdoptionMapping
         if ($domain && ((int) $domain->service_id !== $target->serviceId || (int) $domain->user_id !== $target->customerId
             || (int) $domain->server_id !== $target->serverId || $domain->registrar_key !== $binding->registrarKey
             || $domain->account_fingerprint !== $binding->fingerprint)) { throw new \DomainException('mapping_unconfirmed'); }
-        $sourceExpiry = $domain?->renewal_policy['conversion_source_expiry'] ?? $domain?->provider_expires_at?->format('Y-m-d');
+        $sourceExpiry = $domain?->renewal_policy['source_expiry'] ?? $domain?->provider_expires_at?->format('Y-m-d');
         if ($domain) {
-            try { new \Paymenter\Extensions\Servers\Domains\Data\DateEvidence($sourceExpiry ?? '', \Paymenter\Extensions\Servers\Domains\Data\ExpiryPrecision::Date, 'conversion_source'); }
+            try { new \Paymenter\Extensions\Servers\Domains\Data\DateEvidence($sourceExpiry ?? '', \Paymenter\Extensions\Servers\Domains\Data\ExpiryPrecision::Date, 'import_source'); }
             catch (\Throwable) { throw new \DomainException('expiry_unconfirmed'); }
             if ($domain->provider_expires_at !== null && $sourceExpiry !== $domain->provider_expires_at->format('Y-m-d')) { throw new \DomainException('expiry_disagrees'); }
         }

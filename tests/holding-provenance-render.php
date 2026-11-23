@@ -12,7 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 
 $out=$argv[1]??'';$shell=file_get_contents($argv[2]??'');expect(is_dir($out),'Output directory required');
 [$d]=$make('example.com',false);
-DB::table('domains_domains')->where('id',$d->id)->update(['provenance'=>'adoption_pending','status'=>'adoption_pending','billing_managed'=>false,'provider_expires_at'=>null,'renewal_policy'=>encrypt(json_encode(['conversion_source_expiry'=>'2027-10-18']),false)]);$d->refresh();
+DB::table('domains_domains')->where('id',$d->id)->update(['provenance'=>'adoption_pending','status'=>'adoption_pending','billing_managed'=>false,'provider_expires_at'=>null,'renewal_policy'=>encrypt(json_encode(['source_expiry'=>'2027-10-18']),false)]);$d->refresh();
 $dto=$owners->present($d);storefrontViews();app('view')->getFinder()->flush();
 $html=view('domains::show',['domain'=>$dto,'keys'=>[]])->render();preg_match('#<body>(.*)</body>#s',$html,$body);
 writeRenderArtifact($out.'/customer-pending.html',str_replace('@@SLOT@@',$body[1]??$html,$shell));
