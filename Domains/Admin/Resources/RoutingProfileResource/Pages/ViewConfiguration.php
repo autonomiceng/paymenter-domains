@@ -25,7 +25,7 @@ class ViewConfiguration extends RecordDetailPage
     protected function head(): Head
     {
         $r=$this->getRecord();
-        return Head::make((string)$r->name,Reader::Staff)->note($r->enabled?'Monitoring is on.':'Monitoring is off.');
+        return Head::make((string)$r->name,Reader::Staff)->note($r->enabled?'This template is on.':'This template is off.');
     }
     public function getBreadcrumbs(): array{return [RoutingProfileResource::getUrl()=>'DNS templates',$this->getTitle()];}
     protected function actions(): array

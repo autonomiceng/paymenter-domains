@@ -74,8 +74,8 @@ final class DomainSummaries
             if (!$expiry || $expiry<=gmdate('Y-m-d',$now)) { $invoiceMissing=false; }
             if (!$expiry) { $waits=$pending?'import':(['registration_pending'=>'registration','transfer_pending'=>'transfer'][$t->status]??null); }
             [$status,$reason]=$managedStatus??[null,null];
-            $out['managed:'.$id]=new DomainSummary($t->domain,null,'managed',$registration,[],null,null,array_values(array_unique($states)),DomainSummaryStrings::all(),
-                $expiry,$precision,$source,[],$due,$price,[],[],['detail'=>$url,'invoiceHistory'=>$pending?route('invoices'):null,'support'=>Missing::supportUrl()],
+            $out['managed:'.$id]=new DomainSummary($t->domain,null,'managed',$registration,array_values(array_unique($states)),DomainSummaryStrings::all(),
+                $expiry,$precision,$source,$due,$price,['detail'=>$url,'invoiceHistory'=>$pending?route('invoices'):null,'support'=>Missing::supportUrl()],
                 renewalOff:$off,renewalReminderOff:$reminderOff,renewalDueProjected:$projected,testEnvironment:in_array($t->server_id,$testServers),
                 nameservers:ObservationProjection::nameservers($t)?->toArray(),statusState:$status,statusReason:$reason,demo:DemoData::is($t),
                 daysLeft:$expiry?intdiv(strtotime($expiry.' 00:00:00 UTC')-strtotime(gmdate('Y-m-d',$now).' 00:00:00 UTC'),86400):null,

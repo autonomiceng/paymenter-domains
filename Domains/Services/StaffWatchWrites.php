@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{WatchAudit,WatchProfile};
 final class StaffWatchWrites
 {
     public const VIEW='admin.domains.watch.view',MANAGE='admin.domains.watch.manage';
-    public const UNREADABLE='Saved DNS records cannot be read. Restore the template before changing it.';
+    public const UNREADABLE='Saved DNS records cannot be read. Ask your site admin to restore this template.';
     public static function ticket(int $actor,int $id,int $revision,string $action,?int $defaultId=null): string
     { return Crypt::encryptString(json_encode(compact('actor','id','revision','action','defaultId')+['until'=>time()+600,'key'=>bin2hex(random_bytes(16))],JSON_THROW_ON_ERROR)); }
     public static function authorize(User $actor): void

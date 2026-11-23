@@ -78,18 +78,6 @@ class Storefront
         }
     }
 
-    /** Current public transfer offers, bounded to the candidate suffixes of these names. */
-    public function offeredTransferEndings(array $names): array
-    {
-        $endings = PolicyEndings::transferEnabled($names);
-        $read = $this->reader($endings); $offered = [];
-        foreach ($endings as $ending) {
-            try { $read->offer($ending, 'transfer', 1); $offered[] = $ending; }
-            catch (\Throwable) { /* An unavailable public offer has no entry link. */ }
-        }
-        return $offered;
-    }
-
     private function catalogueRows(): array
     {
         $endings = SalesPolicy::orderBy('tld')->pluck('tld')->all();

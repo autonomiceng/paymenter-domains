@@ -30,7 +30,4 @@ abstract class WatchRecord extends Model
         });
         static::deleting(static function (): never { throw new \DomainException('Watch history is retained.'); });
     }
-    protected static function canonical(?string $name): bool
-    { return $name !== null && !filter_var($name, FILTER_VALIDATE_IP) && strlen($name) <= 253 && preg_match('/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+\z/D', $name) === 1; }
-    protected static function digest(?string $value): bool { return $value !== null && preg_match('/\A[a-f0-9]{64}\z/D', $value) === 1; }
 }
