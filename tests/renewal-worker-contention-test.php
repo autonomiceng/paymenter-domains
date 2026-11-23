@@ -12,7 +12,7 @@ $file = tempnam((string) getenv('TMPDIR'), 'renewal-workers-');
 $source = DB::connection();
 $source->statement('VACUUM INTO '.$source->getPdo()->quote($file));
 foreach (['renew_first', 'renew_second'] as $name) {
-    config(['database.connections.'.$name => [...$source->getConfig(), 'database' => $file]]);
+    config(['database.connections.'.$name => [...config('database.connections.sqlite'), 'database' => $file]]);
 }
 DB::setDefaultConnection('renew_first');
 try {
@@ -27,7 +27,7 @@ try {
     $duringAdmission = $afterExpiry = null;
     $state->during = static function () use ($runSecond, &$duringAdmission): void {
         $other = $runSecond();
-        $duringAdmission = [$other->state, $other->transition_revision, $other->attempt];
+        $duringAdmission = [$other->state, $other->transition_revision, (array) $other->attempt];
     };
     $state->afterWrite = static function () use ($clock, $runSecond, &$afterExpiry): void {
         $clock->instant = $clock->now()->modify('+361 seconds');
@@ -36,7 +36,7 @@ try {
     };
     $money = nativeFinancialSnapshot($op->fresh());
     $reply = $first->run($op->id, $firstWriter);
-    same(['awaiting_payment', 1, null], $duringAdmission, 'The second worker preserves the first admission');
+    same(['awaiting_payment', 1, []], $duringAdmission, 'The second worker preserves the first admission: '.json_encode([$duringAdmission, $reply->state, $reply->safe_code]));
     same(['uncertain', 3, $reply->renewal_attempt], $afterExpiry, 'Expired reservation is quarantined before the first reply');
     same(['uncertain', 'stale_claim', 'accepted'], [$reply->state, $reply->safe_code, $reply->attempt['execution']['disposition']],
         'Late acknowledgement observes the original reservation without reviving it');

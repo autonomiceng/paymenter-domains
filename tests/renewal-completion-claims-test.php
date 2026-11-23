@@ -20,7 +20,13 @@ $state->expiry='2028-10-18'; $state->charge='8.00'; same('succeeded',$completion
 same('2028-10-18',$d->fresh()->provider_expires_at->format('Y-m-d'),'Original registrar proof advances owned expiry');same('active',$d->service->fresh()->status,'Registrar reconciliation preserves native paid status');
 // An old lost renewal reply can use an audited support order, followed by exact independent readback.
 [$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-support-answer-placeholder.com'));[$engine,$writer,$completion]=$compose($b);
+$warnings = [];
+app('events')->listen(Illuminate\Log\Events\MessageLogged::class, static function ($event) use (&$warnings): void {
+    if ($event->message === 'Domains renewal reply not recorded.') { $warnings[] = [$event->level, $event->context]; }
+});
 $state->lost=true;$writes=$state->writes;same('uncertain',$engine->run($op->id,$writer)->state,'Missing reply remains uncertain');$attempt=$op->fresh()->attempt;
+expect(!array_key_exists('send_failure', $attempt), 'Unclassified failure retains no invented reason');
+same([['warning', ['operation_id' => $op->id, 'exception_class' => RuntimeException::class]]], $warnings, 'Unclassified failure logs only its type');
 $clock->instant=$clock->now()->modify('+25 hours');$state->lost=false;$state->expiry='2028-10-18';$state->charge='8.00';
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$renewBindings);
 // Enom reads the domain on a lost reply before staff record its answer. The read alone cannot complete the renewal.

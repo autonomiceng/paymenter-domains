@@ -3,14 +3,43 @@
 declare(strict_types=1);
 require __DIR__.'/Support/renewal-execution.php';
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
-use Paymenter\Extensions\Servers\Domains\Services\{EnomAnswers, RegistrarCheck, Refunds};
+use Illuminate\Log\Events\MessageLogged;
+use Illuminate\Support\Facades\{Auth, DB, Queue};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
+use Paymenter\Extensions\Servers\Domains\Data\SendFailure;
+use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
+use Paymenter\Extensions\Servers\Domains\Services\{EnomAnswers, NativePaidHooks, RegistrarCheck, Refunds, RuntimeWork};
+require __DIR__.'/Support/renewal-runtime.php';
 
 // The real financial fixture is required: a lost paid reply must retain both the sealed attempt
 // and native invoice while the normal completion entry point reports the existing staff action.
-[$op, $d, $b, $invoice] = $makeRenewal(placeholderComFixtureName('renew-uncertain-placeholder.com'));
+[$op, $d, $b, $invoice] = $makeRenewal(placeholderComFixtureName('renew-uncertain-placeholder.com'), false);
 [$engine, $writer, $completion] = $compose($b);
-$state->lost = true;
-same('uncertain', $engine->run($op->id, $writer)->state, 'Lost paid renewal reply stays uncertain');
+$work = $renewalRuntime($b, $engine, $writer, $completion);
+app()->instance(RuntimeWork::class, $work);
+NativePaidHooks::boot();
+Queue::fake();
+DB::transaction(static function () use ($invoice, $op): void {
+    \App\Helpers\ExtensionHelper::addPayment($invoice, null, $op->amount);
+    Queue::assertNotPushed(RunOperation::class);
+});
+$job = Queue::pushed(RunOperation::class)->where('operationId', $op->id)->sole();
+$state->lost = new SendFailure('timeout', 24993);
+$logged = [];
+app('events')->listen(MessageLogged::class, static function ($event) use (&$logged): void {
+    if ($event->message === 'Domains renewal reply not recorded.') { $logged[] = [$event->level, $event->context]; }
+});
+$job->handle($work);
+$result = $op->fresh();
+same(['uncertain', 'renewal_confirmation_required', null, 1],
+    [$result->state, $result->safe_code, $result->attempt['execution'], $state->writes], 'Lost paid renewal stays uncertain after one send');
+same(['category' => 'timeout', 'timeout_ms' => 24993], $result->attempt['send_failure'], 'Attempt retains safe failure metadata');
+same([['warning', ['operation_id' => $op->id, 'exception_class' => SendFailure::class, 'category' => 'timeout', 'timeout_ms' => 24993]]],
+    $logged, 'Lost reply logs safe facts only');
+require __DIR__.'/Support/staff-panel.php';
+staffPanel();
+Auth::setUser(staffUser(['admin.domains.view', 'admin.domains.manage', 'admin.domains.secrets-metadata']));
+Livewire\Livewire::test(ViewOperation::class, ['record' => $result->id])->assertSee('timeout; time limit 24993 ms');
 $attempt = $op->fresh()->attempt;
 $money = nativeFinancialSnapshot($op->fresh());
 $reads = count($state->calls);
