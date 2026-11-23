@@ -2,12 +2,9 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
-use Paymenter\Extensions\Servers\Domains\Services\StaffReason;
 use Filament\Actions\Action;
 use Filament\Forms\Components\{Textarea,TextInput};
 use Filament\Notifications\Notification;
-use Filament\Schemas\Components\Section;
-use Filament\Infolists\Components\TextEntry;
 use Filament\Support\Enums\Width;
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
@@ -66,24 +63,24 @@ final class DnsTemplateActions
     }
     public static function disable(DnsTemplate $row,int $revision): Action
     {
-        $reason=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::usesRefusal((int)$row->id)??($row->readProfile()===null?Writes::UNREADABLE:null);
+        $reason=SiteDnsDefault::usesRefusal((int)$row->id)??($row->readProfile()===null?Writes::UNREADABLE:null);
         return self::templateGuard(self::action((int)$row->id,$revision,'disable','Turn off')->view('domains::admin.template-switch')
             ->arguments(['on'=>true,'blocked'=>$reason!==null])->requiresConfirmation()->modalHeading('Turn off DNS template?')
             ->modalSubmitActionLabel('Turn off')->visible(fn()=>$row->enabled && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE)),$reason);
     }
     public static function deleteTemplate(DnsTemplate $row,int $revision): Action
     {
-        $reason=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::usesRefusal((int)$row->id);
+        $reason=SiteDnsDefault::usesRefusal((int)$row->id);
         if($reason){return Sheet::blocked('delete','Delete','DNS template',$reason)->color('danger')
             ->action(fn()=>Notification::make()->warning()->title($reason)->send())
             ->visible(fn()=>Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));}
         return self::action((int)$row->id,$revision,'delete','Delete')->color('danger')->outlined()
-            ->requiresConfirmation()->modalHeading('Delete DNS template?')->modalDescription('The saved nameservers and records will be deleted. This cannot be undone.')
+            ->requiresConfirmation()->modalHeading('Delete DNS template?')->modalDescription('The saved nameservers will be deleted. This cannot be undone.')
             ->modalSubmitActionLabel('Delete');
     }
     public static function addTemplate(): Action
     {
-        return self::action( 0, 0, 'save', 'Add DNS template', self::templateFields())
+        return self::action(0, 0, 'save', 'Add DNS template', self::templateFields())
             ->modalDescription(self::ONE_PER_LINE)->modalWidth(Width::Medium)->modalSubmitActionLabel('Save');
     }
 
@@ -95,13 +92,12 @@ final class DnsTemplateActions
 
     public static function templateFields(?DnsTemplate $row = null): array
     {
-        $fields = [
+        return [
             TextInput::make('name')->label('Name')->default($row?->name)->required()->maxLength(128)
                 ->rule(FieldRules::check(fn ($name) => Writes::requireUniqueName((string) $name, $row?->id))),
             Textarea::make('nameservers')->label('Nameservers')->default(implode("\n", $row?->nameservers ?? []))
                 ->required()->maxLength(8192)->rows(max(4, count($row?->nameservers ?? [])))->rule(FieldRules::hostname(13))
                 ->helperText('Enter one nameserver per line.'),
         ];
-        return $fields;
     }
 }

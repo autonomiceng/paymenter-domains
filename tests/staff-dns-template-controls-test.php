@@ -71,7 +71,7 @@ $check('Dependencies refuse turn off and delete with a reason',function()use($pr
     expect(!$button->hasAttribute('disabled')&&!$button->hasAttribute('wire:click'),'Blocked Delete stays focusable without a silent write handler');
     same($reason,$page->instance()->getAction('delete')->getTooltip(),'Delete uses the shared blocked-control tooltip');
     $switch=$xpath->query('//button[@role="switch"]')->item(0);
-    expect($switch instanceof DOMElement && $switch->getAttribute('aria-disabled') === 'true' && !$switch->hasAttribute('disabled') && !$switch->hasAttribute('wire:click'),'The blocked monitoring switch stays focusable and cannot send a write');
+    expect($switch instanceof DOMElement && $switch->getAttribute('aria-disabled') === 'true' && !$switch->hasAttribute('disabled') && !$switch->hasAttribute('wire:click'),'The blocked template switch stays focusable and cannot send a write');
     siteDnsFixture(null);
 });
 $check('One New domains use choice is shown',function()use($profile,$make,$manager):void{

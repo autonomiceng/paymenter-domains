@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Dns;
-/** Reviewed platform defaults and independent routing allowlists; no registrar inference. */
+/** Canonical nameservers for a new registration. */
 final readonly class RoutingProfile
 {
     public array $nameservers;

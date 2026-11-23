@@ -1,5 +1,5 @@
 <?php
-// Staff sidebar, Domain monitoring Settings tab and notices, dark and light. MIT, Copyright (c) 2026 Autonomic Engineering.
+// Staff sidebar and resolver settings, dark and light. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/staff-navigation-test.php';$nativeSuccessful=false;
 use Illuminate\Support\Facades\{Blade,DB,Route};

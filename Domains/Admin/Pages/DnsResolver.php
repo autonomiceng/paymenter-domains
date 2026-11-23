@@ -5,12 +5,11 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Pages;
 use Filament\Actions\Action;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
-use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DefaultNameservers,HelpHint,Sheet,Staff,StaffTabs};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head,Row,SettingsRow,Value};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{SettingsPage,Section};
 use Paymenter\Extensions\Servers\Domains\Dns\DohEndpoint;
-use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Plain,Reader,RecordFamilies,State};
+use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Plain,Reader,State};
 use Paymenter\Extensions\Servers\Domains\Services\{ContactStepRetries,DnsResolverSettings,FundsWaits,SiteDnsDefault,DnsTemplateWrites};
 class DnsResolver extends SettingsPage
 {
@@ -80,7 +79,7 @@ class DnsResolver extends SettingsPage
                 ...($missingDefault?[Row::notice('default-nameservers',Value::state(State::NotSet,$staff,$refusal??($canEdit?SiteDnsDefault::NONE:'New domains have no nameservers to use. '.SiteDnsDefault::ASK)))]:[]),
                 $nameservers,
                 SettingsRow::setting('Registrar refresh',Value::plain(Plain::Daily,'Daily refresh reads domain facts. Use Sync now on a domain to read DNS, SRV, DS and glue records. Unsupported families remain unsupported.'),$system)
-                    ->help('Registrar changes come from the registrar only. '.RecordFamilies::EVIDENCE),
+                    ->help('Registrar changes come from the registrar only.'),
                 SettingsRow::setting('Registrar read failure emails',Value::plain(Plain::None,'Shown on the domain page, beside Resume sync. There is no email alert for them.'),$system),
             ]),
             $this->automaticActions(),

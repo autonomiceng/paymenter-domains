@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Models;
 use Paymenter\Extensions\Servers\Domains\Dns\RoutingProfile;
-/** Routing rules edited through the scoped staff action; discovery remains default off. */
+/** Registration nameservers edited through revision-checked staff actions. */
 final class DnsTemplate extends RevisionedRecord
 {
     protected $table = 'domains_dns_templates';

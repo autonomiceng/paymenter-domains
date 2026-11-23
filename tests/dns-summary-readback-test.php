@@ -22,7 +22,7 @@ Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clo
 $op=$submit($d,$driver,'dns',['records'=>$wanted,'preimage_digest'=>\Paymenter\Extensions\Servers\Domains\Services\ManagementPayload::digest($state->dns)]);
 same('succeeded',$management->run($op->id,$driver)->state,'DNS save has confirmed management readback');
 $saved=ObservationRecords::current($d->fresh(),$clock->now());
-same($wanted,$saved['families']['dns']['records'],'Confirmed DNS save replaces the monitoring inventory');
+same($wanted,$saved['families']['dns']['records'],'Confirmed DNS save replaces the registrar inventory');
 same($clock->now()->format(DATE_ATOM),$saved['families']['dns']['at'],'DNS checked time is the actual confirming readback');
 foreach(['srv','ds','glue'] as $kind){same($baseline['families'][$kind],$saved['families'][$kind],'DNS save does not refresh unrelated '.$kind);}
 same($baseline['at'],$saved['at'],'A DNS readback does not retime the full registrar observation');
@@ -42,7 +42,7 @@ $state->afterWrite=static function()use($state){$state->fault='GetHosts';};
 same('uncertain',$management->run($op->id,$driver)->state,'Missing readback cannot publish desired records');
 same($saved,ObservationRecords::current($d->fresh(),$clock->now()),'Unconfirmed save cannot change inventory or checked time');
 $state->fault='';same('succeeded',$management->reconcile($op->id,$driver)->state,'Read-only reconciliation confirms deletion');
-same([$wanted[0]],ObservationRecords::current($d->fresh(),$clock->now())['families']['dns']['records'],'Reconciliation updates the same monitoring inventory');
+same([$wanted[0]],ObservationRecords::current($d->fresh(),$clock->now())['families']['dns']['records'],'Reconciliation updates the same registrar inventory');
 $table=storefrontDom($page())->query('//table[contains(concat(" ",normalize-space(@class)," ")," domains-dns-inventory ")]')->item(0);
 expect($table&&!str_contains($table->textContent,'saved-alias'),'Deleted CNAME disappears from the customer summary');
 same(2,count(array_filter($state->calls,fn($call)=>$call[0]==='SetHosts')),'Reconciliation never repeats a DNS write');

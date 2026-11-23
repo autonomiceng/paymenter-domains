@@ -35,5 +35,4 @@ $emit('configure', false, 'configure'); $emit('configure-invalid', false, 'inval
 $response = ['status' => 200, 'body' => '{"Status":0,"Question":[{"name":"example.com","type":1}],"Answer":[{"name":"example.com","type":1,"TTL":60,"data":"192.0.2.1"}]}']; $emit('working', true);
 $response = new \Paymenter\Extensions\Servers\Domains\Dns\DohFailure('timeout'); $emit('failed', true);
 $response = ['status' => 200, 'body' => '{"Status":2,"Question":[{"name":"example.com","type":1}]}']; $emit('servfail', true);
-// Monitoring notices render on the Domain monitoring list: staff-navigation-render.php.
 echo "Stock resolver states rendered.\n"; $nativeSuccessful = true;
