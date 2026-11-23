@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
 use Carbon\CarbonImmutable;
 use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts,RenewalRepeatWait};
-/** Cells of the client Domains list, from the summary alone. Domains your hosting uses renew at their registrar. */
+/** Cells of the client Domains list, derived from the registration summary. */
 final class DomainListRow
 {
     private const WAITS = ['import' => 'when the import is confirmed', 'registration' => 'when the registration finishes', 'transfer' => 'when the transfer finishes'];
@@ -50,7 +50,7 @@ final class DomainListRow
         $soon = $days !== null && $days > 0 && $days <= 30;
         return ['missing' => false, 'tone' => $days !== null && $days < 0 ? 'bad' : ($soon || $days === 0 ? 'warn' : null), 'note' => $soon ? 'In '.$days.($days === 1 ? ' day' : ' days') : null];
     }
-    /** Empty for a domain renewed at its own registrar (we send no invoices), or Auto-renew on/off with the price, the cancel date or a missing next invoice. */
+    /** Auto-renew state, price, cancellation date or missing next invoice. */
     public static function renewal(DomainSummary $s): array
     {
         if ($s->expiry===null && (in_array($s->statusState,['registration_rejected','transfer_rejected','cancelled'],true)||in_array($s->order['state']??null,['failed','cancelled'],true))) { return ['value'=>'','note'=>null,'invoiceMissing'=>false,'invoiceCause'=>null,'invoiceFix'=>null]; }

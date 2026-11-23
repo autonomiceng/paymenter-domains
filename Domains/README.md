@@ -40,4 +40,3 @@ Renewals only, so names already held keep renewing.
 or `tel:` link to use that instead. With neither, Paymenter offers nothing safe to fall back on, so the Registrars page
 System checks show it as Missing with this next step, and sentences that point at support drop that part.
 Customers see it only after login.
-

@@ -46,4 +46,3 @@ import permission. Before turning it on: run an end-to-end check on the site, co
 live registrar account and its standard renewal pricing, and check simultaneous staff
 and customer edits against the site's database. Then let in-progress customer, order and
 service edits finish, and restart web and queue workers.
-
