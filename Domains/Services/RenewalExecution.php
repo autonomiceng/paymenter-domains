@@ -202,7 +202,14 @@ final class RenewalExecution
         }
         if ($l['domain']->renewal_policy['automatic_spend_paused'] ?? false) { throw new RenewalHold('renewal_spend_paused', 'Renewal spending paused.'); }
         if ($op->expected_expires_at > $this->clock->now()->modify('+10 years')) { throw new \DomainException('Renewal term too long.'); }
-        return RenewalFunding::requireCurrent($op, $l);
+        $funding = RenewalFunding::requireCurrent($op, $l);
+        if ($op->funding_basis === 'paid_invoice') {
+            // A gateway refund can reduce available money without changing any reserved native posting.
+            $peers = Operation::where('invoice_id', $op->invoice_id)->orderBy('id')->lockForUpdate()->get();
+            $money = InvoiceMoney::lockedRecord($l, $op->invoice_id, $peers);
+            RenewalDecision::requireFunding($funding['invoice_total_minor'], InvoiceMoney::held($money));
+        }
+        return $funding;
     }
     private function configured(array $l): void
     {
