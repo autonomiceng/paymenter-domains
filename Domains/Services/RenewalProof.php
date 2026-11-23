@@ -21,7 +21,11 @@ final class RenewalProof
     private static function claim(Operation $op): ?array
     {
         $claim = $op->renewal_check;
-        return self::sameIdentity($claim, 'identity', RegistrarAnswers::identity($op)) ? $claim : null;
+        $key = $op->attempt['claim_key'] ?? null;
+        if (!is_array($claim) || !is_string($key)) { return null; }
+        // Older read claims stored only a reply hash. Each sealed operation has just one dispatch.
+        if (!isset($claim['claim_key']) && isset($claim['identity'])) { return $claim; }
+        return self::sameIdentity($claim, 'claim_key', $key) ? $claim : null;
     }
 
     public static function claimed(Operation $op): bool { return self::claim($op) !== null; }
@@ -33,7 +37,7 @@ final class RenewalProof
     public static function open(Operation $op, AttemptEvidence $attempt, \DateTimeImmutable $deadline, Clock $clock): self
     {
         $read = new self((int) $op->id, RegistrarAnswers::identity($op), $op->attempt['claim_key'], bin2hex(random_bytes(16)), $attempt, $deadline, $clock);
-        $op->renewal_check = ['identity' => $read->identity, 'token' => $read->token,
+        $op->renewal_check = ['claim_key' => $read->claimKey, 'token' => $read->token,
             'until' => $deadline->getTimestamp() + self::CLAIM_GRACE_SECONDS, 'unresolved' => self::claimed($op)];
         if (!$op->save()) { throw new \RuntimeException('Renewal read claim could not be saved.'); }
         return $read;
@@ -43,14 +47,13 @@ final class RenewalProof
     {
         return (int) $op->id === $this->operationId && (int) $op->server_id === $this->attempt->binding->serverId
             && $op->account_fingerprint === $this->attempt->binding->fingerprint
-            && hash_equals($this->identity, RegistrarAnswers::identity($op));
+            && ($op->attempt['claim_key'] ?? null) === $this->claimKey;
     }
 
     private function ownedClaim(Operation $op): ?array
     {
-        $claim = $op->renewal_check;
-        return $this->matches($op) && self::sameIdentity($claim, 'identity', $this->identity)
-            && ($claim['token'] ?? null) === $this->token ? $claim : null;
+        $claim = self::claim($op);
+        return $this->matches($op) && ($claim['token'] ?? null) === $this->token ? $claim : null;
     }
 
     /** Recheck the registrar read deadline under the final holding locks. */
@@ -68,7 +71,7 @@ final class RenewalProof
         $claim = $this->ownedClaim($op);
         if ($claim === null) { return false; }
         $op->renewal_check = ($claim['unresolved'] ?? false) === true
-            ? ['identity' => $this->identity, 'unresolved' => true] : null;
+            ? ['claim_key' => $this->claimKey, 'unresolved' => true] : null;
         self::saveEvidence($op);
         return true;
     }
@@ -99,8 +102,7 @@ final class RenewalProof
         if ($this->superseded) { return; }
         try {
             $this->saved = $this->withLockedOperation(function (Operation $op): bool {
-                if ((int) $op->id !== $this->operationId || ($op->attempt['claim_key'] ?? null) !== $this->claimKey
-                    || $op->account_fingerprint !== $this->attempt->binding->fingerprint || (int) $op->server_id !== $this->attempt->binding->serverId) { return false; }
+                if (!$this->matches($op)) { return false; }
                 $account = Account::where('server_id', $op->server_id)->first();
                 if (!$account || !AccountBindings::binding($account)->matches($this->attempt->binding)) { return false; }
                 // A late reply can still prove this attempt even if a different worker now owns its read claim.
