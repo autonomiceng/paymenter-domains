@@ -7,26 +7,25 @@ use Paymenter\Extensions\Servers\Domains\Dns\RoutingProfile;
 use Illuminate\Support\Facades\{Crypt,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\{WatchAudit,WatchProfile};
-/** Local staff edits only. A request advances ordinary work without overriding leases/backoff or feature gates. */
+/** Revision-checked DNS template edits and replay protection. */
 final class StaffWatchWrites
 {
     public const VIEW='admin.domains.watch.view',MANAGE='admin.domains.watch.manage';
     public const UNREADABLE='Saved DNS records cannot be read. Restore the template before changing it.';
-    public static function ticket(int $actor,string $kind,int $id,int $revision,string $action,?int $defaultId=null): string
-    { return Crypt::encryptString(json_encode(compact('actor','kind','id','revision','action','defaultId')+['until'=>time()+600,'key'=>bin2hex(random_bytes(16))],JSON_THROW_ON_ERROR)); }
+    public static function ticket(int $actor,int $id,int $revision,string $action,?int $defaultId=null): string
+    { return Crypt::encryptString(json_encode(compact('actor','id','revision','action','defaultId')+['until'=>time()+600,'key'=>bin2hex(random_bytes(16))],JSON_THROW_ON_ERROR)); }
     public static function authorize(User $actor): void
     { abort_unless(Staff::allows($actor,self::VIEW) && Staff::allows($actor,self::MANAGE),403); }
-    public function run(User $actor,string $kind,int $id,string $action,string $ticket,string $reason,array $input=[]): void
+    public function run(User $actor,int $id,string $action,string $ticket,string $reason,array $input=[]): void
     {
         self::authorize($actor);$reason=trim($reason);
         StaffReason::require($reason);
         try{$t=json_decode(Crypt::decryptString($ticket),true,16,JSON_THROW_ON_ERROR);}catch(\Throwable){throw new \DomainException('Reload and try again.');}
-        if(($t['actor']??null)!==(int)$actor->id || ($t['kind']??null)!==$kind || ($t['id']??null)!==$id || ($t['action']??null)!==$action || ($t['until']??0)<=time()){throw new \DomainException('Reload and try again.');}
-        DB::transaction(function()use($actor,$kind,$id,$action,$ticket,$reason,$input,$t):void {
+        if(($t['actor']??null)!==(int)$actor->id || ($t['id']??null)!==$id || ($t['action']??null)!==$action || ($t['until']??0)<=time()){throw new \DomainException('Reload and try again.');}
+        DB::transaction(function()use($actor,$id,$action,$ticket,$reason,$input,$t):void {
             self::authorize($actor);
             $claim=hash('sha256',$ticket);
-            if(!DB::table('domains_watch_staff_claims')->insertOrIgnore(['claim'=>$claim,'subject_type'=>$kind,'subject_id'=>$id,'action'=>$action,'created_at'=>time()])){throw new \DomainException('Reload and try again.');}
-            if($kind!=='profile'){throw new \DomainException('Reload and try again.');}
+            if(!DB::table('domains_watch_staff_claims')->insertOrIgnore(['claim'=>$claim,'subject_id'=>$id,'action'=>$action,'created_at'=>time()])){throw new \DomainException('Reload and try again.');}
             BusinessSetting::singleton(true);
             $row=$id?WatchProfile::whereKey($id)->lockForUpdate()->firstOrFail():new WatchProfile;
             if(($row->exists?(int)$row->revision:0)!==($t['revision']??null)){throw new \DomainException('The saved details changed. Reload and try again.');}
@@ -42,7 +41,7 @@ final class StaffWatchWrites
                 if(!$row->exists){throw new \DomainException('Reload and try again.');}
                 if($reasonBlocked=SiteDnsDefault::usesRefusal((int)$row->id,true)){throw new \DomainException($reasonBlocked);}
                 if($action==='delete'){
-                    // Delete only an unreferenced template here; watch history remains append-only.
+                    // Delete only an unreferenced template here; the audit remains append-only.
                     WatchAudit::create(['subject_type'=>'dns_profile','subject_id'=>$row->id,'actor_id'=>$actor->id,
                         'event'=>'dns_profile_deleted','reason'=>$reason,'before_revision'=>(string)$before,
                         'after_revision'=>(string)($before+1),'data'=>['name'=>$row->name],'created_at'=>now()]);

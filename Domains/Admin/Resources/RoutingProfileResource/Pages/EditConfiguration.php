@@ -86,7 +86,7 @@ class EditConfiguration extends RecordDetailPage
         $data = $this->form->getState();
         $id = (int) $this->getRecord()->id;
         try {
-            (new Writes())->run(Auth::user(), 'profile', $id, 'save', Writes::ticket((int) Auth::id(), 'profile', $id,
+            (new Writes())->run(Auth::user(), $id, 'save', Writes::ticket((int) Auth::id(), $id,
                 $this->revision, 'save', $this->defaultId), 'DNS template saved', $data);
         } catch (\Illuminate\Database\QueryException|\Illuminate\Database\Eloquent\ModelNotFoundException) {
             Notification::make()->warning()->title('Reload the template and try again.')->send();

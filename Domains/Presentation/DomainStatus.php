@@ -22,19 +22,19 @@ final class DomainStatus
      * The hold shows in the reason line: staff read their step, customers read ON_IT. Staff must act, so it is amber. state => tone */
     public const STOPPED = ['registration_held' => 'warning', 'registration_unconfirmed' => 'warning'];
     /** Internal state => [status key, default reason line]. Domain status column values, request states seen on a domain,
-     * watch findings, and derived states: renewal_off_expiring (auto-renew off, expiry within 30 days),
+     * derived states: renewal_off_expiring (auto-renew off, expiry within 30 days),
      * active_no_expiry (active without a confirmed expiry), expires_today (DomainStatus::expiry) and setup_required (held until the customer finishes setup). */
     public const STATES = [
         'active' => ['active', null], 'registration_pending' => ['pending_registration', null], 'transfer_pending' => ['pending_transfer', null],
         'registration_held' => ['pending_registration', self::ON_IT], 'registration_unconfirmed' => ['pending_registration', self::ON_IT],
         'awaiting_payment' => ['awaiting_payment', 'Invoice not paid'], 'awaiting_code' => ['action_required', 'Auth code needed'],
-        'renewal_off_expiring' => ['action_required', 'Auto-renew off'], 'watch.ns_changed' => ['action_required', 'Nameservers changed'],
-        'setup_required' => ['action_required', 'Finish setup'], 'watch.not_registered' => ['action_required', 'Not registered'],
+        'renewal_off_expiring' => ['action_required', 'Auto-renew off'],
+        'setup_required' => ['action_required', 'Finish setup'],
         'departure_suspected' => ['under_review', 'Not in our registrar account'],
         'needs_review' => ['under_review', null], 'adoption_pending' => ['under_review', 'Import not confirmed'],
         'held' => ['under_review', null], 'uncertain' => ['under_review', null], 'active_no_expiry' => ['under_review', 'Expiry missing'],
-        'expires_today' => ['expires_today', null], 'expired' => ['expired', self::LATE], 'grace' => ['expired', self::LATE], 'watch.expired' => ['expired', 'Renew at your registrar'],
-        'redemption' => ['redemption', self::LATE], 'watch.redemption' => ['redemption', 'Restore at your registrar'],
+        'expires_today' => ['expires_today', null], 'expired' => ['expired', self::LATE], 'grace' => ['expired', self::LATE],
+        'redemption' => ['redemption', self::LATE],
         'registration_rejected' => ['failed', 'Registration did not finish'], 'transfer_rejected' => ['failed', 'Transfer did not finish'],
         'cancelled' => ['cancelled', null],
         // A confirmed departure: the saved departure record gives the reason (DomainStates::managed).

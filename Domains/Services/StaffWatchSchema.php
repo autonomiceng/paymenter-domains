@@ -13,11 +13,10 @@ final class StaffWatchSchema extends TableSchema
         return [
             'domains_watch_staff_claims' => static function (Blueprint $t): void {
                 $t->string('claim', 64)->primary();
-                $t->string('subject_type', 16);
                 $t->unsignedBigInteger('subject_id');
                 $t->string('action', 16);
                 $t->unsignedBigInteger('created_at');
-                $t->index(['subject_type', 'subject_id', 'action', 'created_at'], 'dws_'.substr(hash('sha256', $t->getTable()), 0, 16));
+                $t->index(['subject_id', 'action', 'created_at'], 'dws_'.substr(hash('sha256', $t->getTable()), 0, 16));
             },
         ];
     }

@@ -46,11 +46,10 @@ final class DomainPage
     {
         if($d->departureSuspected){return null;}
         $setup = $d->actions['setup'] ?? null; $phase = $d->transfer['phase'] ?? null;
-        $movedAt = isset($s?->noticeDates['dns']) ? ' on '.CarbonImmutable::createFromTimestampUTC((int) $s->noticeDates['dns'])->format('M j, Y') : '';
         $contact = $support ? ['label' => 'Contact support', 'url' => $support] : null;
         $order = $d->order['state'] ?? null; $word = ($d->order['kind'] ?? null) === 'transfer' ? 'transfer' : 'registration';
         $renewalCheck=$d->renewNow['check']??$d->renewalInvoice['check']??null;
-        $nameservers = self::nameserverNotice($d, $s, $movedAt, $contact);
+        $nameservers = self::nameserverNotice($d, $contact);
         $notice = match (true) {
             // A nameserver step restores service, so it stays with its action and the renewal check is said beside it.
             $renewalCheck!==null && $nameservers!==null => [...$nameservers, 'text' => $nameservers['text'].' '.($renewalCheck['brief'] ?? $renewalCheck['body']).($d->changesUnavailable && $d->changesRefused===self::PROCESSING_OFF ? ' '.self::PAUSED_AFTER : '')],
@@ -94,7 +93,7 @@ final class DomainPage
     }
     /** The nameserver step: the domain stopped using ours, or the registration settings were not applied. Null without one.
      * asks: the customer has this step, even in a blue notice, so the page does not also say no action is needed. */
-    private static function nameserverNotice(OwnedDomain $d, ?DomainSummary $s, string $movedAt, ?array $contact): ?array
+    private static function nameserverNotice(OwnedDomain $d, ?array $contact): ?array
     {
         $change = isset($d->management['nameservers']) ? ['label' => 'Change nameservers', 'url' => $d->actions['show'].'?edit=nameservers#edit-nameservers'] : null;
         if (!$d->dnsCorrection) { return null; }
