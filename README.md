@@ -30,7 +30,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), [extension conventions](docs/paymenter-
 
 ## Installation
 
-Install the current Domains ZIP through Paymenter on an empty installation. Reinstalling
+Install the current Domains ZIP on a Paymenter site with no retained Domains data. Reinstalling
 the same package verifies its schema and preserves holdings, settings and billing records.
 If activation refuses retained data or an incompatible catalogue contract, preserve the
 database and verify the installation. Staff can import individual domains through **Import**.

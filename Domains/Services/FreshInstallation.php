@@ -40,15 +40,24 @@ final class FreshInstallation
             || array_filter($ran, static fn ($name) => str_contains(strtolower($name),'domains')) !== [];
     }
 
-    public static function manifest(): string
+    private static function manifest(): string
     {
         $root = dirname(__DIR__); $files = [];
         foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS)) as $file) {
             if ($file->isFile() && $file->getExtension() === 'php') {
-                $files[substr($file->getPathname(),strlen($root)+1)] = hash_file('sha256',$file->getPathname());
+                $files['Domains/'.substr($file->getPathname(),strlen($root)+1)] = hash_file('sha256',$file->getPathname());
             }
         }
-        ksort($files); return hash('sha256', OfferState::json($files));
+        ksort($files);
+        if (is_file($root.'/manifest.json')) {
+            $package = json_decode(file_get_contents($root.'/manifest.json'), true, flags: JSON_THROW_ON_ERROR);
+            $members = $package['members'] ?? null;
+            if (!is_array($members)) { throw new \DomainException('Invalid Domains package manifest.'); }
+            $expected = array_filter($members, static fn ($path) => str_ends_with($path, '.php'), ARRAY_FILTER_USE_KEY);
+            ksort($expected);
+            if ($expected !== $files) { throw new \DomainException('Installed Domains PHP files differ from the package manifest.'); }
+        }
+        return hash('sha256', OfferState::json($files));
     }
 
     /** Advisory bootstrap check; only the locked lifecycle proof may create initialization authority. */

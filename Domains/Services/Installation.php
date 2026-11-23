@@ -82,6 +82,27 @@ final class Installation
         self::verificationRecord()->create(['key'=>self::VERIFIED_KEY,'settingable_type'=>null,'settingable_id'=>null,
             'type'=>'string','encrypted'=>false,'value'=>$version]);
     }
+    /** Identify the shipped package, or the schema definitions when installing directly from source. */
+    public static function schemaVersion(): string
+    {
+        $manifest = dirname(__DIR__).'/manifest.json';
+        if (is_file($manifest)) {
+            return hash_file('sha256', $manifest) ?: throw new \RuntimeException('Cannot read the Domains package manifest.');
+        }
+
+        $files = [dirname(__DIR__).'/database/migrations/'.self::BASELINE.'.php'];
+        foreach ([self::class, TableSchema::class, SchemaVerifier::class, ...self::SCHEMAS] as $class) {
+            $files[] = (new \ReflectionClass($class))->getFileName();
+        }
+        $hash = hash_init('sha256');
+        foreach ($files as $file) {
+            if (!hash_update_file($hash, $file)) {
+                throw new \RuntimeException('Cannot read the Domains schema definition.');
+            }
+        }
+        return hash_final($hash);
+    }
+
     private static function verificationState(): string
     {
         $ran=app(Migrator::class)->getRepository()->getRan();sort($ran);
@@ -89,7 +110,7 @@ final class Installation
         if ($domains !== [self::BASELINE]) {
             throw new \RuntimeException('Retained Domains migration history is incomplete.');
         }
-        return json_encode(['version'=>FreshInstallation::manifest(),'migrations'=>$ran,'schema'=>SchemaVerifier::fingerprint()],JSON_THROW_ON_ERROR);
+        return json_encode(['version'=>self::schemaVersion(),'migrations'=>$ran,'schema'=>SchemaVerifier::fingerprint()],JSON_THROW_ON_ERROR);
     }
     public function verifyForOrders(): void
     {
