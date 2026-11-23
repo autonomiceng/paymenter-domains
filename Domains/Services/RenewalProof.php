@@ -80,8 +80,8 @@ final class RenewalProof
     /** Observe each reply before a later exchange can fail or run out of time. */
     public function saw(DomainSnapshot|OrderEvidence $seen): void
     {
-        if ($this->saved || $this->superseded) { return; }
-        $this->observation ??= RenewalDecision::positiveObservation($this->attempt->binding, $this->attempt->query->name,
+        if ($this->observation !== null || $this->superseded) { return; }
+        $this->observation = RenewalDecision::positiveObservation($this->attempt->binding, $this->attempt->query->name,
             $this->attempt->beforeExpiry?->value, $seen);
         if ($this->observation !== null) { $this->write(); }
     }
