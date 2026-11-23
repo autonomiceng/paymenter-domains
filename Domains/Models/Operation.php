@@ -29,26 +29,27 @@ class Operation extends Model
             if(array_key_exists('management_unsent',$operation->attempt??[])){throw new \DomainException('Unsent management proof requires a live dispatched operation.');}
         });
         static::updating(static function (self $operation): void {
+            $dirty = array_keys($operation->getDirty());
             if ($operation->action === 'renew') {
                 $next = (int) $operation->getOriginal('transition_revision') + 1;
-                $newReply = $operation->isDirty('attempt') && array_key_exists('execution', $operation->attempt ?? [])
+                $newReply = in_array('attempt', $dirty, true) && array_key_exists('execution', $operation->attempt ?? [])
                     && !array_key_exists('execution', $operation->getOriginal('attempt') ?? []);
-                if ($newReply || $operation->isDirty(['state', 'renewal_admission_until'])) {
+                if ($newReply || array_intersect($dirty, ['state', 'renewal_admission_until'])) {
                     $operation->transition_revision = $next;
-                } elseif ($operation->isDirty('transition_revision') && $operation->transition_revision !== $next) {
+                } elseif (in_array('transition_revision', $dirty, true) && $operation->transition_revision !== $next) {
                     throw new \DomainException('Renewal revision must advance by one.');
                 }
             }
-            if ($operation->getRawOriginal('renewal_proof') !== null && $operation->isDirty('renewal_proof')) {
+            if ($operation->getRawOriginal('renewal_proof') !== null && in_array('renewal_proof', $dirty, true)) {
                 throw new \DomainException('Renewal proof is retained.');
             }
-            if ($operation->isDirty('renewal_reserved_revision')
-                && ($operation->getOriginal('renewal_reserved_revision') !== null || $operation->action !== 'renew'
+            if (in_array('renewal_reserved_revision', $dirty, true)
+                && ($operation->getRawOriginal('renewal_reserved_revision') !== null || $operation->action !== 'renew'
                     || $operation->funding_basis !== 'paid_invoice' || $operation->state !== 'running'
                     || $operation->renewal_reserved_revision !== $operation->transition_revision)) {
                 throw new \DomainException('Renewal reservation is immutable.');
             }
-            if ($operation->isDirty(['id', 'domain_id', 'service_id', 'server_id', 'registrar_key', 'account_fingerprint', 'authority_generation', 'action', 'term', 'currency', 'amount', 'invoice_id', 'invoice_item_id', 'operation_key', 'funding_basis', 'authorized_by', 'funding_reason', 'retry_number', 'renewal_previous_proof'])) {
+            if (array_intersect($dirty, ['id', 'domain_id', 'service_id', 'server_id', 'registrar_key', 'account_fingerprint', 'authority_generation', 'action', 'term', 'currency', 'amount', 'invoice_id', 'invoice_item_id', 'operation_key', 'funding_basis', 'authorized_by', 'funding_reason', 'retry_number', 'renewal_previous_proof'])) {
                 throw new \DomainException('Operation binding and action are immutable.');
             }
         });
@@ -161,7 +162,7 @@ class Operation extends Model
                     &&!array_intersect(array_keys($old),['execution','evidence','charge','order_candidates','provider_reference','registration','corrections','reconciliation','terminal']);
             }
             $balanceCap=\Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::capReset($operation);
-            $reservedRenewal = $operation->getOriginal('renewal_reserved_revision') !== null;
+            $reservedRenewal = $operation->getRawOriginal('renewal_reserved_revision') !== null;
             $safeAttemptReset = !$reservedRenewal && ($safeCapReset || $safeTestRetry || $balanceCap);
             if ($reservedRenewal && ($new['send_state'] ?? null) !== ($old['send_state'] ?? null)) {
                 throw new \DomainException('Reserved renewal send state is immutable.');
