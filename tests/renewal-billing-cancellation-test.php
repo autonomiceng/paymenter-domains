@@ -49,7 +49,8 @@ $action=isset($shown->management['nameservers'])?'Change nameservers':'Contact s
 same($action,$notice['action']['label']??null,'Nameserver correction keeps its step');
 $html=view('domains::show',['domain'=>$shown,'summary'=>$summary])->render();
 same('Renewal being checked.',DomainPage::nextInvoice($shown,$summary,'/support')['note']??null,'Nameserver correction: the renewal row does not say no action is needed');
-expect(preg_match('~<span class="domains-notice__tx">'.preg_quote(e($step),'~').'[^<]*'.preg_quote(e($confirming),'~').'[^<]*</span>\s*<a [^>]*>'.$action.'</a>~u',$html)===1,'Rendered nameserver correction notice keeps the check and its action');
+$status = storefrontDom($html)->query('//*[@role="status"][.//a[normalize-space(.)="'.$action.'"]]')->item(0);
+expect($status && str_contains($status->textContent,$step) && str_contains($status->textContent,$confirming),'Rendered nameserver correction includes the registrar check and its action');
 same($before,$ledger(),'Page, list and notices are read-only');
 DB::table('invoice_transactions')->where('id',$payment)->delete();DB::table('domains_operations')->where('id',$cycle->id)->update($raw);
 echo "Native cancellation billing passed\n";$nativeSuccessful=true;

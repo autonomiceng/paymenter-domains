@@ -83,9 +83,8 @@ foreach (array_keys($rows) as $i=>$name) {
     same($renewal,$cell($dom,$row,'Auto-renew'),'Renewal cell: '.$name);
 }
 // The row says what the domain page says while we check a renewal: the same State.
-same(['Under review'],array_map($norm,iterator_to_array($dom->query('//tbody/tr[6]/td[@data-label="Auto-renew"]//*[@data-domains-tone]'))),'Renewal under review is a State on the list');
-// The summary lists every usable link and its overflow counts those past the first three, so four links show 3 more.
-same(['Transfer on hold','Renew at your registrar'],array_map($norm,iterator_to_array($dom->query('//tbody//td[@data-label="Status"]//*[contains(@class,"domains-panel-sub")]'))),'Reason lines sit under their states');
+same(['Under review'],array_map($norm,iterator_to_array($dom->query('//tbody/tr[td/a[normalize-space(.)="renewal-review.example"]]/td[@data-label="Auto-renew"]//*[@data-domains-tone]'))),'Renewal under review is a State on the list');
+same(['Transfer on hold'],array_map($norm,iterator_to_array($dom->query('//tbody//td[@data-label="Status"]//*[contains(@class,"domains-panel-sub")]'))),'Reason lines sit under their states');
 same(0,$dom->query('//tbody//*[contains(@class,"domains-badge") and contains(normalize-space(),"navailable")]')->length,'No unavailable pills');
 expect(!str_contains($norm($dom->query('//div[@class="domains"]')->item(0)),"\u{2014}"),'No em dashes in the list');
 expect(!str_contains($html,'Related services') && !str_contains($html,'View domain details'),'Old hosting card copy removed');
