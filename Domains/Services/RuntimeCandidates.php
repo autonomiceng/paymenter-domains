@@ -19,7 +19,7 @@ final class RuntimeCandidates
     }
     public static function billing(Builder $q): Builder
     {
-        return $q->where(fn($q)=>$q->whereNotNull('adoption_id')->orWhere('provenance','converted_purchase')
+        return $q->where(fn($q)=>$q->whereNotNull('adoption_id')
             ->orWhereExists(function($o):void {
                 $o->selectRaw('1')->from('domains_operations as runtime_op')->join('invoice_items as runtime_item','runtime_item.id','=','runtime_op.invoice_item_id')
                     ->join('invoices as runtime_invoice','runtime_invoice.id','=','runtime_item.invoice_id')

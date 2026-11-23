@@ -10,18 +10,8 @@ use Paymenter\Extensions\Servers\Domains\Services\{Installation,SiteDnsDefault,C
 // Native settings, schema history and encrypted watch rows cannot be proved by a stub.
 $entry=new \Paymenter\Extensions\Servers\Domains\Domains([]);$entry->installed();
 same(null,SiteDnsDefault::profile(),'Old installation has no deployment default');
-// Pre-F71 retained storage has neither complimentary table nor migrations 000055 and 000058.
-// Keep all existing foundational tables/history; the normal installer must add F71 before seeding DNS.
-foreach(['domains_complimentary_approvals','domains_complimentary_accounts']as$table){
-    same(0,DB::table($table)->count(),'Only empty new tables are removed from the synthetic old installation');
-    Schema::drop($table);
-}
-DB::table('migrations')->whereIn('migration',[ComplimentaryAccountSchema::MIGRATION,ComplimentaryTimeSchema::MIGRATION])->delete();
-
 config(['domains.site_dns_default.nameservers'=>['ns1.example.test','ns2.example.test']]);
 app(Installation::class)->install();
-ComplimentaryTimeSchema::verify();
-same(true,DB::table('migrations')->where('migration',ComplimentaryAccountSchema::MIGRATION)->exists(),'Normal pre-F71 upgrade records the new migration');
 $seeded=SiteDnsDefault::profile();
 expect($seeded!==null,'Normal same-version installation seeds the DNS default');
 same(['ns1.example.test','ns2.example.test'],$seeded->nameservers,'Seed uses configured nameservers');

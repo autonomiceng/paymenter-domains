@@ -62,15 +62,6 @@ lifecycleReject(fn()=>ServiceCancellation::create(['service_id'=>$fake->service_
 [$complete]=$prepare(placeholderComFixtureName('lifecycle-completed-placeholder.com'));same('succeeded',$reconcile->run($complete->id)->state,'Original completion proof established');
 ServiceCancellation::create(['service_id'=>$complete->service_id,'type'=>'end_of_period','reason'=>'Stop future renewal']);
 same('active',$complete->domain->service->fresh()->status,'Terminal end-of-period cancellation does not delete or cancel registrar/native holding');
-require_once __DIR__.'/Support/converted-holding.php';
-[$converted]=$prepare(placeholderComFixtureName('lifecycle-converted-placeholder.com'));same('succeeded',$reconcile->run($converted->id)->state,'Historical source completed');
-[$converted,$convertedDomain,$convertedBinding]=convertedHoldingFixture($converted);
-expect(RenewalAuthority::completed($converted,$convertedDomain,$convertedBinding),'Converted renewal has full sealed terminal proof');
-ServiceCancellation::create(['service_id'=>$converted->service_id,'type'=>'end_of_period','reason'=>'Converted holding future stop']);
-same(0,DB::table('domains_native_intents')->where('service_id',$converted->service_id)->count(),'Proven converted holding needs no acquisition intent');
-$attempt=$converted->attempt;$attempt['converted_completion']['mac']=str_repeat('0',64);$converted->attempt=$attempt;
-DB::table('domains_operations')->where('id',$converted->id)->update(['attempt'=>$converted->getAttributes()['attempt']]);
-lifecycleReject(fn()=>ServiceCancellation::create(['service_id'=>$converted->service_id,'type'=>'end_of_period','reason'=>'Forged converted proof']));
 // Pause after creating guard, before SQL. Payment and real engine execution see the committed
 // owned intent even though no native cancellation row exists yet. Transport is synthetic only.
 $race=$new(placeholderComFixtureName('lifecycle-race-placeholder.com'),paid:false);$armed=true;$calls=$writer->calls;

@@ -107,7 +107,7 @@ trait TldSalesPage
         if($s['label']==='For sale'||$this->staffStop()){return $head;}
         $url=match(true){
             in_array($reason,['Check registrar account',TldFacts::RENEWALS_OFF],true)=>RegistrarFacts::accountUrl((int)$t->server_id),
-            $reason==='Over the cost limit'=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl(['account'=>$t->server_id]),
+            $reason==='Over the cost limit'=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::salesUrl(['account'=>$t->server_id]),
             default=>null};
         return $url===null?$head:$head->link($reason==='Over the cost limit'?'Change it in What you sell':'Open the registrar account',$url);
     }

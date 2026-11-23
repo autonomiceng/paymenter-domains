@@ -11,7 +11,7 @@ final class Runtime
     private bool $booted=false;
     public static function register(): void
     {
-        ConversionGate::requireComplete();NativeIdentity::boot();$app=app();if($app->bound(self::class)){return;}
+        NativeIdentity::boot();$app=app();if($app->bound(self::class)){return;}
         $app->singleton(self::class);
         foreach([RegistrarRegistry::class,AccountBindings::class,PricingRules::class,PriceCatalogue::class,SellerPolicies::class,NativeCatalogue::class,
             CheckoutEligibility::class,CartAdmission::class,InvoiceBinding::class,HolderPricing::class,NativeDomainGuard::class,NativeServerGuard::class,
@@ -52,7 +52,7 @@ final class Runtime
     {if(!app()->bound(self::class)){return $fallback;}return app(RuntimePorts::class)->managementEngine(AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$d->server_id)->firstOrFail()));}
     public function boot(): void
     {
-        ConversionGate::requireComplete();if($this->booted){return;}$this->booted=true;
+        if($this->booted){return;}$this->booted=true;
         View::addNamespace('domains',dirname(__DIR__).'/resources/views');HostingDomainRow::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\ComplimentaryAccountSetting::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\ProductMonitoring::boot();
         require dirname(__DIR__).'/routes/web.php';require dirname(__DIR__).'/routes/owned.php';
         app(NativeServerGuard::class)->boot();app(NativeDomainGuard::class)->boot();

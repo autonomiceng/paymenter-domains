@@ -1,7 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/offer-activation-test.php';$nativeSuccessful=false;
+require __DIR__.'/Support/current-catalogue.php';$nativeSuccessful=false;
 require_once __DIR__.'/Support/offer-generation.php';
 use App\Models\{Role,User};
 use Illuminate\Support\Facades\DB;

@@ -110,5 +110,5 @@ class ListTlds extends RecordListPage
         return ['No TLDs yet','Choose what you sell on a registrar account.',$attention?'No TLD terms need attention':'No TLDs match'];
     }
     protected function emptyAction(): ?Action
-    {return Action::make('choose_what_you_sell')->label('Choose what you sell')->visible(fn()=>!$this->narrowed())->url(fn()=>WhatYouSell::getUrl());}
+    {return Action::make('choose_what_you_sell')->label('Choose what you sell')->visible(fn()=>!$this->narrowed())->url(fn()=>WhatYouSell::salesUrl());}
 }

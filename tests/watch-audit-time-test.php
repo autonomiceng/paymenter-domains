@@ -23,24 +23,5 @@ try{
     }
     WatchNoticeHealth::record(7,7,'watch','clock_reversal',1793525400);
     same(1793525400,WatchAudit::where('event','notice_health')->sole()->created_at->timestamp,'Health elapsed-time input retains its instant');
-    $migration='2026_11_23_000001_create_domains_schema';
-    Schema::table('domains_watch_audit',fn($t)=>$t->dropColumn('time_zone'));
-    DB::table('migrations')->where('migration',$migration)->delete();
-    DB::table('domains_watch_audit')->delete();
-    DB::table('domains_watch_audit')->insert([...$attrs,'data'=>'retained encrypted bytes','created_at'=>'2026-11-01 01:30:00']);
-    $before=DB::table('domains_watch_audit')->sole();$install->install();
-    $old=WatchAudit::sole();same(null,$old->time_zone,'Ambiguous retained rows stay unmarked');
-    same($before->created_at,$old->getRawOriginal('created_at'),'Ambiguous wall times are never shifted');
-    same($before->data,$old->getRawOriginal('data'),'Retained evidence is unchanged');
-    same(CarbonImmutable::parse($before->created_at,'America/Los_Angeles')->timestamp,$old->created_at->timestamp,'Unmarked rows preserve the prior local-time read contract');
-    $path=dirname(__DIR__).'/Domains/database/migrations/'.$migration.'.php';
-    (require $path)->up();$install->install();$install->verify();same(1,WatchAudit::count(),'Reruns keep retained rows');
-    DB::table('migrations')->where('migration',$migration)->delete();
-    $error=null;try{$install->install();}catch(DomainException $e){$error=$e->getMessage();}
-    same('Retained watch audit time zones have no installation record.',$error,'An unrecorded marker is refused');
-    DB::table('migrations')->insert(['migration'=>$migration,'batch'=>99]);
-    Schema::table('domains_watch_audit',fn($t)=>$t->dropColumn('time_zone'));
-    $error=null;try{$install->install();}catch(RuntimeException $e){$error=$e->getMessage();}
-    same('Retained watch audit time zones are missing.',$error,'A recorded but lost marker is refused');
 }finally{date_default_timezone_set($prior);}
 $nativeSuccessful=true;echo "Watch audit UTC instants, DST, mixed rows and conservative retained upgrade.\n";

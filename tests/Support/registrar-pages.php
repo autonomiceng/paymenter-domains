@@ -585,7 +585,7 @@ foreach(['2026-10-18T12:00:00Z','2026-10-18T00:30:00Z'] as $expiryDay){
 }
 app()->instance(Clock::class,$clock);
 DB::table('domains_domains')->where('id',$domain->id)->update(['provider_expires_at'=>$savedExpiry]);
-require __DIR__.'/reminder-upgrade.php';
+
 
 // Completed render cases retain cyclic Filament schemas; release them before the action cases.
 unset($page,$offRows);gc_collect_cycles();gc_mem_caches();

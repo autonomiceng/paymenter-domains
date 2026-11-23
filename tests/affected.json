@@ -100,7 +100,6 @@
     "tests/Support/runtime-enom-*.php": ["tests/test_installed_package_enom_exchange.py"],
     "Domains/database/migrations/*": [
       "tests/test_installed_package_fresh.py",
-      "tests/test_installed_package_upgrade.py",
       "tests/test_schema_mariadb.py"
     ],
     "Domains/Services/RenewalCycles.php": ["tests/cancelled-renewal-payment-test.php", "tests/late-renewal-test.php"],

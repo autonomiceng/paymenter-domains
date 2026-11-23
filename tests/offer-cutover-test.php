@@ -1,11 +1,16 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/offer-activation-test.php';$nativeSuccessful=false;
+require __DIR__.'/Support/current-catalogue.php';$nativeSuccessful=false;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts,Capabilities,Context,Edit,Facts,FactsObserved,Intent,OfferScheduler,Query,Revision,StaffCatalogue,StaffCommands,CatalogueActivation};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CartAdmission, CheckoutEligibility, EnomTestRenewal, InvoiceBinding, NativeCatalogue, ObservationRecords, PayCheck, Runtime, RuntimePorts, StaffOperationReview, StaffOperations, StaffSettingsReview, StaffSettingsWrites, Storefront};
 use Illuminate\Support\Facades\DB;
+require_once __DIR__.'/Support/staff-panel.php';
+$staff = staffUser(array_keys(\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::permissions()));
+auth()->login($staff);
+DB::table('domains_tlds')->where('id', $tlds[0]->id)->update(['catalogue_facts' => null]);
+$tlds[0]->refresh();
 // No test routing overrides: native events and long-lived installed services must select together.
 $caps=Capabilities::routed();same(true,$caps instanceof Capabilities,'The checked switch must route the installed holder adapter');
 $ports=CallerPorts::routed();$scheduler=OfferScheduler::routed();
@@ -25,7 +30,7 @@ config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enab
 App\Models\Server::findOrFail($binding->serverId)->settings()->updateOrCreate(['key'=>EnomTestRenewal::KEY],['type'=>'string','encrypted'=>true,'value'=>json_encode(['fingerprint'=>$binding->fingerprint,...EnomTestRenewal::protocol($binding)])]);
 $q=new Query($binding,['com'],'register');$revision=fn()=>$ports->readOffers($q,Context::Staff)[0]->revision;
 
-// Real bridge replay starts with unknown facts and retained native rows. One bounded account feed
+// Start with unknown facts and existing native rows. One bounded account feed
 // plus metadata for its selected sold set must reopen at the original retail, without deleting IDs.
 $nativePricesBefore = DB::table('prices')->orderBy('id')->get()->keyBy('id')->map(fn($p) => [$p->plan_id, $p->currency_code, $p->price])->all();
 $bulkClock = app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class);
@@ -105,7 +110,7 @@ $page=StaffCatalogue::routed()->page(collect([$tlds[0]->fresh()]));expect($page!
 $locked=DB::transaction(fn()=>$sellers->admit([$public['selection']],$now));same('28.60',$locked[0]->retail,'Installed locked admission uses current shared price');
 $user=commerceUser();$cart=commerceCart($user);$line=commerceAdd($cart,$public['product'],'cutover-placeholder.com',3);
 $admission->refresh();$before=$reads->calls;$checkout=commerceCheckout($user,$cart);
-same(4,Operation::count(),'Real installed checkout adds exactly one obligation beside three frozen historical operations');
+same(1,Operation::count(),'Real installed checkout creates one obligation');
 $op=Operation::where('operation_key','like','invoice-item:%')->sole();same('28.60',$op->policy['price']['retail'],'Native invoice freezes the admitted shared amount');
 same($before,$reads->calls,'Locked checkout creates no second provider read');
 // Active workers use deployed protocol policy, independent of the retired ending list.

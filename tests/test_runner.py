@@ -673,9 +673,9 @@ class RunnerTests(unittest.TestCase):
         suites = runner.manifest()
         cases = [(['tests/test_package.py'], ['package'], None),
                  (['tests/test_schema_mariadb.py'], ['mariadb'], None),
-                 (['tests/test_package.py', 'tests/test_installed_package_previous.py', 'tests/test_package.py'],
+                 (['tests/test_package.py', 'tests/test_installed_package_fresh.py', 'tests/test_package.py'],
                   ['native', 'package'], False),
-                 (['tests/test_installed_package_previous.py'], ['native'], True),
+                 (['tests/test_installed_package_fresh.py'], ['native'], True),
                  (['tests/checkout-refresh-test.php'], ['native'], True),
                  (['tests/offer-reader-batch-test.php'], ['native'], True),
                  (['tests/checkout-refresh-test.php', 'tests/offer-reader-batch-test.php'], ['native'], True),
@@ -730,7 +730,7 @@ class RunnerTests(unittest.TestCase):
         for path, message in [('tests/unregistered-test.php', 'Unregistered'),
                               ('../tests/test_runner.py', 'Unregistered'),
                               (str(ROOT/'tests/test_runner.py'), 'Unregistered'),
-                              ('tests/test_installed_package_previous.py', 'PAYMENTER_TEST_APP')]:
+                              ('tests/test_installed_package_fresh.py', 'PAYMENTER_TEST_APP')]:
             with self.subTest(path=path), tempfile.TemporaryDirectory() as temp, \
                  mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': ''}), \
                  mock.patch.object(runner.tempfile, 'mkdtemp', return_value=temp), \

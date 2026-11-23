@@ -21,18 +21,10 @@ tldPanel();$staff=staffUser([Staff::VIEW]);Auth::setUser($staff);
 $pages=[RegistrarSetup::class,RegistrarAccount::class,WhatYouSell::class,ListTlds::class];
 $heading='Missing: an account that can sell domains.';
 $step="NameSilo can't sell in the new catalogue yet. Add an Enom account to start selling.";
-$check=static function(bool $visible,string $scenario,bool $retired=false)use($pages,$heading,$step):void {
+$check=static function(bool $visible,string $scenario)use($pages,$heading,$step):void {
     foreach($pages as $page){
         $instance=app($page);
         if($instance instanceof RegistrarAccount || $instance instanceof WhatYouSell){$instance->account=1;}
-        if($retired && $page!==RegistrarSetup::class){
-            // Current catalogue readers cannot render a retired installation before its checked bridge.
-            $refused=false;try{$instance->content(Schema::make($instance));}
-            catch(DomainException $error){same(Paymenter\Extensions\Servers\Domains\Services\FreshInstallation::MESSAGE,$error->getMessage(),$scenario.': exact retired reader boundary on '.$page);$refused=true;}
-            expect($refused,$scenario.': retired catalogue reader refuses on '.$page);
-            same([],Paymenter\Extensions\Servers\Domains\Admin\Support\CatalogueSalesNotice::components(),$scenario.': no new-catalogue Missing notice on '.$page);
-            continue;
-        }
         $schema=$instance->content(Schema::make($instance));
         if(in_array(Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\Concerns\BuildsList::class,class_uses_recursive($instance))){
             // A list page says it as a notice row above its table, in the page's own words.
@@ -80,10 +72,5 @@ Server::whereKey(2)->update(['enabled'=>false]);
 $check(false,'Enabled NameSilo still supplies sales with Enom disabled');
 Server::whereKey(1)->update(['enabled'=>false]);
 $check(true,'Neither disabled registrar can supply sales');
-// An unconverted installation retains legacy routing and must never get new-catalogue guidance.
-Setting::where('key',CatalogueActivation::KEY)->whereNull('settingable_type')->whereNull('settingable_id')->delete();
-CallerRouting::reset();
-same('legacy',CatalogueActivation::routeState()['state'],'The fixture now represents an unconverted install');
-$check(false,'Old mode',true);
 echo "Fresh NameSilo Missing notice passed.\n";
 $nativeSuccessful=true;

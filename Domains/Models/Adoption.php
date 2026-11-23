@@ -45,7 +45,7 @@ final class Adoption extends Model
                 }
             }
             if (!in_array($row->state, ['preview', 'committed', 'refused', 'superseded'], true)
-                || !in_array($row->origin, ['staff', 'converter_pending'], true)
+                || $row->origin !== 'staff'
                 || !in_array($row->registrar_key, ['enom', 'namesilo'], true)
                 || !in_array($row->environment, ['test', 'live'], true)
                 || !preg_match('/^[a-f0-9]{64}$/D', $row->request_digest ?? '')

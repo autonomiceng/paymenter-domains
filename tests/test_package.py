@@ -188,8 +188,6 @@ class PackageTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, 'license must match'):
                         builder.runtime_members(source)
     def test_one_time_converter_is_excluded(self):
-        runtime_conversion = {'Services/ConversionGate.php',
-                              'database/migrations/2026_11_02_000048_add_offer_conversion.php'}
         with tempfile.TemporaryDirectory(prefix='domains-converter-package-') as temp:
             root = Path(temp)
             first = builder.build(ROOT/'Domains', root/'first')
@@ -201,15 +199,12 @@ class PackageTests(unittest.TestCase):
                 self.assertEqual(set(package.namelist()), set(first['members']))
                 for name in package.namelist():
                     self.assertFalse(any(p.lower() in {'scripts', 'tests', 'docs', '.github'} for p in Path(name).parts))
-                    if any('conversion' in p.lower() for p in Path(name).parts):
-                        self.assertIn(name.removeprefix('Domains/'), runtime_conversion)
+                    self.assertFalse(any('conversion' in p.lower() for p in Path(name).parts))
                     self.assertNotEqual(Path(name).name.lower(), 'readme.md')
                     self.assertEqual(first['members'][name], hashlib.sha256(package.read(name)).hexdigest())
-                for name in ['Mail/DomainNotice.php', 'Presentation/OwnedDomain.php', 'routes/web.php', 'resources/views/search.blade.php', 'resources/help/owner-help.md', 'database/migrations/2026_10_18_000001_create_domains_foundation.php']:
+                for name in ['Mail/DomainNotice.php', 'Presentation/OwnedDomain.php', 'routes/web.php', 'resources/views/search.blade.php', 'resources/help/owner-help.md', 'database/migrations/2026_11_23_000001_create_domains_schema.php']:
                     self.assertIn('Domains/'+name, package.namelist())
                 self.assertNotIn('Domains/Catalogue/UpgradeConversion.php', package.namelist())
-                for name in runtime_conversion:
-                    self.assertIn('Domains/'+name, package.namelist())
                 for name in ['Catalogue/UpgradeConversion.php', 'Catalogue/UpgradeEvidence.php']:
                     self.assertNotIn('Domains/'+name, package.namelist())
                     self.assertFalse((ROOT/'Domains'/name).exists())
@@ -219,18 +214,18 @@ class PackageTests(unittest.TestCase):
             for name in ['Catalogue/UpgradeConversion.php', 'Catalogue/UpgradeConversionProbe.php', 'Catalogue/upgradeconversion.php']:
                 with self.subTest(name=name):
                     script = source/name
-                    script.write_bytes((ROOT/'scripts/convert-enom-05.php').read_bytes())
+                    script.write_bytes(b'<?php')
                     try:
                         with self.assertRaisesRegex(ValueError, 'Development or private files'):
                             builder.runtime_members(source)
                     finally:
                         script.unlink()
             (source/'Services/conversion').mkdir()
-            (source/'Services/conversion/Apply.php').write_bytes((ROOT/'scripts/convert-enom-05.php').read_bytes())
+            (source/'Services/conversion/Apply.php').write_bytes(b'<?php')
             with self.assertRaisesRegex(ValueError, 'Development or private files'):
                 builder.runtime_members(source)
 
-    def test_conversion_allowlist_requires_exact_runtime_paths(self):
+    def test_conversion_files_are_refused(self):
         with tempfile.TemporaryDirectory(prefix='domains-conversion-paths-') as temp:
             root = Path(temp); source = root/'Domains'; source.mkdir()
             (source/'Domains.php').write_text("<?php use Paymenter\\Extensions\\Servers\\Domains\\Services\\Probe; #[ExtensionMeta(version: '0.1.0')]")

@@ -1,34 +1,10 @@
 <?php
-// Synthetic bridge database captured after checked activation on 891124421645.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting,CatalogueActivation};
 
-/** Native-only fixture: replay persisted bytes, never load a retired converter into the current runtime. */
-function retainedOfferDatabase(): array
-{
-    same('sqlite',DB::connection()->getDriverName(),'Bridge fixture is SQLite only');
-    $database=config('database.connections.sqlite.database');
-    if($database!==':memory:'){
-        $fixture=(string)getenv('PAYMENTER_TEST_FIXTURE');$expected=(string)getenv('PACKAGE_DATABASE');
-        expect(getenv('PACKAGE_PHASE')==='bridge-seed'&&is_file($fixture.'/.domains-fixture.json')
-            &&$expected!==''&&$database===$expected&&is_file($expected)
-            &&realpath(dirname($expected))===realpath(dirname($fixture)),'Bridge replay owns only the runner-created installed scratch database');
-    }
-    $saved=json_decode(file_get_contents(__DIR__.'/../fixtures/retained-offer-bridge.json'),true,512,JSON_THROW_ON_ERROR);
-    same('89112442164558c4ab61ff32f210d1b102605112',$saved['source'],'Exact source bridge is pinned');
-    DB::statement('PRAGMA foreign_keys = OFF');
-    foreach(Schema::getTableListing(null,false) as $table){if(!str_starts_with($table,'sqlite_')){Schema::drop($table);}}
-    foreach($saved['objects'] as $object){if($object['type']==='table'){DB::statement($object['sql']);}}
-    foreach($saved['tables'] as $table=>$rows){foreach(array_chunk($rows,50) as $page){DB::table($table)->insert($page);}}
-    foreach($saved['objects'] as $object){if($object['type']!=='table'){DB::statement($object['sql']);}}
-    DB::statement('PRAGMA foreign_keys = ON');CallerRouting::reset();
-    same($saved['receipt'],CatalogueActivation::routeState(),'Replayed database has the actual checked active receipt');
-    return $saved;
-}
-
-/** Rows that neither catalogue upgrades nor schema cleanup may alter. */
+/** Rows that catalogue reads and failed activations may alter. */
 function retainedOfferObligations(): string
 {
     $rows=[];

@@ -166,9 +166,9 @@ foreach(['unobserved','stale','disabled'] as $case){
 }
 $renewPrice->update([...costColumns($observation)]);
 $gate=App\Models\Setting::where('key',\Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation::KEY)->sole();
-$savedGate=$gate->value;$gate->value=json_encode(['state'=>'paused','generation'=>2]);$gate->save();
+$savedGate=$gate->value;$gate->value=json_encode(['state'=>'invalid','generation'=>2]);$gate->save();
 $inactive=RegistrarFacts::dueGap($account,$unpriced);
 expect($inactive['act']&&str_contains($inactive['text'],\Paymenter\Extensions\Servers\Domains\Services\FreshInstallation::MESSAGE),
-    'Inactive catalogue needs the upgrade step rather than promising an automatically queued read');
+    'An invalid catalogue receipt requires installation verification');
 $gate->value=$savedGate;$gate->save();
 echo "Registrar account counts and links agree.\n";$nativeSuccessful=true;

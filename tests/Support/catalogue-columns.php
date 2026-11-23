@@ -19,15 +19,6 @@ function costColumns(mixed $json): array
     try{return \Paymenter\Extensions\Servers\Domains\Catalogue\CurrentCost::values(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($json)));}
     catch(\Throwable){return ['cost_enabled'=>true,'cost_source_unit'=>'invalid'];}
 }
-/** Restore the reminder batch column only for an explicit pre-retirement fixture. */
-function legacyReminderAuditColumn(): bool
-{
-    if(\Illuminate\Support\Facades\Schema::hasColumn('domains_reminder_schedules','audit')){return false;}
-    \Illuminate\Support\Facades\Schema::table('domains_reminder_schedules',static fn($t)=>$t->text('audit')->nullable());
-    \Illuminate\Support\Facades\DB::table('domains_reminder_schedules')->update(['audit'=>encrypt([])]);
-    return true;
-}
-
 /** Arrange the same synthetic intent after removal of the old TLD flags. */
 function tldColumns(array $values,?\Paymenter\Extensions\Servers\Domains\Models\Tld $row=null): array
 {

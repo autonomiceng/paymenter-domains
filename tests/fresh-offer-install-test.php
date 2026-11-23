@@ -35,4 +35,9 @@ same($payload, DB::table('jobs')->where('id',$job)->value('payload'), 'Unrelated
 $receipt = CatalogueActivation::routeState();
 $entry->installed(); $entry->upgraded('0.1.0');
 same($receipt, CatalogueActivation::routeState(), 'Repeat lifecycle calls preserve the committed receipt');
+$unowned = (new ReflectionClass(\Paymenter\Extensions\Servers\Domains\Services\FreshInstallation::class))->newInstanceWithoutConstructor();
+$refused = false;
+try { CatalogueActivation::initialize($unowned); } catch (LogicException) { $refused = true; }
+expect($refused, 'Activation requires the initializer that owns the durable intent');
+same($receipt, CatalogueActivation::routeState(), 'Unowned activation preserves the receipt');
 $nativeSuccessful = true;
