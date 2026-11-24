@@ -208,12 +208,16 @@ def domains(root, arguments, *, history=None):
         output = Path(tempfile.mkdtemp(prefix='domains-tests-')).resolve()
         receipts = Path(os.environ.get('DOMAINS_TEST_RECEIPTS', output/'resources')).resolve()
         receipts.mkdir(exist_ok=True)
-        budget = Path(os.environ['DOMAINS_TEST_BUDGET']) if existing else SCRIPTS/'case_budget.py'
+        budget = root/'scripts/case_budget.py'
         env = dict(PATH='/usr/local/bin:/usr/bin:/bin', LANG='C.UTF-8', HOME='/tmp', TMPDIR=str(output),
                    GIT_OPTIONAL_LOCKS='0', GIT_NO_REPLACE_OBJECTS='1', PYTHONDONTWRITEBYTECODE='1',
                    DOMAINS_TEST_CGROUP=str(group),
                    DOMAINS_TEST_BUDGET=str(budget), DOMAINS_TEST_RECEIPTS=str(receipts))
-        mounts = {path: path for path in [root, output, group, receipts, budget]}
+        # A delegated wide run supplies its own per-category limits. The repository
+        # controller enforces both profiles and writes the same per-command receipts.
+        if existing and Path(os.environ['DOMAINS_TEST_BUDGET']) != budget:
+            env['DOMAINS_TEST_LIMITS'] = 'wide'
+        mounts = {path: path for path in [root, output, group, receipts]}
         if (root/'.git').exists():
             mounts.update({path: path for path in git_inputs(root)})
         if source := os.environ.get('PAYMENTER_TEST_APP'):

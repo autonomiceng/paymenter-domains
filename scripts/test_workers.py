@@ -83,6 +83,18 @@ def environments(env, output, jobs, runtime=None):
     return workers, fixture_snapshot, runtime_snapshot
 
 
+def record_source_check(rows, match, *, worker=None):
+    unchanged, error = match
+    if not unchanged:
+        scope = 'suite' if worker is None else 'worker'
+        print(json.dumps({'source_mismatch': scope, 'worker': worker,
+                          'commands': [row['argv'] for row in rows]}), flush=True)
+    for row in rows:
+        if worker is not None or not unchanged:
+            row.update(runtime_unchanged=unchanged, guard_complete=True,
+                       runtime_error=None if unchanged else f"Source changed for worker {row['worker']}: {error or 'digest mismatch'}")
+
+
 def verify_worker(env, *, fixture_snapshot, runtime_snapshot):
     if fixture_snapshot is not None:
         native.verify(env['PAYMENTER_TEST_FIXTURE'], fixture_snapshot=fixture_snapshot,

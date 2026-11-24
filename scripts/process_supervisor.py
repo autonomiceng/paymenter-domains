@@ -88,14 +88,8 @@ def cleanup(leader, grace=0):
         time.sleep(.01)
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--grace-seconds', type=float, default=0)
-    parser.add_argument('command', nargs=argparse.REMAINDER)
-    args = parser.parse_args()
-    command = args.command[1:] if args.command[:1] == ['--'] else args.command
-    if not command or args.grace_seconds < 0:
-        parser.error('A command and nonnegative grace period are required.')
+def supervise(command, grace_seconds, *, env=None):
+    """Run in a dedicated controller process that can adopt and reap this command's descendants."""
     # Linux reparents orphaned descendants here, rather than to the host init.
     libc = ctypes.CDLL(None, use_errno=True)
     if libc.prctl(36, 1, 0, 0, 0):  # PR_SET_CHILD_SUBREAPER
@@ -111,7 +105,7 @@ def main():
     signal.signal(signal.SIGINT, interrupted)
     leader = None
     try:
-        leader = subprocess.Popen(command)
+        leader = subprocess.Popen(command, env=env)
         while True:
             pid, status = os.waitpid(-1, 0)
             if pid == leader.pid:
@@ -119,15 +113,27 @@ def main():
                 break
         if not cleanup(leader):
             return 125
-        return leader.returncode if leader.returncode >= 0 else 128-leader.returncode
+        return leader.returncode
     except Shutdown as error:
-        cleanup(leader, args.grace_seconds)
+        cleanup(leader, grace_seconds)
         return 128+error.signum
     except BaseException:
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
         signal.signal(signal.SIGINT, signal.SIG_IGN)
-        cleanup(leader, args.grace_seconds)
+        cleanup(leader, grace_seconds)
         raise
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--grace-seconds', type=float, default=0)
+    parser.add_argument('command', nargs=argparse.REMAINDER)
+    args = parser.parse_args()
+    command = args.command[1:] if args.command[:1] == ['--'] else args.command
+    if not command or args.grace_seconds < 0:
+        parser.error('A command and nonnegative grace period are required.')
+    code = supervise(command, args.grace_seconds)
+    return code if code >= 0 else 128-code
 
 
 if __name__ == '__main__':

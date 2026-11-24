@@ -444,8 +444,8 @@ sudo() {
                 self.assertEqual((receipt['phase'], receipt['git_tree'], receipt['git_tree_error']), ('setup', 'a'*40, None))
 
     def test_resources_are_recorded_only_after_the_cgroup_drains(self):
-        for drained in (True, False):
-            with self.subTest(drained=drained), tempfile.TemporaryDirectory() as temp:
+        for drained, status, oom in [(True, 0, 0), (True, 124, 0), (True, 0, 1), (False, 0, 0)]:
+            with self.subTest(drained=drained, status=status, oom=oom), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 receipt = root/'case.json'
                 args = ['case_budget.py', '--name', 'probe', '--test-scope', '--wall', '10',
@@ -453,12 +453,18 @@ sudo() {
                 event_reads = []
                 read_text = Path.read_text
 
-                def execute(*args):
+                def execute(argv, *, grace_seconds, env):
                     group, = root.glob('test-*')
+                    self.assertNotIn('DOMAINS_TEST_CGROUP', env)
+                    self.assertEqual((group/'memory.max').read_text(), '1048576')
+                    self.assertEqual((group/'memory.swap.max').read_text(), '0')
+                    self.assertEqual((group/'memory.oom.group').read_text(), '1')
+                    subprocess.run([*argv[:-1], '/bin/true'], env=env, check=True)
+                    self.assertEqual((group/'cgroup.procs').read_text().strip(), '0')
                     (group/'memory.peak').write_text('4096')
-                    (group/'memory.events').write_text('oom_kill 0\n')
+                    (group/'memory.events').write_text(f'oom_kill {oom}\n')
                     (group/'cpu.stat').write_text('usage_usec 25000\n')
-                    return subprocess.CompletedProcess(args, 0)
+                    return status
 
                 def read(path, *args, **kwargs):
                     if path.name == 'cgroup.events':
@@ -476,17 +482,18 @@ sudo() {
 
                 with mock.patch.object(sys, 'argv', args), mock.patch.dict(os.environ, DOMAINS_TEST_CGROUP=temp), \
                      mock.patch.object(case_budget, 'time', mock.Mock(monotonic=itertools.count(step=0.25).__next__)), \
-                     mock.patch.object(case_budget.subprocess, 'run', side_effect=execute), \
+                     mock.patch.object(case_budget, 'supervise', side_effect=execute), \
                      mock.patch.object(case_budget.resource, 'getrusage', return_value=mock.Mock(ru_maxrss=8)), \
                      mock.patch.object(Path, 'read_text', read), mock.patch.object(Path, 'rmdir', remove):
                     if drained:
-                        self.assertEqual(case_budget.main(), 0)
+                        self.assertEqual(case_budget.main(), status or oom)
                     else:
                         with self.assertRaises(TimeoutError):
                             case_budget.main()
                 self.assertEqual(receipt.exists(), drained)
                 if drained:
                     data = json.loads(receipt.read_text())
+                    self.assertEqual((data['process_exit'], data['oom_kill'], data['exit']), (status, oom, status or oom))
                     self.assertEqual((data['wall_seconds'], data['memory_bytes'], data['cpu_seconds']), (0.25, 4096, 0.025))
 
     def test_setup_failure_receipt_rechecks_the_checkout_tree(self):
