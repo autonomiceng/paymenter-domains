@@ -28,6 +28,32 @@ spec.loader.exec_module(runner)
 
 
 class ReceiptTests(unittest.TestCase):
+    def test_parallel_runtime_mutation_is_a_failure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); (root/'Domains').mkdir(); output = root/'output'; output.mkdir()
+            path = root/'Domains/Probe.php'; path.write_text('<?php')
+            def execute(argv, **kwargs):
+                path.write_text('<?php // changed')
+                return b'changed', b'', 0, False
+            commands = [('provider', [f'probe-{index}']) for index in range(6)]
+            with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'execute', side_effect=execute), \
+                 mock.patch.object(runner, 'hashes', wraps=runner.hashes) as digest, \
+                 contextlib.redirect_stdout(io.StringIO()) as log:
+                self.assertEqual(runner.run(commands, {}, output, ['provider'], {}, jobs=2, fail_fast=True), 1)
+            receipt = json.loads((output/'receipt.json').read_text())
+            self.assertFalse(receipt['complete'])
+            self.assertEqual(len(receipt['results']), len(commands))
+            self.assertEqual(digest.call_count, 4)  # Admission, two workers, suite end.
+            for row in receipt['results']:
+                self.assertTrue(row['guard_complete'])
+                self.assertFalse(row['runtime_unchanged'])
+                self.assertIn(f"worker {row['worker']}", row['runtime_error'])
+            reports = [json.loads(line) for line in log.getvalue().splitlines() if line.startswith('{')]
+            for worker in (0, 1):
+                expected = [row['argv'] for row in receipt['results'] if row['worker'] == worker]
+                self.assertTrue(expected)
+                self.assertIn({'source_mismatch': 'worker', 'worker': worker, 'commands': expected}, reports)
+
     def test_bootstrap_inspects_offline_and_refreshes_php_on_request(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
