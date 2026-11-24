@@ -69,6 +69,7 @@ $new = static function (string $name, bool $paid = true, bool $setup = true, str
     return $op->fresh();
     } finally { if($runtime!==null){app()->instance(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class,$runtime);} }
 };
+$paidRegistration = static fn (string $name) => $new($name, preparedCheckout: true);
 // Raw rows retain invoice/item/payment/credit/job bytes, including native timestamps.
 $nativeMoney = static function (): array {
     $rows = [];

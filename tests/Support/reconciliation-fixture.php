@@ -2,10 +2,11 @@
 // Synthetic Enom 444f31c registration reconciliation scenarios; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/enom-history.php';
-// A caller can supply its own paid orders, including a multi-line native checkout.
-$paidRegistration = $new ?? null;
+// Loading the operation fixture here provides a prepared checkout. Preloaded matrices
+// use their existing order factory, including the owner and cycle multi-line checkouts.
+$paidRegistration = null;
 require_once __DIR__.'/operation-fixture.php';
-$paidRegistration ??= static fn (string $name) => $new($name, preparedCheckout: true);
+$paidRegistration ??= $new;
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, DateEvidence, Disposition, DriverResult, Environment, Evidence, ExpiryPrecision, HistoryAcceptance, RegistrationEvidence, RequestBudget, RequestContext, RequestOrigin, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
