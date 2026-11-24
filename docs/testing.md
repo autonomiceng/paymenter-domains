@@ -45,17 +45,19 @@ built theme to render with a host skin. The UI suite uses the image’s Node.js,
 
 Build the PHP suite image with `python3 scripts/bootstrap.py --download`, then run
 `scripts/test.py` offline. Bootstrap without `--download` checks the local image only.
-`scripts/php-suite.Dockerfile` pins the amd64 base and dated Debian repository.
-`scripts/php-runtime-packages.json` pins PHP 8.4.27 archives by SHA-256. Set
-`PHP_RUNTIME_ARCHIVE_CACHE` to reuse verified archives when building. Setup requires Docker.
+The Dockerfile pins the amd64 Debian trixie base by digest. Each explicit build refreshes
+apt metadata and installs the newest PHP 8.4 packages offered by trixie and its security
+archive. On a cached host, repeat `--download` to pick up a new patch. Docker can reuse
+the browser layer. Setup requires Docker with BuildKit.
 Execution requires Linux cgroup v2, rootless runc, user namespaces, GNU tar and a delegated
 memory scope. Direct invocation can request a 2 GiB, zero-swap systemd user scope.
 
 Each invocation exports the image by immutable ID into a temporary directory and starts one
 OCI container under the admitted controller. Tests share read-only PHP and vendor files.
 Each native case receives its own application and database. The runner reaps each process
-tree and records file limits, peak memory and exit status. The receipt binds the image ID
-and the checkout tree. The separate MariaDB boundary keeps its existing service and driver.
+tree and records file limits, peak memory and exit status. Each suite image receipt records
+the image ID, checkout tree, PHP version and installed Debian PHP package versions. Reuse
+evidence only for the same image ID. The separate MariaDB boundary keeps its existing service and driver.
 
 ## Suites and receipts
 
@@ -120,9 +122,8 @@ Passing offline tests never establish real writes, sandbox acceptance, transfer 
 SMTP delivery, browser accessibility, installed ZIP compatibility or production pricing.
 See [API gates](design/parity.md). Provider/environment acceptance requires separate authority.
 
-Enom protocol tests (slice 10) require DOM in standalone/provider and native runs. The pinned XML archive belongs
-to the base offline runtime; `php-test` loads DOM without other native extensions. Missing archives fail without
-download; the archive hash came from the Debian security download described above.
+Enom protocol tests (slice 10) require DOM in standalone/provider and native runs. The image includes
+`php8.4-xml`. The standalone `php-test` wrapper enables DOM without the native test modules.
 
 Enom named read normalization is exercised by `tests/enom-read-test.php` with synthetic XML and
 a synthetic accepted-binding factory. Price absence differs from failed reads; ownership, expiry
@@ -153,7 +154,7 @@ The exact staged slice is tested separately before its signed commit; subsequent
 Slice 16's `cart-admission-test.php` invokes vanilla Livewire Cart checkout in the disposable fixture:
 shared hosting/domain invoices, distinct names on one separated product, positive below-cost coupons,
 zero net, stale/seller-switched/direct-link checks, receipt tampering, malformed input and explicit
-premium=false. Native tokenizer is enabled from the already pinned common package for Blade/Livewire.
+premium=false. Native tokenizer is enabled from the image’s `php8.4-common` package for Blade/Livewire.
 Source map: Enom `444f31c` CartOrdering fields/admit → CartAdmission + CheckoutEligibility;
 native mixed-cart/coupon/quantity/source scenarios → cart-admission-test. Transfer eligibility/RDAP,
 contacts/registry and installed extension entry remain 27/18/39; these tests register internal hooks only.
@@ -303,10 +304,9 @@ No installed schedule, provider acceptance or concurrent MariaDB guarantee is es
 `owned-pages-test.php` exercises current native/ledger ownership, capability labels,
 held contacts, pending transfers, safe correction states and real Blade rendering.
 `PAYMENTER_TEST_APP=<pinned source> python3 scripts/render-owned.py SHELL_DIR OUTPUT_DIR`
-renders synthetic owner DTOs inside the supplied site shell. It needs cached native PHP
-archives (`PHP_RUNTIME_ARCHIVE_CACHE`, or seed with `python3 scripts/bootstrap.py --native --download`)
-and reads `SHELL_DIR/ref-domains-register.html`. It writes pages to `OUTPUT_DIR` and copies
-them back into `SHELL_DIR` as `ui33-*.html` (`ui34-*.html` with `records`).
+renders synthetic owner DTOs inside the supplied site shell. It uses a disposable PHP runtime copied
+from the prepared suite image and reads `SHELL_DIR/ref-domains-register.html`. It writes pages to
+`OUTPUT_DIR` and copies them back into `SHELL_DIR` as `ui33-*.html` (`ui34-*.html` with `records`).
 It does not boot the extension, read registrar state or enable processing.
 The owner action/management suites cover exact encrypted code bytes, paid UTC cutoffs,
 immutable setup, purchase grammar, native CSRF, atomic replay, engine requests and synthetic readback.
@@ -396,13 +396,11 @@ Render complete, unknown, partial, stale-generation and many-record owner pages 
 ## Opt-in NameSilo OTE contract test
 
 Run only with separate authority for the sandbox account and (for `--write`) its funds.
-The runner is excluded from `tests/suites.json`, default suites and CI. Prepare the pinned
-PHP archives offline and supply the key through `NAMESILO_SANDBOX_API_KEY` in the environment;
-never pass it as an argument. No credential file is loaded by the runner.
+The runner is excluded from `tests/suites.json`, default suites and CI. Prepare the PHP suite image before the run.
+Supply the key through `NAMESILO_SANDBOX_API_KEY` in the environment. No credential file is loaded by the runner.
 
 ```sh
 # Offline guards; with PAYMENTER_TEST_APP this also exercises the actual registration path.
-PHP_RUNTIME_ARCHIVE_CACHE=/path/to/verified/php-archives \
 PAYMENTER_TEST_APP=/canonical/path/to/paymenter-1.5.9 scripts/ote-contract.sh --self-test
 # Check the UTC clock before each authorized run.
 date -u
@@ -537,8 +535,8 @@ Stopped scheduled-read coverage includes a domain-read failure while processing 
 
 ## Supported PHP
 
-Runtime source targets PHP 8.3 and 8.4, matching Paymenter 1.5.9. The existing offline
-runner retains its hash-pinned PHP 8.4.27 runtime. A separate CI job parses every shipped
+Runtime source targets PHP 8.3 and 8.4, matching Paymenter 1.5.9. The offline runner uses
+Debian’s PHP 8.4 packages. A separate CI job parses every shipped
 PHP file on PHP 8.3 and runs `tests/php83-compatibility-test.php`.
 The token guard also runs with offline lint and the registered runner suite. It rejects
 40 PHP 8.4 global functions from PHP NEWS (including Intl, OPcache, PCNTL, PgSQL and
@@ -577,8 +575,7 @@ refuse converter paths, tampering, unsafe names, symlinks, collisions and oversi
 
 The native suite verifies the built ZIP before passing an upload copy to Paymenter
 1.5.9's real UploadExtensionService. A second disposable app copy uses installed files
-without the source-tree runtime autoloader. Native ZIP support uses a pinned PHP archive
-and requires the system libzip library; missing offline dependencies fail rather than simulate.
+without the source-tree runtime autoloader. The suite image includes `php8.4-zip` and its libzip dependency.
 Fresh-process boot checks migration history, installed classes/pages/routes and one scheduler.
 Same-ZIP reinstall and file-removal/reinstall via native Install preserve
 raw ledgers/settings and all prior migration records; only account update timestamps are
@@ -691,7 +688,7 @@ runtime regressions; `--only` does not expand dependencies. For adoption/registr
 [native identity focused command](testing-coverage/native-identity-focused.md), including shared transfer and identity
 consumers and separately recorded MariaDB scenarios.
 
-The PR boundary runs `python3 scripts/test.py` with the pristine native dependency and pinned runtime cache.
+The PR boundary runs `python3 scripts/test.py` with the pristine native dependency and prepared PHP suite image.
 For focused iteration, `--only` selects exact registered test paths:
 
 ```sh

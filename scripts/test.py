@@ -340,6 +340,8 @@ def cancel_on_error(processes):
 def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, workers=None, worker_check=None, timings=None, only=None,
         fail_fast=False, requested_jobs=None, memory_mib=None, jobs_explicit=False, lint_base=None, checkout=None):
     started_run = time.monotonic()
+    image = os.environ.get('PHP_SUITE_IMAGE') if selected != ['mariadb'] else None
+    php_version, php_packages = php_suite.installed_versions() if image else (None, {})
     # main() captures the checkout before setup; direct callers record no tree.
     checkout = (None, 'not recorded') if checkout is None else checkout
     timings = {} if timings is None else timings
@@ -539,7 +541,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         first_failure = failures[0] if failures else next(iter(failed_indexes), None)
         timings['run'] = time.monotonic() - started_run
         planned = {argv[-1] for kind, argv in commands if kind != 'lint'}
-        receipt = {'php_suite_image': os.environ.get('PHP_SUITE_IMAGE'), 'runner_error': runner_error, 'runner_error_detail': runner_error_detail, 'final_guard_complete': final_guard_complete,
+        receipt = {'php_suite_image': image, 'php_version': php_version, 'php_packages': php_packages,
+                   'runner_error': runner_error, 'runner_error_detail': runner_error_detail, 'final_guard_complete': final_guard_complete,
                    'final_guard_error': final_guard_error, 'timings': timings, 'only_tests': sorted(set(only or [])),
                    'lint_base': lint_base,
                    'git_tree': tree, 'git_tree_error': tree_error,
@@ -560,7 +563,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                                                                     if row['peak_rss_kib'] is not None), default=None)}
                                   for kind in selected if (rows := [row for row in results if row['kind'] == kind])},
                    'omitted_tests': [path for paths in suites.values() for path in paths if path not in planned],
-                   'complete': complete, 'jobs': jobs, 'php_version': '8.4.27', 'results': results, 'runtime_sha256': before,
+                   'complete': complete, 'jobs': jobs, 'results': results, 'runtime_sha256': before,
                    'selected_suites': selected, 'omitted_suites': [s for s in CATEGORIES if s not in selected],
                    'unimplemented_suites': [s for s, paths in suites.items() if not paths],
                    'dependency': {'commit': native.COMMIT, 'lock_sha256': native.LOCK_SHA256, 'source_sha256': dependency[1]} if dependency else None,
@@ -679,7 +682,7 @@ def main(*, launch=False):
     except BaseException as error:
         setup_failure(setup_output(), error)
         raise
-    if launch and selected != ['mariadb'] and not php_suite.IMAGE_ARCHIVES.is_dir():
+    if launch and selected != ['mariadb'] and not php_suite.RUNTIME.is_dir():
         _, arguments = timing_option.parse_known_args()
         return php_suite.domains(ROOT, arguments, history=args.timings_from)
     jobs_explicit = args.jobs is not None or 'DOMAINS_TEST_JOBS' in os.environ
@@ -722,8 +725,6 @@ def main(*, launch=False):
                 runtime, binary, extension = prepare(native=needs_fixture)
         env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
                'PHPRC': '', 'PHP_INI_SCAN_DIR': '', 'TMPDIR': str(output), 'PYTHONDONTWRITEBYTECODE': '1'}
-        if php_suite.IMAGE_ARCHIVES.is_dir():
-            env['PHP_RUNTIME_ARCHIVE_CACHE'] = str(php_suite.IMAGE_ARCHIVES)
         env.update({key: value for key, value in os.environ.items() if key.startswith('DOMAINS_TEST_')})
         if 'ui' in selected:
             env.update({name: os.environ[name] for name in BROWSER_ENV if name in os.environ})

@@ -10,7 +10,6 @@
     "scripts/case_budget.py",
     "scripts/hosted-php-userns.sh",
     "scripts/php-suite.Dockerfile",
-    "scripts/php-runtime-packages.json",
     "scripts/bootstrap.py",
     "tests/native-database.php",
     "scripts/php-test",

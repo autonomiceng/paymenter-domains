@@ -18,13 +18,9 @@ import bootstrap
 
 class BootstrapTests(unittest.TestCase):
     def prepare(self, root, native_mode=False):
-        # Reuse only verified local archives; never download for these checks.
-        archives = os.environ.get('PHP_RUNTIME_ARCHIVE_CACHE', bootstrap.CACHE)
-        with mock.patch.object(bootstrap, 'CACHE', root/'runtime-cache'), mock.patch.dict(os.environ, {
-                'PHP_RUNTIME_ARCHIVE_CACHE': str(archives), 'LD_LIBRARY_PATH': str(root)}):
+        with mock.patch.object(tempfile, 'tempdir', str(root)), mock.patch.dict(os.environ, {'LD_LIBRARY_PATH': str(root)}):
             return bootstrap.prepare(native=native_mode)
 
-    @unittest.skipUnless(os.environ.get('PAYMENTER_TEST_FIXTURE'), 'native fixture not selected')
     def test_native_bootstrap_reports_gd_library_load_failure_and_cleans_runtime(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -34,7 +30,7 @@ class BootstrapTests(unittest.TestCase):
                 self.prepare(root, native_mode=True)
             self.assertIn(str(root/'libgd.so.3'), str(failure.exception))
             self.assertIn('file too short', str(failure.exception))
-            self.assertEqual(list((root/'runtime-cache').glob('runtime-*')), [])
+            self.assertEqual(list(root.glob('php-runtime-*')), [])
 
     def test_provider_bootstrap_does_not_need_gd(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -45,8 +41,9 @@ class BootstrapTests(unittest.TestCase):
                 try:
                     self.assertTrue(binary.is_file())
                     self.assertTrue(extension.is_file())
-                    self.assertFalse((extension.parent/'gd.so').exists())
-                    self.assertEqual(list((root/'runtime-cache').glob('*-gd_*.deb')), [])
+                    subprocess.run([binary, '-n', '-d', 'extension='+str(extension), '-r',
+                                    'exit(extension_loaded("curl") && !extension_loaded("gd") ? 0 : 1);'],
+                                   env=dict(os.environ, LD_LIBRARY_PATH=str(root)), check=True)
                 finally:
                     shutil.rmtree(runtime)
 
