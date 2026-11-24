@@ -5,8 +5,8 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use App\Models\Server;
 use Illuminate\Support\Facades\{DB,Schema};
-use Paymenter\Extensions\Servers\Domains\Contracts\RegistrarDriver;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
+use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, RegistrarDriver};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 
 // Binding policy adapted from Enom d2c55e2 Services/RuntimeGuard.php.
@@ -60,7 +60,7 @@ final class AccountBindings
                 // The native transaction callback captures plaintext: never retain its exception trace.
                 throw new \DomainException('Registrar account configuration could not be saved.');
             }
-            if($enroll&&Schema::hasTable('domains_reminder_schedules')){ReminderSchedules::enroll($serverId);}
+            $this->scheduleReads($saved, $enroll);
             $phase = 'verification_finished';
             return $saved;
         } finally { $review?->finish($phase); }
@@ -115,10 +115,22 @@ final class AccountBindings
                     $review->record('authenticated_and_saved');
                 });
             } catch (\Throwable) { throw new \DomainException('Local account configuration could not be saved.'); }
-            if ($enroll && Schema::hasTable('domains_reminder_schedules')) { ReminderSchedules::enroll($serverId); }
+            $this->scheduleReads($binding, $enroll);
             $phase = 'authentication_finished';
             return $binding;
         } finally { $review->finish($phase); }
+    }
+
+    private function scheduleReads(AccountBinding $binding, bool $newAccount): void
+    {
+        if ($newAccount && Schema::hasTable('domains_reminder_schedules')) {
+            ReminderSchedules::enroll($binding->serverId);
+        }
+        if (app()->bound(Runtime::class)) {
+            // The verified save has committed. The regular schedule recovers a missed queue hint.
+            (new RuntimeDiagnostics(app(Clock::class)))->attempt('price_sync',
+                fn () => Runtime::observations()->sync($binding, RequestOrigin::Background), $binding->serverId);
+        }
     }
 
     private function uniqueLocalKey(#[\SensitiveParameter] array $credentials, int $serverId, string $registrar, Environment $environment, bool $lock = false): void
@@ -194,7 +206,7 @@ final class AccountBindings
                     $review->record('sandbox_enrollment_saved');return $binding;
                 });
             }catch(\Throwable){throw new \DomainException('Sandbox enrollment could not be saved.');}
-            if(Schema::hasTable('domains_reminder_schedules')){ReminderSchedules::enroll($serverId);}
+            $this->scheduleReads($saved, true);
             $phase='sandbox_enrollment_finished';return $saved;
         }finally{$review->finish($phase);}
     }
