@@ -22,6 +22,18 @@ app()->instance(OwnerPorts::class,$ports);app()->instance(OwnedDomains::class,$o
 $staff=staffUser([Staff::VIEW,'admin.domains.manage']);$staff->update(['first_name'=>'Sam','last_name'=>'Support']);$actor=$staff->fresh();Auth::setUser($actor);
 $view=static fn()=>Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id]);
 $open=static fn(string $row,string $action)=>$view()->mountAction(TestAction::make('edit_'.$action)->schemaComponent('relationManagerTabs.sheet','content'));
-$edit=static fn(string $row,string $action,array $data=[])=>$open($row,$action)->setActionData($data)->callMountedAction();
+// Submit the mounted form fields and action in the same Livewire request as the browser.
+$edit = static function (string $row, string $action, array $data = []) use ($open) {
+    $page = $open($row, $action);
+    $schema = $page->instance()->getMountedActionSchemaName();
+    $page->assertSchemaExists($schema);
+    $path = $page->instance()->{$schema}->getStatePath();
+    $updates = [];
+    foreach ($data as $field => $value) {
+        $updates[$path.'.'.$field] = $value;
+    }
+
+    return $page->update(calls: [['method' => 'callMountedAction', 'params' => [[]], 'path' => '']], updates: $updates);
+};
 $last=static fn(string $action)=>$d->operations()->where('action',$action)->orderByDesc('id')->first();
 $finish=static function(Operation $op)use($management,$driver):void{Illuminate\Support\Facades\Cache::flush();same('succeeded',$management->run($op->id,$driver)->state,'Staff '.$op->action.' uses the same queue and readback');};
