@@ -7,6 +7,7 @@ require_once __DIR__.'/Support/synthetic-invoice-attachment.php';
 require __DIR__.'/Support/namesilo-registration-fixture.php';
 require_once __DIR__.'/Support/staff-panel.php';
 require __DIR__.'/Support/money-receipt.php';
+require_once __DIR__.'/Support/fixture-checkpoint.php';
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\{Auth,Cache,DB};
 use Livewire\Livewire;
@@ -216,7 +217,21 @@ same(null,$op->fresh()->funding['refund_authorization']??null,'No refund after a
 echo "Release sends a held contact step order once.\n";
 
 // Cancel and refund cancels the order and its service, then refunds once through the gateway.
-$op=$heldOrder('held-contact-refund-placeholder.com');$viaGateway($op,'receipt_held_contact_refund');
+$op=$heldOrder('held-contact-refund-placeholder.com');
+$restoreHeld=nativeFixtureCheckpoint();
+$heldAt=$clock->instant;
+$nativeNow=Carbon\Carbon::now()->toImmutable();
+$heldReturns=MoneyReceiptGateway::$returns;
+$resetHeld=static function () use ($restoreHeld,$heldAt,$nativeNow,$heldReturns,$clock,$staff,$op): Operation {
+    $restoreHeld();
+    $clock->instant=$heldAt;
+    Carbon\Carbon::setTestNow($nativeNow);
+    Carbon\CarbonImmutable::setTestNow($nativeNow);
+    MoneyReceiptGateway::$returns=$heldReturns;
+    Auth::login($staff);
+    return $op->fresh();
+};
+$viaGateway($op,'receipt_held_contact_refund');
 MoneyReceiptGateway::$lost=false;MoneyReceiptGateway::$outcome='refunded';$sends=MoneyReceiptGateway::$sends;
 $words=OperationActions::refundWords($op);
 expect(str_starts_with($words,'Cancels this order and its service, then refunds $'.number_format((float)$op->amount,2).' to the original payment.'),'The confirm says it cancels first and what it refunds');
@@ -240,7 +255,7 @@ same([1,1],[$sent->contactAdd,$sent->registerDomain],'Cancel and refund sends no
 echo "Cancel and refund cancels first, then refunds once.\n";
 
 // A failed refund leaves the service cancelled and the refund retryable, with honest words.
-$op=$heldOrder('held-contact-refund-fails-placeholder.com');$viaGateway($op,'');$sends=MoneyReceiptGateway::$sends;
+$op=$resetHeld();$viaGateway($op,'');$sends=MoneyReceiptGateway::$sends;
 $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionVisible('refund')->assertActionVisible('release');
 $page->callAction('refund',['reason'=>'Customer asked for a refund'])->assertHasNoActionErrors()
     ->assertNotified(Notification::make()->warning()->persistent()->title('Cancelled, refund not finished')
@@ -288,7 +303,7 @@ same($before+1,$sent->contactAdd,'Nothing more is sent');
 echo "Both actions are refused once anything reached NameSilo.\n";
 
 // The saved contact step is bound to the original payload, so changed details cannot be released with it.
-$op=$heldOrder('held-contact-details-changed-placeholder.com');
+$op=$resetHeld();
 $payload=$op->payload;$payload['contacts']['registrant']['first_name']='Changed';
 \Paymenter\Extensions\Servers\Domains\Services\ContactSetup::recoveryWrite(fn()=>$op->update(['payload'=>$payload]));$op=$op->fresh();
 $before=[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$op->attempt];
@@ -302,7 +317,7 @@ same($before,[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$op->fresh(
 echo "Changed details cannot release a saved contact step.\n";
 
 // A completed unsent contact step cannot run again, even though its saved order details still match.
-$op=$heldOrder('held-contact-ended-placeholder.com');
+$op=$resetHeld();
 $row=ProfileContactOperation::where('operation_id',$op->id)->sole();
 ProfileContactOperation::writing(fn()=>$row->update(['state'=>'sealed','attempt'=>[...$row->attempt,
     'seal'=>'sealed','send_state'=>'possibly_sent','worker_key'=>str_repeat('a',32),'lease_until'=>$clock->now()->format(DATE_ATOM)]]));
@@ -362,7 +377,7 @@ same(0,ContactStepRetries::tries($sentAfter->fresh()),'Waiting for Orders spends
 echo "A queued contact retry whose window lapsed while Orders were off sends once they are on.\n";
 
 // A contact hold with nothing sent retries by itself a few spaced times, then stays for staff. It never cancels or refunds.
-$op=$heldOrder('held-contact-auto-retry-placeholder.com');$viaGateway($op,'receipt_held_contact_auto_retry');
+$op=$resetHeld();$viaGateway($op,'receipt_held_contact_auto_retry');
 $money=[$nativeMoney(),$serviceStatus($op),MoneyReceiptGateway::$sends];$before=[$sent->contactAdd,$sent->registerDomain];
 expect(!ContactStepRetries::readmit($op->id,$clock),'The first automatic try waits');
 foreach(ContactStepRetries::WAITS as $i=>$wait){
