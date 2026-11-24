@@ -149,7 +149,9 @@ $d=$row('active','register','succeeded',null,730);
 ObligationAlerts::record($d,'operation_review',time()-60,(int)$d->latestAcquisition->id);
 $cases['finished request with an alert from its hold']=[$d,'active','Active',null];
 
-$page=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('w2-case-')->set('tableRecordsPerPage',100)->assertSuccessful();
+$caseList=static fn()=>Livewire::actingAs($viewer)->test(ListDomains::class)
+    ->update(updates:['tableSearch'=>'w2-case-','tableRecordsPerPage'=>100]);
+$page=$caseList()->assertSuccessful();
 $columns=$page->instance()->getTable()->getColumns(); $records=$page->instance()->getTableRecords()->keyBy('id');
 $ids=static fn(string $key)=>DomainQueries::status(Domain::query()->where('domain','like','w2-case-%'),[$key])->orderBy('id')->pluck('id')->all();
 $members=[]; $wrong=[];
@@ -270,7 +272,7 @@ foreach (array_keys(DomainResource::statusOptions()) as $key) {
     same($expected,$ids($key),'Status filter matches the rows: '.$key);
 }
 // The filter on the real list page, with its search and page size, picks the same rows.
-$filtered=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('w2-case-')->set('tableRecordsPerPage',100)->filterTable('status',['awaiting_payment']);
+$filtered=$caseList()->filterTable('status',['awaiting_payment']);
 expect($filtered->instance()->getTableRecords()->contains('id',$cases['order: unpaid invoice'][0]->id)&&!$filtered->instance()->getTableRecords()->contains('id',$one->id),'Awaiting payment shows the unpaid order, not an Active domain');
 // One answer on every surface: the list, the heading, the Registration card and the request page.
 $oneView=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$one->id])->assertSee('Active')->assertDontSee('Registrar request needs a check');
@@ -298,7 +300,7 @@ same(['text'=>'Registrar request needs a check. Check request #9.','act'=>true],
 same('Sync stopped after a failed check. Use Resume sync below.',DomainFacts::note(['reason'=>null,'step'=>'Sync stopped after a failed check. Use Resume sync below.','act'=>true,'request'=>null],'failed')['text'],'A step about the sync does not say it twice');
 // The Registrar column is hidden by default, so a missing registrar account shows in the Note, amber like the domain's head.
 $orphan=$row('active','transfer','succeeded'); DB::table('domains_domains')->where('id',$orphan->id)->update(['account_fingerprint'=>str_repeat('0',64)]);
-$page=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('w2-case-')->set('tableRecordsPerPage',100);
+$page=$caseList();
 $columns=$page->instance()->getTable()->getColumns(); $record=$page->instance()->getTableRecords()->keyBy('id')[$orphan->id];
 same(['Registrar account not found. Check Registrars.',State::NeedsReview->label()],[$columns['note']->record($record)->getState(),$columns['status']->record($record)->getState()],'The list says the registrar account is missing and asks staff to look');
 // An ended domain places no orders, so a saved pause on it says nothing. A live one still says it.
@@ -310,7 +312,7 @@ expect(str_contains((string)DomainFacts::for($live->fresh())['Registrar']['sub']
 // Orders off: the list and the heading read the customer's word, then the request's reason. The request reads the same word.
 $offTransfer=$row('transfer_pending','transfer','held','processing'); $offChange=$row('something_new','nameservers','queued');
 Account::where('server_id',$seed->server_id)->update(['processing_enabled'=>false]);
-$page=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('w2-case-')->set('tableRecordsPerPage',100);
+$page=$caseList();
 $columns=$page->instance()->getTable()->getColumns(); $records=$page->instance()->getTableRecords()->keyBy('id');
 foreach ([$offTransfer,$offChange] as $d) {
     $op=$d->operations()->sole(); $line=RequestFacts::status($op); $status=DomainFacts::status($d->fresh());
@@ -384,7 +386,7 @@ ksort($seen); same(['off'=>['pending_registration'],'on'=>['on_hold']],$seen,'Th
 // Each list render reads the Orders switches once for every row's word, note and step, never once per row.
 $accounts->update(['processing_enabled'=>false]);$moreOff=[$row('registration_pending','register','queued'),$row('registration_pending','register','queued')];
 DB::enableQueryLog();DB::flushQueryLog();
-$page=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('w2-case-')->set('tableRecordsPerPage',100);
+$page=$caseList();
 $notes=$page->instance()->getTable()->getColumns()['note'];$built=$page->instance()->getTableRecords()->keyBy('id');
 foreach([$queuedOff,...$moreOff] as $d){$notes->record($built[$d->id])->getState();}
 $switches=array_values(array_filter(DB::getQueryLog(),static fn(array $q)=>str_contains($q['query'],'domains_accounts')&&str_contains($q['query'],'processing_enabled')));DB::disableQueryLog();
