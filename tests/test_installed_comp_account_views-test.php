@@ -71,12 +71,14 @@ expect(str_contains($domainPage->effects['partials']['action-modals.0']??'','We 
 expect(str_starts_with((string)Livewire::actingAs($staff)->test(ComplimentaryAccountSetting::class,['customer'=>$user->id])->instance()->turnOnAction()->getModalDescription(),'We pay for new registrations'),'Unnamed sites use neutral account funding copy');
 $pdf = App\Classes\PDF::generateInvoice($invoice->fresh());
 expect($pdf instanceof Barryvdh\DomPDF\PDF, 'The customer invoice uses the native PDF renderer');
+$pdfBytes = $pdf->output();
+expect(str_starts_with($pdfBytes, '%PDF-'), 'The native renderer produced a PDF attachment');
 $out=getenv('COMP_ACCOUNT_RENDER_DIR');
 if($out){
     expect(is_dir($out),'Existing review artifact directory required');
     writeRenderArtifact($out.'/staff-switch.html',$staffHtml);writeRenderArtifact($out.'/staff-domain.html',$domainHtml);
     writeRenderArtifact($out.'/customer-domain.html',$ownerHtml);writeRenderArtifact($out.'/customer-invoice.html',$invoiceHtml);writeRenderArtifact($out.'/invoice-pdf.html',$pdfHtml);
-    writeRenderArtifact($out.'/customer-invoice.pdf',$pdf->output());
+    writeRenderArtifact($out.'/customer-invoice.pdf',$pdfBytes);
     writeRenderArtifact($out.'/reports.json',json_encode(['before'=>$before,'after'=>$report->chart()['datasets'],'invoice_total'=>(float)$invoice->total,'transactions'=>$invoice->transactions()->count()],JSON_PRETTY_PRINT));
 }
 echo "Native staff switch, domain filter, customer invoice, negative PDF line and revenue reporting passed\n";$nativeSuccessful=true;
