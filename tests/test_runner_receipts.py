@@ -453,13 +453,14 @@ sudo() {
                 event_reads = []
                 read_text = Path.read_text
 
-                def execute(argv, *, grace_seconds, env):
+                def execute(argv, *, grace_seconds, env, wall, preexec_fn):
                     group, = root.glob('test-*')
                     self.assertNotIn('DOMAINS_TEST_CGROUP', env)
                     self.assertEqual((group/'memory.max').read_text(), '1048576')
                     self.assertEqual((group/'memory.swap.max').read_text(), '0')
                     self.assertEqual((group/'memory.oom.group').read_text(), '1')
-                    subprocess.run([*argv[:-1], '/bin/true'], env=env, check=True)
+                    self.assertEqual((argv, wall), (['probe'], 10))
+                    subprocess.run(['/bin/true'], env=env, preexec_fn=preexec_fn, check=True)
                     self.assertEqual((group/'cgroup.procs').read_text().strip(), '0')
                     (group/'memory.peak').write_text('4096')
                     (group/'memory.events').write_text(f'oom_kill {oom}\n')

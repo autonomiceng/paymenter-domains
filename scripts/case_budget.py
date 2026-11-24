@@ -4,11 +4,12 @@ import json
 import os
 from pathlib import Path
 import resource
+import signal
 import sys
 import time
 import uuid
 
-from process_supervisor import supervise
+from process_supervisor import STOP_SIGNALS, supervise
 
 
 def drain(group):
@@ -44,11 +45,11 @@ def main():
         controls = {prefix+key for prefix in ('DOMAINS_TEST_', 'PAY_TEST_')
                     for key in ('CGROUP', 'BUDGET', 'RECEIPTS', 'JOBS', 'OVERLAY', 'LIMITS')}
         env = {key: value for key, value in os.environ.items() if key not in controls}
-        # The shell joins before exec, so every descendant starts under the memory limit.
-        enter = ['sh', '-c', 'echo 0 > "$1" || exit 125; shift; exec "$@"',
-                 'enter-cgroup', str(group/'cgroup.procs')]
-        result = supervise(['timeout', '--kill-after=0.2s', str(args.wall), *enter, *args.command[1:]],
-                           grace_seconds=1, env=env)
+        def enter_cgroup():
+            # This dedicated, single-threaded controller forks directly into the test exec.
+            # Join before the test can start any children.
+            (group/'cgroup.procs').write_text('0')
+        result = supervise(args.command[1:], grace_seconds=1, env=env, wall=args.wall, preexec_fn=enter_cgroup)
         elapsed = time.monotonic()-started
     finally:
         drain(group)
@@ -66,9 +67,24 @@ def main():
                 memory_method='per_test_cgroup', peak_rss_bytes=rss, memory_events=events,
                 oom_kill=events['oom_kill'], cpu_seconds=int(cpu['usage_usec'])/1e6,
                 limits=dict(wall_seconds=args.wall, memory_bytes=args.memory))
-    args.receipt.write_text(json.dumps(data)+'\n')
+    if os.environ.get('DOMAINS_TEST_LIMITS') == 'wide':
+        data['memory_events'] = {key: str(value) for key, value in events.items()}
+    pending = args.receipt.with_name(args.receipt.name+'.'+group.name+'.pending')
+    try:
+        pending.write_text(json.dumps(data)+'\n')
+        pending.replace(args.receipt)
+    finally:
+        pending.unlink(missing_ok=True)
     return code
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    # Handle cancellation in supervise while the child is alive. Defer it during
+    # cgroup setup, drain and receipt publication so cancellation cannot strand a group.
+    mask = signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
+    try:
+        sys.exit(main())
+    finally:
+        for number in STOP_SIGNALS:
+            signal.signal(number, signal.SIG_DFL)
+        signal.pthread_sigmask(signal.SIG_SETMASK, mask)

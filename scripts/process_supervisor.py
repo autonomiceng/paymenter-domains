@@ -9,6 +9,9 @@ import subprocess
 import time
 
 
+STOP_SIGNALS = {signal.SIGTERM, signal.SIGINT}
+
+
 class Shutdown(BaseException):
     def __init__(self, signum):
         self.signum = signum
@@ -88,24 +91,29 @@ def cleanup(leader, grace=0):
         time.sleep(.01)
 
 
-def supervise(command, grace_seconds, *, env=None):
+def supervise(command, grace_seconds, *, env=None, wall=None, preexec_fn=None):
     """Run in a dedicated controller process that can adopt and reap this command's descendants."""
     # Linux reparents orphaned descendants here, rather than to the host init.
     libc = ctypes.CDLL(None, use_errno=True)
     if libc.prctl(36, 1, 0, 0, 0):  # PR_SET_CHILD_SUBREAPER
         raise OSError(ctypes.get_errno(), 'Cannot establish descendant ownership')
     children(os.getpid())
+    handled = STOP_SIGNALS if wall is None else STOP_SIGNALS | {signal.SIGALRM}
+
     def interrupted(signum, frame):
-        # Set dispositions before unwinding: a second signal must not abort
-        # the exception handler before it can drain owned descendants.
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        # Only the first signal initiates cleanup. A timer can also expire while cancelling.
+        for number in handled:
+            signal.signal(number, signal.SIG_IGN)
         raise Shutdown(signum)
-    signal.signal(signal.SIGTERM, interrupted)
-    signal.signal(signal.SIGINT, interrupted)
+    for number in handled:
+        signal.signal(number, interrupted)
     leader = None
+    mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
     try:
-        leader = subprocess.Popen(command, env=env)
+        signal.pthread_sigmask(signal.SIG_UNBLOCK, handled)
+        if wall is not None:
+            signal.setitimer(signal.ITIMER_REAL, wall)
+        leader = subprocess.Popen(command, env=env, preexec_fn=preexec_fn)
         while True:
             pid, status = os.waitpid(-1, 0)
             if pid == leader.pid:
@@ -115,13 +123,18 @@ def supervise(command, grace_seconds, *, env=None):
             return 125
         return leader.returncode
     except Shutdown as error:
-        cleanup(leader, grace_seconds)
-        return 128+error.signum
+        expired = error.signum == signal.SIGALRM
+        cleanup(leader, .2 if expired else grace_seconds)
+        return 124 if expired else 128+error.signum
     except BaseException:
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        for number in handled:
+            signal.signal(number, signal.SIG_IGN)
         cleanup(leader, grace_seconds)
         raise
+    finally:
+        if wall is not None:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.pthread_sigmask(signal.SIG_SETMASK, mask)
 
 
 def main():
