@@ -52,7 +52,10 @@ def environment(index, *, env, output, runtime, fixture, fixture_snapshot, runti
     return child
 
 
-def prepared_hashes(fixture, vendor_hashes):
+def prepared_hashes(fixture, vendor_hashes=None):
+    if vendor_hashes is None:
+        vendor = (fixture/'vendor').resolve(strict=True)
+        vendor_hashes = {'vendor/'+name: digest for name, digest in native.admitted_vendor_hashes(vendor).items()}
     snapshot = dict(vendor_hashes)
     for entry in fixture.iterdir():
         if entry.name == 'vendor':
@@ -69,11 +72,7 @@ def prepared_hashes(fixture, vendor_hashes):
 def environments(env, output, jobs, runtime=None):
     output = output.resolve()
     fixture = Path(env['PAYMENTER_TEST_FIXTURE']) if env.get('PAYMENTER_TEST_FIXTURE') else None
-    fixture_snapshot = None
-    if fixture:
-        vendor = (fixture/'vendor').resolve(strict=True)
-        fixture_snapshot = prepared_hashes(fixture, {'vendor/'+name: value for name, value
-                                                     in native.admitted_vendor_hashes(vendor).items()})
+    fixture_snapshot = prepared_hashes(fixture) if fixture else None
     runtime_snapshot = runtime_hashes(runtime) if runtime else None
     create = partial(environment, env=env, output=output, runtime=runtime, fixture=fixture,
                      fixture_snapshot=fixture_snapshot, runtime_snapshot=runtime_snapshot)
@@ -81,6 +80,18 @@ def environments(env, output, jobs, runtime=None):
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         workers = list(pool.map(create, range(jobs)))
     return workers, fixture_snapshot, runtime_snapshot
+
+
+def record_source_check(rows, match, *, worker=None):
+    unchanged, error = match
+    if not unchanged:
+        scope = 'suite' if worker is None else 'worker'
+        print(json.dumps({'source_mismatch': scope, 'worker': worker,
+                          'commands': [row['argv'] for row in rows]}), flush=True)
+    for row in rows:
+        if worker is not None or not unchanged:
+            row.update(runtime_unchanged=unchanged, guard_complete=True,
+                       runtime_error=None if unchanged else f"Source changed for worker {row['worker']}: {error or 'digest mismatch'}")
 
 
 def verify_worker(env, *, fixture_snapshot, runtime_snapshot):
@@ -99,35 +110,29 @@ def verify(workers, fixture_snapshot, runtime_snapshot):
         list(pool.map(check, workers))
 
 
-_COMMAND_SNAPSHOTS = {}
+def pristine_fixture_check(env, original):
+    fixture = Path(env['PAYMENTER_TEST_FIXTURE'])
+    vendor = fixture/'vendor'
+    vendor_hashes = None if original is None else {name: digest for name, digest in original.items()
+                                                  if name.startswith('vendor/')}
+    snapshot = prepared_hashes(fixture, vendor_hashes)
+    return partial(native.verify, fixture, fixture_snapshot=snapshot,
+                   shared_vendor=vendor.resolve(strict=True) if vendor.is_symlink() else None,
+                   force_vendor=True)
 
 
 @contextmanager
-def command_environment(env, *, fixture_snapshot=None):
-    """Keep generated app files private to a case; reuse only verified vendor files."""
+def command_environment(env):
+    """Dispose of each case's app. The suite verifies the shared inputs."""
     if not env or not env.get('PAYMENTER_TEST_FIXTURE'):
         yield env
         return
     fixture = Path(env['PAYMENTER_TEST_FIXTURE'])
-    vendor = (fixture/'vendor').resolve(strict=True)
-    if fixture_snapshot is not None:
-        key = (str(fixture), id(fixture_snapshot))
-        cached = _COMMAND_SNAPSHOTS.get(key)
-        if cached is None:
-            original = fixture_snapshot
-            fixture_snapshot = prepared_hashes(fixture, {name: digest for name, digest in original.items()
-                                                         if name.startswith('vendor/')})
-            cached = _COMMAND_SNAPSHOTS[key] = (original, fixture_snapshot)
-        fixture_snapshot = cached[1]
-    with installed_fixture.application(fixture, 'case', verify_vendor=fixture_snapshot is None) as (root, app):
-        temporary = root/'tmp'; temporary.mkdir()
-        child = dict(env, PAYMENTER_TEST_FIXTURE=str(app), TMPDIR=str(temporary),
-                     TMP=str(temporary), TEMP=str(temporary))
-        try:
-            yield child
-        finally:
-            if fixture_snapshot is not None:
-                native.verify(app, fixture_snapshot=fixture_snapshot, shared_vendor=vendor)
+    with installed_fixture.application(fixture, 'case', verify_vendor=False) as (root, app):
+        temporary = root/'tmp'
+        temporary.mkdir()
+        yield dict(env, PAYMENTER_TEST_FIXTURE=str(app), TMPDIR=str(temporary),
+                   TMP=str(temporary), TEMP=str(temporary))
 
 
 def prepare_database(env, output, root):

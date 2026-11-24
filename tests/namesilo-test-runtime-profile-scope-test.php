@@ -4,6 +4,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 require __DIR__.'/native-app.php';
+require_once __DIR__.'/Support/fixture-checkpoint.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,CredentialAuthenticator,RegistrationProtocol};
 use Paymenter\Extensions\Servers\Domains\Data\{Environment,Money,RequestBudget,RequestContext,RequestOrigin};
@@ -26,19 +27,16 @@ function curl_close($h):void {}
 // Prepare funded native orders using the existing commerce fixture.
 $orders=[];\Carbon\Carbon::setTestNow($clock->now());\Carbon\CarbonImmutable::setTestNow($clock->now());
 foreach(['registration'=>'register','transfer'=>'transfer'] as $route=>$action){
-    foreach(['ok','unsent','lost','badread','readfail','differentroles'] as $mode){
-        $cart=commerceCart($user);commerceAdd($cart,$native->product($tlds[1],$action),placeholderComFixtureName('test-profile-'.$action.'-'.$mode.'-placeholder.com'));
-        commerceCheckout($user,$cart)->assertHasNoErrors();
-        $op=Domain::latest('id')->firstOrFail()->operations()->sole();
-        DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'paid']);
-        \App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>$op->amount,'fee'=>'0.00','status'=>'succeeded']);
-        if($action==='transfer'){
-            $request=\Illuminate\Http\Request::create('/internal-transfer-input','POST',['transfer_code'=>'SyntheticOnly']);
-            $request->setUserResolver(fn()=>$user);$transfers->submitCode($request,$op->id);$op=$op->fresh();
-        }
-        if($mode==='differentroles'){$payload=$op->payload;$payload['contacts']['admin']['email_address']='other@example.com';$op->payload=$payload;DB::table('domains_operations')->where('id',$op->id)->update(['payload'=>$op->getAttributes()['payload']]);}
-        $orders[]=[$route,$mode,$op->id];
+    $cart=commerceCart($user);commerceAdd($cart,$native->product($tlds[1],$action),placeholderComFixtureName('test-profile-'.$action.'-placeholder.com'));
+    commerceCheckout($user,$cart)->assertHasNoErrors();
+    $op=Domain::latest('id')->firstOrFail()->operations()->sole();
+    DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'paid']);
+    \App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>$op->amount,'fee'=>'0.00','status'=>'succeeded']);
+    if($action==='transfer'){
+        $request=\Illuminate\Http\Request::create('/internal-transfer-input','POST',['transfer_code'=>'SyntheticOnly']);
+        $request->setUserResolver(fn()=>$user);$transfers->submitCode($request,$op->id);$op=$op->fresh();
     }
+    foreach(['ok','unsent','lost','badread','readfail','differentroles'] as $mode){$orders[]=[$route,$mode,$op->id];}
 }
 $registry=new RegistrarRegistry;
 $registry->register('namesilo',['api_key'],new AccountVerifier,static fn()=>throw new \LogicException('No reader needed for contact preparation'),
@@ -56,7 +54,13 @@ app()->instance(AccountBindings::class,$testBindings);
 config(['domains.namesilo_account.environment'=>'test']);
 $claims=new OperationClaims($testBindings,$clock,$caps);$field=static fn(object $object,string $class,string $name)=>(new \ReflectionProperty($class,$name))->getValue($object);
 $ports=TestRuntime::factory($binding)($binding);
+$restoreFundedOrders=nativeFixtureCheckpoint();
 foreach($orders as [$route,$mode,$id]){
+    $restoreFundedOrders();
+    if($mode==='differentroles'){
+        $op=Operation::findOrFail($id);$payload=$op->payload;$payload['contacts']['admin']['email_address']='other@example.com';
+        $op->payload=$payload;DB::table('domains_operations')->where('id',$id)->update(['payload'=>$op->getAttributes()['payload']]);
+    }
     $port=$field($ports['acquisition'],AcquisitionPorts::class,$route);
     $writer=$field($field($port,AcquisitionPort::class,'engine'),DomainOperations::class,'writer');
     $profiles=$field($port,AcquisitionPort::class,'profiles');

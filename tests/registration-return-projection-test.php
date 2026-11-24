@@ -1,7 +1,9 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Native reserved return plans and customer wording.
 declare(strict_types=1);
+$fixtureReadyRegistration = true;
 require __DIR__.'/Support/operation-fixture.php';
+require_once __DIR__.'/Support/fixture-checkpoint.php';
 require __DIR__.'/Support/money-receipt.php';
 require __DIR__.'/Support/owner-pages.php';
 use App\Models\{Credit,Gateway,InvoiceTransaction,Role};
@@ -59,9 +61,20 @@ $reviewed=static function(Operation $saved,string $label)use($owners,$user,$cloc
         catch(DomainException $e){same('Retained return plan needs review.',$e->getMessage(),$label.': staff credit context asks for review');}
     },$label);
 };
+// Every projection runs with unrelated orders in the same customer's list and money history.
+$orders=[];
+foreach(['register','transfer'] as $action){
+    foreach(['paid'=>true,'unpaid'=>false] as $key=>$paid){
+        $orders[$action][$key]=$new('return-projection-'.$action.'-'.$key.'-placeholder.com',$paid,true,$action)->id;
+    }
+}
+$restoreOrders=nativeFixtureCheckpoint();
+$initialReturns=MoneyReceiptGateway::$returns;
 foreach(['register','transfer']as$action){
 foreach(['split','returned','credited',null] as $index=>$expected){
-    $op=$new('return-projection-'.$action.'-'.$index.'-placeholder.com',$expected!==null,true,$action);$op->update(['state'=>'held','safe_code'=>'staff_review']);
+    $restoreOrders();MoneyReceiptGateway::$returns=$initialReturns;
+    $op=Operation::findOrFail($orders[$action][$expected===null?'unpaid':'paid']);
+    $op->update(['state'=>'held','safe_code'=>'staff_review']);
     $bridge=$expected==='split'?100:0;$total=PricingRule::minor($op->amount);
     if(in_array($expected,['split','returned'],true)){
         DB::table('invoice_transactions')->where('invoice_id',$op->invoice_id)->update(['gateway_id'=>$gateway->id,'transaction_id'=>'synthetic-receipt-'.$index,'amount'=>PricingRule::decimal($total-$bridge)]);

@@ -1,6 +1,7 @@
 <?php
 // Synthetic management contacts through the genuine durable engine. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/fixture-checkpoint.php';
 require __DIR__.'/bootstrap.php';
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 $transferEnvironment=Environment::Live;
@@ -75,8 +76,10 @@ expect($fresh->id!==$old->id,'An identical save replaces a pair held by an exhau
 same(['rejected','rejected'],[$old->fresh()->state,$step->fresh()->state],'Replacement closes both old operations');
 $management->run($old->id,$driver);$management->run($step->id,$driver);same($sent,count($writes()),'The old pair never sends');
 // Reconstruction can recover a returned ID by reading only that ID. An unknown creation never replays.
+[$d,$driver,$original]=$holding('sequence');
+$restoreHolding=nativeRegistrarCheckpoint($clock,$ms);
 foreach(['default','mismatch','contactAdd','lost'] as $fault){
-    [$d,$driver,$original]=$holding('sequence-'.$fault);$input=['role'=>'all','contact'=>$original->payload['contacts']['registrant']];
+    $restoreHolding();$d->refresh();$original->refresh();$input=['role'=>'all','contact'=>$original->payload['contacts']['registrant']];
     $op=$submit($d,$driver,'contacts',$input);$ms->fault=$fault;$management->run($op->id,$driver);
     same(['contactAdd'],array_column($writes(),0),'Unproven creation never associates');
     $stage=$d->operations()->where('action','contact_profile')->sole();same('uncertain',$stage->state,'Unproven creation retains its sealed attempt');
@@ -115,8 +118,10 @@ $management->run($op->id,$driver);same(2,count($writes()),'Unknown association c
 $ms->fault='';$ms->route='apibatch';same('succeeded',$management->reconcile($op->id,$driver)->state,'Independent role readback proves a lost association');
 same(2,count($writes()),'Association recovery remains read-only');
 // Current native ownership and owner-bound profile identity are required after creation, too.
+[$d,$driver,$original]=$holding('drift');
+$restoreHolding=nativeRegistrarCheckpoint($clock,$ms);
 foreach(['owner','profile'] as $drift){
-    [$d,$driver,$original]=$holding('drift-'.$drift);$input=['role'=>'registrant','contact'=>$original->payload['contacts']['registrant']];
+    $restoreHolding();$d->refresh();$original->refresh();$input=['role'=>'registrant','contact'=>$original->payload['contacts']['registrant']];
     $op=$submit($d,$driver,'contacts',$input);$management->run($op->id,$driver);Cache::flush();
     $stage=$d->operations()->where('action','contact_profile')->sole();
     if($drift==='owner'){\Illuminate\Support\Facades\DB::table('services')->where('id',$d->service_id)->update(['user_id'=>commerceUser()->id]);}

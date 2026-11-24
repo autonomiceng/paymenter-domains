@@ -9,6 +9,9 @@ import subprocess
 import time
 
 
+STOP_SIGNALS = {signal.SIGTERM, signal.SIGINT}
+
+
 class Shutdown(BaseException):
     def __init__(self, signum):
         self.signum = signum
@@ -88,6 +91,52 @@ def cleanup(leader, grace=0):
         time.sleep(.01)
 
 
+def supervise(command, grace_seconds, *, env=None, wall=None, preexec_fn=None):
+    """Run in a dedicated controller process that can adopt and reap this command's descendants."""
+    # Linux reparents orphaned descendants here, rather than to the host init.
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(36, 1, 0, 0, 0):  # PR_SET_CHILD_SUBREAPER
+        raise OSError(ctypes.get_errno(), 'Cannot establish descendant ownership')
+    children(os.getpid())
+    handled = STOP_SIGNALS if wall is None else STOP_SIGNALS | {signal.SIGALRM}
+
+    def interrupted(signum, frame):
+        # Only the first signal initiates cleanup. A timer can also expire while cancelling.
+        for number in handled:
+            signal.signal(number, signal.SIG_IGN)
+        raise Shutdown(signum)
+    for number in handled:
+        signal.signal(number, interrupted)
+    leader = None
+    mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+    try:
+        signal.pthread_sigmask(signal.SIG_UNBLOCK, handled)
+        if wall is not None:
+            signal.setitimer(signal.ITIMER_REAL, wall)
+        leader = subprocess.Popen(command, env=env, preexec_fn=preexec_fn)
+        while True:
+            pid, status = os.waitpid(-1, 0)
+            if pid == leader.pid:
+                leader.returncode = os.waitstatus_to_exitcode(status)
+                break
+        if not cleanup(leader):
+            return 125
+        return leader.returncode
+    except Shutdown as error:
+        expired = error.signum == signal.SIGALRM
+        cleanup(leader, .2 if expired else grace_seconds)
+        return 124 if expired else 128+error.signum
+    except BaseException:
+        for number in handled:
+            signal.signal(number, signal.SIG_IGN)
+        cleanup(leader, grace_seconds)
+        raise
+    finally:
+        if wall is not None:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--grace-seconds', type=float, default=0)
@@ -96,38 +145,8 @@ def main():
     command = args.command[1:] if args.command[:1] == ['--'] else args.command
     if not command or args.grace_seconds < 0:
         parser.error('A command and nonnegative grace period are required.')
-    # Linux reparents orphaned descendants here, rather than to the host init.
-    libc = ctypes.CDLL(None, use_errno=True)
-    if libc.prctl(36, 1, 0, 0, 0):  # PR_SET_CHILD_SUBREAPER
-        raise OSError(ctypes.get_errno(), 'Cannot establish descendant ownership')
-    children(os.getpid())
-    def interrupted(signum, frame):
-        # Set dispositions before unwinding: a second signal must not abort
-        # the exception handler before it can drain owned descendants.
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        signal.signal(signal.SIGINT, signal.SIG_IGN)
-        raise Shutdown(signum)
-    signal.signal(signal.SIGTERM, interrupted)
-    signal.signal(signal.SIGINT, interrupted)
-    leader = None
-    try:
-        leader = subprocess.Popen(command)
-        while True:
-            pid, status = os.waitpid(-1, 0)
-            if pid == leader.pid:
-                leader.returncode = os.waitstatus_to_exitcode(status)
-                break
-        if not cleanup(leader):
-            return 125
-        return leader.returncode if leader.returncode >= 0 else 128-leader.returncode
-    except Shutdown as error:
-        cleanup(leader, args.grace_seconds)
-        return 128+error.signum
-    except BaseException:
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        signal.signal(signal.SIGINT, signal.SIG_IGN)
-        cleanup(leader, args.grace_seconds)
-        raise
+    code = supervise(command, args.grace_seconds)
+    return code if code >= 0 else 128-code
 
 
 if __name__ == '__main__':

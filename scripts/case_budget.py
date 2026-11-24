@@ -4,10 +4,12 @@ import json
 import os
 from pathlib import Path
 import resource
-import subprocess
+import signal
 import sys
 import time
 import uuid
+
+from process_supervisor import STOP_SIGNALS, supervise
 
 
 def drain(group):
@@ -22,11 +24,6 @@ def drain(group):
 
 
 def main():
-    if sys.argv[1] == '--enter':
-        (Path(sys.argv[2])/'cgroup.procs').write_text(str(os.getpid()))
-        env = {k: v for k, v in os.environ.items() if k not in
-               {'DOMAINS_TEST_CGROUP', 'DOMAINS_TEST_BUDGET', 'DOMAINS_TEST_RECEIPTS', 'DOMAINS_TEST_JOBS'}}
-        os.execvpe(sys.argv[3], sys.argv[3:], env)
     parser = argparse.ArgumentParser()
     parser.add_argument('--name', required=True)
     parser.add_argument('--test-scope', action='store_true', required=True)
@@ -35,7 +32,7 @@ def main():
     parser.add_argument('--receipt', type=Path, required=True)
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
-    if not 0 < args.wall <= 65 or not 0 < args.memory <= 768*1024**2 or args.command[:1] != ['--']:
+    if not 0 < args.wall <= 65 or not 0 < args.memory <= 768*1024**2 or args.command[:1] != ['--'] or len(args.command) < 2:
         parser.error('Invalid test limits or command')
     group = Path(os.environ['DOMAINS_TEST_CGROUP'])/('test-'+uuid.uuid4().hex)
     group.mkdir()
@@ -45,8 +42,14 @@ def main():
         (group/'memory.swap.max').write_text('0')
         (group/'memory.oom.group').write_text('1')
         started = time.monotonic()
-        result = subprocess.run(['timeout', '--kill-after=0.2s', str(args.wall), sys.executable,
-                                 __file__, '--enter', str(group), *args.command[1:]])
+        controls = {prefix+key for prefix in ('DOMAINS_TEST_', 'PAY_TEST_')
+                    for key in ('CGROUP', 'BUDGET', 'RECEIPTS', 'JOBS', 'OVERLAY', 'LIMITS')}
+        env = {key: value for key, value in os.environ.items() if key not in controls}
+        def enter_cgroup():
+            # This dedicated, single-threaded controller forks directly into the test exec.
+            # Join before the test can start any children.
+            (group/'cgroup.procs').write_text('0')
+        result = supervise(args.command[1:], grace_seconds=1, env=env, wall=args.wall, preexec_fn=enter_cgroup)
         elapsed = time.monotonic()-started
     finally:
         drain(group)
@@ -59,14 +62,29 @@ def main():
             group.rmdir()
 
     rss = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss*1024
-    code = result.returncode or int(bool(events['oom_kill']) or elapsed > args.wall or max(rss, peak) > args.memory)
-    data = dict(exit=code, process_exit=result.returncode, wall_seconds=elapsed, memory_bytes=peak,
+    code = result or int(bool(events['oom_kill']) or elapsed > args.wall or max(rss, peak) > args.memory)
+    data = dict(exit=code, process_exit=result, wall_seconds=elapsed, memory_bytes=peak,
                 memory_method='per_test_cgroup', peak_rss_bytes=rss, memory_events=events,
                 oom_kill=events['oom_kill'], cpu_seconds=int(cpu['usage_usec'])/1e6,
                 limits=dict(wall_seconds=args.wall, memory_bytes=args.memory))
-    args.receipt.write_text(json.dumps(data)+'\n')
+    if os.environ.get('DOMAINS_TEST_LIMITS') == 'wide':
+        data['memory_events'] = {key: str(value) for key, value in events.items()}
+    pending = args.receipt.with_name(args.receipt.name+'.'+group.name+'.pending')
+    try:
+        pending.write_text(json.dumps(data)+'\n')
+        pending.replace(args.receipt)
+    finally:
+        pending.unlink(missing_ok=True)
     return code
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    # Handle cancellation in supervise while the child is alive. Defer it during
+    # cgroup setup, drain and receipt publication so cancellation cannot strand a group.
+    mask = signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
+    try:
+        sys.exit(main())
+    finally:
+        for number in STOP_SIGNALS:
+            signal.signal(number, signal.SIG_DFL)
+        signal.pthread_sigmask(signal.SIG_SETMASK, mask)

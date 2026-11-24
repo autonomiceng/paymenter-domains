@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/acquisition-retirement.php';
+require_once __DIR__.'/Support/fixture-checkpoint.php';
 use App\Models\{InvoiceTransaction,Server};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
@@ -79,9 +80,12 @@ foreach(['register','transfer'] as $action){
     $raise($op);$retirement->inspect($op->domain_id);
     $check(fn()=>same(0,$open($op),$action.' completed acquisition remains valid with follow-up work'));
 
+    $clock->instant=$now;
+    $baseline=$new(placeholderComFixtureName('retirement-'.$action.'-conflict-placeholder.com'),action:$action);
+    $restore=nativeFixtureCheckpoint();
     foreach(['identity','mixed','processing','partial','send','money'] as $fault){
-        $clock->instant=$now;
-        $bad=$new(placeholderComFixtureName('retirement-'.$action.'-'.$fault.'-placeholder.com'),action:$action);
+        $restore();
+        $bad=$baseline->fresh();
         if($fault==='identity'){DB::table('invoice_items')->where('id',$bad->invoice_item_id)->update(['quantity'=>2]);}
         if($fault==='mixed'){App\Models\Invoice::find($bad->invoice_id)->items()->create(['reference_type'=>'synthetic','price'=>'1.00','quantity'=>1,'description'=>'Synthetic additional line']);}
         if($fault==='processing'){InvoiceTransaction::create(['invoice_id'=>$bad->invoice_id,'amount'=>'1.00','fee'=>'0.00','status'=>'processing']);}

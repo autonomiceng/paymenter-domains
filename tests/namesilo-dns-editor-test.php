@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering. Synthetic shared DNS editor coverage.
 declare(strict_types=1);
 require __DIR__.'/Support/namesilo-dns-form.php';
+require_once __DIR__.'/Support/fixture-checkpoint.php';
 use Filament\Actions\Testing\TestAction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{Auth,Cache};
@@ -14,7 +15,10 @@ use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{DnsForm,DnsManagem
 use Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence;
 use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,ObservationProjection,OwnedDomains,OwnerPorts,OwnerSetup,Refunds,TransferInputs};
 // A middle change that used its five unsent tries keeps the editor after a settings change, and a fresh save finishes the rest.
-$setup('dns-drift',[$a,$txt,$caa,$srv]);$seed=$submit($d,$driver,'dns',['records'=>[$a,$txt,$cname]]);Cache::flush();$management->run($seed->id,$driver);
+$setup('dns-form',[$a,$txt,$caa,$srv]);
+$seed=$submit($d,$driver,'dns',['records'=>[$a,$txt,$cname]]);Cache::flush();
+same('succeeded',$management->run($seed->id,$driver)->state,'Synthetic seed save completes');
+$restoreSeed=nativeRegistrarCheckpoint($clock,$wire,$ms);
 $rows=$form();$rows[0]['address']='192.0.2.5';$rows[1]['address']='v=spf1 a -all';$rows[]=['name'=>'mail','type'=>'A','address'=>'192.0.2.6','mx_pref'=>'','_source'=>''];$post($rows);$op=$latest();
 $steps=$d->operations()->where('action','dns')->where('id','<=',$op->id)->orderByDesc('id')->limit(3)->get()->reverse()->values();
 Cache::flush();$management->run($op->id,$driver);same('succeeded',$steps[0]->fresh()->state,'The first change is confirmed');$wire->fault='missing';
@@ -31,8 +35,7 @@ expect($fresh->id!==$op->id,'A fresh save replaces the unsent request');same('ma
 for($i=0;$i<3&&$fresh->fresh()->state!=='succeeded';$i++){Cache::flush();$management->run($fresh->id,$driver);}
 same('succeeded',$fresh->fresh()->state,'The fresh request completes');same(['dnsUpdateRecord','dnsAddRecord'],$wire->writes,'Only the remaining changes are sent');
 // The opt-in adapter edits standard rows in the shared editor; CAA and SRV stay read-only.
-$setup('dns-form',[$a,$txt,$caa,$srv]);
-$seed=$submit($d,$driver,'dns',['records'=>[$a,$txt,$cname]]);Cache::flush();same('succeeded',$management->run($seed->id,$driver)->state,'Synthetic seed save completes');$wire->writes=[];
+$restoreSeed();$d=$d->fresh();$wire->writes=[];
 same([['name'=>'@','type'=>'A','address'=>'192.0.2.1','mx_pref'=>10],['name'=>'@','type'=>'TXT','address'=>'v=spf1 -all','mx_pref'=>10],['name'=>'www','type'=>'CNAME','address'=>'example.net.','mx_pref'=>10]],
     $section()['records'],'Standard rows are editable without provider IDs or TTLs');
 $dom=$page();$html=$dom->document->saveHTML();
@@ -97,6 +100,6 @@ same($sortById($others),$sortById(array_values(array_filter($wire->records,fn($r
 // Saved records stay counted when DNS is closed again, and both sides still say why and what to do.
 // The confirmed save is the last records check, so the owner page gives its time once in the Checked line.
 $driver=$ordinary;$dom=$page();$row=$text($dom->query('//li[@id="dns"]/span[contains(@class,"domains-row__v")]')->item(0));$checked=$text($dom->query('//p[starts-with(normalize-space(.),"Checked ")]')->item(0));
-expect(str_starts_with($row,'4 records')&&str_starts_with($checked,'Checked ')&&str_ends_with($row,$off),'Owner keeps the count and its time and gets the reason and next step');same(0,$page()->query('//li[@id="dns"]//form')->length,'No records form with saved records either');
+expect(str_starts_with($row,'4 records')&&str_starts_with($checked,'Checked ')&&str_ends_with($row,$off),'Owner keeps the count and its time and gets the reason and next step');same(0,$dom->query('//li[@id="dns"]//form')->length,'No records form with saved records either');
 $html=html_entity_decode($staffPage()->html(),ENT_QUOTES|ENT_HTML5);expect(str_contains($html,'4 records')&&str_contains($html,'As of ')&&str_contains($html,$off),'Staff keep the count and get the reason and next step');
 $nativeSuccessful=true;echo "namesilo-dns-editor-test.php passed\n";

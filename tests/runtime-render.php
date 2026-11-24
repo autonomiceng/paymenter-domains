@@ -1,7 +1,7 @@
 <?php
 // Installed native panel and engine-owned customer projections. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/runtime-presenter-test.php';$nativeSuccessful=false;require_once __DIR__.'/Support/staff-panel.php';require __DIR__.'/Support/storefront.php';
+require __DIR__.'/Support/runtime-presenter-fixture.php';require_once __DIR__.'/Support/staff-panel.php';require __DIR__.'/Support/storefront.php';
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\{Auth,Blade};
 use Illuminate\Support\HtmlString;

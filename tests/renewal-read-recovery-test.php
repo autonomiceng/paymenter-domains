@@ -2,6 +2,8 @@
 // Required renewal subread recovery; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
+$fixtureReadyRegistration = true;
+$reuseRenewalHolding = true;
 require __DIR__.'/Support/renewal-execution.php';
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;

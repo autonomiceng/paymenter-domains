@@ -1,6 +1,8 @@
 <?php
 // Native staff workflow boundaries; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$fixtureReadyRegistration = true;
+$reuseRenewalHolding = true;
 require __DIR__.'/Support/staff-operation-fixture.php';
 use App\Models\{Credit,InvoiceTransaction};
 use Illuminate\Support\Facades\{Auth,DB};
@@ -91,7 +93,6 @@ same(2,(int)DB::table('domains_observation_work')->where('id',$stopped)->value('
 DB::table('domains_observation_work')->where('id',$stopped)->delete();ObservationRecords::hold($check->domain->fresh(),'records_unavailable',$clock->now());
 $noRow=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionHidden('resume_observation')->assertSee('Use Sync now.')->assertDontSee('Use Resume sync');
 $noRow->assertActionVisible('sync_now');
-Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionHidden('resume_observation');
 // Any domain can stop syncing. One with no request resumes on its own page, through the same writer, audited in its history.
 [$solo]=$prepare(placeholderComFixtureName('staff-solo-placeholder.com'));$run($solo,'recheck');$soloDomain=$solo->domain->fresh();
 DB::table('domains_observation_work')->where('domain_id',$soloDomain->id)->delete();DB::table('domains_operations')->where('id',$solo->id)->delete();

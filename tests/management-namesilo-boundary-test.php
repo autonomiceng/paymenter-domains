@@ -1,13 +1,16 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/fixture-checkpoint.php';
 require __DIR__.'/Support/management-namesilo.php';
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol;
 use Paymenter\Extensions\Servers\Domains\Data\{Capabilities, Capability, ManagementRequest, ManagementResult, RequestContext, Support};
 use Paymenter\Extensions\Servers\Domains\Services\{ManagementCorrections, ManagementPayload};
+[$d,$driver]=$holding('adverse');
+$restoreHolding=nativeRegistrarCheckpoint($clock,$ms);
 foreach (['replace','add','remove','old_ip','privacy_terms'] as $mode) {
-    [$d,$driver]=$holding('adverse-'.$mode);
+    $restoreHolding();$d->refresh();
     $adverse=new class($binding,fn()=>throw new LogicException('Adverse driver reached wire')) extends ManagementProtocol {
         public string $mode;
         public function capabilities(): Capabilities { return new Capabilities($this->binding,['lock'=>new Capability(Support::Supported)]); }
@@ -50,8 +53,10 @@ Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clo
 $observe->fault=''; same('succeeded',$reconcile->run($original->id)->state,'Original acquisition reconciles after bound corrections');
 expect(isset($d->fresh()->renewal_policy['billing_anchor']),'Independent financial reconciliation establishes anchor');
 same($originalWire,$state->calls,'Correction and completion never replay original transfer');
+[$d,$driver,$original]=$holding('idle-correction',false);
+$restoreHolding=nativeRegistrarCheckpoint($clock,$ms,$observe);
 foreach (['queued','held'] as $stateName) {
-    [$d,$driver,$original]=$holding('idle-correction-'.$stateName,false);
+    $restoreHolding();$d->refresh();$original->refresh();
     $op=$management->request($user,$d->id,'auto_renew_off',[],$key(),$driver,correction:$original->operation_key);
     if ($stateName==='held') { $ms->fault='owner'; same('held',$management->run($op->id,$driver)->state,'Not-yet-owned correction stays unsent'); }
     same([],$writes(),'Idle correction has no writes');

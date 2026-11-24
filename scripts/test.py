@@ -299,8 +299,9 @@ def shutdown(process, graceful, *, supervised):
     except subprocess.TimeoutExpired as drain:
         return drain.output or b'', drain.stderr or b''
 
-def execute(argv, *, cwd, env, timeout=60, graceful=0, processes=None, index=None, rss_path=None):
+def execute(argv, *, cwd, env, timeout=60, graceful=0, processes=None, index=None, rss_path=None, supervised=False):
     if rss_path is not None:
+        supervised = True
         argv = [sys.executable, str(SUPERVISOR), '--grace-seconds', str(max(graceful, 1)), '--',
                 '/usr/bin/time', '-f', '%M', '-o', str(rss_path), '--', *argv]
     with subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -311,10 +312,10 @@ def execute(argv, *, cwd, env, timeout=60, graceful=0, processes=None, index=Non
             stdout, stderr = process.communicate(timeout=timeout)
             return stdout, stderr, process.returncode, False
         except subprocess.TimeoutExpired:
-            stdout, stderr = shutdown(process, graceful, supervised=rss_path is not None)
+            stdout, stderr = shutdown(process, graceful, supervised=supervised)
             return stdout, stderr, 124, True
         except BaseException as error:
-            error.captured_output = shutdown(process, graceful, supervised=rss_path is not None)
+            error.captured_output = shutdown(process, graceful, supervised=supervised)
             raise
         finally:
             if processes is not None:
@@ -351,6 +352,12 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
     with timing('runtime_snapshot', timings):
         before = hashes()
         fingerprint = runtime_fingerprint() if jobs > 1 else None
+        if worker_check:
+            worker_checks = [worker_check]
+        else:
+            original = dependency[1] if dependency else None
+            worker_checks = [test_workers.pristine_fixture_check(child, original)
+                             for child in (workers or [env]) if (child or {}).get('PAYMENTER_TEST_FIXTURE')]
     stopped, scheduling = threading.Event(), threading.Lock()
     processes, failures = Processes(), []
 
@@ -365,20 +372,23 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
     def command(index, worker):
         kind, argv = commands[index]
         started = time.monotonic()
-        attempted[index] = (kind, argv, started)
+        attempted[index] = (kind, argv, started, worker)
         slow = Path(argv[-1]).name.startswith('test_installed_') or Path(argv[-1]).name in SLOW_NATIVE
         timeout = (3000 if kind == 'mariadb' else 300 if kind == 'native' and slow
                    else 120 if kind == 'native' else 180 if kind == 'ui' else 60)
         bounded = bool((env or {}).get('DOMAINS_TEST_CGROUP'))
         phased = bounded and test_workers.installed_phases(argv[-1])
+        local_budget = bounded and env.get('DOMAINS_TEST_BUDGET') == str(ROOT/'scripts/case_budget.py')
         resource_receipt = output / f'{index:04d}.resources.json'
         # Browser cases run alone and include Chromium, Node and the PHP server.
         test_limits = dict(wall_seconds=60 if Path(argv[-1]).name in {'native-paid-baseline-test.php', 'renewal-safety-test.php', 'staff-release-parity-test.php', 'staff-transfer-release-parity-test.php'} else 30 if kind in ('ui', 'native') else 10,
                            memory_bytes=(768 if kind == 'ui' else 256)*1024**2)
-        if bounded and env.get('DOMAINS_TEST_BUDGET') == str(ROOT/'scripts/case_budget.py'):
+        if local_budget and env.get('DOMAINS_TEST_LIMITS') != 'wide':
             test_limits = dict(wall_seconds=min(65, timeout), memory_bytes=512*1024**2)
         syntax_lint = kind == 'lint' and len(argv) >= 3 and argv[1] == '-l'
-        rss_path = None if syntax_lint else output/f'{index:03d}.rss.txt'
+        case_budget = bounded and not phased
+        owns_descendants = case_budget and local_budget
+        rss_path = None if syntax_lint or owns_descendants else output/f'{index:03d}.rss.txt'
         interrupted = None
         stdout, stderr = b'', b''
         try:
@@ -388,22 +398,22 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
             if pure and source_env:
                 source_env = {key: value for key, value in source_env.items() if key != 'PAYMENTER_TEST_FIXTURE'}
             context = (nullcontext(source_env) if pure else
-                       test_workers.command_environment(source_env, fixture_snapshot=dependency[1] if dependency else None))
+                       test_workers.command_environment(source_env))
             with context as child:
                 launched = ([sys.executable, env['DOMAINS_TEST_BUDGET'], '--name', argv[-1],
                              '--test-scope', '--wall', str(test_limits['wall_seconds']),
                              '--memory', str(test_limits['memory_bytes']),
-                             '--receipt', str(resource_receipt), '--', *argv] if bounded and not phased else argv)
+                             '--receipt', str(resource_receipt), '--', *argv] if case_budget else argv)
                 stdout, stderr, code, timed_out = execute(launched, cwd=ROOT, env=child,
-                                                        timeout=test_limits['wall_seconds']+2 if bounded and not phased else timeout, graceful=60 if kind == 'mariadb' else 0,
-                                                        processes=processes, index=index, rss_path=rss_path)
+                                                        timeout=test_limits['wall_seconds']+2 if case_budget else timeout, graceful=60 if kind == 'mariadb' else 0,
+                                                        processes=processes, index=index, rss_path=rss_path, supervised=owns_descendants)
         except BaseException as error:
             interrupted = error
             stdout, stderr = getattr(error, 'captured_output', (stdout, stderr))
             code, timed_out = 130 if isinstance(error, KeyboardInterrupt) else None, False
         seconds = time.monotonic() - started
         cancelled = interrupted is not None or index in processes.cancelled
-        result = {'kind': kind, 'argv': argv, 'exit': code, 'timed_out': timed_out,
+        result = {'kind': kind, 'argv': argv, 'worker': worker, 'exit': code, 'timed_out': timed_out,
                   'cancelled': cancelled, 'peak_rss_kib': None, 'command_error': str(interrupted) if interrupted else None,
                   'runtime_unchanged': False, 'runtime_error': 'Integrity verification did not finish.',
                   'dependency_changes': getattr(interrupted, 'changed_paths', []),
@@ -419,10 +429,12 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
             result['cases'] = test_workers.phase_results(stdout)
             if not result['cases'] or any(row.get('exit') != 0 or not row.get('resources') for row in result['cases']):
                 result['exit'] = code = code or 1
-        if bounded and not phased:
+        if case_budget:
             result['limits'] = test_limits
             try:
                 result['resources'] = json.loads(resource_receipt.read_text())
+                if owns_descendants and not syntax_lint and 'peak_rss_bytes' in result['resources']:
+                    result['peak_rss_kib'] = result['resources']['peak_rss_bytes']//1024
             except (OSError, ValueError) as error:
                 result['exit'] = code = code or 1
                 result['resource_error'] = 'Invalid per-test resource receipt: '+type(error).__name__
@@ -432,20 +444,11 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         captured[index] = value
         if code and not cancelled and not result['skipped']:
             stop(index)
-        started_guard = time.monotonic()
-        try:
-            unchanged, runtime_error = runtime_matches(before, fingerprint)
-            result.update(runtime_unchanged=unchanged, runtime_error=runtime_error, guard_complete=True)
-            if not unchanged:
-                stop(index)
-            if rss_path is not None:
-                try:
-                    result['peak_rss_kib'] = int(rss_path.read_text().splitlines()[-1])
-                except (OSError, ValueError, IndexError):
-                    pass
-        finally:
-            result.update(guard_seconds=time.monotonic()-started_guard,
-                          finished_seconds=time.monotonic()-started_run)
+        if rss_path is not None:
+            try:
+                result['peak_rss_kib'] = int(rss_path.read_text().splitlines()[-1])
+            except (OSError, ValueError, IndexError):
+                pass
         if interrupted is not None:
             raise interrupted
         return value
@@ -499,9 +502,9 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                     record(index, value)
                 except BaseException:
                     pass
-        for index, (kind, argv, started) in attempted.items():
+        for index, (kind, argv, started, worker) in attempted.items():
             if index not in completed:
-                completed[index] = {'kind': kind, 'argv': argv, 'exit': None,
+                completed[index] = {'kind': kind, 'argv': argv, 'worker': worker, 'exit': None, 'guard_complete': False,
                                     'timed_out': False, 'cancelled': True, 'peak_rss_kib': None,
                                     'runtime_unchanged': False, 'runtime_error': runner_error,
                                     'skipped': False, 'seconds': time.monotonic()-started,
@@ -512,17 +515,18 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
     dependency_unchanged, dependency_error, dependency_detail = False, None, None
     try:
         with timing('final_guards', timings):
-            # A final guard catches changes after the last per-command check.
-            unchanged, runtime_error = runtime_matches(before, fingerprint)
-            if results and not unchanged:
-                results[-1].update(runtime_unchanged=False, runtime_error=runtime_error)
+            for worker in range(jobs):
+                rows = [row for row in results if row['worker'] == worker]
+                if rows:
+                    test_workers.record_source_check(rows, runtime_matches(before, fingerprint), worker=worker)
             try:
                 dependency_unchanged = dependency is None or native.verify(dependency[0])[1] == dependency[1]
-                if worker_check:
-                    worker_check()
+                for check in worker_checks:
+                    check()
             except (ValueError, RuntimeError, OSError, KeyError, TypeError, subprocess.CalledProcessError) as error:
                 dependency_unchanged = False
                 dependency_error, dependency_detail = type(error).__name__, str(error)
+            test_workers.record_source_check(results, runtime_matches(before, fingerprint))
             final_guard_complete = True
     except BaseException as error:
         final_guard_error = type(error).__name__

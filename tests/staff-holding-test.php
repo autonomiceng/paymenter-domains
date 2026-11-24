@@ -3,6 +3,8 @@
 declare(strict_types=1);
 ini_set('memory_limit','256M');
 require_once __DIR__.'/Support/reserved-fixtures.php';
+$fixtureReadyRegistration = true;
+$reuseRenewalHolding = true;
 require __DIR__.'/Support/renewal-execution.php';
 require __DIR__.'/Support/staff-panel.php';
 use App\Models\ServiceCancellation;

@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/Support/synthetic-invoice-attachment.php';
 require __DIR__.'/Support/renewal-execution.php';
 require __DIR__.'/Support/money-receipt.php';
+require_once __DIR__.'/Support/fixture-checkpoint.php';
 
 use App\Models\{Credit, Gateway, Invoice, InvoiceTransaction, Role};
 use Illuminate\Support\Facades\DB;
@@ -81,28 +82,43 @@ $assertProjection = static function($expected, $actual, string $message) use (&$
 };
 $failures = []; $checks = 0; $steps = 0; $cases = 0; $coverage = [];
 
-// Each scenario has its own invoice. The oracle reads actual native payouts and the credit balance,
-// never Domains' available(), retained plan amounts, or a service's returned observation.
+// Build each starting invoice once. Restore its committed rows before running a new action trace.
+$empty = nativeFixtureCheckpoint();
+$startingInvoices = [];
+foreach (['ordinary', 'late', 'closed'] as $mode) {
+    $empty();
+    $clock->instant = $now;
+    activeCommerceFacts($now, $now->modify('+30 days'), $ports);
+    $name = 'money-invariant-'.$mode.'-placeholder.com';
+    if ($mode === 'ordinary') {
+        $op = $new($name, false);
+        $op->update(['state'=>'held', 'safe_code'=>'staff_review']);
+    } else {
+        [$op] = $makeRenewal($name, false);
+    }
+    if ($mode === 'late') {
+        $cycles->retireUnpaid($op->id);
+    } else {
+        DB::table('invoices')->where('id', $op->invoice_id)->update(['status'=>'paid']);
+    }
+    $startingInvoices[$mode] = [nativeFixtureCheckpoint(), $op->id, $clock->instant, Carbon\Carbon::now()->toImmutable()];
+}
+
+// The oracle reads actual native payouts and the credit balance for this isolated invoice.
 $run = static function (int $seed, string $mode, array $actions) use (
-    $new, $makeRenewal, $cycles, $clock, $now, $ports, $refunds, $staff, $balance, $receiptGateway, $creditGateway,
+    $startingInvoices, $clock, $refunds, $staff, $balance, $receiptGateway, $creditGateway,
     &$failures, &$checks, &$steps, &$cases, &$coverage, &$projectionChecks, $assertProjection
 ): void {
     $cases++;
     MoneyReceiptGateway::$returns = []; MoneyReceiptGateway::$lost = false;
     MoneyReceiptGateway::$outcome = 'refunded'; MoneyReceiptGateway::$onStatus = null;
     InvariantReceiptGateway::$observations = []; InvariantReceiptGateway::$requests = [];
-    $name = 'money-invariant-'.$cases.'-placeholder.com';
-    $clock->instant = $now;
-    activeCommerceFacts($now, $now->modify('+30 days'), $ports);
-    if ($mode !== 'ordinary') {
-        [$op, , , $invoice] = $makeRenewal($name, false);
-        if ($mode === 'late') { $cycles->retireUnpaid($op->id); }
-        else { DB::table('invoices')->where('id', $invoice->id)->update(['status'=>'paid']); }
-    } else {
-        $op = $new($name, false); $op->update(['state'=>'held', 'safe_code'=>'staff_review']);
-        $invoice = Invoice::findOrFail($op->invoice_id);
-        DB::table('invoices')->where('id', $invoice->id)->update(['status'=>'paid']);
-    }
+    [$restore, $operationId, $clock->instant, $nativeNow] = $startingInvoices[$mode];
+    $restore();
+    Carbon\Carbon::setTestNow($nativeNow);
+    Carbon\CarbonImmutable::setTestNow($nativeNow);
+    $op = \Paymenter\Extensions\Servers\Domains\Models\Operation::findOrFail($operationId);
+    $invoice = Invoice::findOrFail($op->invoice_id);
     $gross = PricingRule::minor($op->amount);
     $beforeCredit = $balance(); $receipts = []; $trace = []; $seen = []; $closing = false; $previousOut = 0; $promised = 0; $planCrashed = false;
     $record = static function (string $rule, array $facts) use (&$failures, &$seen, &$trace, $seed, $mode): void {
@@ -290,6 +306,7 @@ foreach ([101, 211, 307, 401, 503, 601, 701, 809, 907, 1009, 1103, 1201, 1301, 1
     for ($i=0, $n=1+$pick(3); $i<$n; $i++) { $late[] = ['retry']; }
     $run($seed, 'late', $late);
 }
+$empty();
 // Focused records cover the new states without switching any production writer.
 $nativeRow = static fn(int $id, int $minor, string $key, bool $card = true, string $status = 'succeeded'): array =>
     ['id'=>$id, 'amount'=>PricingRule::decimal($minor), 'transaction_id'=>$key, 'gateway_id'=>1, 'cardOk'=>$card, 'status'=>$status];

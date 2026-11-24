@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import tarfile
 import threading
@@ -24,6 +25,7 @@ LOCK_SHA256 = 'fd6bdeb5557b3af0976d5688d92081abc6f7c3235806a6c4b77f4b8bca9186be'
 def hashes(root):
     result = {}
 
+    buffer = memoryview(bytearray(64 * 1024))
     pending = [(root, '')] if root.is_dir() else []
     while pending:
         directory, prefix = pending.pop()
@@ -35,10 +37,14 @@ def hashes(root):
                 if entry.is_dir(follow_symlinks=False):
                     pending.append((entry.path, name+'/'))
                 elif entry.is_file(follow_symlinks=False):
-                    with open(entry.path, "rb") as handle:
-                        result[name] = hashlib.file_digest(handle, "sha256").hexdigest()
+                    digest = hashlib.sha256()
+                    with open(entry.path, 'rb') as handle:
+                        while size := handle.readinto(buffer):
+                            digest.update(buffer[:size])
+                    result[name] = digest.hexdigest()
 
-    return {name: result[name] for name in sorted(result, key=Path)}
+    # Keep pathlib's component-wise ordering for relative paths from scandir.
+    return {name: result[name] for name in sorted(result, key=lambda name: name.split('/'))}
 
 
 # Admission lives only in this runner process, never in a caller-supplied disk cache.
@@ -142,11 +148,18 @@ def verify(source, *, fixture_snapshot=None, shared_vendor=None, force_vendor=Fa
         if any(parent.is_symlink() for parent in ancestors):
             raise ValueError('Fixture dependency path is linked.')
         for name, digest in files.items():
-            path = source/name
-            if path.is_symlink():
+            path = os.path.join(source, name)
+            try:
+                mode = os.lstat(path).st_mode
+            except (FileNotFoundError, NotADirectoryError):
+                raise ValueError('Fixture dependency changed: '+name) from None
+            if stat.S_ISLNK(mode):
                 raise ValueError('Fixture dependency path is linked.')
-            if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            if not stat.S_ISREG(mode):
                 raise ValueError('Fixture dependency changed: '+name)
+            with open(path, 'rb') as handle:
+                if hashlib.sha256(handle.read()).hexdigest() != digest:
+                    raise ValueError('Fixture dependency changed: '+name)
         actual_vendor = admitted_vendor_hashes(vendor_root, force=force_vendor)
         if actual_vendor != expected_vendor:
             error = ValueError('Fixture vendor inventory changed.')

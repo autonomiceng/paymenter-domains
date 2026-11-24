@@ -209,21 +209,6 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(called.call_count, failed+1)
                 self.assertEqual([row['argv'] for row in receipt['results']], [argv for _, argv in commands[:failed+1]])
 
-    def test_parallel_runtime_mutation_is_a_failure(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp); (root/'Domains').mkdir(); output = root/'output'; output.mkdir()
-            path = root/'Domains/Probe.php'; path.write_text('<?php')
-            def execute(argv, **kwargs):
-                path.write_text('<?php // changed')
-                return b'changed', b'', 0, False
-            with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'execute', side_effect=execute), \
-                 contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(runner.run([('provider', ['probe'])]*4, {}, output, ['provider'], {}, jobs=2, fail_fast=True), 1)
-            receipt = json.loads((output/'receipt.json').read_text())
-            self.assertFalse(receipt['complete'])
-            self.assertTrue(any(not row['runtime_unchanged'] for row in receipt['results']))
-            self.assertLessEqual(len(receipt['results']), 2)
-
     def test_final_runtime_guard_catches_a_late_change(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); (root/'Domains').mkdir(); output = root/'output'; output.mkdir()
@@ -299,7 +284,7 @@ class RunnerTests(unittest.TestCase):
             contaminate = ("from pathlib import Path; import os; "
                            "app=Path(os.environ['PAYMENTER_TEST_FIXTURE']); "
                            "(app/'bootstrap/cache/routes-v7.php').write_text('cached storefront'); "
-                           "(app/'database/runtime.sqlite').touch(); "
+                           "(app/'database/runtime.sqlite').touch(); (app/'pristine').write_text('case-local'); "
                            "(app/'extensions').mkdir(); (app/'extensions/Domains').symlink_to(app/'pristine'); "
                            "print((app/'vendor').resolve())")
             probe = ("from pathlib import Path; import os; "
@@ -314,6 +299,17 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(runner.run(commands, env, output, ['native'], {}), 0)
             self.assertEqual((output/'000.stdout.txt').read_text().strip(), str(fixture/'vendor'))
             self.assertEqual((output/'001.stdout.txt').read_text().strip(), str(fixture/'vendor'))
+
+            (root/'changed').mkdir()
+            change_vendor = ("from pathlib import Path; import os; "
+                             "app=Path(os.environ['PAYMENTER_TEST_FIXTURE']); "
+                             "(app/'vendor/autoload.php').write_text('changed')")
+            with mock.patch.object(runner, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(runner.run([('native', [sys.executable, '-c', change_vendor])], env,
+                                            root/'changed', ['native'], {}), 1)
+            receipt = json.loads((root/'changed/receipt.json').read_text())
+            self.assertFalse(receipt['dependency_unchanged'])
+            self.assertEqual(receipt['results'][0]['exit'], 0)
 
     def test_worker_copies_use_canonical_paths_under_a_linked_output_parent(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -432,7 +428,7 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual('ui' in runner.default_suites(), bool(source))
         self.assertIn('mariadb', runner.CATEGORIES)
 
-    def test_failure_timeout_or_source_mutation_saves_output_and_stops(self):
+    def test_failure_timeout_or_source_mutation_preserves_output(self):
         for failure in ['timeout', 'exit', 'mutation']:
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp); (root/'Domains').mkdir(); (root/'output').mkdir()
@@ -446,10 +442,11 @@ class RunnerTests(unittest.TestCase):
                 with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'execute', side_effect=execute) as called, \
                      contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                     self.assertEqual(runner.run([('provider', ['php', 'probe']), ('provider', ['php', 'next'])], {}, root/'output', ['provider'], {}, fail_fast=True), 1)
-                called.assert_called_once()
+                executed = 2 if failure == 'mutation' else 1
+                self.assertEqual(called.call_count, executed)
                 receipt = json.loads((root/'output/receipt.json').read_text())
                 self.assertFalse(receipt['complete'])
-                self.assertEqual(len(receipt['results']), 1)
+                self.assertEqual(len(receipt['results']), executed)
                 self.assertEqual(receipt['results'][0]['timed_out'], failure == 'timeout')
                 self.assertEqual(receipt['results'][0]['runtime_unchanged'], failure != 'mutation')
                 self.assertEqual((root/'output/000.stdout.txt').read_bytes(), b'partial')
