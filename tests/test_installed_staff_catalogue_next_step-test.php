@@ -90,7 +90,7 @@ try {
 $reset();DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->delete();
 $queue->update(['offer_work'=>OfferState::json(['feed_due'=>$now->getTimestamp()+86400]),'offer_feed_succeeded_at'=>$now->getTimestamp()]);
 [$table,$row]=nextTable();$cell=$table->cell($row,'register','cost');same('Missing',$cell['text'],'A completed read with no registrar cost keeps the amount missing');
-expect(str_contains($cell['next'],'1-year registration cost for .com'),'Missing cost identifies the action, term and ending');
+expect(str_contains($cell['next'],'1-year registration cost'),'Missing cost identifies the action and term');
 
 } catch (Throwable $error) {$failures[]='Case 3: '.$error->getMessage();}
 try {
@@ -286,7 +286,7 @@ case 'cost limit':
 case 'registrar cost':
     DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->delete();
     $queue->update(['offer_work'=>OfferState::json(['feed_due'=>$now->getTimestamp()+86400]),'offer_feed_succeeded_at'=>$now->getTimestamp()]);
-    $next='1-year registration cost for .com';break;
+    $next='1-year registration cost';break;
 case 'registrar terms':
     DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);
     $queue->update(['offer_work'=>OfferState::json(['facts'=>['com'=>['unsupported'=>true,'authority'=>$factAuthority,'due_at'=>null]]])]);

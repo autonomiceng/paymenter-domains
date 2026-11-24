@@ -440,7 +440,7 @@ final class SettingsActions
         $t=$tld?Tld::find($tld):null;
         if($t===null||$rule===null){return new \Illuminate\Support\HtmlString('');}
         try{$rows=(StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\FreshInstallation::MESSAGE))->preview($t,$rule);}catch(\Throwable){$rows=[];}
-        if($rows===[]){return new \Illuminate\Support\HtmlString('<p>Exact registrar costs missing. '.e(TldFacts::refreshText(TldFacts::snapshot($t)['refresh']??[],false)).'</p>');}
+        if($rows===[]){return new \Illuminate\Support\HtmlString('<p>Exact registrar costs missing. '.e(TldFacts::refreshText(TldFacts::snapshot($t)['refresh']??[])).'</p>');}
         $registrarRequirement=self::cached(fn()=>self::previewRegistrarRequirement($t));
         $canEditTerms=self::canSee(Staff::POLICY)&&self::canSee(Review::permission('acceptance'));
         $costs=Staff::can(Staff::COSTS);$money=static fn(?string $v)=>$v===null?'None':'$'.preg_replace('/(\.\d{2}\d*?)0+$/D','$1',$v);

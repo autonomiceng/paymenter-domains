@@ -52,7 +52,7 @@ trait TldSalesPage
             $actions['seller']->label('Registrar choices')->modalHeading('Registrar choices');
         }
         // The dialog keeps the button's verb.
-        $verb=$this->sales()['reason']==='No registrar selected'?'Choose registrar':'Change registrar';
+        $verb=$this->sales()['reason']===TldFacts::NO_SELLER?'Choose registrar':'Change registrar';
         $seller=$fix==='seller'?$actions['seller']->label($verb)->modalHeading($verb)->color('primary'):null;
         // Every sales action is always registered; visibility picks the one that shows.
         return array_values(array_filter([$this->startSellingAction()->color($fix===null?'primary':'gray'),$seller,$actions['override']->color($fix==='override'?'primary':'gray'),
@@ -92,7 +92,7 @@ trait TldSalesPage
         // Edit prices can't repair the account's defaults or settings it can't read; the reason names where to.
         if($s['invalid']&&in_array($s['kind'],['account_defaults','unreadable'],true)){return null;}
         if($s['invalid']||in_array($s['reason'],['Below cost','Price missing','Prices not published'],true)){return 'override';}
-        return in_array($s['reason'],['No registrar selected','Not offered by this registrar'],true)||TldFacts::unsupported($s['reason'])?'seller':null;
+        return in_array($s['reason'],[TldFacts::NO_SELLER,'Not offered by this registrar'],true)||TldFacts::unsupported($s['reason'])?'seller':null;
     }
     /** Browser tabs keep the account, so two accounts' pages for one TLD never share a title. */
     protected function browserTitle(): ?string {$a=$this->account();return $a===null?null:'.'.$this->getRecord()->tld.' on '.$a;}
@@ -131,7 +131,7 @@ trait TldSalesPage
         if($this->registrarBlocked()){
             return rtrim($reason,'.').'. '.TldRegistrar::none($this->getRecord()->tld,TldRegistrar::selectable($this->registrarChoices()));
         }
-        if($this->fix()==='seller'&&$reason!=='No registrar selected'&&!TldFacts::canChangeSeller()){
+        if($this->fix()==='seller'&&$reason!==TldFacts::NO_SELLER&&!TldFacts::canChangeSeller()){
             return rtrim($reason,'.').'. '.TldFacts::ASK_SELLER;
         }
         if($reason===TldFacts::TERMS_EVIDENCE_MISSING){return $reason.'.';}
@@ -140,7 +140,8 @@ trait TldSalesPage
                 ?'Registrar terms are out of date.':"Registrar terms couldn't be read.");
         }
         return match($reason){
-            'No registrar selected'=>'No registrar selected. '.($this->settings()['seller']->isVisible()?'Choose a registrar for new orders.':'Ask staff who can change the registrar.'),
+            // The Registrar for new orders row below gives the next step, so the notice only says why.
+            TldFacts::NO_SELLER=>TldFacts::NO_SELLER.'.',
             default=>str_starts_with($reason,TldFacts::OTHER_SELLER.' ')?$reason.'. This account keeps its existing domains.':rtrim($reason,'.').'.'};
     }
     /** Sales reasons for a stop that Start selling lifts. */
@@ -178,9 +179,9 @@ trait TldSalesPage
             ->modalHeading('Start selling .'.$t->tld.'?')->modalSubmitActionLabel('Start selling')
             ->modalDescription(fn()=>$this->startDescription())
             // A saved price account is not a registrar choice. Staff must choose where new orders go.
-            ->disabled(fn():bool=>$this->sales()['reason']==='No registrar selected')
-            ->extraAttributes(fn():array=>$this->sales()['reason']==='No registrar selected'?['aria-disabled'=>'true']:[])
-            ->visible(fn():bool=>$this->canStart()||$this->mayChangeSales()&&$this->sales()['reason']==='No registrar selected')
+            ->disabled(fn():bool=>$this->sales()['reason']===TldFacts::NO_SELLER)
+            ->extraAttributes(fn():array=>$this->sales()['reason']===TldFacts::NO_SELLER?['aria-disabled'=>'true']:[])
+            ->visible(fn():bool=>$this->canStart()||$this->mayChangeSales()&&$this->sales()['reason']===TldFacts::NO_SELLER)
             ->schema([Hidden::make('review_key')->default(fn()=>Review::ticket((int)auth()->id(),$server,$id,'tld_settings',$this->reviewStamp))])
             ->action(function(array $data)use($server,$id):void {
                 $input=[];

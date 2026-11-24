@@ -88,7 +88,7 @@ DB::table('domains_tlds')->where('id',$com->id)->update(['catalogue_facts'=>null
 $queue=DB::table('domains_observation_queues')->where('server_id',$binding->serverId);
 $queued=OfferState::decode($queue->value('offer_work'));
 $queued['facts']['com']['due_at']=$now->getTimestamp()-60;$queue->update(['offer_work'=>OfferState::json($queued)]);
-[$sales,$row]=$table('com');same('Queued for the next background run.',$sales->status($row)['next'],'An overdue check shows the real queue state');
+[$sales,$row]=$table('com');same('Checking',$sales->status($row)['label'],'An overdue check shows the real queue state');
 
 // A failed offer projection is isolated and logged, so it cannot pin the account scan.
 // Shared default validation below remains an account-wide refusal.

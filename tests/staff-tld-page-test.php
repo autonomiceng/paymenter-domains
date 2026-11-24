@@ -211,15 +211,15 @@ DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->de
 
 // No registrar for new orders.
 DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>null]);
-$page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()->assertSee('No registrar selected')->assertSee('Choose registrar');
+$page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()->assertSee(TldFacts::NO_SELLER)->assertSee('Choose registrar');
 expect(str_contains($text($page->html()),'Registrar for new orders Not set'),'No registrar for new orders is Not set');
-same(1,substr_count($text($page->html()),'No registrar selected'),'The head says No registrar selected once');
+same(1,substr_count($text($page->html()),TldFacts::NO_SELLER),'The head says why once');
 expect(str_contains($text($page->html()),'Registrar for new orders Not set Use Choose registrar above.'),'The Not set row says what to do, not the notice reason again');
 same(1,$accountLinks($page->html(),(int)$enom->server_id),'The account section still opens the account');
 $clean($page->html(),'TLD page no registrar');
-same(['label'=>'Not for sale','tone'=>'gray','reason'=>'No registrar selected'],TldFacts::salesState($enom->fresh()),'No registrar for new orders is not for sale');
+same(['label'=>'Not for sale','tone'=>'gray','reason'=>TldFacts::NO_SELLER],TldFacts::salesState($enom->fresh()),'No registrar for new orders is not for sale');
 $page->assertSee('Not for sale')->assertDontSee('For sale');
-$list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertSee('No registrar selected')->assertDontSee('For sale');
+$list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertSee(TldFacts::NO_SELLER)->assertDontSee('For sale');
 expect(!str_contains($text($list->html()),'new orders'),'List: no account takes new orders');
 $clean($list->html(),'List no registrar');
 DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>$enom->server_id]);

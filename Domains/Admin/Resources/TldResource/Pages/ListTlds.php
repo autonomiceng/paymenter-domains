@@ -61,7 +61,7 @@ class ListTlds extends RecordListPage
     private function price(Tld $t,string $field): Value
     {
         $fact=$this->fact($t);$state=TldFacts::priceState($fact,'renew',$field);$staff=Reader::Staff;$id='tld-'.$t->id;
-        // The Note column already says No registrar selected, and a price sync can't fix it; the price cells show only the price.
+        // The Note column already says No registrar chosen, and a price sync can't fix it; the price cells show only the price.
         $cause=str_starts_with((string)$state['cause'],TldFacts::NO_SELLER)&&str_starts_with((string)($fact['sales']['reason']??''),TldFacts::NO_SELLER)?null:$state['cause'];
         $value=$state['value'];
         if(is_string($value)&&preg_match('/^\$[\d,]+(?:\.\d+)?$/D',$value)===1){

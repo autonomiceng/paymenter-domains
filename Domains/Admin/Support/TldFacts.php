@@ -14,7 +14,7 @@ final class TldFacts
     public const AUDIT = \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::KEY;
     /** A sync read this term and the registrar has no cost for it, so it does not sell it. Nothing to do. */
     public const NOT_OFFERED='Not offered';
-    public const NO_SELLER='No registrar selected';
+    public const NO_SELLER='No registrar chosen';
     /** Followed by the account's name. */
     public const OTHER_SELLER='New orders go to';
     /** Edit prices reads the same saved settings before it writes, so it can't repair them. */
@@ -78,12 +78,12 @@ final class TldFacts
         $years=static fn(int $n):string=>$n.' '.($n===1?'year':'years');
         return $min===$max?$years((int)$min):$min.' to '.$years((int)$max);
     }
-    /** Saved account refresh, shared by list cells and dialogs. The retry note is left out where a Sync prices button sits beside it. */
-    public static function refreshText(array $status,bool $retry=true): string
+    /** Saved account refresh, shared by list cells and dialogs. Refreshes run by themselves, so the text gives no retry step. */
+    public static function refreshText(array $status): string
     {
         $date=static fn($at)=>$at?\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at((int)$at):null;
         return (($at=$date($status['succeeded_at']??null))?'Prices updated '.$at.'.':'Prices not updated yet.')
-            .(($at=$date($status['due_at']??null))?' Next update '.$at.'.':' No update scheduled.').($retry?' Sync prices is an optional retry.':'');
+            .(($at=$date($status['due_at']??null))?' Next update '.$at.'.':' No update scheduled.');
     }
     public static function ruleProblem(array $fact): string
     {
@@ -174,7 +174,7 @@ final class TldFacts
     /** Saving What you sell records how orders are sent. Older saves catch up with one save, only where orders are offered. */
 
     /** The one fix for each reason a TLD with a saved price is not for sale. */
-    public const FIXES=['Cost out of date'=>'See the next refresh on this TLD.','Cost missing'=>'The registrar price feed must supply the exact cost.','Prices not published'=>'Open Edit prices and save.','Below cost'=>'Raise the price in Edit prices.','Price missing'=>'Open Edit prices and save.','Prices need checking'=>'Check the registrar account and the last refresh failure.',self::RENEWALS_OFF=>'Turn on Renewals on the registrar account page.',self::NO_SELLER=>'Open the TLD and use Change registrar.'];
+    public const FIXES=['Cost out of date'=>'See the next refresh on this TLD.','Cost missing'=>'The registrar price feed must supply the exact cost.','Prices not published'=>'Open Edit prices and save.','Below cost'=>'Raise the price in Edit prices.','Price missing'=>'Open Edit prices and save.','Prices need checking'=>'Check the registrar account and the last refresh failure.',self::RENEWALS_OFF=>'Turn on Renewals on the registrar account page.',self::NO_SELLER=>'Open the TLD and use Choose registrar.'];
     public const ASK_SELLER='Ask staff who can change the registrar.';
     /** What a registrar asks that checkout can't meet, after "this registrar". Writer::unsupportedCause picks one. */
     public const UNSUPPORTED=["needs registry details checkout doesn't collect",'needs nameservers at registration','renews only automatically',
