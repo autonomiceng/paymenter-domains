@@ -2,6 +2,7 @@
 // Synthetic vendor facts and retained slice28 financial gates; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/reserved-fixtures.php';
+require_once __DIR__.'/fixture-checkpoint.php';
 require __DIR__.'/transfer-fixture.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\{HistoryAcceptance};
@@ -47,8 +48,12 @@ $prepare=static function($label)use($newTransfer,$makeTransfer,&$engine,&$bindin
     $clock->instant=$now->modify('+6 minutes'); return $op;
 };
 $unresolved=static function(array $faults)use($prepare,$observe,$clock,$now,$reconcile,&$binding): void {
+    $submitted = $prepare('unresolved');
+    $restore = nativeRegistrarCheckpoint($clock, $observe);
     foreach ($faults as $fault) {
-        $op=$prepare($fault); $observe->fault=$fault;
+        $restore();
+        $op = $submitted->fresh();
+        $observe->fault = $fault;
         if (str_starts_with($fault,'needs')) { $observe->status='Domain is Locked'; $observe->fault=$fault==='needsowned'?'rejectowned':'rejectcharge'; }
         if ($fault==='expiration') { $observe->expiration=['expiration'=>'2029-01-01']; }
         if ($fault==='badexpiry') { $observe->expiration=['expiration'=>'2028-02-30']; }
