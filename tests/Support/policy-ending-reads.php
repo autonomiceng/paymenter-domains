@@ -1,8 +1,7 @@
 <?php
 // Synthetic input-bounded policy reads; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require_once __DIR__.'/reserved-fixtures.php';
-require __DIR__.'/dns-template.php';
+require __DIR__.'/../native-app.php';
 require __DIR__.'/commerce.php';
 require __DIR__.'/native-commerce.php';
 require __DIR__.'/storefront.php';
@@ -11,13 +10,11 @@ use Illuminate\Support\Facades\{Auth, Cache, DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\StorefrontController;
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
-use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, DomainSummaries, PolicyEndings, Rdap, Storefront, TransferPrecheck};
-use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
+use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaries, PolicyEndings, Rdap, Storefront, TransferPrecheck};
 
-// This fixture exercises retained legacy commerce, rather than new-install activation.
-(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
-extract(dnsFixture());extract(commerceFixture(true,static fn()=>null));
-$clock ??= new FakeClock($now); $at = $now->getTimestamp();
+extract(commerceFixture(true, static fn() => null));
+$owner = commerceUser();
+$at = $now->getTimestamp();
 $rdap = new Rdap(static fn ($url) => ['status' => 200, 'body' => json_encode(str_contains($url, 'dns.json')
     ? ['services' => [[['com'], ['https://rdap.example.com/']]]]
     : ['objectClassName' => 'domain', 'ldhName' => 'example.com', 'status' => ['active'], 'events' => [
@@ -38,7 +35,8 @@ $request = static function (array $data = []) use ($owner, $session): Request {
 $product = $native->product($tlds[0], 'register');
 $plan = $product->plans()->where('billing_period', 1)->sole();
 $order = \App\Models\Order::create(['user_id'=>$owner->id,'currency_code'=>'USD']);
-$service = \App\Models\Service::create(['user_id'=>$owner->id,'order_id'=>$order->id,'product_id'=>$product->id,'plan_id'=>$plan->id,
+// Seed the service for an existing holding before exercising the checkout and summary reads.
+$service = \App\Models\Service::createQuietly(['user_id'=>$owner->id,'order_id'=>$order->id,'product_id'=>$product->id,'plan_id'=>$plan->id,
     'status'=>'active','quantity'=>1,'price'=>'5.00','currency_code'=>'USD']);
 $managed = DB::table('domains_domains')->insertGetId(['service_id' => $service->id, 'user_id' => $owner->id,
     'server_id' => $tlds[0]->server_id, 'registrar_key' => 'enom', 'account_fingerprint' => $tlds[0]->account_fingerprint,
