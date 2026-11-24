@@ -2,6 +2,7 @@
 // Enom d1392a8 stale/overrun/ambiguous renewal scenarios; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
+require_once __DIR__.'/Support/fixture-checkpoint.php';
 // These cases exercise only Enom; cross-registrar fencing has its own renewal tests.
 $reuseRenewalHolding = true;
 $fixtureRegistrars = ['enom'];
@@ -78,10 +79,28 @@ foreach(['topup','return','unknown'] as $case){
 
 }
 $state->balance='100.00';
-[$op, $d, $b] = $makeRenewal(placeholderComFixtureName('renew-eighteen-placeholder.com')); [$engine, $writer, $completion] = $compose($b); $writes = $state->writes;
+// Admission and completion faults branch from two points on the same ordinary renewal.
+$checkpoint = static function ($op, $d, $binding, $invoice) use ($state, $clock): Closure {
+    $restore = nativeFixtureCheckpoint();
+    $registrar = clone $state;
+    $instant = $clock->instant;
+    $nativeNow = Carbon\Carbon::now()->toImmutable();
+    return static function () use ($restore, $registrar, $state, $instant, $clock, $nativeNow, $op, $d, $binding, $invoice): array {
+        $restore();
+        foreach ($registrar as $field => $value) { $state->$field = $value; }
+        $clock->instant = $instant;
+        Carbon\Carbon::setTestNow($nativeNow);
+        Carbon\CarbonImmutable::setTestNow($nativeNow);
+        return [$op->fresh(), $d->fresh(), $binding, $invoice->fresh()];
+    };
+};
+[$op, $d, $b, $invoice] = $makeRenewal(placeholderComFixtureName('renew-eighteen-placeholder.com'));
+$paid = $checkpoint($op, $d, $b, $invoice);
+[$engine, $writer, $completion] = $compose($b); $writes = $state->writes;
 same('pending', $engine->run($op->id, $writer)->state, 'Ordinary renewal acknowledges once');
 same([...$admissionReads, ...$admissionReads], $state->calls, 'Two independent six-read admissions preserve exact order');
 same($writes + 1, $state->writes, 'Exactly one Extend between admission and confirmation');
+$pending = $checkpoint($op, $d, $b, $invoice);
 $state->expiry = '2028-10-18'; $state->charge = '8.00';
 same('succeeded', $completion->run($op->id)->state, 'Ordinary renewal requires actual charge and full-year expiry');
 same([...$admissionReads, ...$admissionReads, ...$confirmationReads], $state->calls, 'Captured renewal confirmation retains both fresh identities, dedicated expiry and order');
@@ -89,7 +108,9 @@ same(18, count($state->calls) + $state->writes - $writes, 'Ordinary success uses
 $completion->run($op->id); $engine->run($op->id, $writer);
 same(18, count($state->calls) + $state->writes - $writes, 'Completed workers remain silent');
 foreach (['unpaid', 'cancelled', 'paused', 'cost', 'unknown', 'disabled', 'authority', 'boundary', 'rate', 'second_flags', 'second_cost', 'balance', 'balance_unknown', 'second_balance', 'second_balance_unknown', 'quote_deadline', 'seal_reversal'] as $case) {
-    [$op, $d, $b, $invoice] = $makeRenewal(placeholderComFixtureName('safety-'.str_replace('_','-',$case).'-placeholder.com'), $case !== 'unpaid');
+    [$op, $d, $b, $invoice] = $case === 'unpaid'
+        ? $makeRenewal(placeholderComFixtureName('safety-unpaid-placeholder.com'), false)
+        : $paid();
     [$engine, $writer] = $compose($b, $case !== 'disabled'); $writes = $state->writes;
     if ($case === 'cancelled') { ServiceCancellation::create(['service_id' => $d->service_id, 'type' => 'immediate', 'reason' => 'Synthetic']); }
     if ($case === 'paused') { $d->refresh()->update(['renewal_policy' => [...$d->renewal_policy, 'automatic_spend_paused' => true]]); }
@@ -138,8 +159,9 @@ $descriptor = new AdmittedOperation($b, new Query($d->domain, Action::Renew, 1),
 $ctx = new RequestContext($b, RequestOrigin::Background, $clock->now()->modify('+120 seconds'), new RequestBudget(1), $clock);
 commerceReject(fn () => $writer->renew($descriptor, $ctx)); commerceReject(fn () => $writer->renew(clone $descriptor, $ctx));
 foreach (['term', 'wrong_term', 'order_expiry', 'charge', 'owner', 'id', 'second_owner', 'second_id', 'drift', 'auto_drift', 'expiry_race'] as $case) {
-    [$op, $d, $b] = $makeRenewal(placeholderComFixtureName('completion-'.str_replace('_','-',$case).'-placeholder.com')); [$engine, $writer, $completion] = $compose($b);
-    same('pending', $engine->run($op->id, $writer)->state, 'Original acknowledged'); $state->expiry = '2028-10-18';
+    [$op, $d, $b] = $pending();
+    [, , $completion] = $compose($b);
+    same('pending', $op->state, 'Original acknowledged'); $state->expiry = '2028-10-18';
     if ($case === 'term') { $state->after = '2027-10-18'; }
     if ($case === 'charge') { $state->charge = '?'; }
     if ($case === 'owner') { $state->owner = 'foreign'; }
