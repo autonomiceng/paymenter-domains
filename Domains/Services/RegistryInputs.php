@@ -22,6 +22,8 @@ final class RegistryInputs
             self::nameSiloNexus($tld, $values);
             return $values;
         }
+        // Endings such as .aaa.pro, for which Enom requires a profession, are intentionally refused.
+        // Add a general way to collect registry fields before enabling an individual ending.
         if (!self::supported($registrar, $tld, $schema) || $values !== []) {
             throw new \DomainException('Registry details are not supported for this ending.');
         }
