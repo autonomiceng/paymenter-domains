@@ -79,14 +79,10 @@ final class TldRegistrar
                 $applying=>$choice['reason'].' Saving the latest prices.',
                 $state==='running'=>$choice['reason'].' Price sync is running for this account.',
                 $queued=>$choice['reason'].' Price sync queued.',
-                $completed=>$choice['reason'].' Last sync completed.',
+                $completed=>$choice['reason'].' Prices updated '.\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at((int)$status['succeeded_at']).'.',
                 default=>$choice['reason'],
             };
-            $url=null;
-            if(self::canRecheck($id,$status)){
-                $url=RegistrarFacts::accountUrl($id);
-                if($url!==null){$reason.=' Use Sync prices on this account to check for new prices.';}
-            }
+            $url=self::canRecheck($id,$status)?RegistrarFacts::accountUrl($id):null;
             $out[$id]=['label'=>$choice['label'],'reason'=>$reason,'url'=>$url];
         }
         return $out;

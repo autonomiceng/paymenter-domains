@@ -22,7 +22,6 @@ foreach([['sell'=>false],['sell'=>false,'stops'=>['renew']],['defaultSell'=>fals
     $page=[];$table=new SellTable([$binding->serverId=>$binding],1,true,static function()use(&$page){return $page;},false,$source);
     $page=$table->rows('com')->get()->all();$cell=$table->cell($page[0],'renew','cost');
     same('Missing',$cell['text'],'Missing retained-holder renewal cost must stay visible');
-    same('Use Sync prices.',$cell['hint'],'Retained renewal cost gives the repair step');
     same(true,$cell['mark'],'Missing retained renewal cost is marked for repair');
     same('$'.$holder->retail,$table->cell($page[0],'renew','price')['text'],'Retained annual retail remains visible');
 }

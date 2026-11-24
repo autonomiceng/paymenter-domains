@@ -9,7 +9,7 @@ final class LateRenewalQuote
     {
         $rate=$l['prices']->where('action','renew')->where('term',1)->where('currency','USD')->where('account_fingerprint',$l['domain']->account_fingerprint)->first();
         $cost = isset($l['offer']) ? $l['offer']['cost']?->total : ($rate?->wholesale === null ? null : PriceCatalogue::cost($rate->wholesale));
-        if($cost===null){throw new \DomainException('Renewal cost Missing. Sync prices and try again.');}
+        if($cost===null){throw new \DomainException('No current registrar renewal cost is available.');}
         // Preserve the regular dollar margin, including fixed-price holders. Never turn a negative margin into an extra loss.
         $margin=PricingRule::units($regular['annual_net'])-PricingRule::units($cost);
         if($margin<0){throw new \DomainException('Renewal margin Missing. Fix renewal pricing and try again.');}

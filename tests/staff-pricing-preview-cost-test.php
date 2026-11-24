@@ -48,7 +48,6 @@ $preview=new ReflectionMethod(SettingsActions::class,'preview');
 $probe->setValue(null,[StaffCatalogue::class=>$source]);
 try {
     expect(SettingsActions::syncAll($binding->serverId)->isVisible(),'Import grants expose Sync prices');
-    expect(str_contains($preview->invoke(null,$t->id,$rule)->toHtml(),'Use Sync prices'),'The stale cost points to the available retry');
     Auth::setUser($pricingOnly);
     expect(!SettingsActions::syncAll($binding->serverId)->isVisible(),'Price editing and publishing do not expose Sync prices');
     $limited=$preview->invoke(null,$t->id,$rule)->toHtml();

@@ -26,7 +26,7 @@ final class SyncPrices implements ShouldQueue,ShouldBeUnique
     public int $timeout=self::TIMEOUT;
     public int $tries=1;
     public bool $failOnTimeout=true;
-    public const WORKER='Price sync needs a database or Redis queue with retry_after above %d seconds. Configure it and start the scheduler and queue worker, then try Sync again.';
+    public const WORKER='Price sync needs a database or Redis queue with retry_after above %d seconds. Configure it and start the scheduler and queue worker.';
     public function __construct(public int $actor,public int $server,public string $fingerprint,public ?string $reviewKey=null)
     {$this->catalogueGeneration=CatalogueActivation::generation();$this->timeout=$reviewKey===null?self::TIMEOUT:self::ACCEPTED_TIMEOUT;}
     public function uniqueId(): string {return 'domains-price-sync:'.$this->server.':'.$this->actor.':'.($this->reviewKey===null?'list':'prices');}
@@ -62,7 +62,7 @@ final class SyncPrices implements ShouldQueue,ShouldBeUnique
         }
     }
     public function failed(?\Throwable $error): void
-    {$this->notice("Couldn't sync prices",'The background read stopped. Your last good prices are still saved. Check the queue worker, then try Sync again.');}
+    {$this->notice("Couldn't sync prices",'The background read stopped. Your last good prices are still saved. Check the queue worker.');}
     private function notice(string $title,string $body): void
     {
         if(!Staff::allows(User::find($this->actor),Staff::VIEW)){return;}

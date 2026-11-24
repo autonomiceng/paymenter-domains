@@ -115,6 +115,10 @@ final class SellTable
         $s=$facts['sales']??['label'=>'Not for sale','tone'=>'gray','reason'=>TldFacts::NEEDS_SYNC];
         if($s['reason']===null){return ['label'=>$s['label'],'tone'=>$s['tone']];}
         if(!$this->grants()->costs){return ['label'=>$s['label'],'tone'=>$s['tone'],'next'=>$s['reason'],'open'=>null];}
+        // A price or terms update cannot choose a seller. Show the same seller decision as the detail page.
+        if(!$this->queueRecovery&&($s['reason']===TldFacts::NO_SELLER||str_starts_with($s['reason'],TldFacts::OTHER_SELLER.' '))){
+            return ['label'=>$s['label'],'tone'=>$s['tone'],'next'=>$s['reason'],'open'=>'tld'];
+        }
         $action=in_array('register',$facts['intent']['stops']??[],true)?'transfer':'register';
         $step=$this->nextStep($row,$action);
         return ['label'=>$step['state']==='checking'?'Checking':$s['label'],'tone'=>$s['tone'],'next'=>$step['next']?:$s['reason'],'open'=>$step['open']];
@@ -230,7 +234,7 @@ final class SellTable
         $step=$field!=='profit'&&$sold!=='off'&&($saved['prices'][$action][$field]??null)===null?$this->nextStep($row,$action):[];
         if($field==='cost'&&($saved['prices'][$action]['cost']??null)===null&&$this->retainedRenewal($row,$action)
             &&($step['state']??null)!=='checking'&&($step['open']??null)!=='account'){
-            $step=['state'=>'missing','next'=>'Use Sync prices.','open'=>null];
+            $step=['state'=>'missing','next'=>'No current registrar cost for annual renewal.','open'=>null];
         }
         return $this->savedCell($saved['prices'][$action]??null,$field,$sold,$step);
     }

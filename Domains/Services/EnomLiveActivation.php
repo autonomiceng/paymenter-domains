@@ -12,7 +12,7 @@ final class EnomLiveActivation
 {
     public const KEY=LiveActivation::KEY;
     public const FEATURES=LiveActivation::FEATURES;
-    private const PRICE_MISSING='Costs and prices Missing. Choose what you sell, Sync prices, then check the enabled TLDs and registrar on the TLD list.';
+    private const PRICE_MISSING='Costs and prices Missing. Check the enabled TLDs, registrar and last price update on the TLD list.';
     public static function defaults(Account $a): array
     {
         $b=AccountBindings::binding($a);$out=[];

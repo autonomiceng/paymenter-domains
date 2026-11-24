@@ -77,13 +77,13 @@ final class OfferReadiness
                                 }else{$p=$row->price();$retail=$p->retail;$renew=$rows['renew:1']->price();$counts[$feature]++;}
                                 $costs[]=['tld'=>$t->tld,'action'=>$action,'term'=>$term,'cost'=>$observation->total,'price'=>$retail,
                                     'note'=>$row->decision->warning,'renewCost'=>$renew?->wholesale,'renewPrice'=>$renew?->retail];
-                            }catch(\Throwable){$failures[]=['tld'=>$t->tld,'action'=>$action,'term'=>$term,'note'=>'Costs or prices Missing. Check the TLD price list and pricing rule; Sync prices if costs are missing.'];}
+                            }catch(\Throwable){$failures[]=['tld'=>$t->tld,'action'=>$action,'term'=>$term,'note'=>'Costs or prices Missing. Check the last price update and the pricing rule for this TLD.'];}
                         }
                     }
                 }
             });
         $missing=$failures!==[];
         foreach($counts as $feature=>$count){$missing=$missing||($features[$feature]??false)&&$count===0;}
-        return ['costs'=>$costs,'failures'=>$failures,'missing'=>$missing?'Costs and prices Missing. Choose what you sell, Sync prices, then check the enabled TLDs and registrar on the TLD list.':null];
+        return ['costs'=>$costs,'failures'=>$failures,'missing'=>$missing?'Costs and prices Missing. Check the enabled TLDs, registrar and last price update on the TLD list.':null];
     }
 }

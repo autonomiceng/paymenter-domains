@@ -58,7 +58,7 @@ final class StaffCatalogue
         $names=['register'=>'registration','renew'=>'renewal','transfer'=>'transfer'];
         $step=static fn(string $state,string|HtmlString $next,?string $open=null)=>compact('state','next','open');
         $missing=static fn(string $next,?string $open='tld')=>$step('missing',$next,$open);
-        $waiting=static fn(array $s)=>!empty($s['local_failure'])?$missing('Check the registrar account and read prices again.','account'):
+        $waiting=static fn(array $s)=>!empty($s['local_failure'])?$missing('The last update failed. Check the registrar account.','account'):
             $step('checking',isset($s['due_at'])&&$s['due_at']>=$now->getTimestamp()&&empty($s['remaining'])?self::nextCheck((int)$s['due_at']):'Queued for the next background run.');
         if(!$offers){return $missing('Check saved settings on .'.$t->tld.'.');}
         if($reason==='account_unavailable'){return $missing('Check account setup on Registrar account.','account');}
@@ -98,9 +98,11 @@ final class StaffCatalogue
             if($queueRecovery){$this->work->requestFacts($b,$t->tld);}
             $status=$once['terms'][$server][$t->tld]??=$this->work->status($b,$t->tld);
             if($status['state']==='waiting_for_evidence'){return $missing(TldFacts::TERMS_EVIDENCE_MISSING.'.');}
-            if(!$queueRecovery&&$status['state']==='unknown'){return $missing('Use Sync prices on the TLD page.');}
-            if($status['state']!=='unsupported'){return $waiting($status);}
-            $human=$missing('Ask the registrar to confirm terms for .'.$t->tld.'.',null);
+            if(!$queueRecovery&&$status['state']==='unknown'){
+                $human=$missing('Registrar terms have not been confirmed.');
+            }elseif($status['state']==='unsupported'){
+                $human=$missing('Ask the registrar to confirm terms for .'.$t->tld.'.',null);
+            }else{return $waiting($status);}
         }
         $expiredRefusal=static function(string $key)use($offers,$now):bool {
             $cost=($offers[$key]??null)?->observation();
@@ -124,11 +126,13 @@ final class StaffCatalogue
                 $status=$once['synced'][$server]??$once['status'][$server]??=$this->work->status($b);
                 if(!$observation&&($status['succeeded_at']??0)>$now->getTimestamp()-86400&&empty($status['remaining'])){
                     [$needed,$years]=explode(':',$key);$name=$names[$needed];
-                    return $missing('Ask the registrar for a '.$years.'-year '.$name.' cost for .'.$t->tld.'.',null);
+                    $at=\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at((int)$status['succeeded_at']);
+                    return $missing('No '.$years.'-year '.$name.' cost for .'.$t->tld.' in the price feed updated '.$at.'.',null);
                 }
                 if(!$queueRecovery){
+                    if(!empty($status['failure'])){return $missing(TldFacts::syncCause($status['failure']).'.','account');}
                     return isset($status['due_at'])||in_array($status['state'],['queued','running','retrying'],true)
-                        ?$waiting($status):$missing('Use Sync prices on the registrar account.','account');
+                        ?$waiting($status):$missing('No current registrar cost for this term.');
                 }
                 if(!isset($once['synced'][$server])){$this->work->sync($b,RequestOrigin::Background);$once['synced'][$server]=$this->work->status($b);}
                 return $waiting($once['synced'][$server]);

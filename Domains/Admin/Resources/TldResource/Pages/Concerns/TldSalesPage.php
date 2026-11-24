@@ -136,14 +136,11 @@ trait TldSalesPage
         }
         if($reason===TldFacts::TERMS_EVIDENCE_MISSING){return $reason.'.';}
         if(($this->snap()['selected']??false)&&!\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::read($this->getRecord())&&!str_contains($reason,'registrar terms')){
-            // Expired terms were read; they are out of date, and Sync prices refreshes them.
             return ($reason===''?'':rtrim($reason,'.').'. ').(\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::stale($this->getRecord())
-                ?'Registrar terms are out of date. Use Sync prices below.':"Registrar terms couldn't be read. Sync prices tries again now.");
+                ?'Registrar terms are out of date.':"Registrar terms couldn't be read.");
         }
         return match($reason){
-            'Cost missing','Cost out of date'=>$reason.'. Use Sync prices below.',
             'No registrar selected'=>'No registrar selected. '.($this->settings()['seller']->isVisible()?'Choose a registrar for new orders.':'Ask staff who can change the registrar.'),
-            TldFacts::TERMS_FAILED=>$reason.'. Sync prices tries again now.',
             default=>str_starts_with($reason,TldFacts::OTHER_SELLER.' ')?$reason.'. This account keeps its existing domains.':rtrim($reason,'.').'.'};
     }
     /** Sales reasons for a stop that Start selling lifts. */
