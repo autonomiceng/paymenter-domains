@@ -84,7 +84,11 @@
       "tests/test_departure_renders.py"
     ],
     "tests/Support/staff-tld-filter-lookalikes.php": ["tests/staff-tld-page-test.php"],
-    "tests/Support/export-funded-registration.php": ["scripts/test_workers.py"],
+    "tests/Support/export-funded-registration.php": [
+      "tests/enom-send-limit-unsent-writes-test.php",
+      "tests/observation-acquisition-work-test.php",
+      "tests/staff-holding-test.php"
+    ],
     "tests/Support/enom-renewal-*-cases.php": ["tests/test_installed_package_enom_renewal.py"],
     "tests/Support/enom-registration-contracts-cases.php": ["tests/test_installed_package_enom_test.py"],
     "tests/Support/enom-transfer-cases-fixture.php": ["tests/test_installed_package_enom_transfer.py"],
