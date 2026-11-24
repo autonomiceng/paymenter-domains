@@ -3,7 +3,7 @@
 declare(strict_types=1);
 $out=$argv[1]??'';
 // A confirmed departure whose email failed to build, so the departed page keeps the open email alert.
-require dirname(__DIR__).'/departure-email-failure-test.php';
+require __DIR__.'/departure-email-failure.php';
 require_once __DIR__.'/panel-render.php';
 require_once __DIR__.'/render-artifacts.php';
 use Illuminate\Support\Facades\Auth;

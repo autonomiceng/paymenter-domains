@@ -22,3 +22,9 @@ function placeholderComFixtureName(string $name): string
     }
     return $name;
 }
+
+/** Name on the genuine paid Enom order shared by downstream fixtures. */
+function fundedRegistrationFixtureName(): string
+{
+    return placeholderComFixtureName('discovery-placeholder.com');
+}

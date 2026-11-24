@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/enom-history.php';
 // Loading the operation fixture here provides a prepared checkout. Preloaded matrices
 // use their existing order factory, including the owner and cycle multi-line checkouts.
+$reuseOperationCatalogue = true;
 $paidRegistration = null;
 require_once __DIR__.'/operation-fixture.php';
 $paidRegistration ??= $new;
@@ -62,11 +63,26 @@ $verify = new class implements AccountVerifier { public function verify(Environm
 $registry->register('enom', ['token'], $verify, fn ($binding, $c) => new Driver(new Client($binding, 'account-enom', $c['token'], $wire), [$fixtureEnding ?? 'com']));
 $readBindings = new AccountBindings($registry); $reconcile = new OperationReconciliation($claims, $readBindings, $clock);
 $caps??=null;$ports??=null;
-$prepare = static function (string $name, string $mode = 'accepted', ?\Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence $nameservers = null) use ($paidRegistration, $claims, $preflight, $clock, $observation,$caps,$ports) {
+// Only a fixture that explicitly starts from this funded order may consume it.
+$fundedRegistration = ($restoredRegistration ?? false)
+    ? \Paymenter\Extensions\Servers\Domains\Models\Domain::where('domain', fundedRegistrationFixtureName())->sole()->operations()->sole()
+    : null;
+$prepare = static function (string $name, string $mode = 'accepted', ?\Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence $nameservers = null) use (&$fundedRegistration, $user, $paidRegistration, $claims, $preflight, $clock, $observation,$caps,$ports) {
     if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
     $clock->instant = new DateTimeImmutable('2026-10-18T12:00:00Z');
-    if($caps!==null){activeCommerceFacts($clock->now(),$clock->now()->modify('+1 day'),$ports);}
-    $op = $paidRegistration($name); [$claimed, $domain, $binding] = $claims->claim($op->id);
+    if ($fundedRegistration !== null) {
+        same($name, $fundedRegistration->domain->domain, 'Scenario starts at the exported paid order');
+        Carbon\Carbon::setTestNow($clock->now());
+        Carbon\CarbonImmutable::setTestNow($clock->now());
+        Illuminate\Support\Facades\Auth::login($user);
+        Illuminate\Support\Once::flush();
+        $op = $fundedRegistration;
+        $fundedRegistration = null;
+    } else {
+        if ($caps !== null) { activeCommerceFacts($clock->now(), $clock->now()->modify('+1 day'), $ports); }
+        $op = $paidRegistration($name);
+    }
+    [$claimed, $domain, $binding] = $claims->claim($op->id);
     if ($mode === 'preseal') { $clock->instant = $clock->now()->modify('+60 seconds'); }
     $ctx = new RequestContext($binding, RequestOrigin::Background, $clock->now()->modify('+300 seconds'), new RequestBudget(10), $clock);
     $sealed = $claims->seal($claimed, $preflight->inspect($claimed, $domain, $ctx), $clock->now()); expect($sealed !== null, 'Original attempt sealed');

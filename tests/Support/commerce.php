@@ -12,11 +12,18 @@ use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, FoundationSchema, StaffAuditSchema, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry, SalesPolicySchema, SellerPolicies};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 
-function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com', bool $active = true, ?Closure $authorize = null, array $registrars = ['enom','namesilo'], bool $nameSiloLocal = true, array $identities = [], ?InstalledCommerceFixture $installed = null): array
+function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com', bool $active = true, ?Closure $authorize = null, array $registrars = ['enom','namesilo'], bool $nameSiloLocal = true, array $identities = [], ?InstalledCommerceFixture $installed = null, bool $freshOperation = false, bool $fundedRegistration = false): array
 {
     if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
     if(!app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)){app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new \Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z')));}
-    if ($active) { ($installed ?? InstalledCommerceFixture::prepare())->consume();app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class);
+    $catalogue = null;
+    if ($active) {
+        $standard = $freshOperation && $eligible && $activation === null && $environment === Environment::Test
+            && $ending === 'com' && $authorize === null && $registrars === ['enom', 'namesilo'] && $nameSiloLocal && $identities === [];
+        $installed ??= InstalledCommerceFixture::prepare($standard ? ($fundedRegistration ? 'FUNDED' : 'OPERATION') : null);
+        $installed->consume();
+        $catalogue = $installed->catalogue;
+        app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class);
         // Fresh empty ports keep the installed catalogue contract, without retaining provider factories.
         $runtimePorts=new \Paymenter\Extensions\Servers\Domains\Services\RuntimePorts;
         $runtimePorts->registerInitialManagedRecordObservations(\Paymenter\Extensions\Servers\Domains\Services\Runtime::initialManagedRecordObservations(...));
@@ -30,8 +37,10 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
         if (class_exists(StaffAuditSchema::class)) { StaffAuditSchema::install(); }
         \Paymenter\Extensions\Servers\Domains\Services\BusinessSettingsSchema::install();
     }
-    Currency::firstOrCreate(['code' => 'USD'], ['name' => 'US Dollar', 'format' => '1,000.00', 'prefix' => '$', 'suffix' => '']);
-    Category::create(['name' => 'Domains', 'slug' => 'domains', 'description' => 'Domains']);
+    if ($catalogue === null) {
+        Currency::firstOrCreate(['code' => 'USD'], ['name' => 'US Dollar', 'format' => '1,000.00', 'prefix' => '$', 'suffix' => '']);
+        Category::create(['name' => 'Domains', 'slug' => 'domains', 'description' => 'Domains']);
+    }
     $registry = new RegistrarRegistry;
     $reads = (object) ['calls' => 0, 'premium' => false, 'available' => true];
     $verifier = new class implements AccountVerifier {
@@ -49,7 +58,7 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
     }
     $bindings = new AccountBindings($registry); $prices = new PriceCatalogue(new PricingRules);
     $sellers = new SellerPolicies($prices, $bindings); $native = new NativeCatalogue($prices);
-    $now = new DateTimeImmutable('2026-10-18T12:00:00Z'); $tlds = [];
+    $now = new DateTimeImmutable('2026-10-18T12:00:00Z');
     if($active){
         $clock=new \Paymenter\Extensions\Servers\Domains\Tests\FakeClock($now);
         // Callers that test permissions pass the installed staff rule; staff arranging below then needs a staff actor.
@@ -60,6 +69,24 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
         $sellers=new SellerPolicies($prices,$bindings,$offers);
         app()->instance(AccountBindings::class,$bindings);app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
     }
+    if ($catalogue === null) {
+        $tlds = seedCommerceCatalogue($bindings, $ports ?? null, $now, $environment, $ending, $activation, $registrars, $identities);
+    } else {
+        config($catalogue['config']);
+        $reads->calls = $catalogue['reads'];
+        $tlds = array_map(static fn (array $row) => (new Tld)->newFromBuilder($row), $catalogue['tlds']);
+    }
+    if($active){
+        foreach([$prices,$sellers,$native,$bindings] as $owner){activeFixturePorts($owner,$ports,$clock);activeFixtureOffers($owner,$offers);}
+        return ['restoredOperation' => $catalogue !== null, 'restoredRegistration' => $catalogue['funded'] ?? false, ...compact('bindings','prices','sellers','native','now','tlds','reads','clock','ports','caps','offers')];
+    }
+    return ['restoredOperation' => false, 'restoredRegistration' => false, ...compact('bindings', 'prices', 'sellers', 'native', 'now', 'tlds', 'reads')];
+}
+
+function seedCommerceCatalogue(AccountBindings $bindings, ?\Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts $ports,
+    DateTimeImmutable $now, Environment $environment, string $ending, ?Closure $activation, array $registrars, array $identities): array
+{
+    $tlds = [];
     foreach ($registrars as $key) {
         // Schema is ready; this synthetic insert does not exercise native server installation.
         $server = Server::withoutEvents(static fn () => Server::create(['name' => 'Synthetic', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]));
@@ -77,9 +104,9 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
         if ($environment === Environment::Live) { $bindings->confirmLiveSite($server->id, rtrim(config('app.url'), '/')); }
         $bindings->setProcessing($server->id, true, $activation ?? syntheticActivation());
         $tld = Tld::create(tldColumns(['server_id' => $server->id, 'registrar_key' => $key, 'account_fingerprint' => $binding->fingerprint,
-            'tld' => $ending, 'enabled' => true, 'min_years' => 1, 'max_years' => 3, ...($active?['catalogue_converted'=>true,'registry_fields'=>[]]:[])]));
+            'tld' => $ending, 'enabled' => true, 'min_years' => 1, 'max_years' => 3, ...($ports !== null?['catalogue_converted'=>true,'registry_fields'=>[]]:[])]));
         $terms = $key === 'enom' ? [1, 3] : [1];
-        if($active){
+        if($ports !== null){
             $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,[$ending],'register');
             $rev=fn()=>$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision;
             $costs=[];
@@ -94,15 +121,13 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
         }
         throw new LogicException('Final package fixtures require active commerce.');
     }
-    if($active){
-        $first=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
-        $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($first,[$ending],'register');
-        $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($first,$ending,['register','transfer']),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
-        foreach([$prices,$sellers,$native,$bindings] as $owner){activeFixturePorts($owner,$ports,$clock);activeFixtureOffers($owner,$offers);}
-        return compact('bindings','prices','sellers','native','now','tlds','reads','clock','ports','caps','offers');
-    }
-    return compact('bindings', 'prices', 'sellers', 'native', 'now', 'tlds', 'reads');
+    if ($ports === null) { return $tlds; }
+    $first=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
+    $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($first,[$ending],'register');
+    $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($first,$ending,['register','transfer']),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
+    return $tlds;
 }
+
 function commerceReject(callable $call): void
 {
     try { $call(); $caller=debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS,1)[0];expect(false,'Expected commerce refusal at '.basename($caller['file']).':'.$caller['line']); }

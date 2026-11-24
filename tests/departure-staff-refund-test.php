@@ -1,10 +1,10 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Synthetic card returns only.
 declare(strict_types=1);
-require __DIR__.'/departure-late-receipt-test.php';
+require __DIR__.'/departure-late-receipt.php';
 require __DIR__.'/Support/money-receipt.php';
 use App\Models\Gateway;
-use Paymenter\Extensions\Servers\Domains\Services\{InvoiceMoney,ReceiptReturns,StaffOperationReview,StaffOperations,StaffReviewRefused};
+use Paymenter\Extensions\Servers\Domains\Services\{InvoiceMoney,ReceiptReturns,RenewalCycles,StaffOperationReview,StaffOperations,StaffReviewRefused};
 
 $nativeSuccessful=false;
 Gateway::create(['extension'=>'MoneyReceipt','name'=>'Synthetic card receipt','type'=>'gateway','enabled'=>true]);
@@ -15,6 +15,11 @@ MoneyReceiptGateway::automatic($invoice->fresh(),'departed-staff-receipt',120,'p
 $refunds->creditRejected((int)$renewal->id);
 same(120,ReceiptReturns::outstanding($renewal->fresh()),'The departed renewal retains its in-flight card return');
 same($before,$cash($owner),'An in-flight card return adds no duplicate account credit');
+$note=RenewalCycles::lateNote($renewal->fresh());
+same(true,$note!==null,'The in-flight return has a customer status');
+// Customer History still tells the owner where that money is, though the departure closed the renewal.
+$progress=$owners->present($d->fresh())->progress;
+same(1,count(array_filter($progress,fn($row)=>($row['note']??null)===$note)),'Customer History keeps the late return status');
 MoneyReceiptGateway::complete($invoice->fresh(),'departed-staff-receipt:excess');
 $staff=staffUser(['admin.domains.view','admin.domains.manage','admin.domains.operations.credit','admin.invoices.update']);
 $ticket=static fn($actor)=>StaffOperationReview::ticket((int)$actor->id,(int)$d->id,(int)$renewal->id,'credit',StaffOperationReview::stamp($renewal->fresh(),$d->fresh()),$clock);

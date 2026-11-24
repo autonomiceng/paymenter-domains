@@ -1,7 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Synthetic receipt evidence only.
 declare(strict_types=1);
-require __DIR__.'/departure-late-receipt-test.php';
+require __DIR__.'/departure-late-receipt.php';
 use App\Models\{Gateway,Invoice};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts,PricingRule};

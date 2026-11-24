@@ -2,6 +2,7 @@
 // Synthetic adaptations of Enom 444f31c request-gates/cart-funding/provider-disposition scenarios.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$freshOperation = ($reuseOperationCatalogue ?? false) && !($installedFixture ?? false) && !class_exists(Illuminate\Foundation\Application::class, false);
 if (!($installedFixture ?? false)) { require_once dirname(__DIR__).'/native-app.php'; }
 require __DIR__.'/commerce.php';
 require __DIR__.'/native-commerce.php';
@@ -15,10 +16,12 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, DomainOperations, InvoiceBinding, OperationClaims};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
-extract(commerceFixture(true, $fixtureActivation ?? null, environment: $fixtureEnvironment ?? \Paymenter\Extensions\Servers\Domains\Data\Environment::Test, ending: $fixtureEnding ?? 'com', active:$activeCommerceFixture??true, registrars:$fixtureRegistrars??['enom','namesilo'],nameSiloLocal:$fixtureNameSiloLocal??true)); $clock ??= new FakeClock($now);
+extract(commerceFixture(true, $fixtureActivation ?? null, environment: $fixtureEnvironment ?? \Paymenter\Extensions\Servers\Domains\Data\Environment::Test, ending: $fixtureEnding ?? 'com', active:$activeCommerceFixture??true, registrars:$fixtureRegistrars??['enom','namesilo'],nameSiloLocal:$fixtureNameSiloLocal??true, freshOperation:$freshOperation, fundedRegistration:$useFundedRegistration??false)); $clock ??= new FakeClock($now);
 $transfers = new \Paymenter\Extensions\Servers\Domains\Services\TransferInputs($clock, new \Paymenter\Extensions\Servers\Domains\Services\Refunds($clock));
 $transferCheck = new \Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck(new \Paymenter\Extensions\Servers\Domains\Services\Rdap(static fn () => throw new RuntimeException('Synthetic offline RDAP')));
-App\Models\Server::find($tlds[0]->server_id)->settings()->create(['key' => 'domains_transfer_endings', 'value' => $fixtureEnding ?? 'com']);
+if (!$restoredOperation) {
+    App\Models\Server::find($tlds[0]->server_id)->settings()->create(['key' => 'domains_transfer_endings', 'value' => $fixtureEnding ?? 'com']);
+}
 if(isset($offers)){
     require_once __DIR__.'/offer-commerce.php';
     $eligibility=new class($bindings,$clock,$transferCheck) extends CheckoutEligibility {use OfferCommerceRoute;};$eligibility->fixtureOffers=$offers;
@@ -27,10 +30,14 @@ if(isset($offers)){
 $admission->boot();
 $invoiceBinding = new InvoiceBinding($admission, $native, $prices, $clock); $invoiceBinding->boot();
 app()->instance(InvoiceBinding::class,$invoiceBinding);
-$user = commerceUser(); $user->update(['email' => 'finance-owner@example.com']);
-foreach (['address' => '1 Synthetic Street', 'city' => 'Seattle', 'state' => 'WA', 'zip' => '98101',
-    'country' => 'US', 'phone' => '(206) 555-0100'] as $key => $value) {
-    $user->properties()->create(['key' => $key, 'name' => $key, 'value' => $value]);
+if ($restoredOperation) {
+    $user = App\Models\User::where('email', 'finance-owner@example.com')->sole();
+} else {
+    $user = commerceUser(); $user->update(['email' => 'finance-owner@example.com']);
+    foreach (['address' => '1 Synthetic Street', 'city' => 'Seattle', 'state' => 'WA', 'zip' => '98101',
+        'country' => 'US', 'phone' => '(206) 555-0100'] as $key => $value) {
+        $user->properties()->create(['key' => $key, 'name' => $key, 'value' => $value]);
+    }
 }
 $product = $native->product($tlds[0], 'register');
 // Downstream registration matrices can skip cart rendering and request round trips.
