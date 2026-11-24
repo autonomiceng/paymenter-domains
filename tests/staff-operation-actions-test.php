@@ -36,8 +36,8 @@ foreach(array_keys(StaffOperationReview::ACTIONS) as $action){
 $staff->role->update(['permissions'=>array_values(array_diff($all,[Staff::VIEW]))]);
 commerceReject(fn()=>$run($op,'refund')); $staff->role->update(['permissions'=>$all]);
 // Native modal reason validation on a money action, then allowed release, audit, immutable attempt and single-use key.
-submitStaffAction($page->mountAction('refund'), ['reason'=>'no'])->assertHasActionErrors(['reason'=>'min']);
-submitStaffAction($page->unmountAction()->mountAction('refund'), ['reason'=>"Review\nwith newline"])->assertHasActionErrors(['reason'=>'regex']);
+$page->mountAction('refund')->setActionData(['reason'=>'no'])->callMountedAction()->assertHasActionErrors(['reason'=>'min']);
+$page->unmountAction()->mountAction('refund')->setActionData(['reason'=>"Review\nwith newline"])->callMountedAction()->assertHasActionErrors(['reason'=>'regex']);
 // The dialog's confirm button submits the typed reason; the refund action itself as that button only reopens the dialog.
 $submit=$page->unmountAction()->mountAction('refund')->instance()->getMountedAction()->getModalSubmitAction();
 same(['submit','danger'],[$submit?->getName(),$submit?->getColor()],'Cancel and refund confirms with a red submit button');
