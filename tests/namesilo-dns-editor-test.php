@@ -18,7 +18,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,ObservationP
 $setup('dns-form',[$a,$txt,$caa,$srv]);
 $seed=$submit($d,$driver,'dns',['records'=>[$a,$txt,$cname]]);Cache::flush();
 same('succeeded',$management->run($seed->id,$driver)->state,'Synthetic seed save completes');
-$restoreSeed=nativeFixtureCheckpoint();$seedTime=$clock->now();$seedWire=clone $wire;$seedManagement=clone $ms;
+$restoreSeed=nativeRegistrarCheckpoint($clock,$wire,$ms);
 $rows=$form();$rows[0]['address']='192.0.2.5';$rows[1]['address']='v=spf1 a -all';$rows[]=['name'=>'mail','type'=>'A','address'=>'192.0.2.6','mx_pref'=>'','_source'=>''];$post($rows);$op=$latest();
 $steps=$d->operations()->where('action','dns')->where('id','<=',$op->id)->orderByDesc('id')->limit(3)->get()->reverse()->values();
 Cache::flush();$management->run($op->id,$driver);same('succeeded',$steps[0]->fresh()->state,'The first change is confirmed');$wire->fault='missing';
@@ -35,10 +35,7 @@ expect($fresh->id!==$op->id,'A fresh save replaces the unsent request');same('ma
 for($i=0;$i<3&&$fresh->fresh()->state!=='succeeded';$i++){Cache::flush();$management->run($fresh->id,$driver);}
 same('succeeded',$fresh->fresh()->state,'The fresh request completes');same(['dnsUpdateRecord','dnsAddRecord'],$wire->writes,'Only the remaining changes are sent');
 // The opt-in adapter edits standard rows in the shared editor; CAA and SRV stay read-only.
-$restoreSeed();$d=$d->fresh();$clock->instant=$seedTime;
-foreach($seedWire as $property=>$value){$wire->$property=$value;}
-foreach($seedManagement as $property=>$value){$ms->$property=$value;}
-$wire->writes=[];
+$restoreSeed();$d=$d->fresh();$wire->writes=[];
 same([['name'=>'@','type'=>'A','address'=>'192.0.2.1','mx_pref'=>10],['name'=>'@','type'=>'TXT','address'=>'v=spf1 -all','mx_pref'=>10],['name'=>'www','type'=>'CNAME','address'=>'example.net.','mx_pref'=>10]],
     $section()['records'],'Standard rows are editable without provider IDs or TTLs');
 $dom=$page();$html=$dom->document->saveHTML();
