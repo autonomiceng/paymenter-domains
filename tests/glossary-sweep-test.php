@@ -45,7 +45,7 @@ config(['settings.company_name'=>'Example Hosting']);
 // Upgrades replace only exact earlier defaults, field by field; edited fields stay.
 ReminderTemplates::ensure();
 foreach(priorReminderDefaults() as $key=>$fields){
-    $current=($r+$w)[$key];$t=NotificationTemplate::where('key',$key)->sole();
+    $current=$r[$key];$t=NotificationTemplate::where('key',$key)->sole();
     foreach(array_intersect_key($fields,array_flip(\Illuminate\Support\Facades\Schema::getColumnListing('notification_templates'))) as $field=>$versions){
         foreach($versions as $old){
             $t->forceFill([$field=>$old])->save();ReminderTemplates::ensure();

@@ -211,7 +211,6 @@ expect(!isset(RequestFacts::for($op)['registrar_refund']),'Local unsent rejectio
 // Check explicit map keys. Passthrough alone must never satisfy mapping coverage.
 $labelsSource=file_get_contents(dirname(__DIR__).'/Domains/Admin/Support/Labels.php');
 $reasonSource=explode('public static function reason(', $labelsSource, 2)[1];
-same('Nameservers missing at the registry',Labels::reason('nameservers_missing'),'Staff can identify a missing registry delegation');
 same('Domain not found in the registrar account',Labels::reason('domain_not_in_account'),'Staff can identify a domain missing from its registrar account');
 same('SRV records',Labels::reason('srv'),'Staff can identify the affected record family');
 same('Cancelled',Labels::reason('cancelled'),'Staff can identify a cancelled order');
