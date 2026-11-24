@@ -3,12 +3,10 @@
 declare(strict_types=1);
 require_once __DIR__.'/reserved-fixtures.php';
 require __DIR__.'/runtime-native.php';
-use App\Models\{Invoice,Service};
+use App\Models\Service;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Domains;
-use Paymenter\Extensions\Servers\Domains\Services\{Runtime,RuntimePorts,AccountBindings,CartAdmission,CheckoutEligibility,InvoiceBinding,NativeCatalogue,PriceCatalogue,OwnedDomains,NativePresenter,OwnerPorts,HolderPricing};
-use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
+use Paymenter\Extensions\Servers\Domains\Models\Domain;
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,HolderPricing,NativeCatalogue,NativePresenter,OwnedDomains,OwnerPorts};
 $owners=app(OwnedDomains::class);$presenter=app(NativePresenter::class);$user=commerceUser();$user->update(['email'=>'native-owner@example.com']);$foreign=commerceUser();foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}$pairs=[];$checkoutLines=[];$cartEdits=[];
 foreach($tlds as $i=>$t){
     if($i){$p=DB::table('domains_sales_policies')->where('tld','com')->sole();activeFixtureSeller($sellers,'com',$p->revision,$t->server_id,true,true,$now);}
