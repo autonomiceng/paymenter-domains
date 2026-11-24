@@ -374,15 +374,17 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                    else 120 if kind == 'native' else 180 if kind == 'ui' else 60)
         bounded = bool((env or {}).get('DOMAINS_TEST_CGROUP'))
         phased = bounded and test_workers.installed_phases(argv[-1])
+        local_budget = bounded and env.get('DOMAINS_TEST_BUDGET') == str(ROOT/'scripts/case_budget.py')
         resource_receipt = output / f'{index:04d}.resources.json'
         # Browser cases run alone and include Chromium, Node and the PHP server.
         test_limits = dict(wall_seconds=60 if Path(argv[-1]).name in {'native-paid-baseline-test.php', 'renewal-safety-test.php', 'staff-release-parity-test.php', 'staff-transfer-release-parity-test.php'} else 30 if kind in ('ui', 'native') else 10,
                            memory_bytes=(768 if kind == 'ui' else 256)*1024**2)
-        if bounded and env.get('DOMAINS_TEST_LIMITS') != 'wide':
+        if local_budget and env.get('DOMAINS_TEST_LIMITS') != 'wide':
             test_limits = dict(wall_seconds=min(65, timeout), memory_bytes=512*1024**2)
         syntax_lint = kind == 'lint' and len(argv) >= 3 and argv[1] == '-l'
         case_budget = bounded and not phased
-        rss_path = None if syntax_lint or case_budget else output/f'{index:03d}.rss.txt'
+        owns_descendants = case_budget and local_budget
+        rss_path = None if syntax_lint or owns_descendants else output/f'{index:03d}.rss.txt'
         interrupted = None
         stdout, stderr = b'', b''
         try:
@@ -400,7 +402,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                              '--receipt', str(resource_receipt), '--', *argv] if case_budget else argv)
                 stdout, stderr, code, timed_out = execute(launched, cwd=ROOT, env=child,
                                                         timeout=test_limits['wall_seconds']+2 if case_budget else timeout, graceful=60 if kind == 'mariadb' else 0,
-                                                        processes=processes, index=index, rss_path=rss_path, supervised=case_budget)
+                                                        processes=processes, index=index, rss_path=rss_path, supervised=owns_descendants)
         except BaseException as error:
             interrupted = error
             stdout, stderr = getattr(error, 'captured_output', (stdout, stderr))
@@ -427,7 +429,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
             result['limits'] = test_limits
             try:
                 result['resources'] = json.loads(resource_receipt.read_text())
-                if not syntax_lint and 'peak_rss_bytes' in result['resources']:
+                if owns_descendants and not syntax_lint and 'peak_rss_bytes' in result['resources']:
                     result['peak_rss_kib'] = result['resources']['peak_rss_bytes']//1024
             except (OSError, ValueError) as error:
                 result['exit'] = code = code or 1

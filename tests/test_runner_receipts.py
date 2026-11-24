@@ -443,6 +443,22 @@ sudo() {
                 self.assertFalse(receipt['complete'])
                 self.assertEqual((receipt['phase'], receipt['git_tree'], receipt['git_tree_error']), ('setup', 'a'*40, None))
 
+    def test_budget_deadline_reaps_a_child_in_its_own_session(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            pidfile = Path(temporary)/'detached.pid'
+            # Bound the fixture's lifetime independently if supervision breaks.
+            child = ("import os,signal,sys; from pathlib import Path; signal.alarm(6); "
+                     "signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+                     "Path(sys.argv[1]).write_text(str(os.getpid())); signal.pause()")
+            parent = ("import subprocess,sys; "
+                      "subprocess.run([sys.executable,'-c',sys.argv[1],sys.argv[2]],start_new_session=True)")
+            driver = ("from process_supervisor import supervise; import sys; "
+                      "sys.exit(supervise(sys.argv[1:], grace_seconds=0, wall=1))")
+            result = subprocess.run([sys.executable, '-c', driver, sys.executable, '-c', parent, child, str(pidfile)],
+                                    cwd=ROOT/'scripts', timeout=5)
+            self.assertEqual(result.returncode, 124)
+            self.assertFalse(Path('/proc', pidfile.read_text()).exists())
+
     def test_resources_are_recorded_only_after_the_cgroup_drains(self):
         for drained, status, oom in [(True, 0, 0), (True, 124, 0), (True, 0, 1), (False, 0, 0)]:
             with self.subTest(drained=drained, status=status, oom=oom), tempfile.TemporaryDirectory() as temp:
@@ -535,13 +551,18 @@ sudo() {
                     commands = [('runner', ['probe', 'first']), ('native', ['probe', 'later'])]
                     def execute(argv, **kwargs):
                         path = Path(argv[argv.index('--receipt')+1])
+                        self.assertIsNone(kwargs['rss_path'])
+                        self.assertTrue(kwargs['supervised'])
+                        self.assertEqual(argv[argv.index('--wall')+1], '10' if argv[-1] == 'first' else '30')
+                        self.assertEqual(int(argv[argv.index('--memory')+1]), 256*1024**2)
                         if argv[-1] == 'first':
                             if payload is not None:
                                 path.write_text(payload)
                             return b'first completed', b'', 0, False
                         path.write_text(json.dumps({'exit': 7, 'wall_seconds': 0.1, 'memory_bytes': 1}))
                         return b'later native failure', b'', 7, False
-                    env = {'DOMAINS_TEST_CGROUP': '/unused', 'DOMAINS_TEST_BUDGET': 'unused'}
+                    env = {'DOMAINS_TEST_CGROUP': '/unused', 'DOMAINS_TEST_BUDGET': str(root/'scripts/case_budget.py'),
+                           'DOMAINS_TEST_LIMITS': 'wide'}
                     with mock.patch.object(runner, 'ROOT', root), \
                          mock.patch.object(runner, 'execute', side_effect=execute), \
                          contextlib.redirect_stdout(io.StringIO()):
