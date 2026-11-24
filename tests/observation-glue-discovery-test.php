@@ -87,7 +87,8 @@ expect(in_array('CheckNSStatus',array_column($state->calls,0),true),'Only explic
 $state->glue['ns1.discovery-placeholder.com']='10.0.0.1';$clock->instant=$clock->now()->modify('+61 seconds');$observer->run($d->id,readRecords:true);
 same('1.1.1.1',OwnerRecords::forDomain($d->fresh())['glue'][0]['ip'],'Non-public read preserves confirmed host without absence proof');expect(ObservationRecords::held($d->fresh()),'Invalid child address holds record stage');
 $io=count($state->calls);$clock->instant=$clock->now()->modify('+1 day');$observer->run($d->id,readRecords:false);same($io,count($state->calls),'Invalid child read does not retry automatically');$state->glue['ns1.discovery-placeholder.com']='1.1.1.1';
-foreach(['GetHosts','GetDomainInfo','CheckNSStatus']as$fault){
+foreach(['GetHosts','provider_id_mismatch','CheckNSStatus']as$fault){
+ $observation->domainId=$fault==='provider_id_mismatch'?'457':'456';
  $clearRecords();$state->fault=$fault;$clock->instant=$clock->now()->modify('+61 seconds');
  same('refreshed',$observer->run($d->id,readRecords:true),'Failed record read holds only records: '.$fault);
  same('1.1.1.1',OwnerRecords::forDomain($d->fresh())['glue'][0]['ip'],'Failed read retains confirmed partial child history');

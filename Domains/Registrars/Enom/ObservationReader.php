@@ -20,8 +20,9 @@ final class ObservationReader implements ReadPort
     public function observationCapabilities(): array { return $this->management->observationCapabilities(); }
     public function discover(ManagementRequest $r,RequestContext $c,array $knownGlue=[]): array
     {
-        // Nameservers, contacts and three flags reads share the observer's request budget.
-        $out=$this->management->discover($r,$c,$knownGlue,reservedReads:5);
+        // Keep the combined refresh's existing 11-host rotation. Only contacts need another settings read.
+        $hasSnapshot=$c->observationReply($r->name,R::Info->value)!==null;
+        $out=$this->management->discover($r,$c,$knownGlue,reservedReads:$hasSnapshot?1:5,maxGlueReads:$hasSnapshot?11:13);
         $out['settings']=array_fill_keys(['nameservers','contacts','flags'],['state'=>'unknown','facts'=>[]]);
         if (isset($out['failure_code'])) {
             foreach (['dns','srv','ds'] as $kind) { if (($out[$kind]['state']??null)!=='complete') { $out['failed_family']=$kind;break; } }
@@ -56,6 +57,8 @@ final class ObservationReader implements ReadPort
         $parts=explode('.',$r->name,2);$p=['SLD'=>$parts[0],'TLD'=>$parts[1]];$command->validate($p);
         $origin=$this->binding->environment->value==='live'?'https://reseller.enom.com/interface.asp':'https://resellertest.enom.com/interface.asp';
         OperationClaims::outside();$this->binding->requireMatch($r->binding);$this->binding->requireMatch($c->binding);
+        $observed=$c->observationReply($r->name,$command->value);
+        if ($observed!==null) { return $observed; }
         try { $body=$c->withinRead($this->binding,fn($remaining)=>($this->exchange->getValue())($origin,$command->value,$p,min(25000,$remaining))); }
         catch (ReadDeferred|EnomTestCallLimit $e) { throw $e; }
         catch (\Throwable) { throw new \RuntimeException('Observation transport unavailable.'); }

@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ObservationReader;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationRecords,ObservationSchema,OwnerPorts};
 ObservationSchema::install();$budget=new AccountReadBudget($clock);
 $ports=new OwnerPorts(function($b)use(&$driver){return $driver;});
-$state->ns=['dns1.name-services.com','dns2.name-services.com'];
+$observation->nameservers=$state->ns=['dns1.name-services.com','dns2.name-services.com'];
 [$d,$driver,$original]=$holding(placeholderComFixtureName('c1-regressions-placeholder.com'),NameserverEvidence::observed($state->ns,'enom_getdns',$clock->now()));
 App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 $state->contacts=array_fill_keys(['registrant','admin','tech','auxbilling'],['FirstName'=>'Synthetic','LastName'=>'Person','Address1'=>'1 Example Street','City'=>'Portland','PostalCode'=>'97201','Country'=>'US','EmailAddress'=>'synthetic@example.com','Phone'=>'+1.5035550123']);

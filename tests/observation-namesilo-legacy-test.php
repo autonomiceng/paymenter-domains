@@ -40,7 +40,7 @@ $wire=new class($state) implements DeadlineTransport {
     public function sendWithin($e,$c,$r,#[SensitiveParameter]string $key,int $timeout):TransportResponse{
         same(0,DB::transactionLevel(),'Legacy holding reads outside locks');same('getDomainInfo',$r->command,'Scheduled legacy read has no offer or write command');
         expect($timeout>0&&$timeout<=25000,'Legacy read deadline bounded');$this->state->calls[]=$r->command;
-        return new TransportResponse(200,json_encode(['request'=>['operation'=>$r->command],'reply'=>['code'=>300,'detail'=>'synthetic','created'=>'2020-01-01','expires'=>'2028-01-01','status'=>'Active','auto_renew'=>'No','private'=>'No','locked'=>'Yes','nameservers'=>[['nameserver'=>'ns1.provider.example.net'],['nameserver'=>'ns2.provider.example.net']]]]));
+        return new TransportResponse(200,json_encode(['request'=>['operation'=>$r->command],'reply'=>['code'=>300,'detail'=>'synthetic','created'=>'2020-01-01','expires'=>'2028-01-01','status'=>'Active','auto_renew'=>'No','private'=>'No','locked'=>'Yes','contact_ids'=>array_fill_keys(['registrant','administrative','technical','billing'],'900001'),'nameservers'=>[['nameserver'=>'ns1.provider.example.net'],['nameserver'=>'ns2.provider.example.net']]]]));
     }
 };
 $registry=new RegistrarRegistry;$registry->register('namesilo',['token'],new class implements Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier{
@@ -109,7 +109,12 @@ $adapterExchange=static function($origin,$cmd,$p,$timeout)use(&$adapterCalls,$co
 };
 $port=new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsManagement($binding,$adapterExchange);
 $refresh=new DomainObservation($readBindings,$clock,new AccountReadBudget($clock),observationReader:static fn($b)=>$port);
+$state->calls=[];
 $refreshCode=$refresh->run($d->id);
+$commands=[...$state->calls,...$adapterCalls];
+sort($commands);
+same(['contactList','dnsListRecords','dnsSecListRecords','getDomainInfo','listRegisteredNameServers'],$commands,
+    'One NameSilo record observation with a shared contact sent '.implode(', ',$commands));
 same([],array_values(array_diff($adapterCalls,['getDomainInfo','dnsListRecords','dnsSecListRecords','listRegisteredNameServers','contactList'])),'Refresh through the DNS adapter only reads');
 expect(in_array('dnsListRecords',$adapterCalls,true),'Refresh reads the DNS list');
 $refreshed=$records::current($d->fresh(),$clock->now());

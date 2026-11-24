@@ -37,7 +37,8 @@ final class DomainObservation
             $current();
             if(!hash_equals($credential,$this->bindings->holdingCredentialRevision($binding))){throw new ReadDeferred('Observation credentials changed.');}
         }:null;
-        $ctx=new RequestContext($binding,RequestOrigin::Background,$this->clock->now()->modify('+250 seconds'),new RequestBudget(25),$this->clock,$this->budget,stopOnReadFailure:true,readNameservers:true,current:$wireGuard);
+        $ctx=new RequestContext($binding,RequestOrigin::Background,$this->clock->now()->modify('+250 seconds'),new RequestBudget(25),$this->clock,$this->budget,stopOnReadFailure:true,readNameservers:true,current:$wireGuard,
+            observationName:$recordEnabled && $seed->status==='active' && !$recordOverflow ? $seed->domain : null);
         $snapshot=null; $transfer=TransferStatus::Unknown; $records=null; $failed=false; $recordFailed=false; $deferred=false; $failureCode=null; $capabilities=null; $failedFamily=null;
         $recordHeld=ObservationRecords::held($seed) && !$readRecords;
         try {

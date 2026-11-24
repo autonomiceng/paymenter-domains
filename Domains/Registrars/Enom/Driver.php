@@ -163,9 +163,16 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         $privacyFlag = self::flag($privacy->value('getwppsinfo.wppsenabled'));
         $allowed = self::flag($privacy->value('getwppsinfo.wppsallowed')); $exists = self::flag($privacy->value('getwppsinfo.wppsexists'));
         if ($allowed === null || $exists === null || ($privacyFlag === true && (!$allowed || !$exists))) { $privacyFlag = null; }
+        $nameservers = $context->readNameservers ? $this->read(ReadCommand::Nameservers, $parts, $context) : null;
+        if ($nameservers?->status === 'success') {
+            $context->retainObservationReplies($name, [
+                ReadCommand::Info->value => $reply, ReadCommand::Nameservers->value => $nameservers,
+                ReadCommand::Renewal->value => $renew, ReadCommand::Lock->value => $lock, ReadCommand::Privacy->value => $privacy,
+            ]);
+        }
         $snapshot = new DomainSnapshot($this->binding(), $name, true, $domain->expiry, $auto,
             $privacyFlag, self::flag($lock->value('reg-lock')), $domain->providerReference,
-            nameservers: $context->readNameservers ? self::readNameservers($this->read(ReadCommand::Nameservers, $parts, $context), $context->now()) : null);
+            nameservers: $nameservers ? self::readNameservers($nameservers, $context->now()) : null);
         return $this->neutral($reply, new Evidence(domain: $snapshot));
     }
     public function readRenewalDomain(string $name, #[\SensitiveParameter] RequestContext $context): DriverResult

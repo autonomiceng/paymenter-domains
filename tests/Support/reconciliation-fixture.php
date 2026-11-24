@@ -27,7 +27,7 @@ $wire = new class($observation) implements Transport {
             ReadCommand::Info => '<GetDomainInfo><DomainName DomainNameID="'.($s->domainId??'456').'">'.$s->name.'</DomainName><Status><Belongs-To>'.($s->fault==='owner'?'another-account':'account-enom').'</Belongs-To><Expiration>'.$expiry.'</Expiration></Status></GetDomainInfo>',
             ReadCommand::Nameservers => implode('',array_map(fn($ns)=>'<dns>'.$ns.'</dns>',$s->nameservers)),
             ReadCommand::Expiry => '<ExpirationDate>'.$expiry.'</ExpirationDate>',
-            ReadCommand::Renewal => '<RenewName>0</RenewName>', ReadCommand::Lock => '<Reg-Lock>1</Reg-Lock>',
+            ReadCommand::Renewal => '<RenewName>0</RenewName>', ReadCommand::Lock => $s->fault==='unknown_lock' ? '<Reg-Lock/>' : '<Reg-Lock>1</Reg-Lock>',
             ReadCommand::Privacy => '<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>',
             ReadCommand::Order => '<Order><OrderID>'.($s->fault === 'history-multiple' ? $parameters['OrderID'] : $s->reference).'</OrderID><Result>true</Result><OrderBillAmount>$8.95</OrderBillAmount><BillDate>'.$s->billDate.'</BillDate><OrderDetail>'.$item.'</OrderDetail>'.($s->fault === 'multiple' ? '<OrderDetail>'.$item.'</OrderDetail>' : '').'</Order>',
             ReadCommand::Orders => enomHistoryList($s->fault === 'history-multiple' ? [$s->reference, '9002'] : [$s->reference], $s->billDate),
