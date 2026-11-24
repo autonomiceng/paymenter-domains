@@ -4,6 +4,8 @@ declare(strict_types=1);
 require_once __DIR__.'/Support/synthetic-invoice-attachment.php';
 // Native invoices, claims and the actual Filament action must agree; reuse the existing offline fixture.
 $fixtureRegistrars = ['enom'];
+$fixtureReadyRegistration = true;
+require_once __DIR__.'/Support/fixture-checkpoint.php';
 require __DIR__.'/Support/staff-operation-fixture.php';
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
@@ -141,18 +143,32 @@ commerceReject(fn()=>\Paymenter\Extensions\Servers\Domains\Services\Reconciliati
 app()->instance(OperationClaims::class,$claims);
 config(['domains.enom_writes.transfer'=>false]); // No built-in runtime purchase composition in this fixture.
 $reviewWork=new \Paymenter\Extensions\Servers\Domains\Services\RuntimeWork($clock,new \Paymenter\Extensions\Servers\Domains\Services\RuntimePorts);
+$faultTime=$clock->now()->modify('+61 seconds');
+$clock->instant=$faultTime;
+config(['domains.enom_writes.registration'=>true]);
+$order=$new(placeholderComFixtureName('retry-fault-placeholder.com'));
+config(['domains.enom_writes.registration'=>false]);
+$funds='1.00';$available=true;$query=OperationClaims::query($order,$order->domain);
+$changeRegistry=new RegistrarRegistry;
+$changeRegistry->register('enom',['token'],new class implements AccountVerifier {public function verify(Environment $e,#[SensitiveParameter] array $c):string{return $c['token'];}},
+    static fn($b,$c)=>new FakeRegistrar($b,new Capabilities($b,[]),new DriverResult($b,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,
+        new Evidence(quote:new QuoteEvidence($query,new Money('6.00','USD'),CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+120 seconds')),balance:new Money('1.00','USD'),available:true,premium:false))));
+$changeEngine=new DomainOperations($claims,new RegistrationPreflight(new AccountBindings($changeRegistry),new WriteFeatures(registration:true),new WriteAcceptance($binding,true,true,25,catalogue: $GLOBALS['caps']??null)),$writer,$clock);
+
+// Fork the two retained claim states from one real paid order.
+$restorePaid=nativeFixtureCheckpoint();
+$changeEngine->execute($order->id);
+$restoreBalanceHold=nativeFixtureCheckpoint();
 foreach(['payment','missing_claim','authority','legacy_authority','configuration','setup'] as $fault){
-    $clock->instant=$clock->now()->modify('+61 seconds');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
-    config(['domains.enom_writes.registration'=>true]);$changed=$new(placeholderComFixtureName('retry-'.str_replace('_','-',$fault).'-placeholder.com'));
-    config(['domains.enom_writes.registration'=>false]);$funds='1.00';$available=true;$query=OperationClaims::query($changed,$changed->domain);
-    // Rebind the registrar edge's query for this independent native order.
-    $changeRegistry=new RegistrarRegistry;
-    $changeRegistry->register('enom',['token'],new class implements AccountVerifier {public function verify(Environment $e,#[SensitiveParameter] array $c):string{return $c['token'];}},
-        static fn($b,$c)=>new FakeRegistrar($b,new Capabilities($b,[]),new DriverResult($b,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,
-            new Evidence(quote:new QuoteEvidence($query,new Money('6.00','USD'),CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+120 seconds')),balance:new Money('1.00','USD'),available:true,premium:false))));
-    $changeEngine=new DomainOperations($claims,new RegistrationPreflight(new AccountBindings($changeRegistry),new WriteFeatures(registration:true),new WriteAcceptance($binding,true,true,25,catalogue: $GLOBALS['caps']??null)),$writer,$clock);
-    if($fault==='legacy_authority'){[$claimed]=$claims->claim((int)$changed->id);$changed=$claims->finish($claimed);$changed->update(['safe_code'=>'usd_balance_required']);}
-    else{$changed=$changeEngine->execute($changed->id);}
+    $clock->instant=$faultTime;Carbon\Carbon::setTestNow($faultTime);Carbon\CarbonImmutable::setTestNow($faultTime);
+    if($fault==='legacy_authority'){
+        $restorePaid();
+        [$claimed]=$claims->claim((int)$order->id);
+        $claims->finish($claimed)->update(['safe_code'=>'usd_balance_required']);
+    }else{
+        $restoreBalanceHold();
+    }
+    $changed=$order->fresh();
     $saved=$changed->funding;$savedPayload=$changed->payload;$before=$writer->calls;
     if($fault==='payment'){App\Models\InvoiceTransaction::create(['invoice_id'=>$changed->invoice_id,'amount'=>'1.00','fee'=>'0.00','status'=>'succeeded']);}
     if($fault==='missing_claim'){$f=$saved;unset($f['claim']);DB::table('domains_operations')->where('id',$changed->id)->update(['funding'=>Illuminate\Support\Facades\Crypt::encryptString(json_encode($f))]);}
@@ -218,11 +234,12 @@ $step();config(['domains.enom_writes.registration'=>true]);$failed=$new(placehol
 $query=OperationClaims::query($failed,$failed->domain);$funds='100.00';$available=null;$before=$writer->calls;
 $result=$lowEngine->execute($failed->id);$claim=$result->attempt['claim_key'];$paid=$result->funding['claim'];
 same(['held','registrar_read_failed','absent'],[$result->state,$result->safe_code,$result->attempt['seal']],'A failed read is proven unsent');
-$open($result)->assertSee("Not sent: couldn't read from the registrar. It will retry automatically.")->assertActionHidden('release');
+$failedPage=$open($result);
+$failedPage->assertSee("Not sent: couldn't read from the registrar. It will retry automatically.")->assertActionHidden('release');
 Illuminate\Support\Facades\Auth::setUser($staff);$nextTry=(int)DB::table('domains_runtime_operations')->where('operation_id',$result->id)->value('due_at');
 // The notice supplies the scheduled instant separately from its text; the rendered page keeps it as a time.
 same($nextTry,RequestFacts::notice($result)['next_try'],'A timed retry retains its queued instant');
-$retryPage=$open($result)->html();$retryDom=new DOMDocument;@$retryDom->loadHTML('<?xml encoding="utf-8"?>'.$retryPage);
+$retryPage=$failedPage->html();$retryDom=new DOMDocument;@$retryDom->loadHTML('<?xml encoding="utf-8"?>'.$retryPage);
 $retryTimes=(new DOMXPath($retryDom))->query('//*[@data-piece="notice"]//time[@datetime]');$instants=[];
 foreach($retryTimes as $time){$instants[]=(new DateTimeImmutable($time->getAttribute('datetime')))->getTimestamp();}
 expect(in_array($nextTry,$instants,true),'The rendered notice shows the queued retry instant');
