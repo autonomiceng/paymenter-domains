@@ -48,8 +48,8 @@ function assertRetained(string $receipt): void
         expect(array_key_exists($table,$after),'Retained table exists: '.$table);
         // Only template fields still holding an exact earlier shipped default may change, with the save timestamp.
         // Every other raw value, row identity and multiplicity must survive.
-        $prior=[...priorReminderDefaults(),...priorWatchDefaults()];
-        $current=[...Paymenter\Extensions\Servers\Domains\Services\ReminderTemplates::definitions(),...Paymenter\Extensions\Servers\Domains\Services\WatchNoticeTemplates::definitions()];
+        $prior=priorReminderDefaults();
+        $current=Paymenter\Extensions\Servers\Domains\Services\ReminderTemplates::definitions();
         foreach($rows as &$row){
             if($table==='notification_templates' && isset($prior[$row['key']??null])){
                 $changed=false;
@@ -74,14 +74,6 @@ function assertRetained(string $receipt): void
             $counts[$key]--;
         }
     }
-}
-function seedPsl(): void
-{
-    if(!Schema::hasTable('domains_psl_snapshots')||DB::table('domains_psl_snapshots')->exists()){return;}
-    $body="// Synthetic retained fixture\ncom\n";
-    DB::table('domains_psl_snapshots')->insert(['revision'=>hash('sha256',$body),'state'=>'current','source_url'=>'https://example.test/synthetic-list',
-        'byte_size'=>strlen($body),'icann_count'=>1,'private_count'=>0,'fetched_at'=>1,'validated_at'=>1,'compressed_body'=>base64_encode(gzencode($body))]);
-    DB::table('domains_psl_status')->where('id',1)->update(['checked_at'=>1,'last_result'=>'synthetic_retained']);
 }
 function assertBooted(): void
 {
@@ -192,10 +184,6 @@ if($phase==='server-delete'){
 }elseif($phase==='template-defaults'){
     same(1,DB::table('notification_templates')->where('key','domains_domain_expiring')->update([...previousReminderDefaults(),'updated_at'=>TEMPLATE_BEFORE_AT]),'Seed both exact previous defaults');
     file_put_contents($receipt,json_encode(retained(),JSON_THROW_ON_ERROR));
-}elseif($phase==='watch-seed'){
-    assertRetained($receipt);require __DIR__.'/Support/installed-watch.php';seedInstalledWatch();
-    file_put_contents($receipt,json_encode(retained(),JSON_THROW_ON_ERROR));
-    echo "Installed watch observations, notices and adoption preview seeded with all gates off.\n";
 }elseif($phase==='exchange-contracts'){
     require __DIR__.'/Support/enom-wire.php';require __DIR__.'/Support/enom-exchange.php';
 }elseif(in_array($phase,['namesilo-registration','namesilo-renewal'],true)){
@@ -232,7 +220,6 @@ if($phase==='server-delete'){
     App\Models\Credit::create(['user_id'=>$user->id,'currency_code'=>'USD','amount'=>'4.25']);
     foreach($tlds as $t){$bindings->setProcessing($t->server_id,false);}
     expect(Account::where('processing_enabled',true)->doesntExist(),'Processing parked for retained acceptance');
-    seedPsl();
     same(1,DB::table('notification_templates')->where('key','domains_domain_expiring')->update([
         'subject'=>'Retained synthetic operator subject','body'=>'Retained synthetic operator content.',
         'in_app_body'=>previousReminderDefaults()['in_app_body'],'updated_at'=>TEMPLATE_BEFORE_AT,
@@ -249,7 +236,7 @@ if($phase==='server-delete'){
     same('active',Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation::routeState()['state'],'Fresh catalogue remains active across upload, upgrade and reinstall');
     // Prove the upload-time upgrade succeeded before any second upgrade can repair it.
     app(Installation::class)->verify();
-    require_once __DIR__.'/Support/installed-watch.php';assertInstalledWatchGates();assertRetained($receipt);
+    assertRetained($receipt);
     $before=json_decode(file_get_contents((string)getenv('PACKAGE_MIGRATION_RECEIPT')),true,512,JSON_THROW_ON_ERROR);
     $after=DB::table('migrations')->orderBy('id')->get()->map(fn($r)=>(array)$r)->all();
     same($before,array_slice($after,0,count($before)),'Original migration history unchanged');
@@ -270,7 +257,7 @@ if($phase==='server-delete'){
     same($after,DB::table('migrations')->orderBy('id')->get()->map(fn($r)=>(array)$r)->all(),'Repeated native upgrade changes no migration history');
     same($rawBefore,retained(),'Repeated native upgrade changes no raw retained rows');
     assertRetained($receipt);
-    seedPsl();file_put_contents($receipt,json_encode(retained(),JSON_THROW_ON_ERROR));
+    file_put_contents($receipt,json_encode(retained(),JSON_THROW_ON_ERROR));
     file_put_contents((string)getenv('PACKAGE_MIGRATION_RECEIPT'),json_encode($after,JSON_THROW_ON_ERROR));
     $entry=new Paymenter\Extensions\Servers\Domains\Domains;$entry->boot();$entry->boot();
     assertBooted();

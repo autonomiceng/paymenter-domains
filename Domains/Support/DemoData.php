@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Support;
 use Illuminate\Support\HtmlString;
-use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, ManagedPublicConfig, Operation, WatchName};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 /** Decides whether a record is seeded demo data. Demo records keep their real status, Missing values and actions;
  * they only gain the Demo tag after their name. Markers are the ones the offline demo seed writes. */
 final class DemoData
@@ -26,9 +26,7 @@ final class DemoData
         return match (true) {
             $model instanceof Domain => ($model->snapshot[self::MARKER] ?? null) === true,
             $model instanceof Operation => ($model->policy[self::MARKER] ?? null) === true || $model->funding_basis === self::MARKER,
-            $model instanceof ManagedPublicConfig => $model->reason === self::MARKER,
             $model instanceof Account => self::account($model),
-            $model instanceof WatchName => ($model->registry?->facts[self::MARKER] ?? null) === true,
             default => false,
         };
     }

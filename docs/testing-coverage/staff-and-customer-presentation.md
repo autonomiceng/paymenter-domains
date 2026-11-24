@@ -90,11 +90,7 @@ No claim-evidence comparison or append-only guarantee is relaxed.
 `staff-reason-test.php` checks four/500/501 Unicode characters, invalid UTF-8,
 control characters, actual Filament form/server behavior and safe refusal text.
 Arbitrary DomainException/runtime messages remain behind the generic notification.
-Settings, holdings, contact recovery, acquisition retirement, reminder schedules,
-watch writes/mappings/profiles, notice resend and PSL tests cover their own Unicode
-limits. Adoption already validates UTF-8 and its max-only 500-character form rule.
-Watch storage's internal 1000-character limit and the PSL 1000-character rule remain
-distinct from the usual staff 5–500 and resend 10–500 rules.
+Settings, holdings, contact recovery, acquisition retirement, reminder schedules and DNS template edits apply the shared staff reason limits. Adoption validates its own 500-character limit.
 
 Staff audit removal/empty replacement changes only `staff_actions`. Management
 policy removal changes only `management`; management read-history removal/empty

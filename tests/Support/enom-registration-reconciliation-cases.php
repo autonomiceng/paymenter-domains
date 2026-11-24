@@ -14,7 +14,6 @@ require __DIR__.'/enom-test-sales-fixture.php';
 $reader=$bindings->reader($server->id,true);$generalReader=$bindings->reader($server->id);
 $unpaidOp=Domain::where('domain','unpaid-test-placeholder.com')->sole()->operations()->sole();
 $op=Domain::where('domain','paid-test-placeholder.com')->first()?->operations()->sole();
-app()->instance(Paymenter\Extensions\Servers\Domains\Services\PslTransport::class,new Paymenter\Extensions\Servers\Domains\Services\PslTransport(static fn()=>throw new Paymenter\Extensions\Servers\Domains\Services\PslFailure('transport_failed')));
 $clock->at=$clock->at->modify('+61 seconds');Cache::flush();$reconcileCapOp=$new(placeholderComFixtureName('reconcile-cap-placeholder.com'));$worker->operation($reconcileCapOp->id);same('pending',$reconcileCapOp->fresh()->state,'Second Purchase ACK remains Processing');
 $GLOBALS['testRegisteredName']=$reconcileCapOp->domain->domain;$used=enomTestSendCount();config(['domains.enom_test_sends_per_day'=>$used+3]);
 $before=count($GLOBALS['enomWire']['forms']);(new RuntimeWork($clock,new RuntimePorts))->operation($reconcileCapOp->id);

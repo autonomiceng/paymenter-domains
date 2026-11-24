@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\{Auth,Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnedDomainController,OwnerAutoRenewController};
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
-use Paymenter\Extensions\Servers\Domains\Models\{Operation,WatchAudit};
+use Paymenter\Extensions\Servers\Domains\Models\{Operation,DomainAudit};
 use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaries,OwnerAutoRenew,RenewalStop,RuntimeIneligible,RuntimeReason};
 // Scheduled billing keeps its due-date cutoff; manual requests remain available until expiry.
 foreach($calendarDays as $day){

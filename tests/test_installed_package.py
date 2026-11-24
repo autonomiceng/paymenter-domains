@@ -236,9 +236,8 @@ def main(scenario):
             phase('seed')
             phase('upload', 'current')
             phase('verify')
-            phase('watch-seed')
             phase('verify')
-            evidence.update(watch_adoption_retained=True, activation_default_off=True)
+            evidence.update(activation_default_off=True)
             # The native upgrade is now running current classes and migration history.
             phase('template-defaults')
             phase('upload', 'current')

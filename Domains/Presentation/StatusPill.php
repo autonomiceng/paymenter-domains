@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
 /** The one status pill a customer domain shows on the list, the detail header and the service card.
  * Labels and reasons come from DomainStatus; Services\DomainStates picks the state, so every page agrees.
- * A domain without a resolved state (a monitored domain with no current registry facts) shows no pill. */
+ * A domain without a resolved state shows no pill. */
 final class StatusPill
 {
     /** DomainStatus colours => client tones. The one place the two vocabularies meet. */

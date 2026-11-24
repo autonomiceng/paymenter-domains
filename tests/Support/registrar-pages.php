@@ -11,7 +11,6 @@ use Filament\Facades\Filament;
 use Illuminate\Support\Facades\{Auth,DB,Route};
 use Livewire\Livewire;
 use Filament\Actions\Testing\TestAction;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\PublicSuffixList as PslPage;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\{ActivationStatus,RegistrarAccount,RegistrarBalances as BalancesPage,RegistrarHistory,RegistrarSetup};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
@@ -71,7 +70,7 @@ $off=App\Models\Server::create(['name'=>'Old account','extension'=>'Domains','ty
 $demoId=(int)App\Models\Server::max('id')+1;fixtureAccount($demoId,'namesilo','demo-namesilo');$demo=Account::where('server_id',$demoId)->sole();
 App\Models\Server::whereKey($demo->server_id)->update(['name'=>'Demo NameSilo']);
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__,2).'/Domains/resources/views');
-staffPanel();$panel=Filament::getCurrentPanel();$pages=[RegistrarSetup::class,RegistrarAccount::class,RegistrarHistory::class,BalancesPage::class,ActivationStatus::class,PslPage::class];$panel->pages($pages);
+staffPanel();$panel=Filament::getCurrentPanel();$pages=[RegistrarSetup::class,RegistrarAccount::class,RegistrarHistory::class,BalancesPage::class,ActivationStatus::class];$panel->pages($pages);
 Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel,$pages){foreach($pages as $page){$page::registerRoutes($panel);}});app('router')->getRoutes()->refreshNameLookups();
 $staff=staffUser([Staff::VIEW]);Auth::setUser($staff);
 $sync=Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::lastSync((int)$enom->server_id);
@@ -223,7 +222,7 @@ foreach(['Account','API connection','OK','Test connection','Sales','What you sel
 foreach(['Connected','Working','View price history'] as $needle){$page->assertDontSee($needle);}
 $html=$page->html();
 foreach(['Catalogue acceptance','Account binding','Worker cadence','Native server settings','Registrar setup','(defaults)','Read capacity','Runtime account','Notification safety',
-    'Verify identity','Read balance','Enable processing','Pause processing','Missing Paymenter records','Transfer watch relinks','Start after payment','Change recorded','Confirm'] as $needle){
+    'Verify identity','Read balance','Enable processing','Pause processing','Missing Paymenter records','Start after payment','Change recorded','Confirm'] as $needle){
     expect(!str_contains($html,$needle),'Account page never shows: '.$needle);}
 // Legacy fixtures have no authenticated local NameSilo runtime. They cannot acquire send permission.
 config(['domains.namesilo_test.management'=>false,'domains.namesilo_test.renewal'=>false]);
@@ -269,16 +268,6 @@ $check=static fn(string $label)=>$checks($page)[$label];
 $page->assertSeeHtml('data-piece="trace"')->assertSeeHtml('<li class="domains-panel-step"');
 same(['Delayed','warning'],[$check('Payment events')['value'],$check('Payment events')['tone']],'Missing paid listener delays paid orders');
 same(['Not running','danger'],[$check('Background worker')['value'],$check('Background worker')['tone']],'A stopped worker is danger');
-// Domain monitoring on with a queue timeout under 180 seconds: the Background worker row names the cause, once.
-app()->instance(Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new Paymenter\Extensions\Servers\Domains\Services\WatchWork(new Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(static fn()=>[]),new Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null),true));
-$queue=config('queue');config(['queue.default'=>'database','queue.connections.database.driver'=>'database','queue.connections.database.retry_after'=>60]);
-$short=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id]);
-$worker=$checks($short)['Background worker'];
-same(['Queue timeout too short','danger'],[$worker['value'],$worker['tone']],'Short queue timeout shows on the Background worker row');
-$text=html_entity_decode(strip_tags($short->html()),ENT_QUOTES);
-same(1,substr_count($text,'Queue timeout too short'),'Queue timeout said once');same(1,substr_count($text,"Monitoring can't run. Ask your site admin to set the queue timeout to 180 seconds or more."),'Its cause said once');
-config(['queue.connections.database.retry_after'=>180]);Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertDontSee('Queue timeout too short')->assertSee('Not running');
-config(['queue'=>$queue]);app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Services\WatchWork::class);
 unset($short,$worker);gc_collect_cycles();gc_mem_caches();
 // Open domain alerts: a count row per account that links to the Domains list filtered to those domains.
 same('OK',$check('Domain alerts')['value'],'No open domain alerts');
@@ -301,18 +290,8 @@ Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Reso
 $groups=$page->instance()->checks();
 expect(!str_contains(json_encode($groups),'Domain editing is ready'),'A site check does not promise edits a registrar account can still block');
 expect(in_array('Domain editor',array_column($groups['passing'],'label'),true)&&in_array('Payment events',array_column($groups['failing'],'label'),true),'Failing checks stay apart from passing checks');
-// Public suffix list row: shown with the list permission; never downloaded is a failing check with Download now and Change source.
-$page->assertDontSee('Public suffix list');
-// The full fixture installation already owns the suffix-list schema.
-$psl=Livewire::actingAs(staffUser([Staff::VIEW,PslPage::VIEW,PslPage::MANAGE]))->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Public suffix list')->assertSee('Not downloaded')
-    ->assertActionDoesNotExist(TestAction::make('psl_download')->schemaComponent('system_checks','content'))->assertActionDoesNotExist(TestAction::make('psl_source')->schemaComponent('system_checks','content'))
-    ->assertActionDoesNotExist(TestAction::make('psl_accept')->schemaComponent('system_checks','content'));
-$psl->assertDontSee('View details')->assertDontSee('Download now')->assertSee('Updates retry automatically each week');
-same('danger',$checks($psl)['Public suffix list']['tone'],'A list never downloaded is danger');
-Livewire::actingAs(staffUser([Staff::VIEW,PslPage::VIEW]))->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Not downloaded')
-    ->assertActionDoesNotExist(TestAction::make('psl_download')->schemaComponent('system_checks','content'))->assertActionDoesNotExist(TestAction::make('psl_source')->schemaComponent('system_checks','content'));
 // Release completed permission, reminder and system-check components, including closures that capture them.
-unset($page,$pause,$check,$checks,$psl,$groups,$rows);gc_collect_cycles();gc_mem_caches();
+unset($page,$pause,$check,$checks,$groups,$rows);gc_collect_cycles();gc_mem_caches();
 }
 
 if ($registrarsPart === 'capacity') {
@@ -599,8 +578,8 @@ if ($registrarsPart === 'dns') {
 // Global pricing saves reload Paymenter settings; keep this branding fixture in the same persisted source.
 App\Models\Setting::updateOrCreate(['key'=>'company_name','settingable_type'=>null,'settingable_id'=>null],['type'=>'string','encrypted'=>false,'value'=>'Example Hosting']);
 config(['settings.company_name'=>'Example Hosting','app.name'=>'Generic app']);
-$template=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create(['name'=>'Shared registration DNS','enabled'=>true,
-    'nameservers'=>['ns1.provider.example','ns2.provider.example'],'website_endpoints'=>[],'email_endpoints'=>[],
+$template=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\DnsTemplate::create(['name'=>'Shared registration DNS','enabled'=>true,
+    'nameservers'=>['ns1.provider.example','ns2.provider.example'],
     'edited_by'=>$admin->id,'reason'=>'Synthetic registration template']));
 App\Models\Server::findOrFail($enom->server_id)->settings()->create(['key'=>'domains_new_domain_dns_template','type'=>'string','encrypted'=>false,'value'=>'']);
 $action=TestAction::make('new_domain_dns_'.$enom->server_id)->schemaComponent('sheet','content');

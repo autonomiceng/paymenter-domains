@@ -3,7 +3,7 @@
 declare(strict_types=1);
 use App\Models\Service;
 use Illuminate\Support\Facades\{DB,Event,Log,View};
-use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,CartAdmission,HoldingIdentityLock,HostingDomainRow,InvoiceBinding,InvoiceFunding,NativeCancellation,NativeDomainGuard,NativeExpiry,NativeIdentity,NativeIdentityDiscrepancies,NativeIdentityParents,NativePaidHooks,NativeServerGuard,NativeStock,NativeUserDeletion};
+use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,CartAdmission,HoldingIdentityLock,InvoiceBinding,InvoiceFunding,NativeCancellation,NativeDomainGuard,NativeExpiry,NativeIdentity,NativeIdentityDiscrepancies,NativeIdentityParents,NativePaidHooks,NativeServerGuard,NativeStock,NativeUserDeletion};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\NativeEditorNotice;
 
 // Count raw owned callbacks, including closures, rather than Laravel's wrapper callbacks.
@@ -48,8 +48,6 @@ $project=static function():void {
     DB::transaction(static fn()=>(new ReflectionMethod(NativeDomainGuard::class,'persist'))->invoke(null,$service,$service->getRawOriginal(),[]));
 };
 $project();$firstDispatcher=Service::getEventDispatcher();$before=$counts($firstDispatcher);
-$viewBefore=count(View::getDispatcher()->getListeners('composing: services.show'));
-expect($viewBefore>0,'Native boot registers the hosting composer');
 $editorAvailable=static fn()=>Filament\Support\Facades\FilamentView::hasRenderHook(Filament\View\PanelsRenderHook::PAGE_START,App\Admin\Resources\ServiceResource\Pages\EditService::class);
 expect($editorAvailable(),'Native boot registers the editor notice');
 $distinct=static function(string $class):object {
@@ -82,7 +80,6 @@ if($phase==='rebuilt'){
     same([],array_values(array_filter($freshLogs,static fn($message)=>$message==='Domains hook unavailable.')),'Rebuilt Application emits no hook warning');
     $contexts();$project();
     same($before,$counts(Service::getEventDispatcher()),'Rebuilt Application registers every owned callback exactly once');
-    same($viewBefore,count(View::getDispatcher()->getListeners('composing: services.show')),'Rebuilt Application gets the hosting composer');
     expect($editorAvailable(),'Rebuilt Application gets the editor notice');
     echo "Rebuilt Application: all owned listeners registered once, no hook warning.\n";
 }else{
@@ -93,13 +90,12 @@ if($phase==='rebuilt'){
         $contexts();$project();
         foreach([NativeExpiry::class,NativeIdentity::class,NativeStock::class,NativeIdentityParents::class,
             NativeIdentityDiscrepancies::class,NativeUserDeletion::class,NativeCancellation::class,
-            NativePaidHooks::class,AcquisitionRetirement::class,HostingDomainRow::class,NativeEditorNotice::class]as$class){$class::boot();}
+            NativePaidHooks::class,AcquisitionRetirement::class,NativeEditorNotice::class]as$class){$class::boot();}
         foreach([NativeDomainGuard::class,NativeServerGuard::class,CartAdmission::class,InvoiceBinding::class]as$class){
             app($class)->boot();$distinct($class)->boot();
         }
     }
     same($before,$counts($firstDispatcher),'Repeated boot does not duplicate any owned callback');
-    same($viewBefore,count(Event::getListeners('composing: services.show')),'Repeated boot does not duplicate the hosting composer');
     same($renderBefore,$hooks->getValue($manager),'Repeated boot does not duplicate the editor render hook');
     same([$unrelated],Event::getRawListeners()['domains.test.unrelated'],'Unrelated listener is preserved');
     echo "Repeated boot: every owned callback registered once, unrelated listener retained.\n";

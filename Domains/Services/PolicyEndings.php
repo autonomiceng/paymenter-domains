@@ -15,11 +15,6 @@ final class PolicyEndings
         return CanonicalName::parse($name, SalesPolicy::whereIn('tld', self::candidates([$name]))->pluck('tld')->all());
     }
 
-    /** Summary links retain their any-enabled-suffix rule, independently of admission parsing. */
-    public static function transferEnabled(array $names): array
-    {
-        return SalesPolicy::whereIn('tld', self::candidates($names))->where('transfer_enabled', true)->pluck('tld')->all();
-    }
 
     private static function candidates(array $names): array
     {

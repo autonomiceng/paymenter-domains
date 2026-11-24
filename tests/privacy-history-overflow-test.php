@@ -10,7 +10,7 @@ $afterLockChecks=$clock->now()->modify('+61 seconds');
 $clock->instant=$afterLockChecks;
 Auth::setUser($viewer);
 $pages($requested,null,'Requested registration evidence stays unconfirmed');
-$summary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',(int)$requested->id,$clock->now()->getTimestamp());
+$summary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,(int)$requested->id,$clock->now()->getTimestamp());
 same('requested',$summary->nameservers['state'],'Requested registration evidence keeps its summary label');
 same('refreshed',$observer->run($requested->id),'Privacy fixture has its own current snapshot');
 $state->privacy=true; $state->enabled=false;

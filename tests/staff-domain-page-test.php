@@ -13,13 +13,13 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Relation
 use Paymenter\Extensions\Servers\Domains\Presentation\State;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, DomainEditActions, DomainFacts, HoldingActions, Staff};
 use Paymenter\Extensions\Servers\Domains\Data\{DateEvidence, DomainSnapshot, ExpiryPrecision, TransferStatus};
-use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, WatchAudit};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, DomainAudit};
 use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, ObligationAlerts, ObservationProjection, ObservationRecords, StaffHoldingReview};
 // Saving global settings reloads Paymenter settings from the table.
 App\Models\Setting::updateOrCreate(['key'=>'company_name','settingable_type'=>null,'settingable_id'=>null],['value'=>'Example Hosting','type'=>'string','encrypted'=>false]);config(['settings.company_name'=>'Example Hosting']);
 
 (new Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
-staffPanel(); [$held,$active,$long]=staffData(); staffRenewalsOn($held,$active,$long); Paymenter\Extensions\Servers\Domains\Services\PslReviewSchema::install();
+staffPanel(); [$held,$active,$long]=staffData(); staffRenewalsOn($held,$active,$long); Paymenter\Extensions\Servers\Domains\Services\DomainAuditSchema::install();
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new Paymenter\Extensions\Servers\Domains\Data\SystemClock);
 $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
@@ -398,7 +398,7 @@ same(["Can't read saved data. Ask your site admin to check the encryption key.",
 $history=Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=>$active->fresh(),'pageClass'=>ViewDomain::class]);
 $history->assertSee('Search changes')->assertSee('Request #'.$active->operations()->sole()->id)->assertSee('Transfer')->assertSee('Completed')->assertSee('System')->assertDontSee('827.43');
 DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=>encrypt(json_encode([...$policy,'staff_holdings'=>[['at'=>'2026-10-21T09:30:00Z','actor_id'=>$viewer->id,'action'=>'stop','reason'=>'Customer asked by phone']]]),false)]);
-WatchAudit::create(['subject_type'=>'domain','subject_id'=>$active->id,'user_id'=>$customer->id,'actor_id'=>$customer->id,'event'=>'owner_auto_renew',
+DomainAudit::create(['subject_type'=>'domain','subject_id'=>$active->id,'user_id'=>$customer->id,'actor_id'=>$customer->id,'event'=>'owner_auto_renew',
     'before_revision'=>'on','after_revision'=>'off','data'=>['enabled'=>false],'created_at'=>new DateTimeImmutable('2026-10-22T08:00:00Z')]);
 $history=Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=>$active->fresh(),'pageClass'=>ViewDomain::class]);
 $history->assertSeeInOrder(['Oct 22, 2026, 8:00 AM UTC','Auto-renew turned off','Ada Lovelace','Oct 21, 2026, 9:30 AM UTC','Auto-renew turned off','Customer asked by phone','Synthetic Staff']);

@@ -79,7 +79,7 @@
 @if (!($section['defaults'] ?? false))<p class="domains-hint">{{ $section['defaultError'] ?? \Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::MISSING }}</p>@endif
 @include('domains::partials.nameservers', ['id' => 'domains-ns', 'max' => $section['max'], 'required' => true, 'useOld' => $failed === $section['url'], 'value' => $nsValue, 'placeholder' => "ns1.example.com\nns2.example.com", 'fieldLabel' => 'Nameservers', 'autofocus' => true, 'hint' => 'One per line, 2 to '.$section['max'].', like ns1.example.com.'])
 @if ($section['defaults'] ?? false)
-<button type="submit" name="fill_site_default" value="1" formnovalidate class="domains-btn domains-btn--secondary" data-fill-defaults>Use {{ \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::nameservers() }}</button>
+<button type="submit" name="fill_site_default" value="1" formnovalidate class="domains-btn domains-btn--secondary" data-fill-defaults>Use {{ \Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels::nameservers() }}</button>
 @endif
 @include('domains::partials.edit-buttons', ['open' => $editOpen, 'cancel' => $show, 'label' => 'Save'])
 @include('domains::partials.owner-confirm', ['id' => 'nameservers', 'open' => $confirmStep === 'nameservers', 'cancel' => $show.'?edit=nameservers#edit-nameservers', 'title' => 'Change nameservers?', 'tone' => 'primary', 'button' => 'Change nameservers',

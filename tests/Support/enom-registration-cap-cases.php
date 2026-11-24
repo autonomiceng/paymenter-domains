@@ -14,7 +14,6 @@ require __DIR__.'/enom-test-sales-fixture.php';
 $reader=$bindings->reader($server->id,true);$generalReader=$bindings->reader($server->id);
 $unpaidOp=Domain::where('domain','unpaid-test-placeholder.com')->sole()->operations()->sole();
 $op=Domain::where('domain','paid-test-placeholder.com')->first()?->operations()->sole();
-app()->instance(Paymenter\Extensions\Servers\Domains\Services\PslTransport::class,new Paymenter\Extensions\Servers\Domains\Services\PslTransport(static fn()=>throw new Paymenter\Extensions\Servers\Domains\Services\PslFailure('transport_failed')));
 // Reach the send limit after preflight: the Purchase is armed and sealed, then refused at send. Unsent evidence stays staff-retryable.
 $clock->at=$clock->at->modify('+61 seconds');Cache::flush();$capOp=$new(placeholderComFixtureName('cap-held-placeholder.com'));
 expect(EnomTestRegistration::applies($capOp),'TEST deployment opts in only Enom registration operations');

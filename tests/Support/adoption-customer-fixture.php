@@ -82,7 +82,7 @@ app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clo
 foreach (['2027-10-13T00:30:00+05:30'=>null,'2027-10-12T23:30:00-07:00'=>'2027-10-13'] as $local=>$due) {
  $clock->time=new DateTimeImmutable($local);$projected=$owners->present($d->fresh(),false);
  same($due,$projected->plannedRenewalDue,'Presentation uses actual billing clock date '.$local);
- $listed=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($owner,'managed',$d->id,$clock->now()->getTimestamp());
+ $listed=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($owner,$d->id,$clock->now()->getTimestamp());
  same([$due===null,$due],[($projected->renewalInvoice['state']??null)==='review',$projected->plannedRenewalDue],'Detail reads the billing clock date '.$local);
  same([$due===null,$due],[$listed->renewalInvoiceReview,$listed->renewalDueAt],'Domains list agrees with the domain page at '.$local);
 }
@@ -109,7 +109,7 @@ return;
 $c=App\Models\ServiceCancellation::create(['service_id'=>$service->id,'type'=>'end_of_period','reason'=>'Stop the next renewal after issued debt']);
 DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);
 // The adopted page uses the current cycle for both retained debt and replacement requests.
-foreach(['WatchDnsSchema','ManagedPublicWorkSchema','ManagedPublicSchema','WatchScheduleSchema','WatchNoticeSchema'] as $schema){('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$schema)::install();}
+foreach(['DnsTemplatesSchema','DnsQuotaSchema','RdapQuotaSchema'] as $schema){('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$schema)::install();}
 $c->delete();$session=app('request')->session();$controller=new OwnerRenewalController($owners,$billing);
 $request=static function(string $method,string $path,array $data=[])use($owner,$session):Request {
     $r=Request::create($path,$method,$data);$r->setUserResolver(fn()=>$owner);$r->setLaravelSession($session);return $r;

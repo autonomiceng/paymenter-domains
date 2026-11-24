@@ -25,7 +25,7 @@ app('view')->share('keys',array_fill_keys(['setup','recovery','code','renew','au
 app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
 $text=static fn(string $html):string=>trim(preg_replace('/\s+/',' ',html_entity_decode(strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si','',$html)),ENT_QUOTES)));
 $views=static function()use($owners,$o,$user,$clock,$text):array {
-    $dto=$owners->present($o->fresh());$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$o->id,$clock->now()->getTimestamp());
+    $dto=$owners->present($o->fresh());$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,$o->id,$clock->now()->getTimestamp());
     return [$dto,$summary,DomainListRow::renewal($summary)['note']??null,$text(view('domains::show',['domain'=>$dto,'summary'=>$summary])->render())];
 };
 $ledger=static fn():string=>serialize([DB::table('invoices')->get(),DB::table('invoice_items')->get(),DB::table('invoice_transactions')->get(),DB::table('credits')->get(),Operation::all()->map->getRawOriginal()->all()]);
@@ -41,17 +41,16 @@ same(['review','Next invoice: Under review'],[$dto->renewNow['status']??null,$no
 $confirming='We’re confirming this renewal with the registrar.';
 expect(str_contains($page,$confirming)&&str_contains($page,'Under review')&&!str_contains($page,'Invoice cancelled'),'The page keeps the registrar check, not a cancelled invoice');
 // A nameserver step stays on the page, with its action, beside the renewal check.
-$copy=static fn(object $from,array $change)=>new ($from::class)(...array_replace(get_object_vars($from),$change));
-foreach(['correction'=>[$copy($dto,['dnsCorrection'=>true]),$summary,'The registered nameservers do not match the registration settings.'],
-    'moved'=>[$dto,$copy($summary,['stateKeys'=>[...$summary->stateKeys,'watch.ns_changed']]),$o->domain.' does not use']] as $case=>[$shown,$listed,$step]){
-    $notice=DomainPage::notice($shown,'/support',$listed);
-    expect(str_starts_with($notice['text'],$step)&&str_contains($notice['text'],$confirming)&&!str_contains($notice['text'],'don’t need to do anything'),'Nameserver '.$case.' leads, with the renewal check beside it');
-    $action=isset($shown->management['nameservers'])?'Change nameservers':'Contact support';
-    same($action,$notice['action']['label']??null,'Nameserver '.$case.' keeps its step');
-    $html=view('domains::show',['domain'=>$shown,'summary'=>$listed])->render();
-    same('Renewal being checked.',DomainPage::nextInvoice($shown,$listed,'/support')['note']??null,'Nameserver '.$case.': the renewal row does not say no action is needed');
-    expect(preg_match('~<span class="domains-notice__tx">'.preg_quote(e($step),'~').'[^<]*'.preg_quote(e($confirming),'~').'[^<]*</span>\s*<a [^>]*>'.$action.'</a>~u',$html)===1,'Rendered nameserver '.$case.' notice keeps the check and its action');
-}
+$shown=new ($dto::class)(...array_replace(get_object_vars($dto),['dnsCorrection'=>true]));
+$step='The registered nameservers do not match the registration settings.';
+$notice=DomainPage::notice($shown,'/support',$summary);
+expect(str_starts_with($notice['text'],$step)&&str_contains($notice['text'],$confirming)&&!str_contains($notice['text'],'don’t need to do anything'),'Nameserver correction leads, with the renewal check beside it');
+$action=isset($shown->management['nameservers'])?'Change nameservers':'Contact support';
+same($action,$notice['action']['label']??null,'Nameserver correction keeps its step');
+$html=view('domains::show',['domain'=>$shown,'summary'=>$summary])->render();
+same('Renewal being checked.',DomainPage::nextInvoice($shown,$summary,'/support')['note']??null,'Nameserver correction: the renewal row does not say no action is needed');
+$status = storefrontDom($html)->query('//*[@role="status"][.//a[normalize-space(.)="'.$action.'"]]')->item(0);
+expect($status && str_contains($status->textContent,$step) && str_contains($status->textContent,$confirming),'Rendered nameserver correction includes the registrar check and its action');
 same($before,$ledger(),'Page, list and notices are read-only');
 DB::table('invoice_transactions')->where('id',$payment)->delete();DB::table('domains_operations')->where('id',$cycle->id)->update($raw);
 echo "Native cancellation billing passed\n";$nativeSuccessful=true;

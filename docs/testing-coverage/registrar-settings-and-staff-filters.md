@@ -70,15 +70,11 @@ The later-stop fixture separately preserves issued-debt reminder wording.
 
 A3 `staff-adopt-commit-test.php` exercises native wizard selection/readback/review,
 default-off confirmation, current permissions, stale refusal, actual adoption and
-safe browser state. `adoption-enrollment-test.php` injects postcommit audit failure,
-repairs atomically, retains NS history/work cursors, isolates owners, suppresses old
-watch work and proves no network, financial change or duplicate enrollment on replay.
+safe browser state. Adoption enrollment covers registrar read repair and replay without a second adoption.
 `adoption-customer-test.php` renders actual customer Blade with escaped company text,
 original invoice route-key collisions, expiry/renewal-off and activity. Issued pending
 due dates survive settings changes; paid current cycles never promise another invoice.
-Offline screenshots cover native wizard 1440/1024 and customer detail 1440/1024/375,
-both themes. Customer capture framing is synthetic; installed supplied-site-shell,
-managed public DNS execution and delivered notices still need separate acceptance.
+Native wizard and customer detail fixtures exercise desktop and mobile dimensions in both themes.
 Unissued renewal presentation also checks the day before, at and after the billing
 cutoff; dates at/after cutoff show review without promising new debt.
 Local clock cases on either side of UTC midnight match the actual billing cutoff.
@@ -90,7 +86,6 @@ end-of-period cancellation; issued-debt/reminder rules remain visible.
 
 Offline TEST captures keep the deployment flag on while live confirmation stays disabled.
 
-The native staff label inventory covers adopted watch retirement and dormant public work.
 
 Parity filter/registry follow-up adds simultaneous TLD rows for two Enom accounts and a NameSilo
 account, all with the same ending. Individual and combined selectors assert exact inclusion,

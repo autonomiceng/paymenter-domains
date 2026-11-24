@@ -3,10 +3,10 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
-use App\Models\{Setting, NotificationTemplate};
+use App\Models\{Setting,NotificationTemplate};
 use Illuminate\Database\Migrations\Migrator;
-use Illuminate\Support\Facades\{Cache, DB};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, OfferState, CatalogueActivation};
+use Illuminate\Support\Facades\{Cache,DB};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting,OfferState,CatalogueActivation};
 
 /** The extension lifecycle owns new-install authority; schema maintenance alone never grants it. */
 final class FreshInstallation
@@ -107,7 +107,7 @@ final class FreshInstallation
         try {
             $owner->check();
             app(Migrator::class)->run([dirname(__DIR__).'/database/migrations'], ['force'=>true]);
-            app(Installation::class)->verify(); ReminderTemplates::ensure(); WatchNoticeTemplates::ensure();
+            app(Installation::class)->verify(); ReminderTemplates::ensure();
             CatalogueActivation::initialize($owner);
         } finally { self::$owner = null; CallerRouting::reset(); }
     }
@@ -129,14 +129,7 @@ final class FreshInstallation
         if ($new) { self::work(); }
         foreach (Installation::tables() as $table) {
             $query = DB::table($table)->lockForUpdate();
-            if ($table === 'domains_psl_status') {
-                foreach ($query->get() as $row) {
-                    if ((int)$row->id !== 1 || (int)$row->consecutive_failures !== 0
-                        || array_filter((array)$row, static fn ($v, $k) => !in_array($k,['id','consecutive_failures'],true) && $v !== null, ARRAY_FILTER_USE_BOTH)) {
-                        throw new \DomainException('Domains initialization has retained suffix activity.');
-                    }
-                }
-            } elseif ($table === BusinessSettingsSchema::TABLE) {
+            if ($table === BusinessSettingsSchema::TABLE) {
                 foreach($query->get() as $row){
                     if((int)$row->id!==1||!$row->imported||$row->pricing_rule!==null||$row->card_fee!==null||$row->dns_template!==null){throw new \DomainException('Domains initialization has retained global choices.');}
                 }

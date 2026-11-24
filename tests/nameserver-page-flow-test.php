@@ -18,29 +18,6 @@ $pages($d,null,'Missing registration evidence stays Missing');
 $d->fresh()->update(['observation'=>$registered]);
 same(null,$owners->present($d->fresh())->management['lock']['state'],'Registration does not invent customer lock');
 same(null,DomainFacts::for($d->fresh())['Transfer lock']['value'],'Registration does not invent staff lock');
-require __DIR__.'/Support/FakeDnsReader.php';
-$profile=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create([
-    'name'=>'Synthetic nameserver profile','nameservers'=>['ns1.example.net','ns2.example.net'],
-    'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$viewer->id,'reason'=>'Synthetic page check']));
-DB::transaction(fn()=>$profile->fill(['enabled'=>true,'revision'=>2,'reason'=>'Synthetic enabled profile'])->save());
-$signals=new \Paymenter\Extensions\Servers\Domains\Services\ManagedPublicSignals(
-    new \Paymenter\Extensions\Servers\Domains\Tests\FakeDnsReader(),true,fn()=>$clock->now()->getTimestamp(),$profile->id);
-expect($signals->enqueue($d->id,$user->id),'Public nameserver check enrolled');
-// This page fixture deliberately chooses its comparison template; a global default is not DNS intent.
-DB::transaction(function()use($d,$profile):void {
-    $config=\Paymenter\Extensions\Servers\Domains\Models\ManagedPublicConfig::findOrFail($d->id);
-    $config->fill(['profile_id'=>$profile->id,'revision'=>$config->revision+1])->save();
-});
-expect($signals->enqueue($d->id,$user->id),'Configured public nameserver check enrolled');
-$publicCheck=static function(array $hosts)use($signals,$d,$user,$clock):void {
-    DB::table(\Paymenter\Extensions\Servers\Domains\Services\ManagedPublicWorkSchema::TABLE)->where('domain_id',$d->id)->where('kind','delegation')->update(['due_at'=>$clock->now()->getTimestamp(),'backoff_until'=>null]);
-    $ticket=$signals->begin($d->id,$user->id,'delegation',$clock->now()->getTimestamp());
-    expect($ticket!==null,'Public nameserver check starts');
-    $answer=\Paymenter\Extensions\Servers\Domains\Dns\DnsAnswer::rrset(new \Paymenter\Extensions\Servers\Domains\Dns\DnsQuery($d->domain,'NS'),array_map(
-        fn($host)=>['host'=>$d->domain,'class'=>'IN','type'=>'NS','target'=>$host,'ttl'=>300],$hosts));
-    expect($signals->finish($ticket,new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('delegation','external',queries:[$answer]),$clock->now()->getTimestamp()+1),'Public nameserver check completes');
-    $clock->instant=$clock->now()->modify('+2 seconds');
-};
 $op=$submit($d,$driver,'nameservers',['nameservers'=>['ns3.example.net','ns4.example.net']]);
 same('succeeded',$management->run($op->id,$driver)->state,'Nameserver change has confirmed readback');
 $pages($d,['ns3.example.net','ns4.example.net'],'Management readback before any observation');
@@ -50,7 +27,6 @@ foreach (['name'=>'other.example.com','generation'=>2,'account_fingerprint'=>str
     $pages($d,null,'Reject management evidence with mismatched '.$field);
 }
 $d->fresh()->update(['observation'=>$confirmed]);
-$publicCheck(['ns3.example.net','ns4.example.net']);
 $before=$op->fresh()->getAttributes(); $calls=$state->calls;
 same('succeeded',$management->run($op->id,$driver)->state,'Repeated completion remains succeeded');
 same([$before,$calls],[$op->fresh()->getAttributes(),$state->calls],'Repeated delivery preserves history and sends nothing');
@@ -72,10 +48,6 @@ same('succeeded',$management->reconcile($uncertain->id,$driver)->state,'Later re
 $pages($d,['ns7.example.net','ns8.example.net'],'Reconciliation projects the confirmed change');
 same('refreshed',$observer->run($d->id),'A later observation preserves the management projection');
 $pages($d,['ns7.example.net','ns8.example.net'],'Observation keeps identity-checked management nameservers');
-$clock->instant=$clock->now()->modify('+2 seconds');
-$publicCheck(['ns9.example.net','ns10.example.net']);
-$summary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',(int)$d->id,$clock->now()->getTimestamp());
-same(['ns9.example.net','ns10.example.net'],$summary->nameservers['nameservers'],'A newer public check supplies the summary');
 same(['ns7.example.net','ns8.example.net'],$owners->present($d->fresh())->management['nameservers']['current'],'Customer form retains registrar readback');
 same(['ns7.example.net','ns8.example.net'],DomainFacts::for($d->fresh())['Nameservers']['value'],'Staff retains registrar readback');
 $observed=$d->fresh()->observation;

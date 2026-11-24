@@ -74,10 +74,4 @@ if ($snapshot !== '') {
 $pdo=Illuminate\Support\Facades\DB::connection()->getPdo();
 $GLOBALS['nativeFixtureDatabase']=['pdo'=>$pdo,'changes'=>(int)$pdo->query('SELECT total_changes()')->fetchColumn(),
     'schema'=>(int)$pdo->query('PRAGMA schema_version')->fetchColumn()];
-
-// Public-data updater also uses an explicit fake: native runtime tests must never resolve DNS.
-$app->instance(\Paymenter\Extensions\Servers\Domains\Services\PslTransport::class,
-    new \Paymenter\Extensions\Servers\Domains\Services\PslTransport(static function (): never {
-        throw new \Paymenter\Extensions\Servers\Domains\Services\PslFailure('transport_failed');
-    }));
 unset($nativeSetup);

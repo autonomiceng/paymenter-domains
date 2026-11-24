@@ -15,11 +15,9 @@
     "tests/reconciliation-enom-history-test.php",
     "tests/transfer-rdap-test.php",
     "tests/transfer-status-test.php",
-    "tests/psl-transport-test.php",
     "tests/adoption-enom-test.php",
     "tests/adoption-namesilo-test.php",
     "tests/dns-reader-test.php",
-    "tests/dns-signals-test.php",
     "tests/public-registry-test.php",
     "tests/rdap-transport-test.php",
     "tests/namesilo-default-contact-test.php"
@@ -40,7 +38,6 @@
     "tests/offer-feed-test.php",
     "tests/ote-purchase-evidence-test.php",
     "tests/ote-renewal-probe-test.php",
-    "tests/watch-notice-plan-test.php",
     "tests/status-sets-test.php",
     "tests/status-tones-test.php",
     "tests/settings-refusal-test.php",
@@ -53,8 +50,6 @@
   "ui": [
     "tests/test_staff_table_preferences.py",
     "tests/test_rendered_layout.py",
-    "tests/test_rendered_watch_lists.py",
-    "tests/test_rendered_managed_dns.py",
     "tests/test_staff_refund_browser.py",
     "tests/test_staff_refund_refusals_browser.py"
   ],

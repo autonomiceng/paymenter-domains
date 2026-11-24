@@ -7,7 +7,7 @@ use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\{Artisan,DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Domains;
-use Paymenter\Extensions\Servers\Domains\Services\{AdoptionSchema,Installation,PslReviewSchema,SchemaVerifier};
+use Paymenter\Extensions\Servers\Domains\Services\{AdoptionSchema,Installation,DomainAuditSchema,SchemaVerifier};
 
 same(getenv('DB_SOCKET'), DB::connection()->getConfig('unix_socket'), 'Resolved socket belongs to this disposable fixture');
 same(getenv('DB_DATABASE'), DB::connection()->getDatabaseName(), 'Resolved database belongs to this disposable fixture');
@@ -39,13 +39,13 @@ $entry = new Domains([]);
 $entry->installed();
 $tables = Schema::getTableListing($database, false); sort($tables);
 $owned = array_values(array_diff($tables, $native));
-expect(count($owned) > 30, 'Fresh native install created the complete Domains schema');
+same(41,count($owned), 'Fresh native install created the complete Domains schema');
 $prefix = DB::connection()->getTablePrefix();
 foreach ($owned as $table) {
     expect(str_starts_with($table, $prefix.'domains_'), 'Fresh install left no reference table: '.$table);
     expect(isset($verified[substr($table, strlen($prefix))]), 'Fresh install verified every retained definition: '.$table);
 }
-DB::table('domains_psl_status')->where('id', 1)->update(['consecutive_failures' => 3]);
+DB::table('domains_public_dns_pool')->insert(['id'=>1,'active'=>'[]','used'=>3,'window_at'=>100]);
 $snapshot = static function () use ($owned, $prefix): array {
     $result = [];
     foreach ($owned as $physical) {

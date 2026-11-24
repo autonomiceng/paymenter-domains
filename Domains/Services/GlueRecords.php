@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\Schema;
-use Paymenter\Extensions\Servers\Domains\Models\{Domain,WatchProfile};
+use Paymenter\Extensions\Servers\Domains\Models\{Domain,DnsTemplate};
 /** Glue discovery candidates and saved read evidence. Never writes registrar state or templates. */
 final class GlueRecords
 {
@@ -22,8 +22,8 @@ final class GlueRecords
         $candidates=ObservationRecords::current($d)['families']['glue']['candidates']??[];
         $known=array_replace(self::hosts($d->domain,[],$candidates),$known);
         $known=self::hosts($d->domain,$known,[...$nameservers,...(ObservationProjection::nameservers($d)?->nameservers??[])]);
-        if (Schema::hasTable('domains_watch_profiles')) {
-            foreach (WatchProfile::orderBy('id')->cursor() as $template) { $known=self::hosts($d->domain,$known,$template->nameservers??[]); }
+        if (Schema::hasTable('domains_dns_templates')) {
+            foreach (DnsTemplate::orderBy('id')->cursor() as $template) { $known=self::hosts($d->domain,$known,$template->nameservers??[]); }
         }
         return $known;
     }

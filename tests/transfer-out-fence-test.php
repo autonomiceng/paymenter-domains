@@ -18,7 +18,7 @@ class TransferFenceGateway
 }
 class_alias(TransferFenceGateway::class,'Paymenter\\Extensions\\Gateways\\TransferFenceDouble\\TransferFenceDouble');
 Queue::fake(); Mail::fake(); ObservationSchema::install(); ReminderSchema::install();
-\Paymenter\Extensions\Servers\Domains\Services\PslReviewSchema::install();
+\Paymenter\Extensions\Servers\Domains\Services\DomainAuditSchema::install();
 app()->instance(AccountBindings::class,$bindings);
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 $guard=new NativeDomainGuard(new HolderPricing($prices),$clock); $guard->boot();

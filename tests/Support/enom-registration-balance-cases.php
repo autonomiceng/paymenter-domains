@@ -14,7 +14,6 @@ require __DIR__.'/enom-test-sales-fixture.php';
 $reader=$bindings->reader($server->id,true);$generalReader=$bindings->reader($server->id);
 $unpaidOp=Domain::where('domain','unpaid-test-placeholder.com')->sole()->operations()->sole();
 $op=Domain::where('domain','paid-test-placeholder.com')->first()?->operations()->sole();
-app()->instance(Paymenter\Extensions\Servers\Domains\Services\PslTransport::class,new Paymenter\Extensions\Servers\Domains\Services\PslTransport(static fn()=>throw new Paymenter\Extensions\Servers\Domains\Services\PslFailure('transport_failed')));
 config(['domains.enom_test_sends_per_day'=>0]);same('Our test send limit is 0, so no Enom test requests are sent.',EnomTestSendLimit::facts('test-uid'),'Zero limit wording is accurate');$beforeCalls=count($GLOBALS['enomWire']['forms']);$beforeUsed=enomTestSendCount();
 $balanceBeforeRefusal=DB::table(Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::TABLE)->where('server_id',$server->id)->where('account_fingerprint',$binding->fingerprint)->first();
 $capRead=static fn()=>new Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,RequestOrigin::Interactive,$clock->now()->modify('+25 seconds'),

@@ -15,8 +15,6 @@ final class PublicRegistryReader
         $this->bootstrap = $bootstrap === null ? null : json_decode(json_encode($bootstrap, JSON_THROW_ON_ERROR), true, 32, JSON_THROW_ON_ERROR);
         $this->transport = $transport === null ? (new Rdap())->pinned(...) : \Closure::fromCallable($transport);
     }
-    public function revision(): string { return hash('sha256', json_encode($this->bootstrap, JSON_THROW_ON_ERROR)); }
-    public function snapshot(): ?array { return $this->bootstrap; }
     /** Refreshing metadata must never discard the last validated registry routes. */
     public function refresh(RegistryContext $context): bool
     {
@@ -61,7 +59,10 @@ final class PublicRegistryReader
             $statuses = array_values(array_filter($statuses, static fn($s) => is_string($s) && preg_match('/\A[a-zA-Z -]{1,64}\z/D', $s)));
             return ['result'=>'facts','reason'=>'facts','safe_code'=>null,'expiry'=>$expiry,'precision'=>$precision,'source'=>$endpoint,'status'=>$statuses,'registrar'=>self::registrar($data)];
         } catch (RegistryDeferred) { return array_replace($unknown, ['reason'=>'deferred','safe_code'=>'budget_exhausted']); }
-        catch (\Throwable) { return array_replace($unknown, ['reason'=>'endpoint_failed']); }
+        catch (\Throwable) {
+            // Without the IANA routes we have not reached the registry for this domain.
+            return array_replace($unknown, ['reason'=>$this->bootstrap === null ? 'deferred' : 'endpoint_failed']);
+        }
     }
     private static function registrar(array $data): ?string
     {

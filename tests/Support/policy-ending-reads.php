@@ -1,26 +1,20 @@
 <?php
 // Synthetic input-bounded policy reads; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require_once __DIR__.'/reserved-fixtures.php';
-require __DIR__.'/watch-notices.php';
+require __DIR__.'/../native-app.php';
 require __DIR__.'/commerce.php';
 require __DIR__.'/native-commerce.php';
 require __DIR__.'/storefront.php';
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{Auth, Cache, DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
-use Paymenter\Extensions\Servers\Domains\Http\Controllers\{StorefrontController, WatchTransferController};
+use Paymenter\Extensions\Servers\Domains\Http\Controllers\StorefrontController;
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
-use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, DomainSummaries, PolicyEndings, Rdap, Storefront, TransferPrecheck, WatchTransfer};
-use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
+use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaries, PolicyEndings, Rdap, Storefront, TransferPrecheck};
 
-// This fixture exercises retained legacy commerce, rather than new-install activation.
-(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
-$f = noticeFixture(); extract($f); extract(commerceFixture(true, static fn () => null));
-$clock ??= new FakeClock($now); $at = $now->getTimestamp();
-config(['domains.watch_transfer.enabled' => true]);
-DB::table('domains_watch_names')->where('id', $id)->update(['registration' => 'external']);
-noticeRegistry($f, $at, 45);
+extract(commerceFixture(true, static fn() => null));
+$owner = commerceUser();
+$at = $now->getTimestamp();
 $rdap = new Rdap(static fn ($url) => ['status' => 200, 'body' => json_encode(str_contains($url, 'dns.json')
     ? ['services' => [[['com'], ['https://rdap.example.com/']]]]
     : ['objectClassName' => 'domain', 'ldhName' => 'example.com', 'status' => ['active'], 'events' => [
@@ -34,22 +28,16 @@ require dirname(__DIR__,2).'/Domains/routes/web.php'; require dirname(__DIR__,2)
 storefrontViews(); $session = app('request')->session(); Auth::login($owner);
 (activeFixtureAdmission($native, $sellers, $eligibility, $clock))->boot();
 $controller = new StorefrontController($store); app()->instance(StorefrontController::class, $controller);
-$summaries = new DomainSummaries; $transfers = new WatchTransfer($store, $summaries, $native);
-$watchController = new WatchTransferController($transfers, $eligibility, $clock);
+$summaries=new DomainSummaries;
 $request = static function (array $data = []) use ($owner, $session): Request {
     $r = Request::create('/domains/check', 'POST', $data); $r->setLaravelSession($session); $r->setUserResolver(fn () => $owner); return $r;
 };
-$postWatch = static function (bool $confirm = false) use ($request, $watchController, $id) {
-    $r = $request(); $key = FormKeys::issue($r, 'watch-transfer:'.$id);
-    return $watchController->check($request(['_request_key' => $key, 'revision' => '1',
-        ...($confirm ? ['step' => 'confirm', 'authority' => '1'] : [])]), $id);
-};
-// A page with distinct endings plus an owned native service exercises the shared batch projection.
-$watchIds = [$id];
-foreach ([reservedFixtureName('second.example.test'), reservedFixtureName('third.example.net')] as $name) {
-    $row = (array) DB::table('domains_watch_names')->where('id', $id)->first(); unset($row['id']);
-    $watchIds[] = DB::table('domains_watch_names')->insertGetId([...$row, 'canonical_name' => $name]);
-}
+$product = $native->product($tlds[0], 'register');
+$plan = $product->plans()->where('billing_period', 1)->sole();
+$order = \App\Models\Order::create(['user_id'=>$owner->id,'currency_code'=>'USD']);
+// Seed the service for an existing holding before exercising the checkout and summary reads.
+$service = \App\Models\Service::createQuietly(['user_id'=>$owner->id,'order_id'=>$order->id,'product_id'=>$product->id,'plan_id'=>$plan->id,
+    'status'=>'active','quantity'=>1,'price'=>'5.00','currency_code'=>'USD']);
 $managed = DB::table('domains_domains')->insertGetId(['service_id' => $service->id, 'user_id' => $owner->id,
     'server_id' => $tlds[0]->server_id, 'registrar_key' => 'enom', 'account_fingerprint' => $tlds[0]->account_fingerprint,
     'domain' => 'managed-placeholder.com', 'reservation_name' => 'managed-placeholder.com', 'sld' => 'managed-placeholder', 'tld' => 'com', 'status' => 'active']);
@@ -97,18 +85,11 @@ $paths = [
         $response = $controller->order($request(['domain' => 'order-placeholder.com', 'action' => 'register', 'term' => '1', '_request_key' => $key]));
         same(route('cart'), $response->getTargetUrl(), 'Actual order POST reaches native cart');
     },
-    'watch-get' => static function () use ($watchController, $request, $id) {
-        same(true, $watchController->show($request(), $id)->getData()['canCheck'], 'GET resolves a current offer');
+    'portal-batch' => static function () use ($summaries,$owner,$managed,$at) {
+        same(1,count($summaries->batch($owner,[$managed],$at+2)),'Page retains its owned domain');
     },
-    'watch-post' => static function () use ($postWatch) { same('eligible', $postWatch()->getData()['state'], 'POST rechecks offer'); },
-    'watch-handoff' => static function () use ($postWatch) { same(route('cart'), $postWatch(true)->getTargetUrl(), 'Confirmed transfer reaches add()'); },
-    'portal-batch' => static function () use ($summaries, $owner, $managed, $watchIds, $at) {
-        $page = $summaries->batch($owner, [$managed], $watchIds, $at + 2);
-        same(4, count($page), 'Multi-domain page retains managed and watch rows');
-        expect($page['watch:'.$watchIds[0]]->urls['compareTransfer'] !== null, 'Enabled transfer ending retains link');
-    },
-    'hosting-summary' => static function () use ($summaries, $owner, $service, $at) {
-        same(1, count($summaries->services($owner, [$service->id], $at + 2)), 'Native hosting summary remains owner scoped');
+    'service-summary' => static function () use ($summaries, $owner, $service, $at) {
+        same(1, count($summaries->services($owner, [$service->id], $at + 2)), 'Native service summary remains owner scoped');
     },
 ];
 // The intent table check runs once per connection; warm it so both sizes compare steady reads.
@@ -148,13 +129,8 @@ foreach (['name.unknown', 'sub.name.example.test', 'sub.name.test', 'sub.name.un
     same($message(fn () => CanonicalName::parse($input, ['com', 'example.test', 'test', 'net'])),
         $message(fn () => PolicyEndings::parse($input)), 'Unknown/subdomain/syntax refusal parity');
 }
-same(['test'], PolicyEndings::transferEnabled(['second.example.test']), 'Summary keeps any enabled suffix even when the longer policy is disabled');
-same([], PolicyEndings::transferEnabled([reservedFixtureName('third.example.net')]), 'Disabled transfer ending omitted');
 // Warm display never becomes money authority, including raw changes without cache invalidation.
-$store->endings(); DB::table('domains_sales_policies')->where('tld', 'com')->update(['transfer_enabled' => false]);
-same(null, $transfers->current($owner, $id, $at + 2)['offer'], 'Disabled current transfer policy refuses a warm offer');
-same(null, $summaries->one($owner, 'watch', $id, $at + 2)->urls['compareTransfer'], 'Current summary withdraws disabled transfer link');
-DB::table('domains_sales_policies')->where('tld', 'com')->update(['transfer_enabled' => true]);
+$store->endings();
 $product = $native->product($tlds[0], 'register');
 $product->plans()->where('billing_period', 1)->sole()->prices()->where('currency_code', 'USD')->update(['price' => '99.00']);
 $r = $request(); $key = FormKeys::issue($r, 'order:changed-placeholder.com');

@@ -35,8 +35,8 @@ foreach([0,1]as$i){
     commerceReject(fn()=>$setup->save($user,$registration->domain_id,['nameservers'=>$i?['ns1.example.com','ns2.example.com']:[],'privacy'=>true]));
     expect(!isset($registration->fresh()->policy['owner_setup']),'Local writer also refuses hidden privacy without freezing setup');
     // Exercise the actual POST grammar: blank nameservers use the site template on either registrar.
-    $template=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create(['name'=>'Owner POST registration DNS '.$i,'enabled'=>true,
-        'nameservers'=>['ns1.provider.example','ns2.provider.example'],'website_endpoints'=>[],'email_endpoints'=>[],
+    $template=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\DnsTemplate::create(['name'=>'Owner POST registration DNS '.$i,'enabled'=>true,
+        'nameservers'=>['ns1.provider.example','ns2.provider.example'],
         'edited_by'=>$user->id,'reason'=>'Synthetic Finish setup default']));
     $account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$registration->server_id)->sole();
     siteDnsFixture($template->id);

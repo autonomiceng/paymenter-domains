@@ -43,39 +43,20 @@ final class DepartureChecks
     {
         return match(self::dnsCase($d)){
             'registrar'=>"This domain uses our registrar's DNS. Its records stop when the transfer completes, so set up DNS at your new host first.",
-            'hosting'=>'DNS records on your hosting plan keep working while the plan is active.',
             default=>null};
     }
-    /** Where this suspected holding's DNS is served, from the nameservers in the last registrar read: our registrar's DNS,
-     * our nameservers on the owner's hosting plan, or other nameservers. Our nameservers without a hosting service of the
-     * owner's for this domain read as other nameservers: nothing says a plan keeps them working. Null when not suspected
-     * or no nameservers were read. */
     public static function dnsCase(Domain $d): ?string
     {
         if(!self::suspected($d)||ObservationProjection::nameservers($d)?->state!=='observed'){return null;}
         if(RegistrationDns::registrarDns($d)){return 'registrar';}
-        $actual=ObservationProjection::nameservers($d)?->nameservers??[];$ours=SiteDnsDefault::profile()?->nameservers??[];sort($actual);sort($ours);
-        return $ours&&$actual===$ours&&self::hosted($d)?'hosting':'other';
-    }
-    /** A departure record's saved DNS case as it reads now: the hosting case only while the owner still has a hosting
-     * service for this domain. */
-    public static function savedDnsCase(Domain $d, mixed $saved): ?string
-    { return $saved==='hosting'&&!self::hosted($d)?'other':(is_string($saved)?$saved:null); }
-    /** The owner has an active hosting service whose domain is this one, the same link the customer domain page lists. */
-    public static function hosted(Domain $d): bool
-    {
-        $c=new DomainSummaryContext((int)$d->user_id,[(int)$d->id],[]);
-        foreach($c->related('managed',(int)$d->id) as $s){if($c->validSource($s)){return true;}}
-        return false;
+        return 'other';
     }
     /** The staff words for dnsCase(): a short title for the Nameservers row and a sentence for the DNS records row. @return array{0:string,1:string}|null */
     public static function staffDnsCase(Domain $d): ?array
     {
-        $company=\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();$ours=($company!==''?$company:'Our').' nameservers';
         $product=match($d->registrar_key){'enom'=>'Enom DNS','namesilo'=>'NameSilo DNSOwl',default=>null};
         return match(self::dnsCase($d)){
             'registrar'=>["Our registrar's DNS",($product?'On '.$product.', our':'On our')." registrar's DNS."],
-            'hosting'=>[$ours.', hosting plan','On '.$ours.', on the hosting plan.'],
             'other'=>['Other nameservers','On other nameservers.'],
             default=>null};
     }
@@ -109,9 +90,7 @@ final class DepartureChecks
         $pool=new PublicDnsQuota();$token=$pool->acquire($clock());if($token===null){return false;}
         try{
             $quota=new RdapQuota();$dns=new QuotaDnsReader($this->dns,$pool,$token,$clock);
-            $saved=DB::table('domains_watch_schedule')->where('scope','bootstrap')->first();
-            $snapshot=$saved?->data===null?null:json_decode($saved->data,true,32,JSON_THROW_ON_ERROR);
-            $reader=$this->factory?($this->factory)($dns,$snapshot):new PublicRegistryReader($dns,$snapshot);
+            $reader=$this->factory?($this->factory)($dns):new PublicRegistryReader($dns);
             $context=new RegistryContext($clock,fn($url)=>$quota->reserve($url,$clock()),fn($url,$r)=>$quota->complete($url,$r,$clock()));
             $result=$reader->read($seed->domain,$context);if($dns->saturated||($result['reason']??null)==='deferred'){return false;}
             return FreshTransaction::run(function()use($seed,$identity,$result,$clock):bool{

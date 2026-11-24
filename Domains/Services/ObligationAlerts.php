@@ -12,7 +12,6 @@ use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
 final class ObligationAlerts
 {
     public const LABELS=[
-        'transfer_watch_relink'=>'Domain monitoring needs relinking after the transfer.',
         'acquisition_retirement_review'=>'Unpaid order needs review. The name stays reserved.',
         'acquisition_late_money'=>'Payment activity after the order closed. Check the invoice.',
         'native_identity_missing'=>"Customer, order or service missing. The name stays reserved. Don't restore records by hand.",
@@ -246,7 +245,7 @@ final class ObligationAlerts
     /** Resolve only after a successful, complete inspection, retaining all historical rows. */
     public static function finish(Domain $d,array $active,int $now):void
     {
-        $q=DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->whereNull('resolved_at')->whereNotIn('code',['account_money_hold','dispute_recovery','refund_repair','funds_wait_review','renewal_funds','template_failed','acquisition_retirement_review','acquisition_late_money','transfer_watch_relink']);
+        $q=DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->whereNull('resolved_at')->whereNotIn('code',['account_money_hold','dispute_recovery','refund_repair','funds_wait_review','renewal_funds','template_failed','acquisition_retirement_review','acquisition_late_money']);
         if($active){$q->whereNotIn('alert_key',$active);}$q->update(['resolved_at'=>$now]);
     }
 }

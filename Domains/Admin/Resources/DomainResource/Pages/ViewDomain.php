@@ -6,14 +6,14 @@ use Filament\Actions\Action;
 use Filament\Schemas\Schema;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Auth;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,WatchResource};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, AcquisitionPaymentReview, DepartedPage, DomainEditActions, DomainFacts, DomainHistory, DomainRows, HoldingActions, NoticeReview, OperationActions, RegistrarRows, Sheet, Staff};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head, Partial, Row, Value};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{RecordDetailPage, Section};
-use Paymenter\Extensions\Servers\Domains\Presentation\{Reader, StaffTime, State};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions,AcquisitionPaymentReview,DepartedPage,DomainEditActions,DomainFacts,DomainHistory,DomainRows,HoldingActions,NoticeReview,OperationActions,RegistrarRows,Sheet,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head,Partial,Row,Value};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{RecordDetailPage,Section};
+use Paymenter\Extensions\Servers\Domains\Presentation\{Reader,StaffTime,State};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,HoldingDeparture,HoldingReadRetry,ManagedDnsSetup,ObservationRecords,OwnedDomains,StaffWatchWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,HoldingDeparture,HoldingReadRetry,ObservationRecords,OwnedDomains};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** One domain: its own state in the head, then its sections as rows, with Activity beside them and History as a tab.
  * Each notice sits first in the section it concerns, one per section. The page follows a change at its own cadence. */
@@ -109,7 +109,7 @@ class ViewDomain extends RecordDetailPage
     private function facts(): array
     {
         if ($this->facts!==null) { return $this->facts; }
-        $d=$this->getRecord(); $facts=self::withDnsSetup($d,DomainFacts::for($d,$this->notice(),$this->familyState())); $progress=$this->managementProgress();
+        $d=$this->getRecord(); $facts=DomainFacts::for($d,$this->notice(),$this->familyState()); $progress=$this->managementProgress();
         if ($this->departureSuspected() || $this->edits()['authCode'] || isset($progress['auth_code_email'])) { $facts['Email auth code']=['value'=>'Goes to the '.OwnedDomains::authCodeRecipient($d),'sub'=>'Never shown here.','url'=>null,'tone'=>null,'help'=>'The code moves this domain to another registrar. We email it and never show it here.','demo'=>false]; }
         if ($this->departureSuspected()) {
             // Say which facts came from the absence read and which were kept from the last read while the domain was ours.
@@ -232,7 +232,7 @@ class ViewDomain extends RecordDetailPage
     public function notice_reviewAction(): Action
     { return Sheet::button(NoticeReview::action($this->getRecord())); }
     /** The sheet. An active domain leads with its registrar records, as in the approved mock; other states lead with
-     * registration and billing. Monitoring keeps the public DNS evidence. */
+     * registration and billing. */
     protected function sections(): array
     {
         $this->cacheHoldingActions();
@@ -292,10 +292,7 @@ class ViewDomain extends RecordDetailPage
             $sections[]=Section::make($title,[...($notice?[$notice]:[]),...($held?[$held]:[]),...$rows]);
         }
         $records=[$this->recordFamilies($d,$facts,$edits,$notices['Registrar records']??null)];
-        $monitoring=Section::make('Monitoring',[...(isset($notices['Monitoring'])?[$notices['Monitoring']]:[]),
-            Partial::make('domains::admin.monitoring-evidence',['evidence'=>\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read($d),'withRecords'=>true],'monitoring-evidence'),
-            ...(($suspected&&\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::allowed()&&($watch=\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::rows($d)['watch']))?[$watch]:[])],\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::EVIDENCE);
-        return [...($d->status==='active'?[...$records,...$sections]:[...$sections,...$records]),$monitoring];
+        return $d->status==='active'?[...$records,...$sections]:[...$sections,...$records];
     }
     /** @return array{0: ?int, 1: ?int} First definite absence and last definite recheck. */
     private static function departureReadTimes(Domain $d, ?int $latest): array
@@ -434,7 +431,7 @@ class ViewDomain extends RecordDetailPage
         return $items;
     }
     /** Each notice in the section it concerns: costs in Renewal, the records read and the hold in Registrar records,
-     * DNS setup in Monitoring. @return array<string,list<array{0:State,1:mixed,2:?Action}>> */
+     * DNS setup. @return array<string,list<array{0:State,1:mixed,2:?Action}>> */
     private function noticeItems(Domain $d, bool $late, ?string $heldIn): array
     {
         $out=[]; $edits=$this->edits();
@@ -461,10 +458,6 @@ class ViewDomain extends RecordDetailPage
             // A plain note is text: the notice escapes it once when it draws it.
             [$line,$link]=RegistrarRows::line($edits['note'],'held');
             $out[$heldIn][]=[State::UnderReview,$line,$link];
-        }
-        if(\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::affected(time())->whereKey($d->id)->exists()){
-            $out['Monitoring'][]=[State::NotSet,'Set the default nameservers in Domains > DNS templates to start DNS monitoring.',
-                Staff::can(StaffWatchWrites::VIEW)&&Staff::canEditDefaultDns()?Sheet::link('dns_templates',\Paymenter\Extensions\Servers\Domains\Admin\Support\DefaultNameservers::TITLE,\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource::getUrl()):null];
         }
         return $out;
     }
@@ -507,15 +500,6 @@ class ViewDomain extends RecordDetailPage
         // A read that is only overdue has not failed: its records are out of date.
         $failed=($s['read_code']??null)||($s['read_stopped']??false)||($s['failed_family']??null);
         return [$failed?State::Failed:State::OutOfDate,($failed?'Registrar read failed. ':'Registrar records are out of date. ').$text.' '.$history,null];
-    }
-    /** A domain monitoring can't compare says so on its DNS row, beside the way to fix it. */
-    private static function withDnsSetup(Domain $d, array $facts): array
-    {
-        $row=isset($facts['DNS records'])?'DNS records':'Nameservers';
-        if (!isset($facts[$row])||!ManagedDnsSetup::affected(time())->whereKey($d->id)->exists()) { return $facts; }
-        $facts[$row]['sub']=trim(($facts[$row]['sub']??'').' DNS comparison not set up.');
-        $facts[$row]['setup']=true;
-        return $facts;
     }
     /** One row per registrar record family, between the shared records head and tail. A family's saved values, its
      * DNSSEC state and its edit buttons sit on the same row. */
@@ -571,7 +555,6 @@ class ViewDomain extends RecordDetailPage
         if ($this->departureSuspected()&&in_array($label,['Transfer lock','Email auth code','Contacts','Nameservers'],true)) { $this->blocked[$label]=true; return [Sheet::button(Action::make('paused_'.md5($label))->label($label==='Nameservers'?'Edit':self::blockedLabel($label,$fact)))]; }
         $side=array_map(fn(Action $action)=>in_array($action->getLabel(),['Edit','Change'],true)?Sheet::edit($action,$label):Sheet::button($action),$edits['rows'][$label]??[]);
         if ($side===[]&&$edits['held']&&in_array($label,self::BLOCKED,true)) { $side[]=Sheet::button(Action::make('held_'.md5($label))->label(self::blockedLabel($label,$fact))); $this->blocked[$label]=true; }
-        if (($fact['setup']??false)&&Staff::can(StaffWatchWrites::VIEW)) { $side[]=Sheet::link('dns_setup','Choose DNS template',WatchResource::getUrl('dns-setup')); }
         if ($fact['url']&&isset(DomainFacts::LINKS[$label])) { $side[]=Sheet::link('open_'.md5($label),DomainFacts::LINKS[$label],$fact['url']); }
         return $side;
     }
@@ -630,7 +613,7 @@ class ViewDomain extends RecordDetailPage
             ->modalHeading('Complimentary renewal')->modalSubmitActionLabel('Confirm complimentary renewal')->modalWidth('3xl')->modalFooterActionsAlignment(\Filament\Support\Enums\Alignment::End)
             ->schema(function()use($d):array {
                 try{$options=app(\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::class)->complimentaryOptions((int)$d->id,Auth::user());}catch(\Throwable){$options=['terms'=>[]];}
-                $terms=self::complimentaryTerms($d);$company=\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
+                $terms=self::complimentaryTerms($d);$company=\Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels::company();
                 // The domain's linked service owns its displayed annual price, even when owner requests are closed.
                 try{$service=$d->service;$annual=$service?->currency_code==='USD'?\Paymenter\Extensions\Servers\Domains\Services\PriceCatalogue::retail((string)$service->price):null;}catch(\Throwable){$annual=null;}
                 $term=fn(\Filament\Schemas\Components\Utilities\Get $get)=>$terms[(int)$get('years')]??null;

@@ -33,7 +33,7 @@ $expires=$d->fresh()->provider_expires_at->format('Y-m-d');$at=$clock->instant;$
 expect($d->fresh()->provenance!=='adopted'&&$dates['issue']<$expires,'A registered domain with its renewal invoice issued before expiry');
 $facts=static function(string $day)use($clock,$user,$d,$owners):array {
     $clock->instant=new DateTimeImmutable($day.'T12:00:00Z');
-    $s=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
+    $s=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,$d->id,$clock->now()->getTimestamp());
     return [$s,Paymenter\Extensions\Servers\Domains\Presentation\DomainListRow::renewal($s),Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::nextInvoice($owners->present($d->fresh()),$s,null)];
 };
 $date=static fn(string $day)=>CarbonImmutable::parse($day,'UTC')->format('M j, Y');
@@ -73,7 +73,7 @@ catch(LogicException $e){same('Locked processing requires an outer transaction.'
 $invoice=$ownerBilling->invoice($d->id,$user,1);
 same(['paid',0.0],[$invoice->status,(float)$invoice->total],'Authorized complimentary renewal still uses the guarded invoice writer');
 // The zero informational receipt has its own issue date, not the standard unpaid-debt calendar.
-$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
+$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,$d->id,$clock->now()->getTimestamp());
 expect(!$summary->renewalInvoiceMissing,'Funded complimentary renewal is not a missing invoice on the list');
 $row=Paymenter\Extensions\Servers\Domains\Presentation\DomainListRow::renewal($summary);
 same('Renewal invoice paid',$row['note'],'List and customer page agree on the issued renewal state');
@@ -82,7 +82,7 @@ same('Paid',Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::nextIn
 try{[$s,$row,$next]=$facts((new DateTimeImmutable($expires))->modify('+1 day')->format('Y-m-d'));same(['Paid',false],[$next['value']??null,$s->renewalInvoiceOverdue],'After expiry an issued invoice keeps its own state');}finally{$clock->instant=$at;}
 // An informational receipt cannot hide a changed/nonzero line or a foreign owner.
 $item=$invoice->items()->sole();$item->forceFill(['price'=>'1.00'])->saveQuietly();
-$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
+$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,$d->id,$clock->now()->getTimestamp());
 expect($summary->renewalInvoiceReview && !$summary->renewalInvoicePaid,'Changed complimentary receipt remains under review');
 same('Under review',Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::nextInvoice($owners->present($d->fresh()),$summary,null)['value'],'Changed receipt detail stays under review');
 // The customer's actual page keeps the refusal: the rendered Renewal card says Under review, never Paid, and moves nothing.
@@ -93,18 +93,18 @@ $card=trim(preg_replace('/\s+/',' ',(string)$card?->textContent));
 expect(str_starts_with($card,'Under review')&&!str_contains($card,'Paid'),'Rendered changed receipt stays under review, got: '.$card);
 same($unchanged,$money(),'Rendering the changed receipt moves no money and changes no request');
 $item->forceFill(['price'=>'0.00'])->saveQuietly();$invoice->forceFill(['user_id'=>$staff->id])->saveQuietly();
-$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
+$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,$d->id,$clock->now()->getTimestamp());
 expect($summary->renewalInvoiceReview && !$summary->renewalInvoicePaid,'Foreign receipt cannot supply list payment state');
 same('Under review',Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::nextInvoice($owners->present($d->fresh()),$summary,null)['value'],'Foreign receipt detail stays under review');
 $invoice->forceFill(['user_id'=>$user->id])->saveQuietly();
 $held=\Paymenter\Extensions\Servers\Domains\Models\Operation::where('invoice_id',$invoice->id)->sole();$held->update(['state'=>'uncertain']);
-$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
+$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,$d->id,$clock->now()->getTimestamp());
 expect($summary->renewalInvoiceReview&&!$summary->renewalInvoicePaid,'Held complimentary receipt remains Under review on list');
 same('Under review',Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::nextInvoice($owners->present($d->fresh()),$summary,null)['value'],'Held complimentary detail matches list');
 
 // Cancellation is only a presentation verdict after complete ledger membership validation.
 $held->update(['state'=>'awaiting_payment']);$invoice->forceFill(['status'=>'cancelled'])->saveQuietly();
-$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
+$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,$d->id,$clock->now()->getTimestamp());
 // Complimentary cancelled receipts are not ordinary debt: they remain under review.
 same('Under review',Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::nextInvoice($owners->present($d->fresh()),$summary,null)['value'],'Cancelled complimentary receipt cannot masquerade as ordinary cancelled debt');
 

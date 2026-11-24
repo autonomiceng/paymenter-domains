@@ -17,7 +17,6 @@ $clock=new class implements Clock {
     public function now(): DateTimeImmutable {return $this->at;}
 };
 app()->instance(Clock::class,$clock);$worker=new RuntimeWork($clock,app(RuntimePorts::class));
-DB::table('domains_psl_status')->where('id',1)->update(['last_attempt_at'=>$clock->now()->getTimestamp()]); // No incidental network admission.
 $logs=[];Event::listen(MessageLogged::class,static function($event)use(&$logs):void {$logs[]=['level'=>$event->level,'message'=>$event->message,'context'=>$event->context];});
 DB::table('domains_operations')->where('id',$op->id)->update(['action'=>'transfer','state'=>'awaiting_code','funding_basis'=>'offline_demo']);
 $holding->update(['status'=>'transfer_pending','provider_expires_at'=>'2027-10-20']);

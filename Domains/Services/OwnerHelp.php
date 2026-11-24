@@ -24,7 +24,7 @@ final class OwnerHelp
     /** Shared staff/customer explanation; the extension uses the site's configured company name. */
     public static function summary(string $anchor): string
     {
-        $company=\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
+        $company=\Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels::company();
         $text=self::SUMMARIES[$anchor];
         // Plain string work: a company name is text, never a pattern replacement.
         return $company!==''&&str_starts_with($text,'We send ')?$company.' sends '.substr($text,8):$text;
@@ -44,7 +44,7 @@ final class OwnerHelp
         $markdown??=(string)file_get_contents(self::path());
         if (!\Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN) { $markdown=preg_replace('~^## WHOIS privacy\R.*?(?=^## |\z)~ms','',$markdown); }
         // Customers never see a registrar's name; the button's own label stands in for {nameservers}.
-        $markdown=str_replace('{nameservers}',\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::nameservers(),$markdown);
+        $markdown=str_replace('{nameservers}',\Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels::nameservers(),$markdown);
         $html=(string)Str::markdown($markdown,['html_input'=>'escape','allow_unsafe_links'=>false]);
         $ids=array_flip(self::ANCHORS);
         $html=preg_replace('~<h1>.*?</h1>\s*~s','',$html,1);

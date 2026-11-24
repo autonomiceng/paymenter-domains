@@ -48,7 +48,7 @@ expect($pending->order['complimentary']??false,'Pending registration retains its
 $notice=Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::notice($pending);
 expect(str_contains($notice['text']??'','Complimentary.'),'Pending registration notice states complimentary even while choosing nameservers');
 same($pending->actions['setup'],$notice['action']['url'],'Complimentary notice preserves the pending setup action');
-$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
+$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,$d->id,$clock->now()->getTimestamp());
 $expires=Paymenter\Extensions\Servers\Domains\Presentation\DomainListRow::expires($summary);
 expect(str_contains($expires['cause']??'','Complimentary.'),'Pending list expiry states the same complimentary funding');
 $proof=fn()=>DB::transaction(function()use($op,$d){$f=InvoiceFunding::lock($op->invoice_id);return $f->requireInitial($op->fresh(),$d->fresh());});

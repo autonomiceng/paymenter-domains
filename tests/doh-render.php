@@ -9,7 +9,7 @@ $css = file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
 $panel->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
 $emit = static function (string $name, bool $check = false, ?string $modal = null) use ($out, $css, $staff): void {
     session()->forget(['filament.notifications', 'filament.livewire.notifications']);
-    $test = \Livewire\Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\MonitoringSettings::class);
+    $test = \Livewire\Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\Pages\DnsResolver::class);
     if ($check) { $test->callAction('check'); }
     if ($modal !== null) {
         $test->mountAction('configure');
@@ -35,5 +35,4 @@ $emit('configure', false, 'configure'); $emit('configure-invalid', false, 'inval
 $response = ['status' => 200, 'body' => '{"Status":0,"Question":[{"name":"example.com","type":1}],"Answer":[{"name":"example.com","type":1,"TTL":60,"data":"192.0.2.1"}]}']; $emit('working', true);
 $response = new \Paymenter\Extensions\Servers\Domains\Dns\DohFailure('timeout'); $emit('failed', true);
 $response = ['status' => 200, 'body' => '{"Status":2,"Question":[{"name":"example.com","type":1}]}']; $emit('servfail', true);
-// Monitoring notices render on the Domain monitoring list: staff-navigation-render.php.
 echo "Stock resolver states rendered.\n"; $nativeSuccessful = true;

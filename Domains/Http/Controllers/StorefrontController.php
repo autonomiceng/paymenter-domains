@@ -8,7 +8,7 @@ use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\RateLimiter;
 use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
-use Paymenter\Extensions\Servers\Domains\Services\{CartHandoffFailure, CartLines, PolicyEndings, Storefront};
+use Paymenter\Extensions\Servers\Domains\Services\{CartHandoffFailure,CartLines,PolicyEndings,Storefront};
 
 /** Dormant until39 explicitly loads routes, views and the shared native cart admission hooks. */
 final class StorefrontController extends Controller
@@ -136,15 +136,6 @@ final class StorefrontController extends Controller
         return redirect()->route('domains.domains.search', ['name' => $input, ...($replace ? ['replace' => $replace['id']] : [])])->with('domains_notice', $notice);
     }
 
-    /** Internal handoff; the owning watch controller verifies its own one-use form key. */
-    public function transfer(Request $request,string $name,\Paymenter\Extensions\Servers\Domains\Services\CheckoutEligibility $eligibility,callable $guard)
-    {
-        if ($this->limit($request)) { throw new \OverflowException('Transfer read limit reached.'); }
-        $item=null;
-        try { $eligibility->comparison($name,function()use($name,&$item){return $item=$this->add($name,'transfer',1);},$guard); }
-        catch (\Throwable $error) { if ($item!==null) { \App\Models\CartItem::whereKey($item)->delete(); }throw $error; }
-        return redirect()->route('cart');
-    }
     /** A replaced line keeps its cart line id: native Cart updates it in place and admission re-checks it. */
     private function add(string $name,string $action,int $term,?int $replace=null): int
     {

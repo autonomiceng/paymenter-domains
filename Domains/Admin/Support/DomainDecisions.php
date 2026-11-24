@@ -3,10 +3,10 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
-use Illuminate\Support\Facades\{DB, Schema};
-use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus, Missing, RequestStatus, StaffTime};
-use Paymenter\Extensions\Servers\Domains\Services\{BillingCalendar, DomainStates, HoldingObservationWork, ObligationAlerts, ObservationProjection, ObservationRecords, ObservationWork, OwnedDomains, OwnerRecords, RenewalCycles, RenewalOwnership, RenewalStop, StaffHoldingReview, StaffOperationReview};
+use Illuminate\Support\Facades\{DB,Schema};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus,Missing,RequestStatus,StaffTime};
+use Paymenter\Extensions\Servers\Domains\Services\{BillingCalendar,DomainStates,HoldingObservationWork,ObligationAlerts,ObservationProjection,ObservationRecords,ObservationWork,OwnedDomains,OwnerRecords,RenewalCycles,RenewalOwnership,RenewalStop,StaffHoldingReview,StaffOperationReview};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Staff domain page rows and the status, sync and alert decisions behind them. Request-local allowlisted projection. Never cache across actors, call providers or serialize models.
  * Each fact is ['value'=>string|list<string>|null,'sub'=>?string,'url'=>?string,'tone'=>?string,'help'=>?string,'demo'=>bool], and 'at' (a timestamp) on a time the page shows in the viewer's zone.
@@ -22,7 +22,7 @@ final class DomainDecisions
     public const LINKS=['Registrar'=>'Open registrar','Open invoice'=>'Open invoice','Customer'=>'Open customer','Service'=>'Open service','Invoice to check'=>'Open invoice'];
     public static function help(): array
     {
-        $company = \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
+        $company = \Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels::company();
         return ['Transfer lock'=>'Registrar lock that blocks transfers to another registrar.',
             'Registrar auto-renew'=>"The registrar's own auto-renew. Keep it off: ".($company !== '' ? $company.' renews' : 'we renew').' after the customer pays.',
             'Renewal'=>($company !== '' ? $company.' sends' : 'We send').' a renewal invoice before this domain expires. Auto Pay is a separate setting.'];
@@ -31,7 +31,7 @@ final class DomainDecisions
     private static function registrarRenewOff(Domain $d): string
     {
         if (self::accountRenewalsOff($d)) { return self::REGISTRAR_RENEW_HELD; }
-        $company = \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
+        $company = \Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels::company();
         if (\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::suspected($d)) { return 'Off on purpose. '.($company !== '' ? $company.' renews' : 'We renew').' after the invoice is paid, not while under review.'; }
         return 'Off on purpose. '.($company !== '' ? $company.' renews' : 'We renew').' the domain after the invoice is paid, so you are never charged by the registrar directly.';
     }
@@ -39,7 +39,6 @@ final class DomainDecisions
      * Payment activity after the order closed shows in the status and the page head instead. */
     public const ALERTS=[
         'unknown_expiry'=>['Expires','danger'],
-        'transfer_watch_relink'=>['Registrar','warning'],
         'operation_review'=>['Registrar','warning'],
         'funds_wait_review'=>['Registrar','warning'],
         'renewal_funds'=>['Registrar','warning'],
@@ -128,9 +127,8 @@ final class DomainDecisions
             }
             $glue=$records['glue']??[];
             if ($glue) {
-                $warnings=\Paymenter\Extensions\Servers\Domains\Services\GlueDrift::warnings($d,known:$sections['known_glue']??[]);
                 $at=\Paymenter\Extensions\Servers\Domains\Services\GlueRecords::asOf($d,$sections);
-                $f['Glue records']=[...Facts::row(array_map(fn($row)=>$row['host'].' '.$row['ip'],$glue),sub:implode(' ',$warnings?[self::differs(count($warnings),count(array_unique(array_column($glue,'host')))),...$warnings]:[]),tone:$warnings?'warning':null,help:'Needed when nameservers are named under this domain.'),'asOf'=>$at?:null];
+                $f['Glue records']=[...Facts::row(array_map(fn($row)=>$row['host'].' '.$row['ip'],$glue),help:'Needed when nameservers are named under this domain.'),'asOf'=>$at?:null];
             }
             $locked=OwnedDomains::storedFlag($d,'lock','locked');
             $f['Transfer lock']=Facts::row(Facts::flag($locked),sub:$locked!==null?null:$unread,help:self::help()['Transfer lock']);
@@ -278,12 +276,6 @@ final class DomainDecisions
             $fact['tone']=$fact['tone']==='danger'?'danger':$tone; $fact['alert']=true;
             if ($request!==null) { $fact['request']=$request; }
             $f[$row]=$fact;
-        }
-        // A failed customer monitoring alert: why, and what to do. The staff alert links here.
-        if ($failed=NoticeHealth::open('managed',(int)$d->id,(string)$d->domain)) {
-            $notice=$f['Open alerts']??Facts::row([],tone:$failed['tone']);$notice['value']=[...$notice['value'],$failed['text']];
-            $notice['tone']=in_array('danger',[$notice['tone'],$failed['tone']],true)?'danger':($notice['tone']==='warning'?'warning':$failed['tone']);
-            $f['Open alerts']=$notice;
         }
         return $f;
     }
@@ -458,7 +450,7 @@ final class DomainDecisions
         if (!in_array($d->price_mode,['standard','complimentary'],true)) { return Facts::row(null,sub:'No renewal price set. Check the linked service.'); }
         $code=$observation['adoption_review']['price']??null;
         if ($code==='retained_renewal') { $code=null; }
-        $company=\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
+        $company=\Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels::company();
         $value=null;
         if ($d->price_mode==='complimentary') {
             $value='Standard renewal price '.($service->currency_code==='USD'?'$':$service->currency_code.' ').number_format((float)$service->price,2).' / year, complimentary';

@@ -13,7 +13,7 @@ $registryCalls=0;
 $dns=new class implements DnsReader {
     public function read(DnsQuery $q,DnsContext $c):DnsAnswer { $c->reserve();return $q->type==='A'?DnsAnswer::rrset($q,[['host'=>$q->name,'type'=>'A','class'=>'IN','ttl'=>60,'ip'=>'8.8.8.8']]):DnsAnswer::negative($q); }
 };
-app()->instance(DepartureChecks::class,new DepartureChecks($dns,$clock,static function($dns,$snapshot)use(&$registryCalls,$d){
+app()->instance(DepartureChecks::class,new DepartureChecks($dns,$clock,static function($dns)use(&$registryCalls,$d){
     return new PublicRegistryReader($dns,['services'=>[[['com'],['https://rdap.example.com']]]],static function()use(&$registryCalls,$d){
         same(0,DB::transactionLevel(),'Scheduled RDAP runs outside locks');$registryCalls++;
         return ['status'=>200,'body'=>json_encode(['objectClassName'=>'domain','ldhName'=>$d->domain,'status'=>['ok']])];

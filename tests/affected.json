@@ -68,7 +68,7 @@
     ],
     "tests/Support/staff-operation-fixture.php": ["tests/walk3-invoice-state-test.php"],
     "tests/staff-request-invoice-test.php": ["tests/walk3-invoice-state-test.php"],
-    "tests/Support/observation-records-ready.php": ["tests/departure-watch-test.php", "tests/transfer-out-not-found-test.php"],
+    "tests/Support/observation-records-ready.php": ["tests/transfer-out-not-found-test.php"],
     "tests/Support/departure-fixture.php": [
       "tests/departure-customer-test.php",
       "tests/departure-departed-test.php",
@@ -82,14 +82,11 @@
       "tests/departure-history-lead-test.php",
       "tests/departure-late-return-history-test.php",
       "tests/departure-money-review-attention-test.php",
-      "tests/departure-monitoring-status-test.php",
       "tests/departure-refund-repair-test.php",
       "tests/departure-renewal-overcharge-attention-test.php",
       "tests/departure-retry-snapshot-test.php",
       "tests/departure-settled-attention-test.php",
       "tests/departure-staff-refund-test.php",
-      "tests/departure-watch-access-test.php",
-      "tests/departure-watch-paused-test.php",
       "tests/test_departure_renders.py"
     ],
     "tests/Support/staff-tld-filter-lookalikes.php": ["tests/staff-tld-page-test.php"],
@@ -110,5 +107,5 @@
     "tests/native-database.php": ["tests/test_runner.py"],
     "scripts/php-test": ["tests/test_runner.py"]
   },
-  "no_tests": ["*.md", "LICENSE", "*.png", "*.svg", "tests/enom-answer-render.php", "tests/staff-watch-render.php", "tests/Support/request-review-render.php", "tests/Support/registrar-transfer-render.php", "tests/Support/monitor-template-render.php", "tests/Support/billing-hold-render.php", "tests/Support/request-order-unproven-render.php"]
+  "no_tests": ["*.md", "LICENSE", "*.png", "*.svg", "tests/enom-answer-render.php", "tests/Support/request-review-render.php", "tests/Support/registrar-transfer-render.php", "tests/Support/dns-template-render.php", "tests/Support/billing-hold-render.php", "tests/Support/request-order-unproven-render.php"]
 }

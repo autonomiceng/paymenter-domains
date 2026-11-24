@@ -66,8 +66,8 @@ same([],OwnedDomains::order($d(['status'=>'active']),$op(),$invoice('paid')),'On
 same([],OwnedDomains::order($d(),null,null),'No order, no line');
 
 // One word and one treatment on the list and the page.
-$summary=static fn(array $order)=>new DomainSummary('order.example',null,'managed','domain.registration.unknown',[],null,null,[],DomainSummaryStrings::all(),...[
-    'expiry'=>null,'expiryPrecision'=>null,'expirySource'=>null,'freshness'=>[],'renewalDueAt'=>null,'renewalPrice'=>null,'relatedServices'=>[],'hostnames'=>[],'urls'=>['detail'=>'/domains/1','support'=>'/tickets/create'],'order'=>$order,'expiryWaits'=>'registration']);
+$summary=static fn(array $order)=>new DomainSummary('order.example',null,'managed','domain.registration.unknown',[],DomainSummaryStrings::all(),...[
+    'expiry'=>null,'expiryPrecision'=>null,'expirySource'=>null,'renewalDueAt'=>null,'renewalPrice'=>null,'urls'=>['detail'=>'/domains/1','support'=>'/tickets/create'],'order'=>$order,'expiryWaits'=>'registration']);
 $owned=static fn(array $order)=>new OwnedDomain('order.example','Pending registration','warn',null,'',null,['show'=>'/domains/1'],[],[],[],[],false,order:$order);
 $pay=['state'=>'unpaid','kind'=>'registration','invoice'=>'/invoices/11'];
 $paid=['state'=>'paid','kind'=>'registration'];

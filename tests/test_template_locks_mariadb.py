@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Socket-only MariaDB: DNS template turn off and delete wait on the template lock and never act on a late assignment."""
+"""Socket-only MariaDB checks for template edits racing with a registration default change."""
 # MIT, Copyright (c) 2026 Autonomic Engineering.
 import json
 import subprocess
 import sys
 from test_schema_mariadb import ROOT, run
 
-# late: a staff assignment commits while the write waits, after the write's repeatable-read view began.
+# late: a new registration default commits while the writer waits, after the write's repeatable-read view began.
 # timeout and deadlock: the waiting write fails and rolls back with the template still on.
 CASES = [(case, action) for case in ('late', 'timeout', 'deadlock') for action in ('disable', 'delete')]
 
@@ -37,8 +37,9 @@ def exercise(command, php_args, env, scratch):
         proof = json.loads(result.stdout.decode().splitlines()[-1])
         if not proof['complete'] or (proof['case'], proof['action']) != (case, action):
             raise AssertionError('Wrong template lock proof for '+name)
-        if (barriers/(name+'-lock-wait')).read_text() != 'proved':
-            raise AssertionError('Real template row lock wait was not observed for '+name)
+        expected_table = 'domains_business_settings' if case == 'late' else 'domains_dns_templates'
+        if (barriers/(name+'-lock-wait')).read_text() != expected_table:
+            raise AssertionError('Registration settings lock wait was not observed for '+name)
         proofs.append(proof)
     return {'complete': True, 'prefix': env['SCHEMA_PREFIX'], 'cases': proofs, 'real_provider_calls': 0}
 

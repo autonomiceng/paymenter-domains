@@ -35,7 +35,7 @@ require __DIR__.'/Support/owner-pages.php';
 $dto=$owners->present($d->fresh());$next=Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::nextInvoice($dto,null,'/support');
 same('Renewal did not finish',$next['value']??null,'Closed complimentary renewal is an outcome, not a pending check');
 expect(isset($next['action'])&&!str_contains(json_encode($next),'nothing you need to do'),'Closed renewal offers support');
-$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
+$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,$d->id,$clock->now()->getTimestamp());
 expect($summary!==null,'Native list summary exists');$row=Paymenter\Extensions\Servers\Domains\Presentation\DomainListRow::renewal($summary);
 expect(str_contains(json_encode($row),'Renewal did not finish')&&!str_contains(json_encode($row),'Under review'),'List and page share the closed outcome');
 $html=view('domains::partials.owner-renew',['domain'=>$dto,'summary'=>$summary,'support'=>'/support','keys'=>['auto-renew'=>'synthetic','renew'=>'synthetic']])->render();expect(str_contains($html,'Renewal did not finish')&&!str_contains($html,'Renewal being checked'),'Native owner Blade uses the terminal renewal outcome');
@@ -43,7 +43,7 @@ $html=view('domains::partials.owner-renew',['domain'=>$dto,'summary'=>$summary,'
 $preference=new Paymenter\Extensions\Servers\Domains\Services\OwnerAutoRenew($clock);app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
 foreach([false,true] as $on){
     $preference->set($user,$d->id,$on);same($on,$d->fresh()->renewal_policy['owner_auto_renew'],'Owner switch saved: '.($on?'On':'Off'));
-    $summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
+    $summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,$d->id,$clock->now()->getTimestamp());
     $row=Paymenter\Extensions\Servers\Domains\Presentation\DomainListRow::renewal($summary);
     same([$on?'On':'Off','Renewal did not finish. Contact support.'],[$row['value'],$row['note']],'Closed renewal list row keeps the outcome with auto-renew '.($on?'On':'Off'));
     $list=preg_replace('/\s+/',' ',html_entity_decode(strip_tags(view('domains::index',['domains'=>new Illuminate\Pagination\LengthAwarePaginator([$summary],1,25)])->render()),ENT_QUOTES));

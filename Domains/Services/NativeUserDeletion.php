@@ -52,7 +52,12 @@ final class NativeUserDeletion
             if(!DB::table(UserDeletionSchema::TABLE)->where('user_id',$owner)->lockForUpdate()->exists()){
                 DB::table(UserDeletionSchema::TABLE)->insert(['user_id'=>$owner,'created_at'=>now()]);
             }
-            WatchCustomerDeletion::erase($owner);
+            $audit = DB::table('domains_audit')->where('user_id', $owner);
+            DB::table(RetentionSchema::MARKS)->where('family', 'domain_audit')->whereIn('source_id', (clone $audit)->select('id'))->delete();
+            $audit->delete();
+            DB::table('domains_contact_profiles')->where('user_id', $owner)->delete();
+            DB::table(RetentionSchema::COLD)->where('user_id', $owner)->delete();
+            User::find($owner)?->properties()->whereIn('key', [...ContactDetails::REQUIRED_PROPERTIES, 'company_name', 'address2'])->delete();
         };
         if(DB::transactionLevel()===0){DB::transaction($write);}else{$write();}
     }

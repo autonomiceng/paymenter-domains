@@ -3,9 +3,10 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources;
 use Filament\Resources\Resource;
-use Illuminate\Database\Eloquent\{Builder, Model};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainQueries, NavigationCount, Staff};
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{AdoptDomain, AdoptionPreview, ListDomains, ViewDomain};
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\DnsResolver;
+use Illuminate\Database\Eloquent\{Builder,Model};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainQueries,NavigationCount,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{AdoptDomain,AdoptionPreview,ListDomains,ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus;
@@ -17,7 +18,7 @@ class DomainResource extends Resource
     protected static ?string $navigationLabel = 'Domains';
     protected static ?int $navigationSort = 1;
     /** The menu item stays marked on every tab of the Domains area (StaffTabs::domains) and the pages under them. */
-    public static function getNavigationItemActiveRoutePattern(): string|array { return [static::getRouteBaseName().'.*',RoutingProfileResource::getRouteBaseName().'.*',WatchResource::getRouteBaseName().'.*']; }
+    public static function getNavigationItemActiveRoutePattern(): string|array { return [static::getRouteBaseName().'.*',RoutingProfileResource::getRouteBaseName().'.*',DnsResolver::getRouteName()]; }
     protected static ?string $modelLabel = 'domain';
     protected static ?string $pluralModelLabel = 'domains';
     protected static ?string $breadcrumb = 'Domains';

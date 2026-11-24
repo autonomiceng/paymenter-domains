@@ -5,10 +5,10 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Resources;
 use Filament\Tables\{Table,Columns\TextColumn,Filters\Filter};
 use Filament\Forms\Components\TextInput;
 use Illuminate\Database\Eloquent\Builder;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{OneLine,WatchReadResource,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{OneLine,DomainReadResource,Staff};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\PendingAdoptionResource\Pages\{ListPending,ViewPending};
-class PendingAdoptionResource extends WatchReadResource
+class PendingAdoptionResource extends DomainReadResource
 {
     protected static ?string $model=Domain::class;
     protected static ?string $navigationLabel='Import pending';

@@ -116,8 +116,6 @@ same(Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Outcome::Succe
     'Separate balance reply shape');
 unset($probePage);gc_collect_cycles();
 $balanceClock->instant=$balanceClock->now()->modify('+5 seconds');
-app()->instance(Paymenter\Extensions\Servers\Domains\Services\PslTransport::class,
-    new Paymenter\Extensions\Servers\Domains\Services\PslTransport(static function():never {throw new Paymenter\Extensions\Servers\Domains\Services\PslFailure('transport_failed');}));
 $balanceService=new RegistrarBalances($bindings,$balanceClock,app(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class));
 $GLOBALS['enrollmentExpectedContext']='apibatch';
 $GLOBALS['enrollmentExpectedTimeout']=25000;

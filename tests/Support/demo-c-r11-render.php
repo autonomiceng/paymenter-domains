@@ -3,7 +3,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 $mode=$argv[2]??(getenv('DOMAINS_RENDER_STATE')?:'terms');
-require dirname(__DIR__).($mode==='monitoring'?'/test_installed_demo_c_monitoring-test.php':'/test_installed_demo_c_terms-test.php');
+require dirname(__DIR__).'/test_installed_demo_c_terms-test.php';
 $nativeSuccessful=false;
 $out=$argv[1]??'';expect(is_dir($out),'Output directory required');
 $skin=$argv[3]??(getenv('DOMAINS_RENDER_STAFF_SKIN')?:'');
@@ -31,10 +31,6 @@ $staffRender=static function($test,string $name)use($out,$css):void{
     $html=str_replace('</head>','<style>'.$css.'</style>'.view('domains::partials.staff-styles')->render().'</head>',$html);
     file_put_contents($out.'/'.$name.'.html',$html);
 };
-if($mode==='monitoring'){
-    $staffRender(Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\ViewWatch::class,['record'=>$watch->id]),'monitoring');
-    $staffRender(Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\MonitoringSettings::class),'settings');
-}else{
     $probe->setValue(null,[Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::class=>new Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue($ports,$clock),Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::class=>new Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities($ports,$clock,static fn()=>null)]);
     Illuminate\Support\Facades\Auth::login($actor);
     $list=Livewire\Livewire::actingAs($actor)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::class);
@@ -55,8 +51,8 @@ if($mode==='monitoring'){
     // Assert genuine backend eligibility before mounting; no mocked action or invented term.
     expect(array_keys(app(Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::class)->complimentaryOptions($d->id,$actor)['terms'])===[1],'Complimentary fixture retains one evidenced year');
     $resource=Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::class;
-    $panel->resources([$resource,Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::class]);
-    Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($resource,$panel){$resource::registerRoutes($panel);Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::registerRoutes($panel);});
+    $panel->resources([$resource]);
+    Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($resource,$panel){$resource::registerRoutes($panel);});
     app('router')->getRoutes()->refreshNameLookups();
     $gift=Livewire\Livewire::actingAs($actor)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id])->mountAction('complimentary_renewal')->call('$refresh');
     expect(count($gift->instance()->mountedActions)===1,'Real complimentary action is mounted');
@@ -73,5 +69,4 @@ if($mode==='monitoring'){
         $html='<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><main class="domains">'.$customerCss.$body.'</main></body></html>';
         file_put_contents($out.'/'.$name.'.html',$html);
     }
-}
 $nativeSuccessful=true;echo "Demo C R11 local states rendered.\n";

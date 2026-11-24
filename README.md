@@ -35,48 +35,14 @@ the same package verifies its schema and preserves holdings, settings and billin
 If activation refuses retained data or an incompatible catalogue contract, preserve the
 database and verify the installation. Staff can import individual domains through **Import**.
 
-## Public suffix list review
-
-The weekly updater stores validated Public Suffix List data (MPL-2.0, publicsuffix.org).
-A removal of more than 5% of either section keeps the saved list and retains the exact
-rejected download for staff review. Staff with watch view rights find the list status under
-**Domains → Registrars → an account → System checks → Public suffix list**; **View details** on that
-row opens the full list page. With watch manage rights, **Download now** downloads and checks a new list.
-If a rejected download is waiting for review, **Review new list** opens **Use new list?** instead.
-It shows the ICANN and private rule counts before and after, plus up to 20 removed rules.
-Changes to the pending bytes or saved baseline invalidate acceptance. All current size, parsing, marker and sentinel checks still apply.
-The same procedure can replace a hash-valid historical list whose rules a newer international
-domain parser rejects; historical source identities explain its differences but never resolve names.
-Acceptance records encrypted retained audit evidence and does not refresh the download's age.
-
 ## License
 
 [MIT](LICENSE), copyright 2026 Autonomic Engineering. NameSilo and Paymenter are trademarks of their respective owners; this is an independent project.
 
 Staff account balances and renewal forecasts: [Registrar balances](docs/design/registrar-balances.md).
 
-External watch comparisons are also default off (`domains.watch_transfer.enabled`).
-Enable them only in reviewed deployment composition after accepting the seller's annual
-transfer and renewal offers, ending allowlist and lock policy, and qualifying the native
-cart/reservation hooks. Public expiry is not transfer authority. Fresh ordinary-domain
-and registry checks plus customer ownership confirmation are required for the handoff;
-post-checkout transfer-code entry remains separate. No verified current-provider renewal
-price source is supplied, so the customer flow makes no numeric savings claim.
-
-Before enabling adoption, discovery, public DNS/registry checks or watch notices, qualify
-current ZIP install and reinstall, owner and revision races, provider adapters, shared-database
-locking, delivery acceptance and the supplied site shell. Keep each feature off until its
-own acceptance is complete; a green offline suite does not activate it. Internal moves
-between platform-held accounts remain a separate, unavailable feature.
-
 Staff see Import domain only when `domains.adoption.enabled` is on and their role has the
 import permission. Before turning it on: run an end-to-end check on the site, confirm the
-live registrar account and its standard renewal pricing, approve managed public DNS for
-imported names (it is recorded but stays inactive until then), and check simultaneous staff
+live registrar account and its standard renewal pricing, and check simultaneous staff
 and customer edits against the site's database. Then let in-progress customer, order and
 service edits finish, and restart web and queue workers.
-
-After a proved LIVE transfer acquisition, local source relinking and external-notice
-suppression run independently of the comparison flag. TEST acquisitions never change
-external watches. This cleanup enables no DNS/registry worker. Deferred relinks appear
-in Registrars and the staff alerts; the bounded runtime cursor retries them.

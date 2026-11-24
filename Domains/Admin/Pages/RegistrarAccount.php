@@ -10,13 +10,13 @@ use Illuminate\Contracts\Support\Htmlable;
 use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{AccountChecklist, ApiCallLimitAction, BalanceCheck, LiveActivationAction, PaidUncertainty, PriceFreshnessAction, PslActions, RegistrarFacts, RegistrarPage, RegistrarRows, SettingsActions, Sheet, Staff, TldFacts};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Row, Value};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{DetailPage, Section};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{AccountChecklist,ApiCallLimitAction,BalanceCheck,LiveActivationAction,PaidUncertainty,PriceFreshnessAction,RegistrarFacts,RegistrarPage,RegistrarRows,SettingsActions,Sheet,Staff,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Row,Value};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{DetailPage,Section};
 use Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness;
-use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain};
-use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus, Fact, Reader, State};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, EnomLiveActivation, SiteDnsDefault};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
+use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus,Fact,Reader,State};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomLiveActivation,SiteDnsDefault};
 /** One registrar account (a Domains server): its own state in the head, then Account, Balance, Sales,
  * Renewals and Domain settings, with System checks on the rail. Reached from the Registrars list. Each switch sits with
  * what it controls; a link that came for a switch lands on it. A cause the head used to say opens the section it concerns. */
@@ -90,7 +90,6 @@ class RegistrarAccount extends DetailPage
     public function checks(): array
     {
         $system = AccountChecklist::system();$a = $this->record();
-        if (Staff::can(PslActions::VIEW)) { $psl = PslActions::row(fn () => $this->resetContent());if (in_array($psl['tone'], ['danger', 'warning'], true)) { $system['failing'][] = $psl; } }
         if ($a) {
             $runtime = AccountChecklist::runtime($a);$system[$runtime['value'] === null ? 'failing' : 'passing'][] = $runtime;
             $alerts = AccountChecklist::alerts($a);$system[$alerts['tone'] === 'success' ? 'passing' : 'failing'][] = $alerts;

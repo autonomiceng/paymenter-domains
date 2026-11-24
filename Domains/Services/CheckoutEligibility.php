@@ -3,9 +3,9 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
-use Illuminate\Support\Facades\{Cache, DB};
+use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{Action, Disposition, Query, RequestBudget, RequestContext, RequestOrigin, SaleSelection};
+use Paymenter\Extensions\Servers\Domains\Data\{Action,Disposition,Query,RequestBudget,RequestContext,RequestOrigin,SaleSelection};
 
 /** Short-lived server-side read evidence. A receipt never replaces locked seller admission. */
 class CheckoutEligibility
@@ -16,16 +16,6 @@ class CheckoutEligibility
 
     // Reserve time for the remaining batch, pacing waits and native lock acquisition.
     private const REFRESH_HEADROOM_SECONDS = 60;
-    private bool $comparisonSeen = false;
-    private ?string $comparisonName = null;
-    private ?\Closure $comparisonGuard = null;
-    /** Same singleton used by native cart listeners; scope cannot leak into later requests. */
-    public function comparison(string $name,callable $handoff,callable $guard): mixed
-    {
-        if ($this->comparisonName!==null) { throw new \LogicException('Comparison handoff already active.'); }
-        $this->comparisonName=$name;$this->comparisonGuard=\Closure::fromCallable($guard);
-        try { $result=$handoff();if (!$this->comparisonSeen) { throw new \DomainException('Comparison admission is unavailable.'); }return $result; } finally { $this->comparisonName=null;$this->comparisonGuard=null;$this->comparisonSeen=false; }
-    }
     public function __construct(private readonly AccountBindings $bindings, private readonly Clock $clock, private readonly ?TransferPrecheck $transfers = null) {}
 
     /** Registration refreshes share one bounded read per cart/name/account/offer. */
@@ -62,11 +52,10 @@ class CheckoutEligibility
         } catch (\DomainException) { return false; }
     }
 
-    public function observe(string $name, SaleSelection $selection, array $identity, bool $comparison = false, ?CheckoutRefreshBudget $batch = null): string
+    public function observe(string $name, SaleSelection $selection, array $identity, ?CheckoutRefreshBudget $batch = null): string
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Eligibility reads require an unlocked cart.'); }
-        // Transfer and comparison semantics remain on their existing path.
-        if ($selection->action !== 'register' || $comparison || $this->comparisonName !== null) { return $this->observeFresh($name, $selection, $identity, $comparison, $batch); }
+        if ($selection->action !== 'register') { return $this->observeFresh($name, $selection, $identity, $batch); }
         $key = 'domains.checkout.refresh.'.hash('sha256', json_encode([$name, $identity, get_object_vars($selection)], JSON_THROW_ON_ERROR));
         $read = function () use ($key, $name, $selection, $identity, $batch): string {
             $batch?->remainingMilliseconds();
@@ -90,7 +79,7 @@ class CheckoutEligibility
         }
     }
 
-    private function observeFresh(string $name, SaleSelection $selection, array $identity, bool $comparison = false, ?CheckoutRefreshBudget $batch = null): string
+    private function observeFresh(string $name, SaleSelection $selection, array $identity, ?CheckoutRefreshBudget $batch = null): string
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Eligibility reads require an unlocked cart.'); }
         if (!in_array($selection->action, ['register', 'transfer'], true)) { throw new \DomainException('Acquisition unavailable.'); }
@@ -117,14 +106,9 @@ class CheckoutEligibility
         if ($result->disposition !== Disposition::Accepted || $result->evidence()->premium !== false || $result->evidence()->available !== true
             || $this->clock->now() >= $deadline) { throw new EligibilityUnconfirmed($result->registrarCode); }
         }
-        $comparison = $comparison || $this->comparisonName === $name;
-        if ($comparison && (!$transfer || !WatchTransferPolicy::eligible($transfer, $this->clock->now()->getTimestamp()))) {
-            throw new \DomainException('Transfer eligibility remains unverified.');
-        }
-        if ($this->comparisonName === $name) { ($this->comparisonGuard)();$this->comparisonSeen=true; }
         $this->catalogue()?->validate($selection, name: $name);
         $token = bin2hex(random_bytes(32));
-        Cache::put('domains.checkout.'.$token, ['retail' => $retail, 'comparison' => $comparison, 'transfer' => $transfer, 'identity' => $identity, 'selection' => get_object_vars($selection),
+        Cache::put('domains.checkout.'.$token, ['retail' => $retail, 'transfer' => $transfer, 'identity' => $identity, 'selection' => get_object_vars($selection),
             'name' => $name, 'observed' => $started->getTimestamp(), 'expires' => $started->modify('+5 minutes')->getTimestamp()], 300);
         return $token;
     }
@@ -137,7 +121,7 @@ class CheckoutEligibility
         if (!is_array($receipt)) { throw new CheckoutCheckExpired; }
         if ($receipt['identity'] !== $identity || $receipt['name'] !== $name || $receipt['observed'] > $now) { throw new \DomainException('Refresh the domain check.'); }
         if ($receipt['expires'] <= $now) { throw new CheckoutCheckExpired; }
-        if (($receipt['comparison'] ?? false) && !WatchTransferPolicy::eligible($receipt['transfer'] ?? [], $now)) { throw new \DomainException('Refresh the comparison.'); }
+        if ($receipt['comparison'] ?? false) { throw new CheckoutCheckExpired; }
         $s = new SaleSelection(...$receipt['selection']);
         if ($locked) { $this->catalogue()?->validate($s, DB::transactionLevel() > 0, $name); }
         if ($locked) {

@@ -42,7 +42,7 @@ final class OwnerNameservers
         $value=mb_strcut($line,0,254,'UTF-8');
         $duplicate=strtolower(str_ends_with($value,'.')?substr($value,0,-1):$value);
         return match($reason['kind']??null) {
-            'few'=>'Enter at least 2 nameservers, one per line'.(($reason['defaults']??false)?', or leave this blank to use '.\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::nameservers().'.':'.'),
+            'few'=>'Enter at least 2 nameservers, one per line'.(($reason['defaults']??false)?', or leave this blank to use '.\Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels::nameservers().'.':'.'),
             'many'=>'Enter no more than '.$reason['max'].' nameservers.',
             'hostname'=>$value." isn't a valid hostname. Use a name like ns1.example.com.",
             'duplicate'=>$duplicate.' is listed more than once.',

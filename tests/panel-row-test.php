@@ -143,17 +143,10 @@ same($at, (new DateTimeImmutable($noticeDom->evaluate('string(//time/@datetime)'
 $five = ['ns1.example.net', 'ns2.example.net', 'ns3.example.net', 'ns4.example.net', 'ns5.example.net'];
 same(implode(', ', $five), Paymenter\Extensions\Servers\Domains\Admin\Support\DomainRows::value(['value' => $five], null)->word, 'Nameservers and glue list every value');
 
-// The preview and the list status build before a check or download has happened.
-require __DIR__.'/Support/psl.php';
-Paymenter\Extensions\Servers\Domains\Services\PslSchema::install();
-$clock = new PslClock;
-app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class, $clock);
-$list = new Paymenter\Extensions\Servers\Domains\Services\PublicSuffixList($clock, new Paymenter\Extensions\Servers\Domains\Services\PslTransport(static fn () => throw new LogicException('No download expected.')), new Paymenter\Extensions\Servers\Domains\Services\PslValidator(128, 5, 1));
 $domain = new Paymenter\Extensions\Servers\Domains\Models\Domain(['domain' => 'fieldnote.example', 'user_id' => $writer->id, 'service_id' => 100, 'renewal_policy' => []]);
 $errors = [];
 foreach ([
     'import preview' => static fn (): array => Paymenter\Extensions\Servers\Domains\Admin\Support\AdoptionRows::sections($domain, [], '', null, 'Imports are off.'),
-    'public suffix list' => static fn (): array => Paymenter\Extensions\Servers\Domains\Admin\Support\PslRows::sections($list),
 ] as $name => $build) {
     try { expect($build() !== [], 'The section is available: '.$name); }
     catch (Throwable $error) { $errors[] = $name.': '.$error->getMessage(); }

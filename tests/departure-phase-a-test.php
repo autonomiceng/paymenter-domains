@@ -12,7 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Dns\{DnsAnswer,DnsContext,DnsQuery};
 require_once __DIR__.'/Support/staff-panel.php';
 require_once __DIR__.'/Support/staff-alerts.php';
 use App\Models\Notification as NativeNotification;
-staffPanel();staffAlertFixture();$viewer=staffUser([Staff::VIEW]);$blind=staffUser(['admin.domains.watch.view']);
+staffPanel();staffAlertFixture();$viewer=staffUser([Staff::VIEW]);$blind=staffUser(['admin.domains.dns.view']);
 $eligible=static fn()=>App\Models\User::whereHas('role')->get()->filter(static fn($u)=>Staff::allows($u,Staff::VIEW))->values()->all();
 $noticeUrl=route('filament.admin.resources.domains.view',['record'=>$d->id]);
 $bell=static fn($user)=>NativeNotification::where('user_id',$user->id)->where('url',$noticeUrl)->count();
@@ -25,7 +25,7 @@ $wire=0;
 $dns=new class implements DnsReader {
     public function read(DnsQuery $q,DnsContext $c):DnsAnswer { $c->reserve();return $q->type==='A'?DnsAnswer::rrset($q,[['host'=>$q->name,'type'=>'A','class'=>'IN','ttl'=>60,'ip'=>'8.8.8.8']]):DnsAnswer::negative($q); }
 };
-$registry=new DepartureChecks($dns,$clock,static function($dns,$snapshot)use(&$wire,$d){return new PublicRegistryReader($dns,['services'=>[[['com'],['https://rdap.example.com']]]],static function()use(&$wire,$d){same(0,DB::transactionLevel(),'RDAP runs outside locks');$wire++;return ['status'=>200,'body'=>json_encode(['objectClassName'=>'domain','ldhName'=>$d->domain,'status'=>['ok'],'events'=>[['eventAction'=>'expiration','eventDate'=>'2028-10-25']],'entities'=>[['roles'=>['registrar'],'vcardArray'=>['vcard',[['fn',[], 'text','Example Registrar']]]]]])];});});
+$registry=new DepartureChecks($dns,$clock,static function($dns)use(&$wire,$d){return new PublicRegistryReader($dns,['services'=>[[['com'],['https://rdap.example.com']]]],static function()use(&$wire,$d){same(0,DB::transactionLevel(),'RDAP runs outside locks');$wire++;return ['status'=>200,'body'=>json_encode(['objectClassName'=>'domain','ldhName'=>$d->domain,'status'=>['ok'],'events'=>[['eventAction'=>'expiration','eventDate'=>'2028-10-25']],'entities'=>[['roles'=>['registrar'],'vcardArray'=>['vcard',[['fn',[], 'text','Example Registrar']]]]]])];});});
 app()->instance(DepartureChecks::class,$registry);
 $worker=new HoldingObservationWork($observer,$clock);
 DB::table('domains_observation_queues')->insert(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint]);

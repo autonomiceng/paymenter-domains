@@ -48,7 +48,6 @@ $check(str_contains($html,'Registrant returned; some contacts did not.'),'Staff 
 $check(str_contains($html,'Refresh contacts before editing.'),'Staff gets a contacts-specific next step');
 $check(str_contains($html,'Last complete read:'),'Staff sees the last complete timestamp');
 $check(str_contains($html,'Last read failed for DNS records')&&str_contains($html,'No read queued.'),'Staff sees failed family and the absence of queued read work');
-$check(str_contains($html,RecordFamilies::EVIDENCE),'Staff sees public versus registrar evidence distinction');
 $s=$d->observation;$s['records']['families']['dns']=['state'=>'unknown','records'=>[],'last_good'=>['at'=>'2026-11-03T09:00:00+00:00','records'=>$record['families']['dns']['records']]];$d->observation=$s;
 $state=RecordFamilies::read($d,$now);$html=view('domains::partials.record-families',['recordFamilies'=>$state])->render();
 $same('unknown',array_column($state['rows'],'state','kind')['dns'],'Historical CAA does not restore completeness');

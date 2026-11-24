@@ -41,7 +41,6 @@ $publicOffers=static function(bool $expected,string $stage):void {
     $rows=array_column($store->endings(),null,'tld');same($expected,($rows['com']['transfer']??null)!==null,$stage.' full Live transfer price');
     same($expected,($rows['com']['transfersOn']??false),$stage.' Live transfer entry fallback');
     same($expected,$store->hasTransferOffers(),$stage.' warm Live transfer offer');
-    same($expected?['com']:[],$store->offeredTransferEndings(['public-transfer.example.com']),$stage.' Live transfer entry link');
     same($calls,$GLOBALS['enomWire']['forms'],$stage.' public projection never calls provider');
 };
 $publicOffers(false,'Before acceptance');

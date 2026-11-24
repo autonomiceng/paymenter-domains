@@ -51,7 +51,7 @@ $reviewed=static function(Operation $saved,string $label)use($owners,$user,$cloc
         $note=DomainPage::expires($dto,null,null)['note']??'';
         if(preg_match('/refunded|account credit|returning what you paid/',$note)){$failures[]=$label.': expiry note claims a return';}
         $now=$clock->now()->getTimestamp();$summaries=new DomainSummaries;
-        expect($summaries->one($user,'managed',$saved->domain_id,$now)!==null,$label.': single summary exists');
+        expect($summaries->one($user,$saved->domain_id,$now)!==null,$label.': single summary exists');
         $row=$summaries->listed($user,$now)['managed:'.$saved->domain_id]??null;
         expect($row!==null,$label.': customer list projects the order');
         expect(StatusPill::key($row->statusState)!=='cancelled',$label.': default customer list keeps the order in view');
@@ -86,7 +86,7 @@ foreach(['split','returned','credited',null] as $index=>$expected){
         if($dom->query('//dd/span[contains(@class,"domains-sub") and not(normalize-space())]')->length){$failures[]=$action.':'.$index.': empty expiry subline';}
         expect(!str_contains($html,'Renewal price')&&!str_contains($html,'<dt>Auto-renew '),'Rejected acquisitions offer no future renewal');
         $summaries=new DomainSummaries;$now=$clock->now()->getTimestamp();
-        foreach(['single'=>$summaries->one($user,'managed',$saved->domain_id,$now),'list'=>$summaries->listed($user,$now)['managed:'.$saved->domain_id]??null] as $kind=>$summary){
+        foreach(['single'=>$summaries->one($user,$saved->domain_id,$now),'list'=>$summaries->listed($user,$now)['managed:'.$saved->domain_id]??null] as $kind=>$summary){
             expect($summary!==null,'Rejected acquisition has a '.$kind.' summary');
             $renew=DomainListRow::renewal($summary);expect($renew['value']!=='On'&&$renew['note']===null,'Rejected acquisition '.$kind.' row has no On price or renewal promise');
         }

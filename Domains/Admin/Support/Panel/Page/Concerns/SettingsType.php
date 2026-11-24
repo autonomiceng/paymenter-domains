@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\Section;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Sheet;
 /** Values someone chooses: the head, then one column of sections whose rows are all settings. No rail, no trace. Each
  * row says who sets it, so a reader with no control still learns who can change it. A section may open with a notice.
- * A settings row with its own dialog (Monitoring settings > Hosting products) is drawn by its partial. */
+ * A settings row with its own dialog is drawn by its partial. */
 trait SettingsType
 {
     use RendersType;

@@ -20,7 +20,7 @@ $dto=$owners->present($d->fresh());
 same($expected,$dto->renewalSchedule,'Owner DTO uses the saved registrar calendar');
 same(null,$dto->renewalDue,'A projection never becomes an issued invoice due date');
 same($expected,$owners->present($d->fresh(),false)->renewalSchedule,'Service projection retains the calendar without forms');
-$summary=(new DomainSummaries())->one($user,'managed',$d->id,$clock->now()->getTimestamp());
+$summary=(new DomainSummaries())->one($user,$d->id,$clock->now()->getTimestamp());
 same([$expected['issue'],$expected['due']],[$summary->renewalIssueAt,$summary->renewalDueAt],'Summary shares billing calendar dates');
 $d->update(['provider_expires_at'=>null]);
 same([],$owners->present($d->fresh())->renewalSchedule,'No registrar expiry means no projected dates');

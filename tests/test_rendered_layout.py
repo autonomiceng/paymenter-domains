@@ -10,17 +10,13 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 CHECK = 'scripts/check-name-and-heading.cjs'
-# Per scope: the render files, each writing its pages into the directory, the pages, and the least verified items. lists:
-# the monitoring list (by R14_RENDER_DIR), the domain page and the Domains list. managed: the DNS monitoring setup list,
-# alone in tests/test_rendered_managed_dns.py so each run keeps memory headroom.
+# Per scope: render fixtures, expected pages and minimum verified items.
 SCOPES = {
-    'lists': (['tests/test_installed_demo_c_state_watch-test.php', 'tests/domain-page-render.php', 'tests/staff-list-render.php'],
-              ['staff-domains-list.html', 'r14-watchlist-paused.html', 'r14-watchlist-retired.html',
-               'domain-page-invoice-due-dark.html', 'domain-page-invoice-due-light.html'], 23),
+    'lists': (['tests/domain-page-render.php', 'tests/staff-list-render.php'],
+              ['staff-domains-list.html',
+               'domain-page-invoice-due-dark.html', 'domain-page-invoice-due-light.html'], 17),
     'staff': (['tests/staff-list-render.php'], ['staff-domains-list.html'], 9),
-    'watch': (['tests/test_installed_demo_c_state_watch-test.php'], ['r14-watchlist-paused.html', 'r14-watchlist-retired.html'], 6),
     'heading': (['tests/domain-page-render.php'], ['domain-page-invoice-due-dark.html', 'domain-page-invoice-due-light.html'], 8),
-    'managed': (['tests/managed-dns-render.php'], ['staff-managed-dns.html'], 3),
 }
 
 

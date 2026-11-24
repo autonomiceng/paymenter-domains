@@ -14,7 +14,6 @@ require __DIR__.'/enom-test-sales-fixture.php';
 $reader=$bindings->reader($server->id,true);$generalReader=$bindings->reader($server->id);
 $unpaidOp=Domain::where('domain','unpaid-test-placeholder.com')->sole()->operations()->sole();
 $op=Domain::where('domain','paid-test-placeholder.com')->first()?->operations()->sole();
-app()->instance(Paymenter\Extensions\Servers\Domains\Services\PslTransport::class,new Paymenter\Extensions\Servers\Domains\Services\PslTransport(static fn()=>throw new Paymenter\Extensions\Servers\Domains\Services\PslFailure('transport_failed')));
 config(['domains.enom_test_sends_per_day'=>500]);$beforeCalls=count($GLOBALS['enomWire']['forms']);$beforeUsed=enomTestSendCount();
 try{EnomTestCalls::prepareSend($binding,true);throw new LogicException('Purchase requires an armed worker scope');}catch(EnomTestCallLimit){}
 try{EnomTestCalls::withPurchase(new AccountBinding('enom',$binding->serverId,Environment::Live,'live-uid'),fn()=>null);throw new LogicException('Purchase scope is TEST-only');}catch(EnomTestCallLimit){}

@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\{Auth,Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnedDomainController,OwnerAutoRenewController};
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
-use Paymenter\Extensions\Servers\Domains\Models\{Operation,WatchAudit};
+use Paymenter\Extensions\Servers\Domains\Models\{Operation,DomainAudit};
 use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaries,OwnerAutoRenew,RenewalStop,RuntimeIneligible,RuntimeReason};
 [$d,$binding]=$holder('owner-switch-placeholder.com');$clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');
 $save($d,false);
@@ -35,7 +35,7 @@ $facts=DomainFacts::for($d->fresh());same([['Off','Turned off by customer'],[\Pa
 Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager::class,['ownerRecord'=>$d->fresh(),'pageClass'=>Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class])
     ->assertSee('Auto-renew turned off')->assertSee(trim($user->first_name.' '.$user->last_name)?:'Customer');
 $staffActor=staffUser([Staff::VIEW]);
-DB::table('domains_watch_audit')->where('subject_type','domain')->where('subject_id',$d->id)->where('event','owner_auto_renew')->update(['data'=>'invalid ciphertext']);
+DB::table('domains_audit')->where('subject_type','domain')->where('subject_id',$d->id)->where('event','owner_auto_renew')->update(['data'=>'invalid ciphertext']);
 Auth::login($staffActor);
 same(['Off','Turned off by customer'],[DomainFacts::for($d->fresh())['Renewal']['value'],DomainFacts::for($d->fresh())['Renewal']['sub']],'Unreadable audit does not break staff facts');
 $native=\Livewire\Livewire::actingAs($staffActor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id]);

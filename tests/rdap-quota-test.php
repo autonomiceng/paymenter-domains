@@ -1,15 +1,37 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/Support/watch-dns.php';
+require __DIR__.'/Support/dns-template.php';
 require __DIR__.'/Support/FakeDnsReader.php';
 use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Dns\{DnsContext,DnsQuery,QuotaDnsReader};
+use Paymenter\Extensions\Servers\Domains\Tests\FakeDnsReader;
 use Paymenter\Extensions\Servers\Domains\Services\{RdapQuota,PublicDnsQuota};
 extract(dnsFixture());$now=1800000000;$url='https://rdap.example.com/domain/example.com';$q=new RdapQuota();
 expect($q->reserve($url,$now),'Host admitted');expect(!(new RdapQuota())->reserve($url,$now),'One in flight per host');$q->complete($url,['status'=>200],$now);
 for($i=1;$i<6;$i++){expect($q->reserve($url,$now),'Host minute slot');$q->complete($url,['status'=>200],$now);}expect(!$q->reserve($url,$now),'Host max six');expect($q->reserve($url,$now+60),'Minute resets');$q->complete($url,['status'=>200],$now+60);
 DB::table(RdapQuota::TABLE)->delete();for($i=0;$i<30;$i++){$u='https://r'.$i.'.example.com';expect($q->reserve($u,$now),'Global slot');$q->complete($u,['status'=>200],$now);}expect(!$q->reserve('https://extra.example.com',$now),'Global max thirty');
-$dns=new PublicDnsQuota();expect($dns->acquire($now)!==null,'HTTP saturation never consumes DNS pool');
+$pool = new PublicDnsQuota();
+$token = $pool->acquire($now);
+expect($token !== null, 'HTTP saturation never consumes DNS pool');
+$resolver = new FakeDnsReader();
+$at = $now;
+$reader = new QuotaDnsReader($resolver, $pool, $token, static function () use (&$at) { return $at; });
+$query = new DnsQuery('rdap.example.com', 'A');
+for ($i = 0; $i < 60; $i++) {
+    $reader->read($query, new DnsContext());
+}
+same(60, count($resolver->calls), 'All sixty DNS queries reach the resolver');
+$at = $now + 59;
+same('budget_exhausted', $reader->read($query, new DnsContext())->code, 'The sixty-first query is refused within the minute');
+same(60, count($resolver->calls), 'An exhausted minute makes no resolver call');
+$at = $now + 60;
+$reader->read($query, new DnsContext());
+same(61, count($resolver->calls), 'The new minute admits one more resolver call');
+$at--;
+same('budget_exhausted', $reader->read($query, new DnsContext())->code, 'Moving behind the new window refuses the query');
+same(61, count($resolver->calls), 'Clock reversal makes no resolver call');
+$pool->release($token);
 DB::table(RdapQuota::TABLE)->delete();for($i=0;$i<5;$i++){expect($q->reserve($url,$now+$i*60),'Endpoint failure probe');$q->complete($url,null,$now+$i*60);}expect(!$q->reserve($url,$now+300),'Five failures open host circuit');expect($q->reserve('https://other.example.com',$now+300),'Other registry unaffected');$q->complete('https://other.example.com',['status'=>200],$now+300);
 expect($q->reserve($url,$now+240+3600),'Hourly probe admitted');expect(!(new RdapQuota())->reserve($url,$now+240+3600),'Only one probe in flight');$q->complete($url,['status'=>200],$now+3840);same(0,(int)DB::table(RdapQuota::TABLE)->where('scope',hash('sha256','rdap.example.com'))->value('failures'),'Success resets own endpoint');
 DB::table(RdapQuota::TABLE)->delete();expect($q->reserve($url,$now),'429 read admitted');$q->complete($url,['status'=>429,'retry_after'=>'9999999999'],$now);same($now+86400,$q->blockedUntil,'Retry-After capped at day');expect(!$q->reserve($url,$now+86399),'429 wait honored');
@@ -25,7 +47,7 @@ $dns=new Paymenter\Extensions\Servers\Domains\Tests\FakeDnsReader([
 for($i=0;$i<5;$i++) {
     $at=$now+$i*60;$reader=new Paymenter\Extensions\Servers\Domains\Services\PublicRegistryReader($dns,null,static function($url,$timeout,$pins)use(&$bootstrapCalls,&$bootstrapRequests){$bootstrapCalls++;$bootstrapRequests[]=[$url,$pins];return ['status'=>200,'body'=>'{}'];});
     $context=new Paymenter\Extensions\Servers\Domains\Dns\RegistryContext(static fn()=>$at,fn($u)=>$q->reserve($u,$at),function($u,$r)use($q,$at,&$bootstrapCompleted){$bootstrapCompleted[]=[$u,$r];$q->complete($u,$r,$at);});
-    same('endpoint_failed',$reader->read('example.com',$context)['reason'],'Malformed bootstrap remains unknown');
+    same('deferred',$reader->read('example.com',$context)['reason'],'Malformed bootstrap defers the registry lookup');
     same($i+1,$bootstrapCalls,'Malformed bootstrap reaches HTTP exactly once per admitted probe');
     same(['https://data.iana.org/rdap/dns.json',['8.8.8.8']],$bootstrapRequests[$i],'Malformed body comes from public bootstrap endpoint');
     same(['https://data.iana.org/rdap/dns.json',['status'=>200,'retry_after'=>null,'deferred'=>false,'failed'=>true]],$bootstrapCompleted[$i],'Malformed bootstrap200 reaches completion with body failure');

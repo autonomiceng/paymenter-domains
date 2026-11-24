@@ -32,7 +32,7 @@ $pageInvoice=static function(?array $r):string {
 $views=static function()use($d,$user,$clock,$owners,$listInvoice,$pageInvoice):array {
     // The same reads the Domains list and the domain page make: listed() for the rows, present() and one() for the page.
     $now=$clock->now()->getTimestamp();$all=(new DomainSummaries)->listed($user,$now);$row=$all['managed:'.$d->id]??null;
-    $page=$owners->present($d->fresh());$summary=(new DomainSummaries)->one($user,'managed',(int)$d->id,$now);
+    $page=$owners->present($d->fresh());$summary=(new DomainSummaries)->one($user,(int)$d->id,$now);
     $renewalRows=$page->renewal!==''&&!$page->setupPending;$pill=StatusPill::owned($page,$summary);$expires=DomainPage::expires($page,$summary,'/support');
     $detail=['pill'=>[$pill['label'],$pill['tone'],$pill['reason']],'renewal'=>$renewalRows?($page->autoRenew?($page->autoRenew['enabled']?'On':'Off'):$page->renewal):null,
         'invoice'=>$pageInvoice(DomainPage::nextInvoice($page,$summary,'/support')),'expires'=>[$page->expiry,$expires['tone']??null]];

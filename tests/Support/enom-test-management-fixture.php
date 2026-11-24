@@ -40,8 +40,6 @@ $op=Domain::where('domain','paid-test-placeholder.com')->sole()->operations()->s
 App\Helpers\ExtensionHelper::addPayment($op->invoice_id,null,$op->amount);
 $worker=app(RuntimeWork::class);Cache::flush();$worker->operation($op->id);
 $GLOBALS['testRegisteredName']=$op->domain->domain;
-$offlinePsl=static fn():never=>throw new Paymenter\Extensions\Servers\Domains\Services\PslFailure('transport_failed');
-app()->instance(Paymenter\Extensions\Servers\Domains\Services\PslTransport::class,new Paymenter\Extensions\Servers\Domains\Services\PslTransport($offlinePsl));
 Cache::flush();$worker->operation($op->id);unset($GLOBALS['testRegisteredName']);
 $d=$op->domain->fresh();
 same('active',$d->status,'Management fixture registers and reconciles one paid TEST domain');

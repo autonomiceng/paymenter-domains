@@ -2,12 +2,14 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\WatchReadResource;
-use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\{AssignedDomains,EditConfiguration,ListConfiguration,ViewConfiguration};
-class RoutingProfileResource extends WatchReadResource
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainReadResource, Staff};
+use Paymenter\Extensions\Servers\Domains\Services\DnsTemplateWrites;
+use Paymenter\Extensions\Servers\Domains\Models\DnsTemplate;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\{EditConfiguration,ListConfiguration,ViewConfiguration};
+class RoutingProfileResource extends DomainReadResource
 {
-    protected static ?string $model=WatchProfile::class;
+    public static function canViewAny(): bool{return Staff::can(DnsTemplateWrites::VIEW);}
+    protected static ?string $model=DnsTemplate::class;
     protected static ?string $navigationLabel='DNS templates';
     protected static string|\BackedEnum|null $navigationIcon='heroicon-o-document-duplicate';
     protected static bool $shouldRegisterNavigation=false;
@@ -15,5 +17,5 @@ class RoutingProfileResource extends WatchReadResource
     protected static ?string $pluralModelLabel='DNS templates';
     protected static ?string $breadcrumb='DNS templates';
     protected static ?string $slug='dns-templates';
-    public static function getPages(): array{return ['index'=>ListConfiguration::route('/'),'view'=>ViewConfiguration::route('/{record}'),'edit'=>EditConfiguration::route('/{record}/edit'),'assigned'=>AssignedDomains::route('/{record}/domains')];}
+    public static function getPages(): array{return ['index'=>ListConfiguration::route('/'),'view'=>ViewConfiguration::route('/{record}'),'edit'=>EditConfiguration::route('/{record}/edit')];}
 }

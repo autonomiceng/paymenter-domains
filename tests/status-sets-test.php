@@ -22,7 +22,6 @@ foreach ([
     'awaiting_payment'=>$pill('Awaiting payment','info','Invoice not paid'),
     'awaiting_code'=>$pill('Action required','warning','Auth code needed'),
     'renewal_off_expiring'=>$pill('Action required','warning','Auto-renew off'),
-    'watch.ns_changed'=>$pill('Action required','warning','Nameservers changed'),
     'needs_review'=>$pill('Under review','warning'),
     'adoption_pending'=>$pill('Under review','warning','Import not confirmed'),
     'held'=>$pill('Under review','warning'),
@@ -30,9 +29,7 @@ foreach ([
     'active_no_expiry'=>$pill('Under review','warning','Expiry missing'),
     'expired'=>$pill('Expired','danger',DomainStatus::LATE),
     'grace'=>$pill('Expired','danger',DomainStatus::LATE),
-    'watch.expired'=>$pill('Expired','danger','Renew at your registrar'),
     'redemption'=>$pill('Redemption','danger',DomainStatus::LATE),
-    'watch.redemption'=>$pill('Redemption','danger','Restore at your registrar'),
     'registration_rejected'=>$pill('Failed','danger','Registration did not finish'),
     'transfer_rejected'=>$pill('Failed','danger','Transfer did not finish'),
     'cancelled'=>$pill('Cancelled','gray'),
@@ -40,7 +37,6 @@ foreach ([
 ] as $state=>$expected) { same($expected,DomainStatus::for($state),'Domain state '.$state); }
 same($pill('Under review','warning','We are on it, nothing for you to do'),DomainStatus::for(null),'No domain state gives the customer no step of their own');
 same($pill('Under review','warning','Transfer on hold'),DomainStatus::for('held','Transfer on hold'),'The caller names the hold cause');
-same($pill('Action required','warning','Not using Example nameservers'),DomainStatus::for('watch.ns_changed','Not using Example nameservers'),'The caller can name the company');
 
 // 2.2 Registrar request.
 // Only the customer can pay, so staff see a wait, not an action.

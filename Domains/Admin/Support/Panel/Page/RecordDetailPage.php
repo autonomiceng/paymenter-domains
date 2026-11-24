@@ -6,7 +6,7 @@ use Filament\Resources\Pages\Concerns\HasRelationManagers;
 use Filament\Resources\Pages\Page;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Tabs\Tab;
-/** A resource record's Detail page, such as a monitored domain. See Concerns\DetailType.
+/** A resource record's Detail page, such as a DNS template. See Concerns\DetailType.
  * Beyond the Detail type it can: keep the resource's relation managers (History) as tabs after the sheet, which stays
  * the Overview tab, unchanged and native, with their ?relation= links; poll at the page's own cadence (2 or 10 seconds,
  * kept alive while the page follows a change, then stopped); and place a shared partial view in a section (Panel\Partial). */

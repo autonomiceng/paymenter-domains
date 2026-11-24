@@ -13,8 +13,8 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,Operati
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Row,Value};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-use Paymenter\Extensions\Servers\Domains\Presentation\{Reader,State};
-use Paymenter\Extensions\Servers\Domains\Services\{DepartureBlocked,DepartureChecks,HoldingDeparture,HoldingLocks,MoneyDecisions,MoneyOutcome,PricingRule,StaffHoldingReview,StaffReason,WatchDiscovery};
+use Paymenter\Extensions\Servers\Domains\Presentation\State;
+use Paymenter\Extensions\Servers\Domains\Services\{DepartureBlocked,DepartureChecks,HoldingDeparture,HoldingLocks,MoneyDecisions,MoneyOutcome,StaffHoldingReview,StaffReason};
 /** Confirm transferred away: the head action, its blocking line and its dialog. Facts are read-only previews; the
  * confirmation checks them all again. */
 final class DepartureConfirm
@@ -130,7 +130,6 @@ final class DepartureConfirm
                 'other_registrar'=>DepartureChecks::registryListsOther($d)?'Its records stopped working when the transfer completed.':'Its records stop working when the transfer completes.',
                 'deleted'=>'Its records stopped working when the domain was deleted.',
                 default=>'Its records work only while the domain is with our registrar.'},
-            'hosting'=>in_array($reason,['other_registrar','other_account'],true)?'Its records keep working while the plan is active.':null,
             default=>null};
     }
     /** What confirmation changes, from the read-only preview: one short list, each item also on the page, then the
@@ -147,8 +146,6 @@ final class DepartureConfirm
         $items[]=e('The name becomes available to order.');
         $items[]=e(implode(' ',array_filter(["Confirm doesn't change DNS.",DepartureChecks::staffDnsCase($d)[1]??null,self::dnsOutcome($d,$reason)])));
         $owner=self::owner($d);
-        $watch=match(WatchDiscovery::departurePreview($d)){'active'=>'as an external domain','paused'=>'paused','hosting','retired'=>'not monitored',default=>null};
-        if($watch!==null){$items[]=e($owner."'s monitored domain stays, {$watch}.");}
         if(($subject=self::subject($d,$reason))!==null){$items[]=e($owner.' gets one email, “'.$subject.'”.');}
         return new HtmlString('<ul class="domains-list">'.implode('',array_map(fn($l)=>'<li>'.$l.'</li>',$items)).'</ul>'
             .'<p class="domains-space">'.$b("This can't be undone.").e(' If the domain comes back, import it as a new domain.').'</p>');
@@ -161,7 +158,7 @@ final class DepartureConfirm
             if(!$t||!$t->enabled||$d->user===null||config('settings.mail_disable')){return null;}
             // The same mail checks the departure email reserves with: a customer who turned the email off gets none.
             if(!$t->isEnabledForPreference($d->user->notificationsPreferences()->where('notification_template_id',$t->id)->first(),'mail')){return null;}
-            return trim(\Illuminate\View\Compilers\BladeCompiler::render((string)$t->subject,['domain'=>$d->domain,'deleted'=>$reason==='deleted','company'=>\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company()]));
+            return trim(\Illuminate\View\Compilers\BladeCompiler::render((string)$t->subject,['domain'=>$d->domain,'deleted'=>$reason==='deleted','company'=>\Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels::company()]));
         }catch(\Throwable){return null;}
     }
     /** The customer's name as the Billing Customer row shows it. */
@@ -202,20 +199,13 @@ final class DepartureConfirm
             $facts['DNS records']['sub']=$sub instanceof Htmlable?new HtmlString($sub->toHtml().' '.e($add)):trim((string)$sub.' '.$add);}
         return $facts;
     }
-    /** The job rows after Public registry, and the Monitored domain row, for staff who may confirm. @return array{name:Row,email:?Row,watch:?Row} */
     public static function rows(Domain $d): array
     {
-        $fact=\Paymenter\Extensions\Servers\Domains\Presentation\Fact::class;$owner=self::owner($d)."'s monitored domain stays.";
-        $watch=match(WatchDiscovery::departurePreview($d)){
-            'active'=>Value::fact($fact::entered('Monitored as an external domain on confirm'),$owner),
-            'paused'=>Value::fact($fact::entered('Stays paused on confirm'),$owner),
-            'retired'=>Value::fact($fact::entered('Not monitored after confirm'),$owner.' Its sources are off.'),
-            'hosting'=>Value::fact($fact::entered('Not monitored after confirm'),$owner),
-            default=>null};
+        $fact=\Paymenter\Extensions\Servers\Domains\Presentation\Fact::class;
         // Email: only when the departure email will send (its saved template is on), as the dialog line says.
         $email=self::subject($d,null)===null?null:Row::make('Email',Value::fact($fact::entered('One email to '.self::owner($d).' on confirm'),
             'Its subject follows the reason you pick.'.(DepartureChecks::dnsCase($d)==='registrar'?' It includes the step to set up DNS at the new host.':'')));
         return ['name'=>Row::make('Name',Value::fact($fact::entered('Released on confirm'),'The name becomes available to order. If the domain comes back, import it as a new domain.')),
-            'email'=>$email,'watch'=>$watch?Row::make('Monitored domain',$watch):null];
+            'email'=>$email];
     }
 }

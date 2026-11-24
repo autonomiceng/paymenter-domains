@@ -37,9 +37,6 @@
 @if ($domain->departureSuspected)<p class="domains-hint">Didn't move this domain? @include('domains::partials.contact-support')</p>@endif
 @include('domains::partials.notices', ['fieldKeys'=>['nameservers','contact','dns','srv','ds','glue']])
 @if ($notice)<x-domains::customer.notice :tone="$notice['tone']" :action="$notice['action']">{{ $notice['text'] }}</x-domains::customer.notice>@endif
-@if (($summary ?? null) && $summary->kind === 'managed' && !$summary->relatedServices && !$summary->relatedOverflow && $domain->expiry && !$domain->setupPending && in_array('domain.dns.platform', $summary->dnsKeys, true) && !$summary->website && !$summary->email)
-<p class="domains-muted">To use this domain, buy a service or point it to your own nameservers.</p>
-@endif
 <x-domains::customer.split>
 {{-- Renewal leads the settings section, as in the approved customer layout. --}}
 @include('domains::partials.owner-renew')

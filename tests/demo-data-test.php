@@ -9,7 +9,7 @@ require __DIR__.'/Support/accounts.php';
 use Filament\Infolists\Components\TextEntry;
 use Filament\Tables\Columns\TextColumn;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\DemoTag;
-use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, ManagedPublicConfig, Operation, WatchName, WatchRegistryObservation};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\FoundationSchema;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 storefrontViews();
@@ -17,16 +17,13 @@ storefrontViews();
 $domain=static fn(array $snapshot)=>tap(new Domain,fn($d)=>$d->snapshot=$snapshot);
 $operation=static fn(array $policy,string $basis)=>tap(new Operation,function($o)use($policy,$basis){$o->policy=$policy;$o->funding_basis=$basis;});
 $account=static fn(string $key,string $identity)=>tap(new Account,function($a)use($key,$identity){$a->registrar_key=$key;$a->stable_identity=$identity;});
-$watch=static fn(?array $facts)=>tap(new WatchName,fn($w)=>$w->setRelation('registry',$facts===null?null:new WatchRegistryObservation(['facts'=>$facts])));
 // Each seed marker is a demo record.
 foreach ([
     'domain snapshot'=>$domain(['offline_demo'=>true,'checkout'=>['invoice_id'=>9]]),
     'request policy'=>$operation(['offline_demo'=>true],'invoice'),
     'request funding basis'=>$operation([],'offline_demo'),
-    'watch reason'=>new ManagedPublicConfig(['reason'=>'offline_demo']),
     'demo Enom account'=>$account('enom','demo-enom'),
     'demo NameSilo account'=>$account('namesilo','demo-namesilo'),
-    'hosting watch registry facts'=>$watch(['result'=>'facts','offline_demo'=>true]),
 ] as $marker=>$model) { expect(DemoData::is($model),'Demo marker: '.$marker); }
 // Existing encrypted identities remain demo records; only canonical values are written by new seeds.
 same(['enom'=>'demo-enom','namesilo'=>'demo-namesilo'],DemoData::ACCOUNTS,'Neutral seed identities');
@@ -41,9 +38,7 @@ foreach ([
     'domain'=>$domain(['checkout'=>['invoice_id'=>9]]), 'domain without snapshot'=>new Domain,
     'domain with a false marker'=>$domain(['offline_demo'=>false]),
     'request'=>$operation(['dispatch_attempted_at'=>'2026-10-01T00:00:00+00:00'],'invoice'),
-    'watch'=>new ManagedPublicConfig(['reason'=>'Customer asked for checks']),
     'Enom account'=>$account('enom','reseller-account'), 'NameSilo account'=>$account('namesilo','Demo-NameSilo'),
-    'hosting watch'=>$watch(['result'=>'facts']), 'unchecked hosting watch'=>$watch(null),
     'no record'=>null, 'other object'=>new stdClass,
 ] as $real=>$model) { expect(!DemoData::is($model),'Real record: '.$real); }
 

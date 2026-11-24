@@ -3,8 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
 use Carbon\CarbonImmutable;
-use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
-use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, RenewalRepeatWait};
+use Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels;
+use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,RenewalRepeatWait};
 /** The client domain page: its one notice and the Renewal card rows, from the page DTOs alone. */
 final class DomainPage
 {
@@ -46,11 +46,10 @@ final class DomainPage
     {
         if($d->departureSuspected){return null;}
         $setup = $d->actions['setup'] ?? null; $phase = $d->transfer['phase'] ?? null;
-        $movedAt = isset($s?->noticeDates['dns']) ? ' on '.CarbonImmutable::createFromTimestampUTC((int) $s->noticeDates['dns'])->format('M j, Y') : '';
         $contact = $support ? ['label' => 'Contact support', 'url' => $support] : null;
         $order = $d->order['state'] ?? null; $word = ($d->order['kind'] ?? null) === 'transfer' ? 'transfer' : 'registration';
         $renewalCheck=$d->renewNow['check']??$d->renewalInvoice['check']??null;
-        $nameservers = self::nameserverNotice($d, $s, $movedAt, $contact);
+        $nameservers = self::nameserverNotice($d, $contact);
         $notice = match (true) {
             // A nameserver step restores service, so it stays with its action and the renewal check is said beside it.
             $renewalCheck!==null && $nameservers!==null => [...$nameservers, 'text' => $nameservers['text'].' '.($renewalCheck['brief'] ?? $renewalCheck['body']).($d->changesUnavailable && $d->changesRefused===self::PROCESSING_OFF ? ' '.self::PAUSED_AFTER : '')],
@@ -65,7 +64,6 @@ final class DomainPage
             $order === 'cancelled' && ($d->order['unpaid'] ?? false) => ['tone' => 'info', 'text' => 'This order was cancelled. Nothing was charged.', 'action' => null],
             $order === 'cancelled' => ['tone' => 'warn', 'text' => 'This order was cancelled. Ask us to start it again.', 'action' => $contact],
             $order === 'failed' => ['tone' => 'bad', 'text' => 'This '.$word.' did not finish. Ask us to start it again.', 'action' => $contact],
-            in_array('watch.ns_changed', $s?->stateKeys ?? [], true) => $nameservers,
             $setup && $phase === 'cutoff' && ($d->setup['contacts'] ?? false) => ['tone' => 'warn', 'text' => 'The auth code deadline passed. Update your details so we can finish the transfer.', 'action' => ['label' => 'Update details', 'url' => $setup]],
             $setup && self::optionalSetup($d) => ['tone' => 'info', 'text' => 'Choose nameservers before registration starts, or we use '.(implode(', ', $d->setup['defaultNameservers'] ?? []) ?: 'the registrar’s default nameservers').'.', 'action' => ['label' => 'Choose nameservers', 'url' => $setup]],
             (bool) $setup => ['tone' => 'warn', 'text' => 'Finish setup to start registration.', 'action' => ['label' => 'Finish setup', 'url' => $setup]],
@@ -95,12 +93,9 @@ final class DomainPage
     }
     /** The nameserver step: the domain stopped using ours, or the registration settings were not applied. Null without one.
      * asks: the customer has this step, even in a blue notice, so the page does not also say no action is needed. */
-    private static function nameserverNotice(OwnedDomain $d, ?DomainSummary $s, string $movedAt, ?array $contact): ?array
+    private static function nameserverNotice(OwnedDomain $d, ?array $contact): ?array
     {
         $change = isset($d->management['nameservers']) ? ['label' => 'Change nameservers', 'url' => $d->actions['show'].'?edit=nameservers#edit-nameservers'] : null;
-        if (in_array('watch.ns_changed', $s?->stateKeys ?? [], true)) {
-            return ['tone' => 'warn', 'text' => $d->name.($s->dnsPreviouslyMatched?' stopped using ':' does not use ').DnsSignalLabels::nameservers().($s->dnsPreviouslyMatched?$movedAt:'').'.', 'action' => $change ?? $contact, 'asks' => true];
-        }
         if (!$d->dnsCorrection) { return null; }
         return ['tone'=>'info','text'=>'The registered nameservers do not match the registration settings. '.($change?'Set up DNS with your provider, then change nameservers.':($contact?'Set up DNS with your provider, then contact support to change nameservers.':'Set up DNS with your provider. Nameserver changes are currently unavailable.')),'action'=>$change ?? $contact,'asks'=>true];
     }

@@ -7,11 +7,11 @@ use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{WatchActions, WatchFacts};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head, Partial, Row, Value};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{RecordDetailPage, Section};
-use Paymenter\Extensions\Servers\Domains\Presentation\{Fact, Plain, Reader, State};
-use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault, StaffWatchWrites as Writes};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\DnsTemplateActions;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head,Partial,Row,Value};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{RecordDetailPage,Section};
+use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Plain,Reader,State};
+use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,DnsTemplateWrites as Writes};
 
 class EditConfiguration extends RecordDetailPage
 {
@@ -33,11 +33,11 @@ class EditConfiguration extends RecordDetailPage
     protected function authorizeAccess(): void
     {
         parent::authorizeAccess();
-        abort_unless(WatchActions::canEditTemplate($this->getRecord()), 403);
-        abort_unless($this->getRecord()->readProfile(), 409, WatchFacts::TEMPLATE_UNAVAILABLE);
+        abort_unless(DnsTemplateActions::canEditTemplate($this->getRecord()), 403);
+        abort_unless($this->getRecord()->readProfile(), 409, Writes::UNREADABLE);
     }
 
-    protected function head(): Head { return Head::make('Edit '.$this->getRecord()->name, Reader::Staff)->note($this->getRecord()->enabled ? 'Monitoring is on.' : 'Monitoring is off.'); }
+    protected function head(): Head { return Head::make('Edit '.$this->getRecord()->name, Reader::Staff); }
     private function detailUrl(): string { return RoutingProfileResource::getUrl('view', ['record' => $this->getRecord()]); }
     public function getBreadcrumbs(): array
     {
@@ -45,7 +45,7 @@ class EditConfiguration extends RecordDetailPage
     }
     public function form(Schema $schema): Schema
     {
-        return $schema->statePath('data')->live(debounce: 300)->components(WatchActions::templateFields($this->getRecord()));
+        return $schema->statePath('data')->live(debounce: 300)->components(DnsTemplateActions::templateFields($this->getRecord()));
     }
     protected function sections(): array
     {
@@ -61,7 +61,6 @@ class EditConfiguration extends RecordDetailPage
             $draft = Writes::routingProfile($this->data);
             $saved = $profile->profile();
             $changes = [];
-            $checks = [];
             $name = trim((string) ($this->data['name'] ?? ''));
             if ($name !== $profile->name) { $changes[] = 'Name changes to '.$name.'.'; }
             $compare = static function (string $label, array $before, array $after) use (&$changes): void {
@@ -70,22 +69,10 @@ class EditConfiguration extends RecordDetailPage
             };
             $compare('nameserver', $saved->nameservers, $draft->nameservers);
             $nsChanged = $saved->nameservers !== $draft->nameservers;
-            if ($nsChanged) { $checks[] = 'nameservers'; }
-            foreach (['website', 'email'] as $axis) {
-                if ($saved->$axis === $draft->$axis) { continue; }
-                $checks[] = $axis.' records';
-                foreach (['exact'=>'hostname', 'suffix'=>'hostname suffix', 'ips'=>'IP address'] as $key=>$label) {
-                    $compare($axis.' '.$label, $saved->{$axis}[$key], $draft->{$axis}[$key]);
-                }
-            }
             $rows[] = Row::make('Pending edits', $changes ? Value::fact(Fact::lines($changes)) : Value::plain(Plain::None));
             $registration = $nsChanged && $this->defaultId;
             $rows[] = Row::make('New registrations', Value::plain($registration ? Plain::Yes : Plain::No,
                 $registration ? 'New registrations use the edited nameservers.' : 'Registration nameservers stay the same.'));
-            $monitor = $checks ? 'Future checks use the edited '.\Illuminate\Support\Arr::join($checks, ', ', ' and ').'.'
-                : 'Checks keep their current nameserver and record settings.';
-            $rows[] = Row::make('Monitored domains', Value::fact(Fact::count(WatchFacts::usedBy($profile->id)),
-                $profile->enabled ? $monitor : 'Checks wait while this template is off.'));
         } catch (\InvalidArgumentException|\DomainException) {
             $rows[] = Row::make('Pending edits', Value::state(State::NeedsReview, Reader::Staff, 'Enter valid DNS targets to preview the changes.'));
         }
@@ -99,7 +86,7 @@ class EditConfiguration extends RecordDetailPage
         $data = $this->form->getState();
         $id = (int) $this->getRecord()->id;
         try {
-            (new Writes())->run(Auth::user(), 'profile', $id, 'save', Writes::ticket((int) Auth::id(), 'profile', $id,
+            (new Writes())->run(Auth::user(), $id, 'save', Writes::ticket((int) Auth::id(), $id,
                 $this->revision, 'save', $this->defaultId), 'DNS template saved', $data);
         } catch (\Illuminate\Database\QueryException|\Illuminate\Database\Eloquent\ModelNotFoundException) {
             Notification::make()->warning()->title('Reload the template and try again.')->send();

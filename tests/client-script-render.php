@@ -14,8 +14,6 @@ $out = $argv[1];
 expect(is_dir($out), 'Output directory required');
 $domain = new OwnedDomain('example.com', 'Active', 'ok', '2027-10-01', 'On', '$14.00',
     ['show' => '/domains/1'], [], ['contacts' => false, 'required' => false], [], [], false);
-$summary = new DomainSummary('example.com', null, 'watch', 'domain.registration.external', [], null, null,
-    [], [], '2027-10-01', 'date', null, [], null, null, [], [], []);
 $cases = [
     'partials.client-script' => [],
     'index' => ['domains' => new LengthAwarePaginator([], 0, 25)],
@@ -24,9 +22,6 @@ $cases = [
     'search' => storefrontData(),
     'transfer' => storefrontData(),
     'pricing' => ['rows' => storefrontData()['endings'], 'guest' => true, 'testEnvironment' => false],
-    'watch-notices' => ['summary' => $summary, 'name' => 'example.com', 'kind' => 'watch', 'id' => 1,
-        'editable' => false, 'notices' => [], 'portal' => [],
-        'preferences' => ['account' => ['enabled' => true, 'revision' => 1], 'target' => ['enabled' => true, 'revision' => 1]]],
 ];
 $recordManagement=[];
 foreach (['dns'=>[

@@ -12,10 +12,8 @@ enum State: string implements HasLabel
 {
     #[Entry([State::Completed, State::Active], 'A check or result that passed. Completed is a finished job and Active is a record in good standing.', 'Checks passed, Matches template and Complete merged into it. DESIGN.md Panels, Nov 12, 2026.')]
     case Ok = 'ok';
-    #[Entry([State::Ok, State::Monitored], 'A record that is live and in good standing. OK is a check result, not a record.', 'DESIGN.md Panels seed list, Nov 12, 2026.')]
+    #[Entry([State::Ok], 'A record that is live and in good standing. OK is a check result, not a record.', 'DESIGN.md Panels seed list, Nov 12, 2026.')]
     case Active = 'active';
-    #[Entry([State::Active, State::Ok], 'A domain we watch but do not manage. Active means we manage it.', 'Monitoring merged into it. DESIGN.md Panels, Nov 12, 2026.')]
-    case Monitored = 'monitored';
     #[Entry([State::Ok, State::Paid], 'A job or request that finished. OK is a check that passed.', 'Done merged into it. DESIGN.md Panels, Nov 12, 2026.')]
     case Completed = 'completed';
     #[Entry([State::Completed, State::Unpaid], 'An invoice the customer has paid. Completed is a job, not money.', 'DESIGN.md Panels seed list, Nov 12, 2026.')]
@@ -99,7 +97,7 @@ enum State: string implements HasLabel
     public function label(): string
     {
         return match ($this) {
-            self::Ok => 'OK', self::Active => 'Active', self::Monitored => 'Monitored', self::Completed => 'Completed', self::Paid => 'Paid', self::ForSale => 'For sale',
+            self::Ok => 'OK', self::Active => 'Active', self::Completed => 'Completed', self::Paid => 'Paid', self::ForSale => 'For sale',
             self::NotReadYet => 'Not read yet', self::NotIssuedYet => 'Not issued yet', self::NotForSale => 'Not for sale', self::NotSupported => 'Not supported', self::NotConnected => 'Not connected',
             self::Paused => 'Paused', self::Stopped => 'Stopped', self::Cancelled => 'Cancelled', self::TransferredAway => 'Transferred away', self::Deleted => 'Deleted', self::NotRecognized => 'Not recognized', self::Unpaid => 'Unpaid',
             self::Checking => 'Checking', self::Queued => 'Queued', self::Running => 'Running', self::PendingRegistration => 'Pending registration',
@@ -118,7 +116,7 @@ enum State: string implements HasLabel
             self::UnderReview => $reader === Reader::Staff ? Tone::Attention : Tone::Progress,
             self::AwaitingPayment => $reader === Reader::Staff ? Tone::Progress : Tone::Attention,
             self::Unpaid => $reader === Reader::Staff ? Tone::Off : Tone::Attention,
-            self::Ok, self::Active, self::Monitored, self::Completed, self::Paid, self::ForSale => Tone::Ok,
+            self::Ok, self::Active, self::Completed, self::Paid, self::ForSale => Tone::Ok,
             self::NotReadYet, self::NotIssuedYet, self::NotForSale, self::NotSupported, self::NotConnected, self::Paused, self::Stopped, self::Cancelled, self::TransferredAway, self::Deleted, self::NotRecognized => Tone::Off,
             self::Checking, self::Queued, self::Running, self::PendingRegistration, self::PendingTransfer => Tone::Progress,
             self::NotSet, self::NeedsReview, self::ActionRequired, self::OrdersPaused, self::ExpiresToday, self::LowBalance, self::BelowCost, self::Delayed, self::OutOfDate => Tone::Attention,

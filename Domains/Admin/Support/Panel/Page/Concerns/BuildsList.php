@@ -22,7 +22,7 @@ trait BuildsList
     /** @return list<Filter> */
     protected function filters(): array { return []; }
     /** What fills the list when it is empty and the next step, then what a search or filter that hid every row says:
-     * ['No monitored domains', 'Turn on monitoring on a hosting product.', 'No monitored domains match']. Without the
+     * ['No DNS templates', 'Add a DNS template.', 'No DNS templates match']. Without the
      * third, the list type's own line shows. @return array{0:string,1:string,2?:string} */
     abstract protected function emptyLine(): array;
     /** Native bulk actions on the rows staff tick. Each checks its own permission when it runs. @return list<BulkAction> */

@@ -6,7 +6,7 @@ use Filament\Resources\Pages\Page;
 use Filament\Tables\Contracts\HasTable;
 use Illuminate\Database\Eloquent\{Builder, Model};
 use Livewire\Attributes\Url;
-/** A resource's list of its saved records, such as monitored domains. It reads the resource's query, opens each row's
+/** A resource's list of its saved records, such as DNS templates. It reads the resource's query, opens each row's
  * view page and checks the resource's list permission on every request, as Filament's own list page does.
  * See Concerns\RecordListType. */
 abstract class RecordListPage extends Page implements PageType, HasTable

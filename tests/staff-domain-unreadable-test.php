@@ -15,7 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainManag
 use Paymenter\Extensions\Servers\Domains\Services\{StaffOperationReview,StaffOperations};
 // Corrupt encrypted storage must not take down staff pages or either customer projection.
 // These real native models/Livewire pages exercise casts and action construction, not a mocked read.
-$pages=[\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class,\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarBalances::class,\Paymenter\Extensions\Servers\Domains\Admin\Pages\ActivationStatus::class,\Paymenter\Extensions\Servers\Domains\Admin\Pages\PublicSuffixList::class];
+$pages=[\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class,\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarBalances::class,\Paymenter\Extensions\Servers\Domains\Admin\Pages\ActivationStatus::class];
 $panel=\Filament\Facades\Filament::getCurrentPanel();$panel->pages($pages);
 \Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel,$pages){foreach($pages as $page){$page::registerRoutes($panel);}});app('router')->getRoutes()->refreshNameLookups();
 \Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::install();\Paymenter\Extensions\Servers\Domains\Services\BalanceAlertSchema::install();ObservationSchema::install();

@@ -13,8 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price};
 use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus,Missing};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,DisputeRecoveries,DomainBilling,EnomLiveActivation,EnomTestManagement,EnomTestRenewal,EnomTestTransfer,NativePaidHooks,NativeServerGuard,NativeServiceRefusal,UnpaidHoldSetting,
-    RenewalBillingSettings,RuntimePorts,WatchWork,CardFee,PricingRules,PricingRule};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,DisputeRecoveries,DomainBilling,EnomLiveActivation,EnomTestManagement,EnomTestRenewal,EnomTestTransfer,NativePaidHooks,NativeServerGuard,NativeServiceRefusal,UnpaidHoldSetting,RenewalBillingSettings,RuntimePorts,CardFee,PricingRules,PricingRule};
 /** Rows for a registrar account's sections and System checks.
  * A row is {label, value (null = Missing), tone, cause, help, action}; a cause shows under its value.
  * action names a SettingsActions setup action. A value of On or Off shows as a switch. Every row says what it is in help. */
@@ -284,7 +283,7 @@ final class AccountChecklist
     public static function whois(Account $a): ?array
     {
         if($a->registrar_key!=='enom'){return null;}
-        return self::row('WHOIS privacy','Not offered. '.TldFacts::registrar($a->registrar_key).' charges for it and '.\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company().' does not sell it yet.');
+        return self::row('WHOIS privacy','Not offered. '.TldFacts::registrar($a->registrar_key).' charges for it and '.\Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels::company().' does not sell it yet.');
     }
     /** Failing checks first. @return array{failing:list<array>,passing:list<array>} */
     public static function system(): array
@@ -348,16 +347,8 @@ final class AccountChecklist
         return [...self::row('Sales',AccountStatus::SET['not_selling'][0],'warning',$reason,null,'Whether customers can buy any TLD from this account while Orders is on.'),
             'buttons'=>[Action::make('not_selling_'.$a->server_id)->label('Open What you sell')->link()->size('sm')->url($url)->visible($url!==null)]];
     }
-    /** Domain monitoring is on only when the runtime composes it; then its checks need the queue WatchWork::queueReady() accepts. */
-    private static function queueTooShort(): bool
-    {
-        if (!app()->bound(WatchWork::class)) { return false; }
-        $work=app(WatchWork::class);
-        return $work->active()&&!$work->queueReady();
-    }
     private static function worker(): array
     {
-        if (self::queueTooShort()) { return self::row('Background worker','Queue timeout too short','danger',"Monitoring can't run. Ask your site admin to set the queue timeout to 180 seconds or more.",null,self::WORKER); }
         $last=Schema::hasTable('domains_runtime_turns')?DB::table('domains_runtime_turns')->max('finished_at'):null;
         if (!$last) { return self::row('Background worker','Not running','danger','No run recorded yet. Start the scheduler and the queue worker.',null,self::WORKER); }
         $stale=app(Clock::class)->now()->getTimestamp()-(int)$last>self::WORKER_STALE_SECONDS;

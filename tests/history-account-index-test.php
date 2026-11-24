@@ -7,23 +7,23 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Services\Installation;
 $indexes=[
     'domains_history_links'=>['domain_id','id'],
-    'domains_watch_audit'=>['subject_type','subject_id','event','id'],
+    'domains_audit'=>['subject_type','subject_id','event','id'],
     'domains_domains'=>['server_id','id'],
     'domains_operations'=>['server_id','account_fingerprint','id'],
 ];
 $install=new Installation;$install->install();
 foreach($indexes as $table=>$columns){expect(Schema::hasIndex($table,$columns),'Fresh history/account index: '.$table);}
-DB::table('domains_watch_audit')->insert(['subject_type'=>'watch','subject_id'=>7,'event'=>'staff_pause','after_revision'=>'2','data'=>'retained encrypted bytes','created_at'=>'2026-11-01 01:30:00']);
-$before=DB::table('domains_watch_audit')->get()->toJson();
+DB::table('domains_audit')->insert(['subject_type'=>'dns_profile','subject_id'=>7,'event'=>'dns_profile_saved','after_revision'=>'2','data'=>'retained encrypted bytes','created_at'=>'2026-11-01 01:30:00']);
+$before=DB::table('domains_audit')->get()->toJson();
 $queries=[
     ['SELECT * FROM domains_history_links WHERE domain_id = 7 ORDER BY id','domains_history_links_domain_id_id_index'],
-    ["SELECT * FROM domains_watch_audit WHERE subject_type = 'watch' AND subject_id = 7 AND event = 'staff_pause' ORDER BY id",'domains_watch_audit_subject_type_subject_id_event_id_index'],
+    ["SELECT * FROM domains_audit WHERE subject_type = 'dns_profile' AND subject_id = 7 AND event = 'dns_profile_saved' ORDER BY id",'domains_audit_subject_type_subject_id_event_id_index'],
     ['SELECT * FROM domains_domains WHERE server_id = 7 AND id > 1 ORDER BY id LIMIT 25','domains_domains_server_id_id_index'],
     ["SELECT * FROM domains_operations WHERE server_id = 7 AND account_fingerprint = 'account' AND id > 1 ORDER BY id LIMIT 25",'domains_operations_server_id_account_fingerprint_id_index'],
 ];
 foreach($queries as [$sql,$name]){expect(str_contains(json_encode(DB::select('EXPLAIN QUERY PLAN '.$sql)),$name),'Query uses '.$name);}
 for($i=0;$i<2;$i++){$install->install();$install->verify();}
-same($before,DB::table('domains_watch_audit')->get()->toJson(),'Reruns retain evidence');
+same($before,DB::table('domains_audit')->get()->toJson(),'Reruns retain evidence');
 Schema::table('domains_history_links',fn($t)=>$t->dropIndex($indexes['domains_history_links']));
 $error=null;try{$install->verify();}catch(RuntimeException $e){$error=$e->getMessage();}
 expect($error!==null,'Recorded history index loss is refused');

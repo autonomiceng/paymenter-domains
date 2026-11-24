@@ -8,11 +8,11 @@ use Illuminate\Support\Facades\{DB,Route};
 use Livewire\Livewire;
 use Filament\Infolists\Components\TextEntry;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarSetup,RegistrarAccount,RegistrarHistory};
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\{RoutingProfileResource,WatchResource};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\{RoutingProfileResource};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\ListConfiguration;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\MonitoringSettings;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\DnsResolver;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,WatchName,WatchProfile};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,DnsTemplate};
 use Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault;
 use Paymenter\Extensions\Servers\Domains\Presentation\{State,Tone};
 // The installed fixture exercises native pages, encrypted account/domain rows and the real settings action.
@@ -20,24 +20,22 @@ use Paymenter\Extensions\Servers\Domains\Presentation\{State,Tone};
 config(['domains.site_dns_default.nameservers'=>['ns01.connection.test']]);
 $entry=new \Paymenter\Extensions\Servers\Domains\Domains([]);$entry->installed();
 $staff=staffUser(array_keys(Staff::permissions()));
-$watch=DB::transaction(fn()=>WatchName::create(['user_id'=>$staff->id,'canonical_name'=>'example.com','psl_revision'=>str_repeat('a',64),
-    'state'=>'active','ns_profile_id'=>null,'profile_revision'=>0,'expected_dns'=>null,'notice_preferences'=>[]]));
-staffPanel();$panel=\Filament\Facades\Filament::getCurrentPanel();$panel->resources([WatchResource::class,RoutingProfileResource::class]);
-$pages=[RegistrarSetup::class,RegistrarAccount::class,RegistrarHistory::class];$panel->pages($pages);
+staffPanel();$panel=\Filament\Facades\Filament::getCurrentPanel();$panel->resources([RoutingProfileResource::class]);
+$pages=[DnsResolver::class,RegistrarSetup::class,RegistrarAccount::class,RegistrarHistory::class];$panel->pages($pages);
 Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel,$pages):void {
-    WatchResource::registerRoutes($panel);RoutingProfileResource::registerRoutes($panel);foreach($pages as$page){$page::registerRoutes($panel);}
+    RoutingProfileResource::registerRoutes($panel);foreach($pages as$page){$page::registerRoutes($panel);}
 });app('router')->getRoutes()->refreshNameLookups();
 $names=static fn(int $n)=>array_map(fn($i)=>sprintf('ns%02d.connection.test',$i),range(1,$n));
-$make=static fn(int $n)=>DB::transaction(fn()=>WatchProfile::create(['name'=>'Connection template '.$n,'nameservers'=>$names($n),
-    'enabled'=>true,'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$staff->id,'reason'=>'Synthetic connection limit']));
+$make=static fn(int $n)=>DB::transaction(fn()=>DnsTemplate::create(['name'=>'Connection template '.$n,'nameservers'=>$names($n),
+    'enabled'=>true,'edited_by'=>$staff->id,'reason'=>'Synthetic connection limit']));
 $snapshot=static fn()=>array_map(fn($table)=>DB::table($table)->orderBy('id')->get()->toJson(),[
-    'domains_domains','domains_operations','domains_watch_names','domains_watch_profiles','domains_watch_audit']);
+    'domains_domains','domains_operations','domains_dns_templates','domains_audit']);
 $connect=static function(string $registrar)use($snapshot):Account {
     $before=$snapshot();$saved=fixtureBusinessRaw(SiteDnsDefault::KEY);
     $server=Server::create(['name'=>'Synthetic '.$registrar,'extension'=>'Domains','type'=>'server','enabled'=>true]);
     $account=Account::withVerifiedBindingWrite(fn()=>Account::create(['server_id'=>$server->id,'registrar_key'=>$registrar,
         'environment'=>'test','stable_identity'=>'synthetic-'.$registrar,'processing_enabled'=>false]));
-    same($before,$snapshot(),'Connecting '.$registrar.' never rewrites defaults, domain nameservers, watches or audits');
+    same($before,$snapshot(),'Connecting '.$registrar.' never rewrites defaults, domain nameservers or audits');
     same($saved,fixtureBusinessRaw(SiteDnsDefault::KEY),'Connection preserves the exact saved default');
     return $account;
 };
@@ -51,9 +49,9 @@ $dnsRow=static function(string $html):array {
 };
 $assertMissing=static function(Account $account,string $rule)use($staff,$row,$dnsRow):void {
     // Account first: it must show the problem immediately after connect, without revisiting settings or upgrading.
-    // Monitoring settings draws it as a panel row: Not set, in the attention tone.
-    $settings=settingsRowValue(Livewire::actingAs($staff)->test(MonitoringSettings::class)->assertSee($rule)->html(),'Default nameservers');
-    same([State::NotSet->label(),Tone::Attention->value],[$settings['word']??null,$settings['tone']??null],'Monitoring settings says the newly incompatible default is not set');
+    // DNS resolver settings draws it as a panel row: Not set, in the attention tone.
+    $settings=settingsRowValue(Livewire::actingAs($staff)->test(DnsResolver::class)->assertSee($rule)->html(),'Default nameservers');
+    same([State::NotSet->label(),Tone::Attention->value],[$settings['word']??null,$settings['tone']??null],'DNS resolver settings says the newly incompatible default is not set');
     foreach([[RegistrarAccount::class,['account'=>$account->server_id]]]as[$class,$params]){
         $page=Livewire::actingAs($staff)->test($class,$params)->assertSee($rule);
         if($class===RegistrarAccount::class){
@@ -67,16 +65,15 @@ $assertMissing=static function(Account $account,string $rule)use($staff,$row,$dn
         unset($entry,$page);gc_collect_cycles();gc_mem_caches();
     }
 };
-$select=static function(WatchProfile $profile,array $accounts,string $oldRule)use($staff,$row,$dnsRow):void {
-    $domains=Domain::orderBy('id')->get()->toJson();$watches=WatchName::orderBy('id')->get()->toJson();
+$select=static function(DnsTemplate $profile,array $accounts,string $oldRule)use($staff,$row,$dnsRow):void {
+    $domains=Domain::orderBy('id')->get()->toJson();
     Livewire::actingAs($staff)->test(ListConfiguration::class)->callAction('siteDefault',['profile'=>$profile->id])->assertHasNoActionErrors();
     same($profile->id,SiteDnsDefault::profile()?->id,'Staff selection is the only default change');
     same($domains,Domain::orderBy('id')->get()->toJson(),'Selecting a default never changes existing domain nameservers');
-    same($watches,WatchName::orderBy('id')->get()->toJson(),'Selecting a default leaves watch assignments unchanged');
-    foreach([[MonitoringSettings::class,[]],...array_map(fn($a)=>[RegistrarAccount::class,['account'=>$a->server_id]],$accounts)]as[$class,$params]){
+    foreach([[DnsResolver::class,[]],...array_map(fn($a)=>[RegistrarAccount::class,['account'=>$a->server_id]],$accounts)]as[$class,$params]){
         $page=Livewire::actingAs($staff)->test($class,$params)->assertDontSee($oldRule);
-        // Monitoring settings draws it as a panel row; the account page keeps its entry.
-        if($class===MonitoringSettings::class){same($profile->name,settingsRowValue($page->html(),'Default nameservers')['word']??null,'Valid staff choice is the Monitoring settings default');continue;}
+        // DNS resolver settings draws it as a panel row; the account page keeps its entry.
+        if($class===DnsResolver::class){same($profile->name,settingsRowValue($page->html(),'Default nameservers')['word']??null,'Valid staff choice is the DNS resolver settings default');continue;}
         // The account page names what new domains get, with its nameservers and Change, as in the approved mock.
         if($class===RegistrarAccount::class){
             $dns=$dnsRow($page->html());
@@ -102,7 +99,7 @@ same($thirteen->id,SiteDnsDefault::profile()->id,'Later Enom connection never re
 $twelve=$make(12);$select($twelve,[$silo,$enom],$enomRule);
 // Change needs both DNS templates and the right to change the default there; the writer still refuses the rest.
 $all=array_keys(Staff::permissions());
-foreach(['view only'=>[Staff::VIEW],'no settings page'=>array_values(array_diff($all,[\Paymenter\Extensions\Servers\Domains\Admin\Pages\PublicSuffixList::VIEW])),
+foreach(['view only'=>[Staff::VIEW],'no settings page'=>array_values(array_diff($all,[\Paymenter\Extensions\Servers\Domains\Services\DnsTemplateWrites::VIEW])),
     'no domain policy'=>array_values(array_diff($all,[Staff::POLICY])),'no site DNS default'=>array_values(array_diff($all,[SiteDnsDefault::MANAGE])),'full'=>$all] as $case=>$grants){
     $user=staffUser($grants);$full=$case==='full';
     $dns=$dnsRow(Livewire::actingAs($user)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSuccessful()->html());

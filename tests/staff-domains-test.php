@@ -211,7 +211,6 @@ expect(!isset(RequestFacts::for($op)['registrar_refund']),'Local unsent rejectio
 // Check explicit map keys. Passthrough alone must never satisfy mapping coverage.
 $labelsSource=file_get_contents(dirname(__DIR__).'/Domains/Admin/Support/Labels.php');
 $reasonSource=explode('public static function reason(', $labelsSource, 2)[1];
-same('Nameservers missing at the registry',Labels::reason('nameservers_missing'),'Staff can identify a missing registry delegation');
 same('Domain not found in the registrar account',Labels::reason('domain_not_in_account'),'Staff can identify a domain missing from its registrar account');
 same('SRV records',Labels::reason('srv'),'Staff can identify the affected record family');
 same('Cancelled',Labels::reason('cancelled'),'Staff can identify a cancelled order');
@@ -297,21 +296,12 @@ $excluded=[
     'RegistrarBalances.php'=>['rate_limited','configuration_unavailable','read_failed','test_call_refused'], // Balance facts.
     'AdoptionReader.php'=>['identity_unconfirmed','expiry_disagrees','read_failed','auto_renew_on','auto_renew_unknown',
         'expired','expiry_unconfirmed','state_unconfirmed'], // Adoption Review::LABELS presenter.
-    'PublicSuffixList.php'=>['not_modified','identical','updated','internal_error','rate_limited','stored_rules_rejected'], // PslFacts.
-    'PslRebaseline.php'=>['stored_rules_rejected','rules_lost'],
-    'WatchMaintenance.php'=>['waiting','dispatch_overdue','checks_unsuccessful','current'], // Health summary().
-    'WatchWork.php'=>['disabled','queue_configuration'],
     'PublicRegistryReader.php'=>['no_expiry','facts','endpoint_failed','deferred'], // Result reason, distinct safe_code.
-    'WatchRegistryObserver.php'=>['deferred'],
-    'WatchDiscovery.php'=>['hosting'], // Departure preview watch outcome, worded by DepartureConfirm::rows and subject() as "Not monitored after confirm" (mock 06).
     'DnsResolverSettings.php'=>['dns_rcode_'], // DNS response prefix, formatted locally.
     'DomainManagement.php'=>['owner_request','staff_correction','nameservers','lock','auto_renew_off','privacy','contacts','dns','ds','glue',
         'ds_add','glue_add','glue_update','privacy_enable','privacy_disable','privacy_purchase'], // Audit reasons and capability names.
     'ManagementProgress.php'=>['contacts','dns','privacy','ds','glue','privacy_enable','privacy_disable','privacy_purchase','ds_add','glue_add','glue_update','under_review','failed','disposed'], // Grouped settings and status keys.
 
-    'ManagedPublicEnrollment.php'=>['managed_enrollment'],
-    'ManagedDnsSetup.php'=>['external','platform'], // DNS intent values, not staff reason codes.
-    'WatchTemplateAssignment.php'=>['deployment','external','inherit','pin','platform','site','unset'], // Template choices and DNS intents.
     'NativeServiceRefusal.php'=>['identity','price'], // Structured log fields.
     'ProviderSendGuard.php'=>['not_callable','clock_failed','guard_threw'], // Structured log fields.
     'CartHandoffFailure.php'=>['unclassified','eligibility_unconfirmed'], // Structured cart handoff log keys, never request safe codes.
@@ -327,7 +317,6 @@ $excluded=[
     'ObservationWork.php'=>['holding'], // Work phase identity.
     'HoldingObservationWork.php'=>['holding','idle','configuration_restored','records_incomplete'], // Phase, turn result, audit event and HoldingReadRetry cause.
     'HoldingReadRetry.php'=>['records_incomplete'], // Read stop code, shown by its own read_cause.
-    'SiteDnsDefault.php'=>['platform'], // Inherited DNS intent, as in ManagedDnsSetup.
     'AccountComplimentaryRenewals.php'=>['account_complimentary'], // Funding authorization reason, not request safe_code.
     'RegistrarAnswers.php'=>['registrar_not_processed'], // Refund authorization audit reason, not request safe_code.
     'SellRule.php'=>['limit','sell','skipped','waiting'], // Row decisions, shown by What you sell.
@@ -341,9 +330,6 @@ foreach(new RecursiveIteratorIterator(new RecursiveDirectoryIterator(dirname(__D
     foreach(array_diff($inventory(file_get_contents($file->getPathname())),$excluded[$file->getBasename()]??[]) as $code){$emitted[$code][]=$file->getBasename();}
 }
 // These services forward codes from closed vocabularies rather than emitting literals at the write.
-$dnsReason=new ReflectionMethod(\Paymenter\Extensions\Servers\Domains\Dns\DnsReading::class,'safeCode');
-$dnsSource=implode('',array_slice(file($dnsReason->getFileName()),$dnsReason->getStartLine()-1,$dnsReason->getEndLine()-$dnsReason->getStartLine()+1));
-foreach($inventory('<?php class Diagnostic {'.$dnsSource.'}') as $code){$emitted[$code][]='DnsReading::safeCode';}
 preg_match_all('/[\'"]([a-z][a-z0-9_]*)[\'"]/D',file_get_contents(dirname(__DIR__).'/Domains/Services/WriteHeld.php'),$holds);
 foreach($holds[1] as $code){$emitted[$code][]='WriteHeld whitelist';}
 $missing=array_diff_key($emitted,$mapped);ksort($missing);
@@ -360,7 +346,7 @@ $noLine=[];
 foreach($known[1] as $code){ $label=Labels::reason($code);
     if($label===null){$noLine[]=$code;continue;}
     expect(!str_starts_with($label,'Missing')&&$label!==$code&&$label!=='Review retained evidence'&&$label!=='Reason missing','Known reason has cause text: '.$code); }
-same(['refreshed','renewal_admitted','management_deferred','readback_confirmed','registration_managed','ready'],$noLine,'Only internal codes show no reason line');
+same(['refreshed','renewal_admitted','management_deferred','readback_confirmed','ready'],$noLine,'Only internal codes show no reason line');
 same("Not sent: couldn't load the registrar account's settings",Labels::reason('configuration_unavailable'),'Held demo request reads as status-model.md 2.2');
 same('Registrar has not confirmed the result',Labels::reason('unverified'),'Uncertain demo request reads as status-model.md 2.2');
 same('Missing (future_reason_code). Check the request history.',Labels::reason('future_reason_code'),'Unknown reason code is Missing with the code');

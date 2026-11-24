@@ -10,8 +10,8 @@ use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaryStrings, OwnerFo
 storefrontViews();
 $root=dirname(__DIR__).'/Domains';
 $norm=static fn(string $html)=>preg_replace('/\s+/',' ',trim(html_entity_decode(strip_tags($html),ENT_QUOTES|ENT_HTML5)));
-$summary=static fn(string $kind,array $more)=>new DomainSummary('next-step.example',null,$kind,'domain.registration.unknown',[],null,null,[],DomainSummaryStrings::all(),...[
-    'expiry'=>null,'expiryPrecision'=>null,'expirySource'=>null,'freshness'=>[],'renewalDueAt'=>null,'renewalPrice'=>null,'relatedServices'=>[],'hostnames'=>[],'urls'=>['detail'=>'/domains/1','support'=>'/tickets/create'],...$more]);
+$summary=static fn(string $kind,array $more)=>new DomainSummary('next-step.example',null,$kind,'domain.registration.unknown',[],DomainSummaryStrings::all(),...[
+    'expiry'=>null,'expiryPrecision'=>null,'expirySource'=>null,'renewalDueAt'=>null,'renewalPrice'=>null,'urls'=>['detail'=>'/domains/1','support'=>'/tickets/create'],...$more]);
 
 // The same word for both: the customer line and the staff cell print it from one constant, and the customer wording is gone.
 $customer=DomainListRow::expires($summary('managed',['expiryWaits'=>'registration']));

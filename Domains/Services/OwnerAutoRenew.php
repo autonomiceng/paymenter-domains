@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Models\{Domain,WatchAudit};
+use Paymenter\Extensions\Servers\Domains\Models\{Domain,DomainAudit};
 /** Local billing preference. Issued invoices and registrar settings retain their own authority. */
 final readonly class OwnerAutoRenew
 {
@@ -27,7 +27,7 @@ final readonly class OwnerAutoRenew
             if(!self::available($l)){throw new \DomainException('Auto-renew cannot be changed for this domain.');}
             if($enabled===!RenewalStop::ownerOff($l)){return;}
             if(!$d->update(['renewal_policy'=>[...($d->renewal_policy??[]),'owner_auto_renew'=>$enabled]])){throw new \DomainException('Auto-renew could not be saved.');}
-            $audit=WatchAudit::create(['subject_type'=>'domain','subject_id'=>$d->id,'user_id'=>$d->user_id,'actor_id'=>$actor->id,
+            $audit=DomainAudit::create(['subject_type'=>'domain','subject_id'=>$d->id,'user_id'=>$d->user_id,'actor_id'=>$actor->id,
                 'event'=>'owner_auto_renew','before_revision'=>$enabled?'off':'on','after_revision'=>$enabled?'on':'off',
                 'data'=>['enabled'=>$enabled],'created_at'=>$this->clock->now()]);
             if(!$audit->exists){throw new \DomainException('Auto-renew audit could not be saved.');}

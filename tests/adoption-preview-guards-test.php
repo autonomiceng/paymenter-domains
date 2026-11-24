@@ -88,12 +88,9 @@ DB::table('products')->where('id', $hostingProduct->id)->update(['server_id' => 
 
 $hostingServer = Server::create(['name' => 'Synthetic hosting', 'extension' => 'SyntheticHosting', 'type' => 'server', 'enabled' => true]);
 DB::table('products')->where('id', $hostingProduct->id)->update(['server_id' => $hostingServer->id]);
-same('competing_holding', $run()->code, 'Unmapped server-backed product requires explicit hosting classification');
-DB::transaction(fn () => \Paymenter\Extensions\Servers\Domains\Models\WatchProductMap::create(['product_id' => $hostingProduct->id, 'property_key' => 'domain',
-    'enabled' => false, 'revision' => 1, 'edited_by' => $staff->id, 'reason' => 'Reviewed synthetic hosting source']));
-same('ready', $run()->code, 'Reviewed hosting map allows explicit server-backed coexistence');
+same('competing_holding', $run()->code, 'A second server-backed service with the same name blocks adoption');
 DB::table('products')->where('id', $hostingProduct->id)->update(['server_id' => $legacyServer->id]);
-same('competing_holding', $run()->code, 'A hosting map cannot exempt a known registrar extension');
+same('competing_holding', $run()->code, 'A second registrar service blocks adoption');
 DB::table('products')->where('id', $hostingProduct->id)->update(['server_id' => null]);
 $peer = Service::withoutEvents(static fn()=>Service::create(['user_id' => $other->id, 'order_id' => $order->id, 'product_id' => $product->id,
     'plan_id' => $plan->id, 'quantity' => 1, 'price' => '10.00', 'currency_code' => 'USD', 'status' => 'pending']));

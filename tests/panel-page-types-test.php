@@ -120,7 +120,7 @@ $refused(static fn () => $fast->getHeader(), 'A Detail page outside a record kee
 $refused(static fn () => $fast->content(Filament\Schemas\Schema::make($fast)), 'A partial view belongs on a record Detail page');
 $refused(static fn () => Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Partial::make('filament-panels::pages.page'), 'A partial is one of the extension\'s own views');
 $record = new class extends Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\RecordDetailPage {
-    protected static string $resource = Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::class;
+    protected static string $resource = Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource::class;
     public int $every = 2;
     protected function head(): Head { return Head::make('Example', Reader::Staff); }
     protected function sections(): array { return [Section::make('Records', [Row::make('Mode', Value::plain(Plain::Test)), Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Partial::make('domains::partials.moment', ['at' => '2026-03-04T05:06:07Z'])])]; }

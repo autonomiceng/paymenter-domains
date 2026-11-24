@@ -6,7 +6,7 @@ selector. Add new consumers when these dependencies change.
 
 | Source trigger | Consumers to inspect |
 | --- | --- |
-| `Domains/Services/AdoptionReader.php` | `Support/adoption-preview.php` constructs the real reader. Follow its consumers through `adoption-confirm.php`, `adoption-holding.php` and `managed-public.php`; retain `adoption-preview-test.php` and the static reason assertions in `staff-domains-test.php`. |
+| `Domains/Services/AdoptionReader.php` | `Support/adoption-preview.php` constructs the real reader. Follow its consumers through `adoption-confirm.php`, `adoption-holding.php`; retain `adoption-preview-test.php` and the static reason assertions in `staff-domains-test.php`. |
 | `Domains/Admin/Resources/DomainResource/Pages/AdoptDomain.php` | Staff preview and confirmation flows, plus the shared adoption fixture consumers. |
 | `Domains/Admin/Pages/RegistrarAccount.php` | Direct registrar page tests and transitive consumers of `Support/staff-tlds.php`, including route registration and settings actions. |
 | `Domains/Presentation/AccountStatus.php` | Direct status assertions and `RegistrarFacts`/`AccountChecklist` consumers on registrar pages and installed scenarios. |
@@ -39,10 +39,6 @@ python3 scripts/test.py --jobs 1 --only \
   tests/contact-setup-test.php tests/domain-summary-managed-test.php \
   tests/enom-catalogue-test.php tests/enom-identity-test.php \
   tests/holding-adoption-test.php \
-  tests/managed-public-confirmation-test.php tests/managed-public-observer-test.php \
-  tests/managed-public-overflow-test.php tests/managed-public-quota-test.php \
-  tests/managed-public-reconciliation-test.php tests/managed-public-relink-test.php \
-  tests/managed-public-source-drift-test.php tests/managed-public-stamp-test.php \
   tests/namesilo-enrollment-test.php tests/native-identity-readiness-test.php \
   tests/native-paid-baseline-test.php tests/native-server-settings-test.php \
   tests/registrar-balances-test.php \
@@ -53,8 +49,8 @@ python3 scripts/test.py --jobs 1 --only \
   tests/staff-settings-history-test.php tests/staff-tld-actions-test.php \
   tests/staff-tld-grants-test.php tests/staff-tld-page-test.php \
   tests/staff-tld-reads-test.php tests/staff-tld-writes-test.php \
-  tests/status-sets-test.php tests/watch-notice-managed-claim-test.php \
-  tests/watch-notice-managed-test.php tests/api-test.php \
+  tests/status-sets-test.php \
+  tests/api-test.php \
   tests/fixture-policy-test.php tests/owner-declutter-test.php \
   tests/php83-compatibility-test.php tests/schema-identifiers-test.php \
   tests/test_package.py tests/test_runner.py \

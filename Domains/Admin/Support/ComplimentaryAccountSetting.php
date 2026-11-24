@@ -22,7 +22,7 @@ use Livewire\Attributes\Locked;
 use Livewire\Component;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
+use Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels;
 use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccountChanged,ComplimentaryAccounts,HookRegistration};
 /**
  * Make domains complimentary / Make domain prices standard, in the native customer editor's header actions, through the
@@ -99,7 +99,7 @@ final class ComplimentaryAccountSetting extends Component implements HasActions,
     /** "Example Hosting pays", from the store's company name in settings; "We pay" when the store has none. */
     private static function payer():string
     {
-        $company=DnsSignalLabels::company();return $company!==''?$company.' pays':'We pay';
+        $company=CompanyLabels::company();return $company!==''?$company.' pays':'We pay';
     }
     /** "Turned on by X, <time>. Reason: Y"; the actor's current display name, or Staff once they are gone. */
     private static function lastChange(array $setting):HtmlString

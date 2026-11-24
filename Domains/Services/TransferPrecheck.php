@@ -62,6 +62,6 @@ final readonly class TransferPrecheck
         if (!$rdap['allowed']) { throw new TransferRestriction($rdap['code'], isset($rdap['retry_at']) ? new \DateTimeImmutable($rdap['retry_at']) : null, $days, $rdap['registrar_locked'] ?? false); }
         // A public restriction can explain a refusal, but never replaces positive registrar eligibility.
         WriteMoney::requireRead($driver->binding(), $r); WriteMoney::requireAvailable($r->evidence());
-        return ['rules' => $days, 'rdap_unchecked' => $rdap['warning'] !== null, 'base_expiry' => $rdap['expires_at'], 'comparison_allowed' => ($rdap['comparison_allowed'] ?? false) && $rdap['allowed']];
+        return ['rules' => $days, 'rdap_unchecked' => $rdap['warning'] !== null, 'base_expiry' => $rdap['expires_at']];
     }
 }
