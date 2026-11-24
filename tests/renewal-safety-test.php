@@ -81,16 +81,9 @@ foreach(['topup','return','unknown'] as $case){
 $state->balance='100.00';
 // Admission and completion faults branch from two points on the same ordinary renewal.
 $checkpoint = static function ($op, $d, $binding, $invoice) use ($state, $clock): Closure {
-    $restore = nativeFixtureCheckpoint();
-    $registrar = clone $state;
-    $instant = $clock->instant;
-    $nativeNow = Carbon\Carbon::now()->toImmutable();
-    return static function () use ($restore, $registrar, $state, $instant, $clock, $nativeNow, $op, $d, $binding, $invoice): array {
+    $restore = nativeRegistrarCheckpoint($clock, $state);
+    return static function () use ($restore, $op, $d, $binding, $invoice): array {
         $restore();
-        foreach ($registrar as $field => $value) { $state->$field = $value; }
-        $clock->instant = $instant;
-        Carbon\Carbon::setTestNow($nativeNow);
-        Carbon\CarbonImmutable::setTestNow($nativeNow);
         return [$op->fresh(), $d->fresh(), $binding, $invoice->fresh()];
     };
 };

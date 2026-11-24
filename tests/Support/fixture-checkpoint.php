@@ -41,3 +41,24 @@ function nativeFixtureCheckpoint(): Closure
         Illuminate\Support\Once::flush();
     };
 }
+
+/** Restore committed rows, the test clocks and the scalar/array state of the synthetic registrar ports. */
+function nativeRegistrarCheckpoint(\Paymenter\Extensions\Servers\Domains\Tests\FakeClock $clock, stdClass ...$ports): Closure
+{
+    $restoreRows = nativeFixtureCheckpoint();
+    $instant = $clock->now();
+    $nativeNow = Carbon\Carbon::getTestNow();
+    $immutableNow = Carbon\CarbonImmutable::getTestNow();
+    $states = array_map(get_object_vars(...), $ports);
+    return static function () use ($restoreRows, $instant, $nativeNow, $immutableNow, $clock, $states, $ports): void {
+        $restoreRows();
+        $clock->instant = $instant;
+        Carbon\Carbon::setTestNow($nativeNow);
+        Carbon\CarbonImmutable::setTestNow($immutableNow);
+        foreach ($ports as $index => $port) {
+            $saved = $states[$index];
+            foreach (array_diff_key(get_object_vars($port), $saved) as $field => $_) { unset($port->$field); }
+            foreach ($saved as $field => $value) { $port->$field = $value; }
+        }
+    };
+}
