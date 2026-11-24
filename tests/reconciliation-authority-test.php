@@ -2,6 +2,7 @@
 // Enom 444f31c uncertain disposition/automatic-refresh; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
+$fixtureReadyRegistration = true;
 require __DIR__.'/Support/reconciliation-fixture.php';
 use Illuminate\Support\Facades\DB;
 same(5,Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT,'Shared engine poll limit stays five');
