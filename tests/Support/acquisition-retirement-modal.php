@@ -16,9 +16,9 @@ if($retirementModal==='success'){
 $modalOp=$new(placeholderComFixtureName('unpaid-modal-placeholder.com'),paid:false);Auth::login($staff);
 $page=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$modalOp->domain_id])->mountAction('retire_unpaid')->assertActionMounted('retire_unpaid');
 $beforeInvalidReason=$modalOp->fresh()->getRawOriginal();
-$page->setActionData(['reason'=>"Reviewed\u{2028}closure"])->callMountedAction()->assertHasActionErrors(['reason'=>'regex']);
+submitStaffAction($page, ['reason'=>"Reviewed\u{2028}closure"])->assertHasActionErrors(['reason'=>'regex']);
 same($beforeInvalidReason,$modalOp->fresh()->getRawOriginal(),'Closure reason field error changes no order');
-$page->setActionData(['reason'=>'Retire from real staff modal'])->callMountedAction()->assertNotified('Order cancelled')->assertRedirect(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('view',['record'=>$modalOp->domain_id]));
+submitStaffAction($page, ['reason'=>'Retire from real staff modal'])->assertNotified('Order cancelled')->assertRedirect(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('view',['record'=>$modalOp->domain_id]));
 Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$modalOp->domain_id])->assertActionDoesNotExist('retire_unpaid');same(null,$modalOp->domain->fresh()->reservation_name,'Real modal invokes retirement');
 $paid=$new(placeholderComFixtureName('unpaid-refusal-placeholder.com'));Auth::login($staff);
 Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$paid->domain_id])->assertActionDoesNotExist('retire_unpaid');
@@ -30,8 +30,8 @@ $action=$retirementModal;foreach(['provider','sibling'] as $cause){
     if($cause==='provider'){$op->domain->update(['provider_order_id'=>'synthetic-provider']);}
     else{Operation::create(['domain_id'=>$op->domain_id,'service_id'=>$op->service_id,'server_id'=>$op->server_id,'registrar_key'=>$op->registrar_key,'account_fingerprint'=>$op->account_fingerprint,'authority_generation'=>1,'operation_key'=>'modal-other:'.$op->id,'action'=>'renew','term'=>1,'state'=>'queued','amount'=>'1.00','currency'=>'USD']);}
     $invoice=App\Models\Invoice::findOrFail($op->invoice_id)->getRawOriginal();$reservation=$op->domain->fresh()->reservation_name;
-    Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$op->domain_id])->mountAction('retire_unpaid')->assertActionMounted('retire_unpaid')
-        ->setActionData(['reason'=>'Review refused unpaid cancellation'])->callMountedAction()->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't cancel order")
+    $page = Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$op->domain_id])->mountAction('retire_unpaid')->assertActionMounted('retire_unpaid');
+    submitStaffAction($page, ['reason'=>'Review refused unpaid cancellation'])->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't cancel order")
             ->body("Can't cancel: the order is no longer pending, or it has other requests or registrar details."));
     same($reservation,$op->domain->fresh()->reservation_name,$action.' '.$cause.' keeps the reservation');
     same($invoice,App\Models\Invoice::findOrFail($op->invoice_id)->getRawOriginal(),$action.' '.$cause.' keeps the invoice');
