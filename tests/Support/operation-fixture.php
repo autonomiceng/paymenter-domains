@@ -34,11 +34,11 @@ foreach (['address' => '1 Synthetic Street', 'city' => 'Seattle', 'state' => 'WA
 }
 $product = $native->product($tlds[0], 'register');
 // Downstream registration matrices can skip cart rendering and request round trips.
-$readyRegistration = ($fixtureReadyRegistration ?? false) && !($installedFixture ?? false)
+$preferPreparedCheckout = $fixtureReadyRegistration ?? false;
+$canPrepareRegistration = !($installedFixture ?? false)
     && $tlds[0]->registrar_key === 'enom'
     && ($fixtureEnvironment ?? \Paymenter\Extensions\Servers\Domains\Data\Environment::Test) === \Paymenter\Extensions\Servers\Domains\Data\Environment::Test;
-if ($readyRegistration) { require_once __DIR__.'/ready-registration.php'; }
-$new = static function (string $name, bool $paid = true, bool $setup = true, string $action = 'register', int $term = 1) use ($user, $product, $native, $tlds, $clock, $transfers, $admission, $readyRegistration): Operation {
+$new = static function (string $name, bool $paid = true, bool $setup = true, string $action = 'register', int $term = 1, bool $preparedCheckout = false) use ($user, $product, $native, $tlds, $clock, $transfers, $admission, $preferPreparedCheckout, $canPrepareRegistration): Operation {
     if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
     // Checkout belongs to this explicit module composition; later physical-send probes keep their Runtime.
     $runtime=app()->bound(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)?app(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class):null;
@@ -49,7 +49,8 @@ $new = static function (string $name, bool $paid = true, bool $setup = true, str
     // Retained invalid-contact scenarios predate the new checkout gate.
     try { \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::validate('enom', \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::collect($user)); $legacyContacts=false; }
     catch (\Paymenter\Extensions\Servers\Domains\Services\ContactValidation) { $legacyContacts=true; }
-    if ($readyRegistration && $action === 'register' && $term === 1 && $paid && $setup && !$legacyContacts) {
+    if (($preparedCheckout || $preferPreparedCheckout) && $canPrepareRegistration && $action === 'register' && $term === 1 && $paid && $setup && !$legacyContacts) {
+        require_once __DIR__.'/ready-registration.php';
         readyRegistrationCheckout($cart, $admission);
     } else {
         $checkout = $legacyContacts ? commerceLegacyCheckout($user, $cart) : commerceCheckout($user, $cart);
@@ -68,6 +69,7 @@ $new = static function (string $name, bool $paid = true, bool $setup = true, str
     return $op->fresh();
     } finally { if($runtime!==null){app()->instance(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class,$runtime);} }
 };
+$paidRegistration = static fn (string $name) => $new($name, preparedCheckout: true);
 // Raw rows retain invoice/item/payment/credit/job bytes, including native timestamps.
 $nativeMoney = static function (): array {
     $rows = [];

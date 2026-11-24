@@ -4,13 +4,14 @@ declare(strict_types=1);
 $fixtureEnding = 'example.com';
 require __DIR__.'/reconciliation-fixture.php';
 require_once __DIR__.'/reserved-fixtures.php';
-use Paymenter\Extensions\Servers\Domains\Data\{DateEvidence, Disposition, DriverResult, Evidence, ExpiryPrecision, HistoryAcceptance, RegistrationEvidence, ResultReason, SendState};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
-use Paymenter\Extensions\Servers\Domains\Services\{HistoryAcceptances, ReconciliationEvidence, RenewalAuthority};
+require_once __DIR__.'/fixture-checkpoint.php';
 // Unknown/sent with a retained order is distinct from a lost reply. Exercise every full-proof refusal.
 $preflight->cost = '8.95';
+[$captured] = $prepare(reservedFixtureName('captured-order.example.com'), 'captured');
+$restore = nativeRegistrarCheckpoint($clock, $observation);
 foreach ($capturedFaults as $fault) {
-    [$op, $binding] = $prepare(reservedFixtureName('captured-'.($fault ?: 'complete').'.example.com'), 'captured');
+    $restore();
+    $op = $captured->fresh();
     $original = $op->attempt; $before = $writer->calls;
     $observation->fault = $fault;
     if ($fault === 'window') { $observation->billDate = '10/16/2026 5:00:01 AM'; }

@@ -52,6 +52,10 @@ config(['hashing.bcrypt.rounds' => 4, 'audit.enabled' => false, 'settings.mail_d
 same('sqlite', config('database.default'), 'Native database isolation');
 same(':memory:', config('database.connections.sqlite.database'), 'Native database is memory only');
 Illuminate\Support\Facades\Http::preventStrayRequests();
+// Order and payment tests keep native invoice events, attachment storage and notifications.
+if (!($renderInvoicePdf ?? false)) {
+    require_once __DIR__.'/Support/synthetic-invoice-attachment.php';
+}
 $snapshot = (string)getenv('PAYMENTER_TEST_DATABASE');
 if ($snapshot !== '') {
     $sql = file_get_contents($snapshot);

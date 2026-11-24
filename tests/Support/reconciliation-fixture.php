@@ -2,7 +2,11 @@
 // Synthetic Enom 444f31c registration reconciliation scenarios; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/enom-history.php';
+// Loading the operation fixture here provides a prepared checkout. Preloaded matrices
+// use their existing order factory, including the owner and cycle multi-line checkouts.
+$paidRegistration = null;
 require_once __DIR__.'/operation-fixture.php';
+$paidRegistration ??= $new;
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, DateEvidence, Disposition, DriverResult, Environment, Evidence, ExpiryPrecision, HistoryAcceptance, RegistrationEvidence, RequestBudget, RequestContext, RequestOrigin, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
@@ -58,11 +62,11 @@ $verify = new class implements AccountVerifier { public function verify(Environm
 $registry->register('enom', ['token'], $verify, fn ($binding, $c) => new Driver(new Client($binding, 'account-enom', $c['token'], $wire), [$fixtureEnding ?? 'com']));
 $readBindings = new AccountBindings($registry); $reconcile = new OperationReconciliation($claims, $readBindings, $clock);
 $caps??=null;$ports??=null;
-$prepare = static function (string $name, string $mode = 'accepted', ?\Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence $nameservers = null) use ($new, $claims, $preflight, $clock, $observation,$caps,$ports) {
+$prepare = static function (string $name, string $mode = 'accepted', ?\Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence $nameservers = null) use ($paidRegistration, $claims, $preflight, $clock, $observation,$caps,$ports) {
     if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
     $clock->instant = new DateTimeImmutable('2026-10-18T12:00:00Z');
     if($caps!==null){activeCommerceFacts($clock->now(),$clock->now()->modify('+1 day'),$ports);}
-    $op = $new($name); [$claimed, $domain, $binding] = $claims->claim($op->id);
+    $op = $paidRegistration($name); [$claimed, $domain, $binding] = $claims->claim($op->id);
     if ($mode === 'preseal') { $clock->instant = $clock->now()->modify('+60 seconds'); }
     $ctx = new RequestContext($binding, RequestOrigin::Background, $clock->now()->modify('+300 seconds'), new RequestBudget(10), $clock);
     $sealed = $claims->seal($claimed, $preflight->inspect($claimed, $domain, $ctx), $clock->now()); expect($sealed !== null, 'Original attempt sealed');

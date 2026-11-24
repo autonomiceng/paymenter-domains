@@ -25,6 +25,7 @@ function readyRegistrationCheckout(Cart $cart, CartAdmission $admission): void
         $checkout->mount();
         expect($checkout->total !== null && $checkout->total->price > 0, 'Ready registration starts with a payable cart');
         $checkout->checkout();
+        expect($checkout->getErrorBag()->isEmpty(), 'Native registration checkout has no validation errors');
         expect($cart->fresh() === null, 'Native registration checkout consumed its cart');
     } finally {
         OrderContact::clear();

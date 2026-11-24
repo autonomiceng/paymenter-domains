@@ -1,7 +1,6 @@
 <?php
 // Automatic balance holds and remaining staff releases say what will happen. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require_once __DIR__.'/Support/synthetic-invoice-attachment.php';
 // Native invoices, claims and the actual Filament action must agree; reuse the existing offline fixture.
 $fixtureRegistrars = ['enom'];
 $fixtureReadyRegistration = true;

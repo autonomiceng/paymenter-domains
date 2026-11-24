@@ -21,6 +21,20 @@ function staffPanel(): void
     Filament::setCurrentPanel($panel);
     Qirolab\Theme\Theme::set('default','default');
 }
+// Submit the mounted form fields and action in the same Livewire request as the browser.
+function submitStaffAction(\Livewire\Features\SupportTesting\Testable $page, array $data): \Livewire\Features\SupportTesting\Testable
+{
+    $schema = $page->instance()->getMountedActionSchemaName();
+    $page->assertSchemaExists($schema);
+    $path = $page->instance()->{$schema}->getStatePath();
+    $updates = [];
+    foreach ($data as $field => $value) {
+        $updates[$path.'.'.$field] = $value;
+    }
+
+    return $page->update(calls: [['method' => 'callMountedAction', 'params' => [[]], 'path' => '']], updates: $updates);
+}
+
 function staffUser(array $permissions): App\Models\User
 {
     $role=App\Models\Role::create(['name'=>'Synthetic role '.App\Models\Role::count(),'permissions'=>$permissions]);
