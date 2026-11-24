@@ -2,6 +2,7 @@
 // A sent Enom renewal with an order number that no read proves; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/Support/synthetic-invoice-attachment.php';
+require_once __DIR__.'/Support/fixture-checkpoint.php';
 $reuseRenewalHolding = true;
 require __DIR__.'/Support/renewal-execution.php';
 use Illuminate\Support\Facades\Cache;
@@ -45,13 +46,20 @@ $shapes = [
     'later info, old expiry read' => static function ($s) { $s->order = '7777'; $s->expiry = '10/18/2028 5:00:00 AM'; },
 ];
 $reset = static function () use ($state): void { $state->order = '9002'; $state->fail = null; unset($state->detail, $state->currency); };
-$sent = static function (string $name, string $expiryAfter, string $shape, ?Closure $pay = null) use ($makeRenewal, $compose, $state, $clock, $shapes, $reset) {
+$accepted = static function (string $name, ?Closure $pay = null) use ($makeRenewal, $compose, $reset) {
     $reset(); [$op, $d, $b, $invoice] = $makeRenewal(placeholderComFixtureName($name), $pay === null); [$engine, $writer, $completion] = $compose($b);
     if ($pay !== null) { $pay($invoice, $op); }
     same('pending', $engine->run($op->id, $writer)->state, 'Enom accepted the renewal');
     same('9002', $op->fresh()->provider_order_id, 'The renewal keeps the order number Enom returned');
-    $state->after = $expiryAfter; ($shapes[$shape])($state); $clock->instant = $clock->now()->modify('+25 hours'); Cache::flush();
     return [$op, $engine, $writer, $completion];
+};
+$reply = static function (string $expiryAfter, string $shape) use ($state, $shapes, $clock): void {
+    $state->after = $expiryAfter; ($shapes[$shape])($state); $clock->instant = $clock->now()->modify('+25 hours'); Cache::flush();
+};
+$sent = static function (string $name, string $expiryAfter, string $shape, ?Closure $pay = null) use ($accepted, $reply): array {
+    $order = $accepted($name, $pay);
+    $reply($expiryAfter, $shape);
+    return $order;
 };
 $readUntilStopped = static function ($op, $completion, string $shape) use ($state, $clock): void {
     for ($i = 1; $i <= OperationReconciliation::POLL_LIMIT; $i++) {
@@ -67,8 +75,10 @@ $readUntilStopped = static function ($op, $completion, string $shape) use ($stat
 };
 
 // Exercise the remaining Enom reply shapes. The credit and retained-proof cases below also check the poll limit.
-foreach (['failed domain read', 'missing detail', 'unreadable detail', 'charge in another currency'] as $n => $shape) {
-    [$op, , , $completion] = $sent("renew-shape-{$n}-placeholder.com", '2027-10-18', $shape);
+[$op, , , $completion] = $accepted('renew-shape-placeholder.com');
+$restoreAccepted = nativeRegistrarCheckpoint($clock, $state);
+foreach (['failed domain read', 'missing detail', 'unreadable detail', 'charge in another currency'] as $shape) {
+    $restoreAccepted(); $op->refresh(); $reply('2027-10-18', $shape);
     $readUntilStopped($op, $completion, $shape);
 }
 
@@ -152,10 +162,12 @@ $seen['an advanced expiry before a deferred read'] = $refused($deferred);
 $readUntilStopped($op, $completion, 'kept'); $state->expiry = '10/18/2028 5:00:00 AM'; $state->fail = ReadCommand::Expiry;
 $first = $refused($op); $kept = isset($op->fresh()->renewal_proof); $state->expiry = '10/18/2027 5:00:00 AM'; $state->fail = null;
 $seen['a fresh later expiry kept for a lagging retry'] = $first && $kept && $refused($op);
+[$op, , , $completion] = $accepted('renew-proof-shapes-placeholder.com');
+$restoreAccepted = nativeRegistrarCheckpoint($clock, $state);
 foreach (['a matching charge' => ['matching charge', '2027-10-18'], 'an advanced expiry' => ['failed order read', '2028-10-18'],
     'an advanced expiry before a failed expiry read' => ['later info, failed expiry read', '2027-10-18'],
     'an advanced expiry before an old expiry read' => ['later info, old expiry read', '2027-10-18']] as $why => [$shape, $expiry]) {
-    [$op, , , $completion] = $sent('renew-proof-'.substr(md5($why), 0, 8).'-placeholder.com', $expiry, $shape);
+    $restoreAccepted(); $op->refresh(); $reply($expiry, $shape);
     $readUntilStopped($op, $completion, $why); $seen[$why] = $refused($op);
 }
 same(array_fill_keys(array_keys($seen), true), $seen, 'Not processed is refused and moves no money after a check saw proof: '.json_encode($seen));
