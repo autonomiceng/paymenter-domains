@@ -76,27 +76,22 @@ class RegistrarAnswers
     private static function requireUnrenewed(AttemptEvidence $attempt, Clock $clock, \DateTimeImmutable $deadline, RenewalProof $proof): void
     {
         $name = $attempt->query->name; $binding = $attempt->binding;
-        $ctx = null; $confirmed = false;
+        $ctx = null; $info = null; $expiryAnswered = false; $finishedInTime = false;
         try {
             $ctx = new RequestContext($binding, RequestOrigin::Interactive, $deadline, new RequestBudget(4), $clock, Runtime::limiter(), true);
             $ctx->observe($proof->saw(...));
             $reader = app(AccountBindings::class)->reader($binding->serverId);
             $reader->readRenewalDomain($name, $ctx);
             $info = $ctx->highestExpiry();
-            // Enom's dedicated expiry can lag or lead its info reply. Both must answer.
             $expiry = method_exists($reader, 'expiry') ? $reader->expiry($name, $ctx) : null;
-            $confirmed = $info !== null && $info->binding->matches($binding) && $info->name === $name
-                && ($binding->registrarKey !== 'enom' || $expiry?->status === 'success' && isset($expiry->facts()['expiry']))
-                && $clock->now() < $deadline;
+            $expiryAnswered = $binding->registrarKey !== 'enom' || ($expiry?->status === 'success' && isset($expiry->facts()['expiry']));
+            $finishedInTime = $clock->now() < $deadline;
         } catch (\PDOException $error) { throw $error; }
-        catch (\Throwable) { $confirmed = false; }
-        $seen = $ctx?->highestExpiry();
-        $matches = $seen !== null && $seen->binding->matches($binding) && $seen->name === $name;
-        $before = $attempt->beforeExpiry?->value;
-        if ($before !== null && $matches && substr($seen->expiry->value, 0, 10) > substr($before, 0, 10)) {
-            throw new \DomainException(self::LATER_EXPIRY);
-        }
-        if ($before === null || !$confirmed || !$matches) {
+        catch (\Throwable) { /* An earlier positive reply still rules out a return. */ }
+        $refusal = RenewalDecision::negativeRead($binding, $name, $attempt->beforeExpiry?->value,
+            $info, $ctx?->highestExpiry(), $expiryAnswered, $finishedInTime);
+        if ($refusal === 'advanced') { throw new \DomainException(self::LATER_EXPIRY); }
+        if ($refusal !== null) {
             throw new \DomainException('The registrar could not confirm the domain’s expiry just now, so this can’t be recorded as not processed yet. Try again later.');
         }
     }
@@ -118,8 +113,6 @@ class RegistrarAnswers
         $capture = FreshTransaction::run(static function () use ($seed, $review, $input, $now, $clock): ?array {
             [$op, $d, $attempt] = self::reviewedAnswer($seed, $review, $input, $now, admitting: true);
             $instant = $clock->now();
-            RenewalProof::promote($op, $instant);
-            // Commit retained evidence before refusing the answer.
             if (self::renewalProof($op, $d)) { return null; }
             if (RenewalProof::claimed($op)) { throw new \DomainException(self::READ_UNRESOLVED); }
             $deadline = $instant->modify('+30 seconds');

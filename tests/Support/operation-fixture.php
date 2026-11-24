@@ -39,6 +39,7 @@ $readyRegistration = ($fixtureReadyRegistration ?? false) && !($installedFixture
     && ($fixtureEnvironment ?? \Paymenter\Extensions\Servers\Domains\Data\Environment::Test) === \Paymenter\Extensions\Servers\Domains\Data\Environment::Test;
 if ($readyRegistration) { require_once __DIR__.'/ready-registration.php'; }
 $new = static function (string $name, bool $paid = true, bool $setup = true, string $action = 'register', int $term = 1) use ($user, $product, $native, $tlds, $clock, $transfers, $admission, $readyRegistration): Operation {
+    if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
     // Checkout belongs to this explicit module composition; later physical-send probes keep their Runtime.
     $runtime=app()->bound(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)?app(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class):null;
     app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);

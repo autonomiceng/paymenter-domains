@@ -31,5 +31,5 @@ assertion and unknown-version refusal. Its native guards retain legacy consent,
 server/environment isolation and the automatic SetRenew correction regression.
 
 Renewal compatibility: `a4b217b8` bill dates use `America/Denver` in the
-confirmation and lost-reply history phases. Native `renewal-send-failure-test.php`
+confirmation and lost-reply history phases. Native `paid-renewal-hook-test.php`
 retains safe failure metadata, staff visibility and no-replay assertions from main.

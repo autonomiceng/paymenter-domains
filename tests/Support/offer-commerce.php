@@ -31,6 +31,7 @@ function offerCommerceAsStaff(callable $body): mixed
 }
 function offerCommerceFixture(): array
 {
+    if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
     // One protected composition: every returned adapter and owner registration uses the installed staff rule.
     $installed = InstalledCommerceFixture::prepare();
     extract(offerCommerceAsStaff(static fn () => commerceFixture(true, active: true, authorize: offerCommerceAuthorize(), installed: $installed)));

@@ -74,11 +74,11 @@ final class ComplimentaryCosts
                 ||($op->attempt['seal']??'absent')!=='absent'||isset($op->attempt['execution'])||isset($op->cost['actual'])){throw new \DomainException('Current unsent registrar cost approval required.');}
             ComplimentaryAccounts::require($op->policy['account_complimentary'],(int)$l['domain']->user_id);
             DB::table('domains_complimentary_approvals')->insert(['operation_id'=>$id,'actor_id'=>$staff->id,'amount'=>$amount,'reason'=>$reason,'created_at'=>ComplimentaryAccounts::stamp($clock->now()),'time_zone'=>ComplimentaryAccounts::ZONE]);
-            $policy=$op->policy;unset($policy['renewal_admission']);
+            $policy=$op->policy;
             $policy['staff_actions']=[...($policy['staff_actions']??[]),['action'=>'release','phase'=>'completed','operation_key'=>$op->operation_key,
                 'generation'=>$op->authority_generation,'actor_id'=>$staff->id,'reason'=>$reason,'at'=>$clock->now()->format(DATE_ATOM),
                 'before'=>['state'=>'held','reason'=>'registrar_price_increased'],'after'=>['state'=>'queued','reason'=>null]]];
-            $op->update(['state'=>'queued','safe_code'=>null,'lease_expires_at'=>null,'policy'=>$policy]);
+            $op->update(['state'=>'queued','safe_code'=>null,'lease_expires_at'=>null,'renewal_admission_until'=>null,'policy'=>$policy]);
         });
     }
 }

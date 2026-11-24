@@ -30,7 +30,7 @@ final class StaffOperationWrites
     {
         self::requireRelease($op,$l,$now);
         $policy=$op->policy??[];
-        if($op->action==='renew'){unset($policy['renewal_admission'],$policy['renewal_execution']);}
+        if($op->action==='renew'){unset($policy['renewal_execution']);$op->renewal_admission_until=null;}
         $op->update(['state'=>'queued','safe_code'=>null,'policy'=>$policy]); // The normal engine must freshly admit; this grants no dispatch.
     }
     /** Read-only facts only; no locks, mutation, registrar exchange or spending grant. */

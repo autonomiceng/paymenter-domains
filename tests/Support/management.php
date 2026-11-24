@@ -57,6 +57,7 @@ $exchange=static function(string $origin,string $command,array $p,int $timeout)u
     return $xml($command,$body);
 };
 $holding=static function(string $name, ?\Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence $nameservers = null)use($prepare,$reconcile,$state,$exchange,$wrongDomain){
+    if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
     expect($name !== $wrongDomain, 'Wrong-domain response remains distinct from the holding');
     [$original,$binding]=$prepare($name, 'accepted', $nameservers);same('succeeded',$reconcile->run($original->id)->state,'Real uniquely completed registration anchor');$d=$original->domain()->firstOrFail();
     $state->name=$name;$state->locked=true;$state->dns=[];$state->srv=[];$state->ds=[];$state->glue=[];$state->contacts=[];$state->calls=[];$state->fault='';$state->afterWrite=null;$state->during=null;$state->apply=true;Cache::flush();

@@ -5,6 +5,7 @@ declare(strict_types=1);
 /** Reuse installation work only while the native fixture is still completely untouched. */
 function restoreCommerceDatabase(): bool
 {
+    if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
     $path=(string)getenv('PAYMENTER_TEST_COMMERCE_DATABASE');
     $baseline=$GLOBALS['nativeFixtureDatabase']??null;
     $connection=Illuminate\Support\Facades\DB::connection();$pdo=$connection->getPdo();
@@ -27,6 +28,7 @@ function restoreCommerceDatabase(): bool
     }
     Paymenter\Extensions\Servers\Domains\Services\Runtime::register();
     Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::reset();
+    if (class_exists(FixtureSetup::class, false)) { FixtureSetup::$restores++; }
     return true;
 }
 
@@ -39,6 +41,7 @@ final class InstalledCommerceFixture
 
     public static function prepare(): self
     {
+        if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
         if (!app()->bound(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)) {
             app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,
                 new Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z')));
@@ -49,6 +52,7 @@ final class InstalledCommerceFixture
         }
         if (!restoreCommerceDatabase()) {
             (new Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
+            if (class_exists(FixtureSetup::class, false)) { FixtureSetup::$fallbacks++; }
         }
         $pdo = Illuminate\Support\Facades\DB::connection()->getPdo();
         $schema = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite' ? (int) $pdo->query('PRAGMA schema_version')->fetchColumn() : null;
@@ -57,6 +61,7 @@ final class InstalledCommerceFixture
 
     public function consume(): void
     {
+        if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
         if ($this->consumed || Illuminate\Support\Facades\DB::connection()->getPdo() !== $this->pdo
             || $this->pdo->inTransaction() || ($this->schema !== null && $this->schema !== (int) $this->pdo->query('PRAGMA schema_version')->fetchColumn())) {
             throw new LogicException('Installed commerce fixture context is no longer valid.');

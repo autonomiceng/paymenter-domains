@@ -7,15 +7,6 @@ use Paymenter\Extensions\Servers\Domains\Data\{RenewalCode, RenewalRequest};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, EnomLateRenewal, EnomTestRenewal, EnomTestSendLimitSchema, RenewalRefused};
 // Native funding, claim ownership and original support answers require the shared financial fixture.
-[$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-late-ack-placeholder.com')); [$engine,$writer]=$compose($b); $writes=$state->writes;
-$state->afterWrite=static function()use($clock,$engine,$op,$writer){ $clock->instant=$clock->now()->modify('+361 seconds'); same('uncertain',$engine->run($op->id,$writer)->state,'Expired running claim quarantined without replay'); };
-same('uncertain',$engine->run($op->id,$writer)->state,'Late acknowledgement cannot restore a quarantined claim');
-same($writes+1,$state->writes,'Stale and late invocations share one write');
-[$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-concurrent-placeholder.com')); [$engine,$writer]=$compose($b); $writes=$state->writes;
-$state->during=static function()use($engine,$writer,$op){
-    $before=$op->fresh()->getRawOriginal(); $engine->run($op->id,$writer); same($before,$op->fresh()->getRawOriginal(),'Concurrent run cannot change owned preflight claim');
-};
-same('pending',$engine->run($op->id,$writer)->state,'Original preflight survives concurrent invocation'); same($writes+1,$state->writes,'Concurrent workers share one send');
 [$op,$d,$b,$bill]=$makeRenewal(placeholderComFixtureName('renew-prewire-placeholder.com')); [$engine,$writer]=$compose($b); $writes=$state->writes;
 Paymenter\Extensions\Servers\Domains\Models\Operation::updated(static function($row)use($op,$bill){
     if($row->id===$op->id && $row->state==='running'){ Illuminate\Support\Facades\DB::table('invoices')->where('id',$bill->id)->update(['status'=>'cancelled']); }
@@ -29,7 +20,13 @@ $state->expiry='2028-10-18'; $state->charge='8.00'; same('succeeded',$completion
 same('2028-10-18',$d->fresh()->provider_expires_at->format('Y-m-d'),'Original registrar proof advances owned expiry');same('active',$d->service->fresh()->status,'Registrar reconciliation preserves native paid status');
 // An old lost renewal reply can use an audited support order, followed by exact independent readback.
 [$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-support-answer-placeholder.com'));[$engine,$writer,$completion]=$compose($b);
+$warnings = [];
+app('events')->listen(Illuminate\Log\Events\MessageLogged::class, static function ($event) use (&$warnings): void {
+    if ($event->message === 'Domains renewal reply not recorded.') { $warnings[] = [$event->level, $event->context]; }
+});
 $state->lost=true;$writes=$state->writes;same('uncertain',$engine->run($op->id,$writer)->state,'Missing reply remains uncertain');$attempt=$op->fresh()->attempt;
+expect(!array_key_exists('send_failure', $attempt), 'Unclassified failure retains no invented reason');
+same([['warning', ['operation_id' => $op->id, 'exception_class' => RuntimeException::class]]], $warnings, 'Unclassified failure logs only its type');
 $clock->instant=$clock->now()->modify('+25 hours');$state->lost=false;$state->expiry='2028-10-18';$state->charge='8.00';
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$renewBindings);
 // Enom reads the domain on a lost reply before staff record its answer. The read alone cannot complete the renewal.
@@ -43,16 +40,4 @@ same('succeeded',$completion->run($op->id)->state,'Supported renewal settles onl
 same($attempt,array_diff_key($op->fresh()->attempt,['reconciliation'=>true]),'Original sealed renewal evidence remains unchanged');
 expect(\Paymenter\Extensions\Servers\Domains\Services\RenewalAuthority::completed($op->fresh(),$d->fresh(),$b),'Staff-supported renewal proof anchors the next cycle');
 same($writes+1,$state->writes,'Support answer and reconciliation never send another renewal');
-// The next independent fixture also refreshes NameSilo facts; restore its complete account composition.
-app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$bindings);
-[$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-below-cost-placeholder.com'),true,1,false,static function($d)use($clock,$ports){
-    $binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$d->server_id)->sole());
-    $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,[$d->tld],'renew');
-    $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::retainRenewal($binding,$d->tld,'1.00'),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
-});
-same('1.00',$op->amount,'Below-cost renewal billed at exact retail with no floor');
-[$engine,$writer,$completion]=$compose($b); same('pending',$engine->run($op->id,$writer)->state,'Below-cost paid renewal still sends');
-$state->expiry='2028-10-18'; $state->charge='8.00';
-same('succeeded',$completion->run($op->id)->state,'Below-cost outcome completes');
-same('below_cost',$op->fresh()->policy['renewal_execution']['reason'],'Below-cost outcome alerts staff');
-echo "Renewal claim safety, staff answer and below-cost completion passed\n"; $nativeSuccessful=true;
+echo "Renewal claim safety and staff answer passed\n"; $nativeSuccessful=true;

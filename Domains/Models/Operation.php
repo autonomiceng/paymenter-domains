@@ -15,8 +15,8 @@ class Operation extends Model
 
     protected $table = 'domains_operations';
     protected $guarded = [];
-    protected $hidden = ['account_fingerprint', 'payload', 'policy', 'cost', 'attempt', 'funding', 'funding_reason', 'authorized_by', 'request_fingerprint', 'management_pending'];
-    protected $casts = ['retry_number'=>'integer', 'attempt' => 'encrypted:array', 'funding' => 'encrypted:array', 'authority_generation' => 'integer', 'payload' => 'encrypted:array', 'policy' => 'encrypted:array', 'cost' => 'encrypted:array', 'amount' => 'decimal:2', 'base_expires_at' => 'immutable_date', 'expected_expires_at' => 'immutable_date', 'confirmed_expires_at' => 'immutable_date', 'lease_expires_at' => 'immutable_datetime', 'started_at' => 'immutable_datetime', 'completed_at' => 'immutable_datetime'];
+    protected $hidden = ['account_fingerprint', 'payload', 'policy', 'cost', 'attempt', 'renewal_reserved_revision', 'renewal_previous_proof', 'renewal_proof', 'renewal_check', 'renewal_admission_until', 'transition_revision', 'funding', 'funding_reason', 'authorized_by', 'request_fingerprint', 'management_pending'];
+    protected $casts = ['transition_revision' => 'integer', 'renewal_reserved_revision' => 'integer', 'renewal_proof' => 'encrypted:array', 'renewal_check' => 'encrypted:array', 'renewal_admission_until' => 'immutable_datetime', 'retry_number'=>'integer', 'attempt' => 'encrypted:array', 'funding' => 'encrypted:array', 'authority_generation' => 'integer', 'payload' => 'encrypted:array', 'policy' => 'encrypted:array', 'cost' => 'encrypted:array', 'amount' => 'decimal:2', 'base_expires_at' => 'immutable_date', 'expected_expires_at' => 'immutable_date', 'confirmed_expires_at' => 'immutable_date', 'lease_expires_at' => 'immutable_datetime', 'started_at' => 'immutable_datetime', 'completed_at' => 'immutable_datetime'];
 
     protected static function booted(): void
     {
@@ -29,16 +29,33 @@ class Operation extends Model
             if(array_key_exists('management_unsent',$operation->attempt??[])){throw new \DomainException('Unsent management proof requires a live dispatched operation.');}
         });
         static::updating(static function (self $operation): void {
-            if ($operation->isDirty(['id', 'domain_id', 'service_id', 'server_id', 'registrar_key', 'account_fingerprint', 'authority_generation', 'action', 'term', 'currency', 'amount', 'invoice_id', 'invoice_item_id', 'operation_key', 'funding_basis', 'authorized_by', 'funding_reason', 'retry_number'])) {
+            $dirty = array_keys($operation->getDirty());
+            if ($operation->action === 'renew') {
+                $next = (int) $operation->getOriginal('transition_revision') + 1;
+                $newReply = in_array('attempt', $dirty, true) && array_key_exists('execution', $operation->attempt ?? [])
+                    && !array_key_exists('execution', $operation->getOriginal('attempt') ?? []);
+                if ($newReply || array_intersect($dirty, ['state', 'renewal_admission_until'])) {
+                    $operation->transition_revision = $next;
+                } elseif (in_array('transition_revision', $dirty, true) && $operation->transition_revision !== $next) {
+                    throw new \DomainException('Renewal revision must advance by one.');
+                }
+            }
+            if ($operation->getRawOriginal('renewal_proof') !== null && in_array('renewal_proof', $dirty, true)) {
+                throw new \DomainException('Renewal proof is retained.');
+            }
+            if (in_array('renewal_reserved_revision', $dirty, true)
+                && ($operation->getRawOriginal('renewal_reserved_revision') !== null || $operation->action !== 'renew'
+                    || $operation->funding_basis !== 'paid_invoice' || $operation->state !== 'running'
+                    || $operation->renewal_reserved_revision !== $operation->transition_revision)) {
+                throw new \DomainException('Renewal reservation is immutable.');
+            }
+            if (array_intersect($dirty, ['id', 'domain_id', 'service_id', 'server_id', 'registrar_key', 'account_fingerprint', 'authority_generation', 'action', 'term', 'currency', 'amount', 'invoice_id', 'invoice_item_id', 'operation_key', 'funding_basis', 'authorized_by', 'funding_reason', 'retry_number', 'renewal_previous_proof'])) {
                 throw new \DomainException('Operation binding and action are immutable.');
             }
         });
         static::updating(static function (self $operation): void {
             \Paymenter\Extensions\Servers\Domains\Services\EnomAnswers::guard($operation);
             $old = $operation->getOriginal('policy') ?? []; $new = $operation->policy ?? [];
-            if(isset($old['unsent_retry'])){
-                foreach($old['unsent_retry'] as $key=>$value){if(($new['unsent_retry'][$key]??null)!==$value){throw new \DomainException('Renewal retry identity is retained.');}}
-            }
             if (isset($old['renewal']) && $operation->isDirty(['base_expires_at', 'expected_expires_at'])) {
                 throw new \DomainException('Issued renewal expiry obligations are frozen.');
             }
@@ -70,11 +87,6 @@ class Operation extends Model
             }
             if(array_key_exists('renewal_replacement',$before)&&($after['renewal_replacement']??null)!==$before['renewal_replacement']){
                 throw new \DomainException('Renewal replacement review is retained.');
-            }
-            // Saved renewal proof for the current attempt only ever stays (RenewalProof).
-            if(is_string($before['renewal_proof']['identity']??null)&&($after['renewal_proof']??null)!==$before['renewal_proof']
-                &&hash_equals(\Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers::identity($operation),$before['renewal_proof']['identity'])){
-                throw new \DomainException('Renewal proof is retained.');
             }
             $history = $before['reconciliation_resumptions'] ?? []; $next = $after['reconciliation_resumptions'] ?? [];
             if (!is_array($history) || !is_array($next) || !array_is_list($next) || count($next) > 20
@@ -150,7 +162,11 @@ class Operation extends Model
                     &&!array_intersect(array_keys($old),['execution','evidence','charge','order_candidates','provider_reference','registration','corrections','reconciliation','terminal']);
             }
             $balanceCap=\Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::capReset($operation);
-            $safeAttemptReset=$safeCapReset||$safeTestRetry||$balanceCap;
+            $reservedRenewal = $operation->getRawOriginal('renewal_reserved_revision') !== null;
+            $safeAttemptReset = !$reservedRenewal && ($safeCapReset || $safeTestRetry || $balanceCap);
+            if ($reservedRenewal && ($new['send_state'] ?? null) !== ($old['send_state'] ?? null)) {
+                throw new \DomainException('Reserved renewal send state is immutable.');
+            }
             \Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::guard($operation,$balanceCap);
             if($newRefusals!==$oldRefusals&&!$safeCapReset) { throw new \DomainException('TEST call refusal history requires a proven-unsent cap reset.'); }
             if (!array_key_exists('registration_admission', $old) && array_key_exists('registration_admission', $new)

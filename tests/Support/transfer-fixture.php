@@ -70,6 +70,7 @@ $historicalTransfer = static function(string $name,int $i)use($user,$native,$pri
 };
 $startsWithRetainedTransfer = $fixtureRetainedTransfer ?? false;
 $newTransfer = static function ($name, int $i=0, bool $paid=true, bool $code=true) use ($user,$native,$sellers,$tlds,$clock,$inputs,$state,$historicalTransfer,$startsWithRetainedTransfer): Operation {
+    if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
     $policy = DB::table('domains_sales_policies')->where('tld','com')->first();
     if ((int) $policy->server_id !== $tlds[$i]->server_id) { activeFixtureSeller($sellers,'com',$policy->revision,$tlds[$i]->server_id,true,true,$clock->now()); }
     if($startsWithRetainedTransfer||Account::where('server_id',$tlds[$i]->server_id)->sole()->environment==='live'){$op=$historicalTransfer($name,$i);}

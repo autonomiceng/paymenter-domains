@@ -55,9 +55,9 @@ $set(['funding'=>[...($op->fresh()->funding??[]),'refund'=>['amount'=>$op->amoun
 $restore();$d->service->update(['status'=>'cancelled']);$refuse('cancelled lifecycle');DB::table('services')->where('id',$op->service_id)->update(['status'=>'active']);
 $restore();$cancel=App\Models\ServiceCancellation::create(['service_id'=>$op->service_id,'type'=>'immediate','reason'=>'Synthetic renewal stop']);$refuse('immediate cancellation');$cancel->delete();
 $restore();
-$set(['policy'=>[...$op->fresh()->policy,'renewal_admission'=>['key'=>str_repeat('b',32),'until'=>$clock->now()->modify('+360 seconds')->format(DATE_ATOM)]]]);
+$set(['renewal_admission_until'=>$clock->now()->modify('+360 seconds')]);
 $release($op);same('queued',$op->fresh()->state,'Staff release queues existing paid obligation');
-expect(!isset($op->fresh()->policy['renewal_admission']),'Release removes retained admission claim');
+expect($op->fresh()->renewal_admission_until === null,'Release removes retained admission claim');
 expect(!isset($op->fresh()->policy['renewal_execution']),'Release removes stale hold guidance and alert flags');
 expect(!isset(Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::for($op->fresh())['admission']),'Queued request has no held-release instruction');
 same(0,$state->writes,'Staff release grants no send');

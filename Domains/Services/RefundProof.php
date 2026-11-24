@@ -12,7 +12,7 @@ final class RefundProof
         if(TransferRejections::proved($op,$d)||RegistrationRefusals::proved($op,$d)){return;}
         self::requireUnsent($op,$d);
     }
-    public static function requireUnsent(Operation $op, Domain $d): void
+    public static function requireUnsent(Operation $op, Domain $d, ?RenewalFundingLedger $ledger = null): void
     {
         $a = $op->attempt ?? []; $f = FinancialAdjustments::registrarFunding($op); $c = $op->cost ?? []; $closed = $op->safe_code === UnpaidAcquisitionProof::CODE;
         $lateCredits = $op->funding_basis !== 'complimentary' && ($op->action === 'renew' || $closed);
@@ -51,12 +51,16 @@ final class RefundProof
         if(isset($a['capacity_deferrals'])&&(!is_array($a['capacity_deferrals'])||!array_is_list($a['capacity_deferrals'])||count($a['capacity_deferrals'])>6||array_filter($a['capacity_deferrals'],fn($v)=>!is_string($v)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/D',$v)))){throw new \DomainException('Unknown capacity deferral.');}
         if (array_diff(array_keys($a), $allowed)) { throw new \DomainException('Unresolved attempt facts prevent refund.'); }
         if ($sealed) {
+            $funded = $op->action === 'renew' && $op->funding_basis === 'paid_invoice'
+                ? $op->renewal_reserved_revision !== null && $op->renewal_proof === null && !array_key_exists('claim', $f)
+                    && !array_key_exists('seal', $f) && RenewalFundingLedger::funded($op, $ledger)
+                : isset($f['claim'], $f['seal']) && $f['claim'] === $f['seal'];
             // Slice25 commits possibly_sent at seal; ONLY its exact typed local prewire result can override it.
             if (!in_array($op->safe_code, [$acquisition?'acquisition_definitely_unsent':'renewal_definitely_unsent', 'refund_approved'], true) || (!$acquisition&&$op->action !== 'renew') || ($a['send_state'] ?? null) !== 'possibly_sent'
                 || ($a['execution'] ?? null) !== ['disposition' => 'rejected', 'send_state' => 'definitely_unsent', 'reason' => 'unsent', 'discrepancies' => []]
                 || !is_string($a['claim_key'] ?? null) || !preg_match('/^[a-f0-9]{32}$/D', $a['claim_key'])
                 || !$op->started_at || !$op->request_fingerprint || !isset($a['dispatch_attempted_at'], $a['authorized_cost'])
-                || ($acquisition?!isset($a[$op->action==='transfer'?'transfer_admission':'registration_admission']):!in_array($a['renewal_mode']??null, ['ordinary', 'grace'], true)) || !isset($f['claim'], $f['seal']) || $f['claim'] !== $f['seal']) {
+                || ($acquisition?!isset($a[$op->action==='transfer'?'transfer_admission':'registration_admission']):!in_array($a['renewal_mode']??null, ['ordinary', 'grace'], true)) || !$funded) {
                 throw new \DomainException('Sealed attempt is not proven prewire refusal.');
             }
         } elseif (($a['seal'] ?? null) !== 'absent' || ($a['send_state'] ?? null) !== 'definitely_unsent'

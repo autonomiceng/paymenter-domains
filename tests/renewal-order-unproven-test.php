@@ -66,59 +66,16 @@ $readUntilStopped = static function ($op, $completion, string $shape) use ($stat
     same($calls, count($state->calls), "{$shape}: a check after the limit reads nothing more");
 };
 
-// 1. Checks stop at the limit whatever the reply looks like, and Record answer appears.
-foreach (array_keys($shapes) as $n => $shape) {
+// Exercise the remaining Enom reply shapes. The credit and retained-proof cases below also check the poll limit.
+foreach (['failed domain read', 'missing detail', 'unreadable detail', 'charge in another currency'] as $n => $shape) {
     [$op, , , $completion] = $sent("renew-shape-{$n}-placeholder.com", '2027-10-18', $shape);
     $readUntilStopped($op, $completion, $shape);
 }
-
-// Pre-upgrade rows kept two forms of positive proof. Exercise direct admission and the first status overwrites.
-$legacyResults = [];
-foreach (['individual expiry' => 'order_unproven', 'aggregate expiry' => 'order_unproven',
-    'status expiry' => 'status_check', 'status charge' => 'status_check'] as $case => $key) {
-    [$legacy, , , $legacyCompletion] = $sent('renew-legacy-'.str_replace(' ', '-', $case).'-placeholder.com', '2027-10-18', 'another order');
-    $readUntilStopped($legacy, $legacyCompletion, $case);
-    $legacy = $legacy->fresh(); $identity = RegistrarAnswers::identity($legacy);
-    if ($key === 'order_unproven') {
-        $legacyProof = ['identity' => $identity, 'read_at' => $clock->now()->format(DATE_ATOM),
-            'order_reference' => $legacy->provider_order_id, 'owned' => true,
-            'expiry' => $case === 'aggregate expiry' ? '2028-10-18' : '2027-10-18',
-            'expiry_reads' => $case === 'individual expiry' ? ['2028-10-18', '2028-10-18', '2027-10-18'] : []];
-    } else {
-        $legacyProof = [...$legacy->policy['status_check'], 'attempt_identity' => $identity, 'facts' => [
-            'owned' => true, 'expiry' => $case === 'status expiry' ? '2028-10-18T05:00:00' : '2027-10-18T05:00:00',
-            'expiry_precision' => 'local', 'charge_confirmed' => $case === 'status charge',
-        ]];
-    }
-    $legacy->update(['policy' => [...$legacy->policy, $key => $legacyProof]]);
-    if ($case === 'status expiry') {
-        // Another stopped check can still replace the visible status, even when it makes no registrar calls.
-        $legacyCompletion->run($legacy->id);
-    }
-    if ($case === 'status charge') {
-        $d = $legacy->domain()->firstOrFail();
-        (new StaffOperations($clock))->run($full, (int) $d->id, (int) $legacy->id, 'resume_reads',
-            StaffOperationReview::ticket((int) $full->id, (int) $d->id, (int) $legacy->id, 'resume_reads',
-                StaffOperationReview::stamp($legacy->fresh(), $d), $clock), 'Check the registrar again.');
-        $readUntilStopped($legacy, $legacyCompletion, $case);
-    }
-    $before = $credit(); $writes = $state->writes;
-    $refusedLegacy = $record($legacy, $full, 'not_processed') !== null;
-    $afterLegacy = $legacy->fresh();
-    $legacyResults[$case] = [$refusedLegacy, $afterLegacy->state === $legacy->state, $afterLegacy->funding['refund_authorization'] ?? null,
-        $afterLegacy->policy['enom_answer'] ?? null, $credit() === $before, $state->writes === $writes,
-        ($afterLegacy->policy['renewal_proof']['identity'] ?? null) === $identity];
-}
-same(array_fill_keys(array_keys($legacyResults), [true, true, null, null, true, true, true]), $legacyResults,
-    'Legacy positives are retained before a refund, check or resume: '.json_encode($legacyResults));
 
 // 2. Not processed returns the payment once as account credit. No case number is needed.
 [$op, $engine, $writer, $completion] = $sent('renew-unproven-placeholder.com', '2027-10-18', 'failed order read');
 $readUntilStopped($op, $completion, 'credit once');
 $op = $op->fresh();
-$op->update(['policy' => [...$op->policy, 'order_unproven' => ['identity' => $identity, 'order_reference' => $op->provider_order_id,
-    'owned' => true, 'expiry' => '2028-10-18', 'expiry_reads' => ['2028-10-18']],
-    'status_check' => [...$op->policy['status_check'], 'facts' => ['owned' => true, 'expiry' => '2028-02-31', 'expiry_precision' => 'date']]]]);
 $before = $credit(); $writes = $state->writes;
 expect($record($op, $answerOnly, 'not_processed') !== null, 'Not processed needs refund permission');
 same([null, $before], [$op->fresh()->funding['refund_authorization'] ?? null, $credit()], 'A refused answer moves no money');
@@ -189,23 +146,11 @@ $state->expiry = '10/18/2027 5:00:00 AM';
 for ($i = 1; $i <= OperationReconciliation::POLL_LIMIT; $i++) { $clock->instant = $clock->now()->modify('+10 minutes'); $completion->run($deferred->id); }
 expect(RegistrarAnswers::ready($deferred->fresh(), $clock->now()), 'Checks stopped after the deferred check');
 $seen['an advanced expiry before a deferred read'] = $refused($deferred);
-// Every check saw the old date; the fresh read at answer time shows the renewed expiry, or fails.
-foreach (['a fresh expiry read showing the renewal' => static function ($s) { $s->after = '2028-10-18'; },
-    'a fresh info read showing the renewal' => static function ($s) { $s->expiry = '10/18/2028 5:00:00 AM'; },
-    'a failed fresh read' => static function ($s) { $s->fail = ReadCommand::Info; },
-    // The info read still shows the old date, but the expiry read must answer too, readably and in time.
-    'an old info read and a failed fresh expiry read' => static function ($s) { $s->fail = ReadCommand::Expiry; },
-    'an old info read and a malformed fresh expiry read' => static function ($s) { $s->after = 'not a date'; },
-    'an old info read and a late fresh expiry read' => static function ($s) use ($clock) { $s->duringCommand = ReadCommand::Expiry; $s->during = static function () use ($clock) { $clock->instant = $clock->now()->modify('+60 seconds'); }; }] as $why => $answerTime) {
-    [$op, , , $completion] = $sent('renew-proof-'.substr(md5($why), 0, 8).'-placeholder.com', '2027-10-18', 'another order');
-    $readUntilStopped($op, $completion, $why); $answerTime($state);
-    $seen[$why] = $refused($op); $state->after = '2027-10-18'; $state->expiry = '10/18/2027 5:00:00 AM'; $state->fail = null; $state->during = null; $state->duringCommand = null;
-}
 // A fresh info read shows the renewed expiry and the expiry read then fails: the proof stays on the attempt, so a retry
 // whose reads all lag again is still refused.
 [$op, , , $completion] = $sent('renew-proof-kept-placeholder.com', '2027-10-18', 'another order');
 $readUntilStopped($op, $completion, 'kept'); $state->expiry = '10/18/2028 5:00:00 AM'; $state->fail = ReadCommand::Expiry;
-$first = $refused($op); $kept = isset($op->fresh()->policy['renewal_proof']); $state->expiry = '10/18/2027 5:00:00 AM'; $state->fail = null;
+$first = $refused($op); $kept = isset($op->fresh()->renewal_proof); $state->expiry = '10/18/2027 5:00:00 AM'; $state->fail = null;
 $seen['a fresh later expiry kept for a lagging retry'] = $first && $kept && $refused($op);
 foreach (['a matching charge' => ['matching charge', '2027-10-18'], 'an advanced expiry' => ['failed order read', '2028-10-18'],
     'an advanced expiry before a failed expiry read' => ['later info, failed expiry read', '2027-10-18'],

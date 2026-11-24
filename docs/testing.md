@@ -1,5 +1,7 @@
 # Verification
 
+Set `DOMAINS_TEST_FIXTURE_COSTS=1` to record fixture setup CPU and database preparation counts for native PHP commands in the suite receipt.
+
 ## Explicit offline pricing filter check
 
 Using the pinned native environment and existing Playwright setup below, render real Blade and run Chromium:

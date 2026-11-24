@@ -19,7 +19,8 @@ function curl_exec($h): bool {
         $op=Operation::findOrFail($GLOBALS['nsOperation']);same('sealed',$op->attempt['seal'],'Durable engine seal precedes physical send');
         expect(isset($op->attempt['dispatch_attempted_at']),'Dispatch marker precedes physical send');
         same(false,$GLOBALS['nsTransport']->reservation->unconsumed((int)$op->id),'Exact grant consumed at physical handoff');
-        if($op->funding_basis==='paid_invoice'){expect(isset($op->funding['seal']),'Native funding sealed before paid send');}
+        if($op->funding_basis==='paid_invoice'){$funded = $op->action === 'renew' ? \Paymenter\Extensions\Servers\Domains\Services\RenewalFundingLedger::funded($op) : isset($op->funding['seal']);
+            expect($funded,'Native funding sealed before paid send');}
         same('https://www.namesilo.com/apibatch/'.$cmd,strtok($url,'?'),'Fixed Live batch mutation route');
     }
     $body=($GLOBALS['nsReply'])($cmd,$p);

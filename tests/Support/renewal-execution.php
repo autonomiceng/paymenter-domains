@@ -53,6 +53,7 @@ $observeRenewalCost=static function($binding)use($ports,$clock):void{
         $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',[$cost]),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
 };
 $acquireRenewalHolding = static function (string $name) use ($prepare, $reconcile): array {
+    if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
     [$original, $binding] = $prepare($name);
     $original = $reconcile->run($original->id);
     same('succeeded', $original->state, 'Real original charge and expiry anchor');

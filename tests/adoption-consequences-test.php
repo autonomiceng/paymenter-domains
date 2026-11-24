@@ -107,7 +107,12 @@ $op = Operation::create(['domain_id' => $d->id, 'service_id' => $d->service_id, 
 $l = DB::transaction(fn () => HoldingLocks::take($d));
 $counterfactual = $l; $counterfactual['adoption'] = clone $a; $counterfactual['adoption']->do_not_renew = false; $counterfactual['cancel'] = collect();
 expect(RenewalFunding::requireCurrent($op, $counterfactual)['basis'] === 'paid_invoice', 'Funded fixture has no independent funding refusal masking DNR');
-$refuse(fn () => RenewalFunding::requireCurrent($op, $l), 'Funded issued execution respects DNR');
+try {
+    RenewalFunding::requireCurrent($op, $l);
+    throw new LogicException('Funded issued execution admitted a stopped renewal');
+} catch (DomainException $stop) {
+    $stopReason = $stop->getMessage();
+}
 $refuse(fn () => RenewalFunding::requireAuthority($op, $l), 'Issued funding authority respects original DNR');
 $refuse(fn () => (new RenewalAuthority($bindings, $clock,offers: $GLOBALS['caps']??null))->capture(new RenewalRequest($d->id, $d->authority_generation, $d->confirmed_revision, $d->provider_expires_at->format('Y-m-d'), $d->provider_domain_id, 1, $op->operation_key)), 'Issued admission respects original DNR');
 $dispatch = new RuntimeDispatch($clock); same(false, $dispatch->current($op), 'Installed renewal dispatch entry suppresses DNR');
@@ -129,8 +134,15 @@ $descriptor = new \Paymenter\Extensions\Servers\Domains\Data\AdmittedOperation($
     new \Paymenter\Extensions\Servers\Domains\Data\DateEvidence($d->provider_expires_at->format('Y-m-d'), \Paymenter\Extensions\Servers\Domains\Data\ExpiryPrecision::Date, 'renewal_base'));
 $ctx = new \Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding, \Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background,
     $clock->now()->modify('+60 seconds'), new \Paymenter\Extensions\Servers\Domains\Data\RequestBudget(1), $clock);
-$grantMap = (new ReflectionProperty($engine, 'grants'))->getValue($engine); $grantMap[$descriptor] = [$ctx, $l['stamp'], $op->id, 'ordinary', $writer];
-$refuse(fn () => $engine->consume($descriptor, $ctx, $writer), 'Last local consume boundary refuses DNR even with injected live grant');
+$grantMap = (new ReflectionProperty($engine, 'grants'))->getValue($engine);
+$grantMap[$descriptor] = ['context' => $ctx, 'stamp' => $l['stamp'], 'id' => $op->id,
+    'revision' => $op->fresh()->transition_revision, 'mode' => 'ordinary', 'writer' => $writer];
+try {
+    $engine->consume($descriptor, $ctx, $writer);
+    throw new LogicException('Last local consume boundary admitted a stopped renewal');
+} catch (\Paymenter\Extensions\Servers\Domains\Services\RenewalUnsent $refusal) {
+    expect($refusal->getPrevious()?->getMessage() === $stopReason, 'Final consume preserves the funding authority refusal');
+}
 same(0, $writes, 'Final consume never reaches writer');
 // Sent original attempts still need outcome reconciliation; no second execution is authorized.
 foreach (['pending', 'uncertain', 'running'] as $sentState) {

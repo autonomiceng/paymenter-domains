@@ -50,19 +50,19 @@ $before = $credit(); $writes = $state->writes; $priorState = $op->fresh()->state
 $calls = count($state->calls);
 $unauthorized = $record($op, $reviewFor($op, $answerOnly));
 $stale = $record($op, identity: str_repeat('0', 64));
-$invalidSubmissions = [$unauthorized, $stale, count($state->calls) - $calls, $op->fresh()->policy['renewal_check'] ?? null];
+$invalidSubmissions = [$unauthorized, $stale, count($state->calls) - $calls, $op->fresh()->renewal_check ?? null];
 
 $review = $reviewFor($op, $staff);
 $state->fail = ReadCommand::Info;
 expect($record($op, $review), 'A read failure without any positive proof refuses the answer');
-$afterHarmlessFailure = $op->fresh()->policy['renewal_check'] ?? null;
+$afterHarmlessFailure = $op->fresh()->renewal_check ?? null;
 $state->fail = null; $state->after = '2028-10-18';
 Cache::flush();
 expect($record($op, $review), 'Retrying the same review now sees the advanced expiry and refuses the answer');
-$proof = $op->fresh()->policy['renewal_proof'] ?? null;
+$proof = $op->fresh()->renewal_proof ?? null;
 $state->after = '2027-10-18';
-$refused = $record($op); $fresh = $op->fresh(); $kept = $fresh->policy['renewal_proof'] ?? null;
-$afterSavedProof = $fresh->policy['renewal_check'] ?? null;
+$refused = $record($op); $fresh = $op->fresh(); $kept = $fresh->renewal_proof ?? null;
+$afterSavedProof = $fresh->renewal_check ?? null;
 $actual = [$credit() - $before, $fresh->state, $fresh->funding['refund_authorization'] ?? null,
     $fresh->policy['enom_answer'] ?? null, $refused, is_array($proof) && $kept === $proof && ($kept['identity'] ?? null) === RegistrarAnswers::identity($fresh), $state->writes - $writes];
 same([0, $priorState, null, null, true, true, 0], $actual,
@@ -86,7 +86,7 @@ $state->duringCommand = ReadCommand::Expiry;
 $state->during = static function () use (&$remaining): void { $remaining = 6; };
 Cache::flush();
 expect($record($op), 'The fresh advanced expiry refuses the answer even when its proof cannot be saved');
-same([6, 0, null], [$conflicts, $remaining, $op->fresh()->policy['renewal_proof'] ?? null],
+same([6, 0, null], [$conflicts, $remaining, $op->fresh()->renewal_proof ?? null],
     'All six proof writes met operation-lock timeouts and no proof was saved');
 
 $state->after = '2027-10-18';
@@ -108,7 +108,7 @@ $op = $stoppedRenewal('answer-retry-placeholder.com');
 $review = $reviewFor($op, $staff); $before = $credit(); $writes = $state->writes;
 $state->fail = ReadCommand::Expiry; Cache::flush();
 expect($record($op, $review), 'The failed expiry read refuses credit');
-same([null, null, 0], [$op->fresh()->policy['renewal_check'] ?? null, $op->fresh()->policy['enom_answer'] ?? null, $credit() - $before],
+same([null, null, 0], [$op->fresh()->renewal_check ?? null, $op->fresh()->policy['enom_answer'] ?? null, $credit() - $before],
     'The failed read releases its claim and moves no money');
 $state->fail = null; Cache::flush();
 expect(!$record($op, $review), 'A healthy read permits staff to retry with the same review');
@@ -121,14 +121,14 @@ $op = $stoppedRenewal('answer-superseded-placeholder.com');
 $before = $credit(); $writes = $state->writes; $successor = null;
 $state->duringCommand = ReadCommand::Expiry;
 $state->during = static function () use ($op, &$successor): void {
-    $current = $op->fresh(); $claim = $current->policy['renewal_check'] ?? null;
+    $current = $op->fresh(); $claim = $current->renewal_check ?? null;
     if ($claim === null) { return; }
     $successor = [...$claim, 'token' => str_repeat('a', 32), 'unresolved' => true];
-    $current->update(['policy' => [...$current->policy, 'renewal_check' => $successor]]);
+    $current->update(['renewal_check' => $successor]);
 };
 Cache::flush();
 $refused = $record($op); $fresh = $op->fresh();
-same([true, true, null, 0, 0], [$refused, $successor !== null && ($fresh->policy['renewal_check'] ?? null) === $successor,
+same([true, true, null, 0, 0], [$refused, $successor !== null && ($fresh->renewal_check ?? null) === $successor,
     $fresh->policy['enom_answer'] ?? null, $credit() - $before, $state->writes - $writes],
     'The stale worker cannot authorize credit or clear the replacement claim');
 $nativeSuccessful = true;

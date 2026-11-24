@@ -59,6 +59,7 @@ $registry->register('enom', ['token'], $verify, fn ($binding, $c) => new Driver(
 $readBindings = new AccountBindings($registry); $reconcile = new OperationReconciliation($claims, $readBindings, $clock);
 $caps??=null;$ports??=null;
 $prepare = static function (string $name, string $mode = 'accepted', ?\Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence $nameservers = null) use ($new, $claims, $preflight, $clock, $observation,$caps,$ports) {
+    if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
     $clock->instant = new DateTimeImmutable('2026-10-18T12:00:00Z');
     if($caps!==null){activeCommerceFacts($clock->now(),$clock->now()->modify('+1 day'),$ports);}
     $op = $new($name); [$claimed, $domain, $binding] = $claims->claim($op->id);

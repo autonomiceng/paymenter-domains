@@ -17,7 +17,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier,Clock};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Capabilities,Disposition,DriverResult,Environment,Evidence,Money,RequestBudget,RequestContext,RequestOrigin,ResultReason,SendState};
 use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation,Price};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, BalanceForecast, BalanceReads, BalanceSchema, ObservationSchema, RegistrarBalances, RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, BalanceForecast, BalanceReads, BalanceSchema, ObservationSchema, RegistrarBalances, RegistrarRegistry, RenewalFundingLedger};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 extract(commerceFixture(true));
 // Account enrollment needs a reviewer during setup; this matrix creates its own two alert recipients below.
@@ -40,10 +40,20 @@ $make=static function(string $name,?string $expiry='2026-11-20',?Account $accoun
 };
 $renew=static function(Domain $d,string $state='awaiting_payment',array $extra=[])use($user):Operation {
     $invoice=Invoice::create(['user_id'=>$user->id,'status'=>'pending','currency_code'=>'USD','due_at'=>'2027-05-01']);
-    return Operation::create([...$d->only(['server_id','registrar_key','account_fingerprint','service_id','authority_generation']),
+    if (isset($extra['renewal_reserved_revision'])) {
+        $line = $invoice->items()->create(['description' => 'Renewal', 'quantity' => 1, 'price' => '10.00']);
+        \App\Helpers\ExtensionHelper::addPayment($invoice, null, '10.00');
+        $payment = $invoice->transactions()->sole();
+        $extra['invoice_item_id'] = $line->id;
+    }
+    $op = Operation::create([...$d->only(['server_id','registrar_key','account_fingerprint','service_id','authority_generation']),
         'domain_id'=>$d->id,'operation_key'=>'balance-renew-'.$d->id,'action'=>'renew','term'=>1,'currency'=>'USD','amount'=>'10.00',
         'invoice_id'=>$invoice->id,'funding_basis'=>'paid_invoice','state'=>$state,'base_expires_at'=>$d->provider_expires_at,
         'payload'=>[],'policy'=>[],'attempt'=>[],'funding'=>[],...$extra]);
+    if (isset($line)) {
+        RenewalFundingLedger::reserve($op->refresh(), ['item' => [$line->id => 1000], 'payment' => [$payment->id => 1000]]);
+    }
+    return $op;
 };
 $d=$make(placeholderComFixtureName('balance-window-placeholder.com'));
 same('8.000000',$forecast()['total'],'Paymenter due in 26 days counts despite expiry in 33');
@@ -189,8 +199,9 @@ $proof=['safe_code'=>'renewal_definitely_unsent','lease_expires_at'=>null,'start
     'attempt'=>['claim_key'=>str_repeat('b',32),'seal'=>'sealed','dispatch_attempted_at'=>$clock->now()->format(DATE_ATOM),
         'send_state'=>'possibly_sent','authorized_cost'=>'8.00','renewal_mode'=>'ordinary',
         'execution'=>['disposition'=>'rejected','send_state'=>'definitely_unsent','reason'=>'unsent','discrepancies'=>[]]],
-    'funding'=>['claim'=>['amount'=>'10.00'],'seal'=>['amount'=>'10.00']],'cost'=>['estimated'=>'8.00','currency'=>'USD','unit'=>'term_total']];
-$renew($proven,'held',$proof);
+    'renewal_reserved_revision'=>2,'transition_revision'=>3,'cost'=>['estimated'=>'8.00','currency'=>'USD','unit'=>'term_total']];
+$validProof = $proof;
+$renew($proven,'held',$validProof);
 same('8.000000',$forecast()['total'],'Validated sealed prewire refusal remains open outside horizon');
 $proven->update(['billing_managed'=>false]);$unproven=$make(placeholderComFixtureName('balance-unproven-placeholder.com'),'2027-06-01');
 $proof['attempt']['execution']['discrepancies']=['unknown'];$renew($unproven,'held',$proof);
@@ -218,7 +229,7 @@ $otherDomain=$make(placeholderComFixtureName('balance-other-placeholder.com'),'2
 // One bounded forecast chunk batches cancellation and invoice reads for both obligation paths.
 $queryCount=static function()use($forecast):int{DB::enableQueryLog();DB::flushQueryLog();$forecast();$n=count(DB::getQueryLog());DB::disableQueryLog();return $n;};
 DB::beginTransaction();
-$bounded=[];$bounded[]=$make(placeholderComFixtureName('forecast-bounded-first-placeholder.com'));$renew($bounded[0]);
+$bounded=[];$bounded[]=$make(placeholderComFixtureName('forecast-bounded-first-placeholder.com'));$renew($bounded[0],'held',$validProof);
 $oneChunk=$queryCount();
 for($i=1;$i<25;$i++){$h=$make(placeholderComFixtureName('forecast-bounded-'.$i.'-placeholder.com'));$bounded[]=$h;$renew($h,$i%2?'awaiting_payment':'held',$i%2?[]:$proof);}
 $manyChunk=$queryCount();same($oneChunk,$manyChunk,'Forecast read count stays bounded across one chunk of obligations');

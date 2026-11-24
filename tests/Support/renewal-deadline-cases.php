@@ -1,6 +1,7 @@
 <?php
 // Synthetic shared checkout/adoption deadlines; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+use Paymenter\Extensions\Servers\Domains\Services\RenewalFundingLedger;
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 return static function ($op, $domain, $binding, Closure $compose, $clock, $state, Closure $setNow, Closure $nativeMoney): array {
@@ -10,6 +11,7 @@ return static function ($op, $domain, $binding, Closure $compose, $clock, $state
         if ($waiting && str_contains($query->sql, '"users"')) { $waiting = false; $setNow($clock->now()->modify('+'.$wait.' seconds')); }
     });
     $reset = static function () use ($op, $original, $state, $setNow, $entry): void {
+        DB::table(RenewalFundingLedger::TABLE)->where(['invoice_item_id' => $op->invoice_item_id, 'retry_number' => $op->retry_number])->delete();
         DB::table('domains_operations')->where('id', $op->id)->update($original);
         $setNow($entry); Cache::flush(); $state->calls = []; $state->writes = 0;
         $state->during = null; $state->duringCommand = null; $state->afterWrite = null;
@@ -18,7 +20,7 @@ return static function ($op, $domain, $binding, Closure $compose, $clock, $state
         expect(in_array($result->state, ['held','queued'], true), 'Deadline refusal keeps unsent renewal');
         same([], $result->attempt ?? [], 'Deadline refusal creates no execution/seal proof');
         same(null, $result->provider_order_id, 'Deadline refusal creates no order proof');
-        expect(!isset($result->funding['seal']), 'Deadline refusal never seals funding');
+        expect(RenewalFundingLedger::entries($result) === ['item' => [], 'payment' => []] && !isset($result->funding['seal']), 'Deadline refusal never seals funding');
         same(0, $state->writes, 'Deadline refusal sends no renewal');
         same($money, $nativeMoney(), 'Native finance unchanged on no-send');
     };

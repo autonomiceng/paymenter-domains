@@ -12,7 +12,13 @@ final class RenewalFunding
     {
         FinancialAdjustments::requireHistory($op, $l);
         // Retry debt keeps its original native adjustments on the sealed predecessor.
-        foreach($l['operations'] as $peer){if(isset($peer->policy['unsent_retry']['next_key'])){FinancialAdjustments::requireHistory($peer,$l);}}
+        foreach ($l['operations'] as $retry) {
+            if ($retry->renewal_previous_proof === null) { continue; }
+            $previous = $l['operations']->first(static fn (Operation $peer) => $peer->action === 'renew'
+                && $peer->invoice_item_id === $retry->invoice_item_id && $peer->retry_number === $retry->retry_number - 1);
+            if (!$previous) { throw new \DomainException('Renewal retry lacks its previous attempt.'); }
+            FinancialAdjustments::requireHistory($previous, $l);
+        }
         $d = $l['domain']; $s = $l['service']; $r = $op->policy['renewal'] ?? [];
         $binding = AccountBindings::binding($l['account']);
         $anchor = HoldingAnchor::resolve($l);
@@ -61,20 +67,32 @@ final class RenewalFunding
             || (int) $invoice->user_id !== (int) $d->user_id || $invoice->currency_code !== 'USD'
             || (int) $item->invoice_id !== (int) $invoice->id || $item->reference_type !== null || $item->reference_id !== null
             || (string) $item->quantity !== '1' || PricingRule::minor($op->amount) <= 0
-            || PricingRule::minor($item->price) !== PricingRule::minor($op->amount)
-            || $invoice->due_at === null || $invoice->due_at->format('Y-m-d') !== ($op->policy['calendar']['due'] ?? null)) { throw new \DomainException('Renewal invoice authority changed.'); }
-        if ($invoice->status !== 'paid') { throw new RenewalHold('renewal_invoice_unpaid', 'Renewal invoice is not funded.'); }
-        $total = $paid = 0; $ids = [];
+            || PricingRule::minor($item->price) !== PricingRule::minor($op->amount)) { throw new \DomainException('Renewal invoice authority changed.'); }
+        $refusal = RenewalDecision::invoiceRefusal($invoice->due_at?->format('Y-m-d'), $op->policy['calendar']['due'] ?? null, $invoice->status);
+        if ($refusal !== null) { throw new RenewalHold($refusal, 'Renewal invoice authority changed.'); }
+        $items = [];
         foreach ($l['items']->where('invoice_id', $invoice->id) as $row) {
             if (!ctype_digit((string) $row->quantity) || (int) $row->quantity < 1) { throw new \DomainException('Invalid renewal invoice.'); }
-            $total += PricingRule::minor($row->price) * (int) $row->quantity;
+            $items[(int) $row->id] = PricingRule::minor($row->price) * (int) $row->quantity;
         }
-        foreach ($l['transactions']->where('invoice_id', $invoice->id) as $row) {
-            if ($row->status === InvoiceTransactionStatus::Succeeded) { $paid += PricingRule::minor($row->amount); $ids[] = $row->id; }
-        }
-        if ($total <= 0) { throw new \DomainException('Invalid renewal invoice total.'); }
-        if ($paid < $total) { throw new RenewalHold('renewal_invoice_unpaid', 'The full invoice must remain paid.'); }
+        $payments = self::payments($op, $l);
+        $total = array_sum($items);
+        $paid = array_sum($payments);
+        RenewalDecision::requireFunding($total, $paid);
         return ['basis' => 'paid_invoice', 'invoice_id' => $invoice->id, 'invoice_item_id' => $item->id,
-            'invoice_total_minor' => $total, 'succeeded_net_minor' => $paid, 'transaction_ids' => $ids, 'currency' => 'USD'];
+            'invoice_total_minor' => $total, 'succeeded_net_minor' => $paid, 'transaction_ids' => array_keys($payments),
+            'entries' => ['item' => $items, 'payment' => $payments], 'currency' => 'USD'];
+    }
+
+    /** Signed minor amounts by native posting id, from the same locked invoice facts. */
+    public static function payments(Operation $op, array $l): array
+    {
+        $payments = [];
+        foreach ($l['transactions']->where('invoice_id', $op->invoice_id) as $row) {
+            if ($row->status === InvoiceTransactionStatus::Succeeded) {
+                $payments[(int) $row->id] = PricingRule::minor($row->amount);
+            }
+        }
+        return $payments;
     }
 }

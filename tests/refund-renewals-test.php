@@ -238,6 +238,10 @@ for($number=0;$number<=3;$number++){
     same($retry->id,\Paymenter\Extensions\Servers\Domains\Services\RenewalRetries::recover($retry->id,$clock)->id,'Retry delay is enforced');
     $clock->instant=$clock->now()->modify('+16 minutes');$next=\Paymenter\Extensions\Servers\Domains\Services\RenewalRetries::recover($retry->id,$clock);
     same($sealed,$retry->fresh()->attempt,'Retry never resets its sealed predecessor');
+    $ordinals = DB::table(\Paymenter\Extensions\Servers\Domains\Services\RenewalFundingLedger::TABLE)
+        ->where('invoice_item_id', $retry->invoice_item_id)->where('source', 'item')->where('source_id', $retry->invoice_item_id)
+        ->orderBy('retry_number')->pluck('retry_number')->map(static fn ($n) => (int) $n)->all();
+    same(range(0, $number), $ordinals, 'Each attempt retains its own funding against the original billed line');
     if($number===3){same($retry->id,$next->id,'Our three-retry bound ends unsent automation');break;}
     expect($next->id!==$retry->id,'Fresh attempt created only from proved no send');same($root->invoice_id,$next->invoice_id,'Retry retains original paid debt');
     same($next->id,\Paymenter\Extensions\Servers\Domains\Services\RenewalRetries::recover($retry->id,$clock)->id,'Duplicate recovery converges on same attempt');

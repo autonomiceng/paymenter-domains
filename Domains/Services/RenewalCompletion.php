@@ -65,6 +65,7 @@ final readonly class RenewalCompletion
                         || $facts->domain->providerAutoRenew !== false);
                 $autoRenewConfirmed = $attempt->binding->registrarKey === 'namesilo' && !$autoRenewUnconfirmed;
                 $proof = $autoRenewUnconfirmed ? null : ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
+                if ($facts->domain) { $saved->saw($facts->domain); }
                 $check->observe($attempt,$facts,$proof!==null);
             }
         } catch (ReadDeferred) { $check->deferred = 'read_limit';
@@ -97,28 +98,23 @@ final readonly class RenewalCompletion
             }
             $cost = $proof['charge']; $cap = $op->policy['renewal']['cost_cap'];
             if(isset($op->policy['account_complimentary'])){$cap['amount']=ComplimentaryCosts::cap($op,$cap['amount']);}
-            $over = WriteMoney::compare($cost['amount'], $cap['amount']) > 0;
-            $changed = WriteMoney::compare($cost['amount'], $attempt->expectedCharge->amount) !== 0;
-            $below = $op->funding_basis!=='complimentary' && WriteMoney::compare($cost['amount'], $op->amount) > 0; $corrections = $proof['observed_corrections'] !== [];
-            // The TEST annual-rate rule cannot silently accept a larger incurred charge, even under a higher staff cap.
-            if ($attempt->binding->registrarKey === 'enom' && $attempt->query->years > 1
-                && WriteMoney::compare($cost['amount'], $attempt->expectedCharge->amount) > 0) {
-                $reason = $over ? 'actual_cost_overrun' : 'actual_charge_changed';
-                $policy['renewal_execution'] = ['staff_alert' => true, 'reason' => $reason, 'refundable_later' => false];
-                $op->update(['state' => 'uncertain', 'safe_code' => $reason, 'policy' => $policy,
-                    'attempt' => [...$op->attempt, 'reconciliation' => $proof], 'cost' => ['actual' => $cost], 'lease_expires_at' => null]);
+            $decision = RenewalDecision::settlement($attempt->binding->registrarKey, $attempt->query->years,
+                $cost['amount'], $attempt->expectedCharge->amount, $cap['amount'],
+                $op->funding_basis === 'complimentary' ? null : $op->amount, $proof['observed_corrections'] !== []);
+            $policy['renewal_execution'] = $decision['renewal_execution'];
+            $confirmed = $decision['state'] === 'succeeded';
+            $op->update(['state' => $decision['state'], 'safe_code' => $decision['safe_code'], 'policy' => $policy,
+                'attempt' => [...$op->attempt, 'reconciliation' => $proof], 'cost' => ['actual' => $cost],
+                'lease_expires_at' => null, ...($confirmed ? ['provider_order_id' => $proof['order_reference'],
+                    'confirmed_expires_at' => $proof['expiry'], 'completed_at' => $this->clock->now()] : [])]);
+            if (!$confirmed) {
                 $d->update(['renewal_policy' => [...$d->renewal_policy, 'automatic_spend_paused' => true]]);
                 return $op;
             }
-            $policy['renewal_execution'] = ['staff_alert' => $over || $changed || $below || $corrections,
-                'reason' => $over ? 'actual_cost_overrun' : ($changed ? 'actual_charge_changed' : ($below ? 'below_cost' : 'confirmed')), 'refundable_later' => false];
-            $op->update(['state' => 'succeeded', 'safe_code' => $changed ? 'actual_charge_changed' : null, 'policy' => $policy,
-                'attempt' => [...$op->attempt, 'reconciliation' => $proof], 'cost' => ['actual' => $cost], 'provider_order_id' => $proof['order_reference'],
-                'confirmed_expires_at' => $proof['expiry'], 'completed_at' => $this->clock->now(), 'lease_expires_at' => null]);
             $priorExpiry=$d->provider_expires_at;
             $d->update(['status' => 'active', 'provider_expires_at' => $proof['expiry'], 'provider_order_id' => $proof['order_reference'],
                 'confirmed_revision' => $d->confirmed_revision + 1, 'last_synced_at' => $this->clock->now(),
-                'renewal_policy' => [...$d->renewal_policy, 'automatic_spend_paused' => $over || ($d->renewal_policy['automatic_spend_paused'] ?? false),
+                'renewal_policy' => [...$d->renewal_policy, 'automatic_spend_paused' => $decision['pause'] || ($d->renewal_policy['automatic_spend_paused'] ?? false),
                     'billing_anchor' => ['expiry' => $proof['expiry'], 'operation_key' => $op->operation_key,
                         ...($l['identity_source']['kind'] === 'adoption' ? ['kind' => 'completed_operation', 'confirmed_revision' => $d->confirmed_revision + 1] : [])]]]);
             if(ObservationProjection::renewed($d,$priorExpiry)){HoldingObservationWork::renewed($d,$this->clock->now());}
