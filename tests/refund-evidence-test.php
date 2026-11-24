@@ -2,6 +2,7 @@
 // Enom 444f31c refunds refusal scenarios; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
+$fixtureReadyRegistration = true;
 require __DIR__.'/Support/renewal-execution.php';
 use App\Models\{Credit, Role};
 use Illuminate\Support\Facades\DB;

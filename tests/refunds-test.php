@@ -1,6 +1,7 @@
 <?php
 // Enom 444f31c/d1392a8 tests/Enom/refunds.php; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$fixtureReadyRegistration = true;
 require __DIR__.'/Support/renewal-execution.php';
 use App\Models\{Credit, InvoiceTransaction, Role, Service};
 use Illuminate\Support\Facades\DB;

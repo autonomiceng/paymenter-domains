@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$fixtureReadyRegistration = true;
 require __DIR__.'/Support/operation-fixture.php';
 require __DIR__.'/Support/money-receipt.php';
 require __DIR__.'/Support/reminder-mail.php';
