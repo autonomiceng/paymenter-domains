@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/reconciliation-fixture.php';
+require_once __DIR__.'/Support/renewal-holding.php';
 require __DIR__.'/Support/staff-panel.php';
 use App\Helpers\ExtensionHelper;
 use App\Models\{BillingAgreement, Credit, Gateway, Invoice, Notification, NotificationTemplate, ServiceCancellation};
@@ -43,10 +44,14 @@ $server = $product->server;
 foreach (['domains_billing_enabled', 'domains_manual_renewals_enabled'] as $key) {
     $server->settings()->updateOrCreate(['key'=>$key], ['value'=>true, 'type'=>'boolean']);
 }
-// A real completed registration supplies each holder anchor; all registrar reads stay synthetic.
-$holder = static function (string $suffix) use ($prepare, $reconcile, $clock, $agreement) {
-    [$original] = $prepare(placeholderComFixtureName('auto-'.$suffix.'-placeholder.com'));
-    same('succeeded', $reconcile->run($original->id)->state, 'Registration anchor confirmed');
+// Each saved-method case needs its own service, invoice history and confirmed registration.
+$acquire = reusableRenewalHolding(static function (string $name) use ($prepare, $reconcile): array {
+    [$purchase, $binding] = $prepare($name);
+    return [$reconcile->run($purchase->id), $binding];
+}, $clock, $ports, $offers, $prices, $user);
+$holder = static function (string $suffix) use ($acquire, $clock, $agreement) {
+    [$original] = $acquire(placeholderComFixtureName('auto-'.$suffix.'-placeholder.com'));
+    same('succeeded', $original->state, 'Registration anchor confirmed');
     $d = $original->domain()->firstOrFail();
     $d->service->update(['billing_agreement_id'=>$agreement->id]);
     $clock->instant = new DateTimeImmutable('2027-09-27T12:00:00Z');
