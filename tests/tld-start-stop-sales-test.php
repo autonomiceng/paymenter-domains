@@ -53,8 +53,9 @@ $reset=static function(array $intent,bool $sellerTransfers,int $defaultLongest=1
     $ports->apply(Edit::republish($binding,'com'),$offer('register')->revision);
 };
 $cycle=static function()use($actor,$t):void{
-    Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->mountAction('stop_selling')->callMountedAction()->assertNotified('Change recorded');
-    Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->mountAction('start_selling')->callMountedAction()->assertNotified('Change recorded');
+    $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id]);
+    $page->mountAction('stop_selling')->callMountedAction()->assertNotified('Change recorded');
+    $page->mountAction('start_selling')->callMountedAction()->assertNotified('Change recorded');
 };
 foreach([[false,[],false],[true,['transfer'],false],[true,[],true]]as[$sellerTransfers,$stops,$restored]){
     $case('transfer restrictions '.json_encode([$sellerTransfers,$stops]),static function()use($reset,$cycle,$catalogue,$t,$sellerTransfers,$stops,$restored,$offer):void{
