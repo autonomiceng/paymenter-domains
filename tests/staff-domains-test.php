@@ -346,7 +346,7 @@ $noLine=[];
 foreach($known[1] as $code){ $label=Labels::reason($code);
     if($label===null){$noLine[]=$code;continue;}
     expect(!str_starts_with($label,'Missing')&&$label!==$code&&$label!=='Review retained evidence'&&$label!=='Reason missing','Known reason has cause text: '.$code); }
-same(['refreshed','renewal_admitted','management_deferred','readback_confirmed','registration_managed','ready'],$noLine,'Only internal codes show no reason line');
+same(['refreshed','renewal_admitted','management_deferred','readback_confirmed','ready'],$noLine,'Only internal codes show no reason line');
 same("Not sent: couldn't load the registrar account's settings",Labels::reason('configuration_unavailable'),'Held demo request reads as status-model.md 2.2');
 same('Registrar has not confirmed the result',Labels::reason('unverified'),'Uncertain demo request reads as status-model.md 2.2');
 same('Missing (future_reason_code). Check the request history.',Labels::reason('future_reason_code'),'Unknown reason code is Missing with the code');
