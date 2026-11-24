@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/transfer-dispatch-fixture.php';
 require __DIR__.'/Support/staff-panel.php';
+require_once __DIR__.'/Support/fixture-checkpoint.php';
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{OperationActions,RequestFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries,OperationTerminalProof,Refunds,StaffOperationReview,StaffOperations};
 staffPanel();app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);app()->instance(Refunds::class,new Refunds($clock));
@@ -24,8 +25,14 @@ $request=Illuminate\Http\Request::create('/internal-transfer-input','POST'); $re
 expect(Paymenter\Extensions\Servers\Domains\Services\TransferInputs::validCode($op->fresh()->payload['epp']??null),'Later owner input remains editable');
 $op=$newTransfer(placeholderComFixtureName('disabled-transfer-placeholder.com')); $makeTransfer(0,new Paymenter\Extensions\Servers\Domains\Services\WriteFeatures(registration:true));
 same('held',$engine->execute($op->id)->state,'Default off transfer gate'); same([],$state->calls,'Registration permission grants no transfer permission');
-foreach (['premium','unknown','funds','changed','reverse','rules','profile','rdap404'] as $fault) {
-    $i=$fault==='profile'?1:0; $op=$newTransfer(placeholderComFixtureName('refuse-'.$fault.'-placeholder.com'),$i); $makeTransfer($i); $state->calls=[]; $state->reads=0;
+$funded=$newTransfer(placeholderComFixtureName('refuse-enom-placeholder.com'));
+$restoreFunded=nativeFixtureCheckpoint();$enomQuery=$state->query;
+// The final refusal's refund remains in the ledger for the separate deferred order below.
+foreach (['premium','unknown','funds','reverse','rules','profile','rdap404','changed'] as $fault) {
+    $restoreFunded();$state->query=$enomQuery;
+    $i=$fault==='profile'?1:0;
+    $op=$i===1?$newTransfer(placeholderComFixtureName('refuse-profile-placeholder.com'),1):$funded->fresh();
+    $makeTransfer($i); $state->calls=[]; $state->reads=0;
     $state->premium=$fault==='premium'?true:($fault==='unknown'?null:false); $state->funds=$fault==='funds'?'1.00':'100.00'; $state->mode=$fault==='profile'?'default':'';
     $state->rdap404=$fault==='rdap404';
     $state->during=static function($read)use($fault,$op,$state){
