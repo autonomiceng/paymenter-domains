@@ -49,8 +49,8 @@ Livewire::actingAs($actor)->test(RequestsRelationManager::class,['ownerRecord'=>
 $row=collect($owners->present($d->fresh())->progress)->firstWhere('label','Nameservers');same('Staff',$row['by']??null,'Customer history says Staff');
 
 // Lock: the owner's warning and the same request.
-$open('Transfer lock','lock')->assertMountedActionModalSee(ManagementForms::lockRisk($d->domain))
-    ->setActionData(['locked'=>'0'])->callMountedAction()->assertNotified(ManagementForms::REQUESTED);
+$lock = $open('Transfer lock','lock')->assertMountedActionModalSee(ManagementForms::lockRisk($d->domain));
+submitStaffAction($lock, ['locked'=>'0'])->assertNotified(ManagementForms::REQUESTED);
 $op=$last('lock');same(false,$op->payload['locked'],'Staff lock change reaches the request');$finish($op);
 
 // Contacts: one contact for every role, with the owner's warning and messages.
@@ -61,7 +61,7 @@ $readablePhone=\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::re
 expect(preg_match('/^\+[0-9]{1,3}\.[0-9]+$/D',$saved['phone'])===1&&preg_match('/^\+[0-9]{1,3} /',$readablePhone)===1,'The saved phone is in registry form and reads with a space: '.$readablePhone);
 $contacts->assertActionDataSet(['phone'=>$readablePhone]);
 $count=$d->operations()->where('action','contacts')->count();
-$contacts->setActionData([...$saved,'email_address'=>'not-an-email'])->callMountedAction()->assertNotified("Couldn't save this change");
+submitStaffAction($contacts, [...$saved,'email_address'=>'not-an-email'])->assertNotified("Couldn't save this change");
 same($count,$d->operations()->where('action','contacts')->count(),'Rejected contact queues nothing');
 // A modal opened before a completed contact change must not restore the old owner email.
 $staleContacts=$open('Contacts','contacts');
@@ -91,7 +91,7 @@ foreach (['queued','completed'] as $race) {
     });
     app()->instance(ManagementForms::class,new ManagementForms($management,$racePorts));
     try {
-        $modal->setActionData([...$current,'city'=>'Stale City'])->callMountedAction();
+        submitStaffAction($modal, [...$current,'city'=>'Stale City']);
         expect($first!==null,'The concurrent staff save runs after the modal check');
         same($race==='queued'?'queued':'succeeded',$first->fresh()->state,'The first staff save reaches '.$race);
         same($before,[$d->operations()->count(),$first->fresh()->state,$first->fresh()->payload,$first->fresh()->policy],'The locked staff comparison preserves the '.$race.' first save');
