@@ -1,10 +1,9 @@
-"""Build the locked PHP image and run a suite inside the caller's Linux cgroup."""
+"""Build the PHP 8.4 image and run a suite inside the caller's Linux cgroup."""
 from contextlib import contextmanager
 import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -12,20 +11,28 @@ import uuid
 
 SCRIPTS = Path(__file__).resolve().parent
 RECIPE = SCRIPTS / 'php-suite.Dockerfile'
-LOCK = SCRIPTS / 'php-runtime-packages.json'
-IMAGE_ARCHIVES = Path('/opt/php-suite/archives')
+RUNTIME = Path('/opt/php-suite/runtime')
 CGROUP = Path('/sys/fs/cgroup')
 
 
 def runtime(*, native):
-    root = IMAGE_ARCHIVES.parent/'runtime'
+    root = RUNTIME
     if not os.statvfs(root).f_flag & os.ST_RDONLY:
         raise RuntimeError('Suite PHP runtime must be mounted read-only.')
     return root, root/'usr/bin/php8.4', root/'usr/lib/php/20240924/curl.so'
 
 
+def installed_versions():
+    version = subprocess.check_output([RUNTIME/'usr/bin/php8.4', '-n', '-r', 'echo PHP_VERSION;'], text=True)
+    rows = subprocess.check_output(['dpkg-query', '-W', '-f=${db:Status-Status} ${Package} ${Version}\n',
+                                    'php*'], text=True)
+    packages = {name: release for status, name, release in (row.split(' ', 2) for row in rows.splitlines())
+                if status == 'installed'}
+    return version, packages
+
+
 def image_tag():
-    digest = hashlib.sha256(RECIPE.read_bytes() + b'\0' + LOCK.read_bytes()).hexdigest()
+    digest = hashlib.sha256(RECIPE.read_bytes()).hexdigest()
     return 'domains-php-suite:' + digest
 
 
@@ -33,26 +40,27 @@ def image_id():
     return subprocess.check_output(['docker', 'image', 'inspect', '--format', '{{.Id}}', image_tag()], text=True).strip()
 
 
-def build(packages):
-    # The Docker build context contains only the recipe, package lock and verified archives.
-    with tempfile.TemporaryDirectory(prefix='php-build-') as name:
-        context = Path(name)
-        shutil.copyfile(RECIPE, context/'Dockerfile')
-        shutil.copyfile(LOCK, context/LOCK.name)
-        directory = context/'archives'
-        directory.mkdir()
-        for archive in packages:
-            shutil.copyfile(archive, directory/archive.name)
-        subprocess.run(['docker', 'build', '--platform', 'linux/amd64', '-t', image_tag(), str(context)], check=True)
+def build():
+    # Refresh apt on explicit builds while reusing the large browser layer.
+    with RECIPE.open('rb') as recipe:
+        subprocess.run(['docker', 'build', '--platform', 'linux/amd64', '--no-cache-filter', 'php-runtime',
+                        '-t', image_tag(), '-'], stdin=recipe, check=True)
+
+
+@contextmanager
+def image_container(image):
+    cid = subprocess.check_output(['docker', 'create', '--pull=never', image, 'true'], text=True).strip()
+    try:
+        yield cid
+    finally:
+        subprocess.run(['docker', 'rm', '-v', cid], check=True, stdout=subprocess.DEVNULL)
 
 
 @contextmanager
 def image_root(bundle):
     image = image_id()
-    # Export a fresh immutable image by ID. Docker never runs the suite outside its owner's cgroup.
-    cid = subprocess.check_output(['docker', 'create', '--pull=never', image, 'true'], text=True).strip()
     root = bundle/'rootfs'
-    try:
+    with image_container(image) as cid:
         root.mkdir()
         with subprocess.Popen(['docker', 'export', cid], stdout=subprocess.PIPE) as export:
             try:
@@ -62,10 +70,6 @@ def image_root(bundle):
                 export.stdout.close()
             if export.wait():
                 raise RuntimeError('PHP suite image export failed.')
-    finally:
-        subprocess.run(['docker', 'rm', '-v', cid], check=True, stdout=subprocess.DEVNULL)
-    if (root/'opt/php-suite/lock.json').read_bytes() != LOCK.read_bytes():
-        raise ValueError('Image package lock differs from the checkout.')
     yield root, image
 
 
@@ -207,7 +211,7 @@ def domains(root, arguments, *, history=None):
         budget = Path(os.environ['DOMAINS_TEST_BUDGET']) if existing else SCRIPTS/'case_budget.py'
         env = dict(PATH='/usr/local/bin:/usr/bin:/bin', LANG='C.UTF-8', HOME='/tmp', TMPDIR=str(output),
                    GIT_OPTIONAL_LOCKS='0', GIT_NO_REPLACE_OBJECTS='1', PYTHONDONTWRITEBYTECODE='1',
-                   PHP_RUNTIME_ARCHIVE_CACHE=str(IMAGE_ARCHIVES), DOMAINS_TEST_CGROUP=str(group),
+                   DOMAINS_TEST_CGROUP=str(group),
                    DOMAINS_TEST_BUDGET=str(budget), DOMAINS_TEST_RECEIPTS=str(receipts))
         mounts = {path: path for path in [root, output, group, receipts, budget]}
         if (root/'.git').exists():

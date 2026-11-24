@@ -28,32 +28,23 @@ spec.loader.exec_module(runner)
 
 
 class ReceiptTests(unittest.TestCase):
-    def test_bootstrap_inspects_offline_and_builds_from_verified_archives_on_request(self):
+    def test_bootstrap_inspects_offline_and_refreshes_php_on_request(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             scripts = root/'scripts'
             scripts.mkdir()
             for name in ('bootstrap.py', 'php_suite.py', 'php-suite.Dockerfile'):
                 shutil.copyfile(ROOT/'scripts'/name, scripts/name)
-            archive = b'verified archive fixture'
-            lock = scripts/'php-runtime-packages.json'
-            lock.write_text(json.dumps([{'url': 'https://example.test/php-native.deb', 'native': True,
-                                         'sha256': hashlib.sha256(archive).hexdigest()}]))
-            cache = root/'.cache/php-runtime'
-            cache.mkdir(parents=True)
-            (cache/'php-native.deb').write_bytes(archive)
-            (cache/'unlisted.deb').write_bytes(b'outside the package lock')
-            digest = hashlib.sha256((scripts/'php-suite.Dockerfile').read_bytes() + b'\0' + lock.read_bytes()).hexdigest()
+            recipe = scripts/'php-suite.Dockerfile'
+            digest = hashlib.sha256(recipe.read_bytes()).hexdigest()
             docker = root/'docker'
             docker.write_text("""#!/bin/sh
 printf '%s\\n' "$*" >> "$CALLS"
 if [ "$1 $2 $3" = 'image inspect --format' ]; then
     [ "$IMAGE_READY" = 1 ] || exit 1
     printf '%s\\n' sha256:prepared
-elif [ "$1 $2 $3 $4" = 'build --platform linux/amd64 -t' ]; then
-    [ "$(ls -A "$6/archives")" = php-native.deb ] || exit 99
-    cmp "$PHP_RUNTIME_ARCHIVE_CACHE/php-native.deb" "$6/archives/php-native.deb" || exit 99
-    cmp "$PACKAGE_LOCK" "$6/php-runtime-packages.json" || exit 99
+elif [ "$1" = build ]; then
+    cmp "$RECIPE" - || exit 99
     exit "$BUILD_STATUS"
 else
     exit 99
@@ -62,7 +53,7 @@ fi
             docker.chmod(0o700)
             calls = root/'calls'
             env = dict(os.environ, PATH=str(root)+os.pathsep+os.environ['PATH'], CALLS=str(calls),
-                       PHP_RUNTIME_ARCHIVE_CACHE=str(cache), PACKAGE_LOCK=str(lock))
+                       RECIPE=str(recipe))
             tag = 'domains-php-suite:'+digest
             for flags in ([], ['--native']):
                 for ready in (False, True):
@@ -83,36 +74,13 @@ fi
                                             env=dict(env, BUILD_STATUS=str(status), IMAGE_READY='1'), capture_output=True,
                                             text=True, timeout=3)
                     call, *after = calls.read_text().splitlines()
-                    self.assertEqual(call.split()[:5], ['build', '--platform', 'linux/amd64', '-t', tag])
-                    self.assertIn('php-build-', call.split()[5])
+                    self.assertEqual(call.split(), ['build', '--platform', 'linux/amd64', '--no-cache-filter',
+                                                    'php-runtime', '-t', tag, '-'])
                     self.assertEqual(after, ['image inspect --format {{.Id}} '+tag] if not status else [])
                     self.assertEqual(result.returncode == 0, status == 0)
                     if status:
                         self.assertFalse(result.stdout)
                         self.assertIn('exit status 23', result.stderr)
-
-    def test_archive_extraction_stops_on_an_earlier_failure(self):
-        recipe = runner.php_suite.RECIPE.read_text().replace('\\\n', ' ')
-        layer, = [line.removeprefix('RUN ') for line in recipe.splitlines()
-                  if line.startswith('RUN ') and 'dpkg-deb -x' in line]
-        for fail_first in (False, True):
-            with self.subTest(fail_first=fail_first), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                archives = root/'archives'
-                archives.mkdir()
-                if fail_first:
-                    (archives/'a-broken.deb').touch()
-                (archives/'z-working.deb').touch()
-                extract = root/'dpkg-deb'
-                extract.write_text("""#!/bin/sh
-case "$2" in *broken.deb) exit 23 ;; esac
-mkdir -p "$3/usr/bin" && ln -s /bin/true "$3/usr/bin/php8.4"
-""")
-                extract.chmod(0o700)
-                result = subprocess.run(['/bin/sh', '-c', layer.replace('/opt/php-suite', '.')],
-                                        cwd=root, env=dict(PATH=str(root)+':/usr/bin:/bin'), timeout=3)
-                self.assertEqual(result.returncode == 0, not fail_first)
-                self.assertEqual((root/'runtime/usr/bin/php8.4').exists(), not fail_first)
 
     def test_mariadb_selection_uses_its_host_driver_and_rejects_mixed_runs(self):
         maria = 'tests/test_schema_mariadb.py'
@@ -129,7 +97,7 @@ mkdir -p "$3/usr/bin" && ln -s /bin/true "$3/usr/bin/php8.4"
                      mock.patch.object(sys, 'argv', ['test.py', *flags]), \
                      mock.patch.dict(os.environ, {'CONVERSION_MARIADB_PHP': '/fixture/php'}, clear=True), \
                      mock.patch.object(tempfile, 'tempdir', directory), \
-                     mock.patch.object(runner.php_suite, 'IMAGE_ARCHIVES', root/'absent'), \
+                     mock.patch.object(runner.php_suite, 'RUNTIME', root/'absent'), \
                      mock.patch.object(runner.php_suite, 'domains', return_value=91) as container, \
                      mock.patch.object(runner, 'run', return_value=0) as run, contextlib.redirect_stderr(io.StringIO()):
                     if mixed:
@@ -322,7 +290,7 @@ sudo() {
                  mock.patch.object(suite, 'run_bundle', side_effect=no_receipt) as launch, contextlib.redirect_stderr(io.StringIO()), \
                  contextlib.chdir(root), mock.patch.object(runner, 'ROOT', repo), \
                  mock.patch.object(runner, 'manifest', return_value={'provider': [], 'mariadb': []}), \
-                 mock.patch.object(suite, 'IMAGE_ARCHIVES', root/'absent'), \
+                 mock.patch.object(suite, 'RUNTIME', root/'absent'), \
                  mock.patch.object(sys, 'argv', ['test.py', '--timings-from', 'old', *flags, '--timings-from='+timing.name]):
                 with self.assertRaises(RuntimeError):
                     runner.main(launch=True)
@@ -415,15 +383,23 @@ sudo() {
                             'changed': (None, 'checkout changed during the run'), 'nested': (None, 'not a Git checkout')}[case]
                 self.assertEqual((receipt['git_tree'], receipt['git_tree_error']), expected)
 
-    def test_direct_run_without_a_captured_checkout_records_no_tree(self):
+    def test_image_receipt_records_installed_php_and_omits_uncaptured_tree(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); (root/'Domains').mkdir(); output = root/'output'; output.mkdir()
             with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'execute', return_value=(b'', b'', 0, False)), \
-                 mock.patch.object(runner, 'git_tree') as git_tree, contextlib.redirect_stdout(io.StringIO()):
+                 mock.patch.object(runner, 'git_tree') as git_tree, mock.patch.dict(os.environ, PHP_SUITE_IMAGE='sha256:prepared'), \
+                 contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(runner.run([('provider', ['probe'])], {}, output, ['provider'], {}), 0)
             git_tree.assert_not_called()
             receipt = json.loads((output/'receipt.json').read_text())
             self.assertEqual((receipt['git_tree'], receipt['git_tree_error']), (None, 'not recorded'))
+
+            self.assertEqual(receipt['php_suite_image'], 'sha256:prepared')
+            version = subprocess.check_output([os.environ['PAYMENTER_TEST_PHP'], '-n', '-r', 'echo PHP_VERSION;'], text=True)
+            self.assertEqual(receipt['php_version'], version)
+            for name in ('php8.4-cli', 'php8.4-gd', 'php8.4-zip'):
+                installed = subprocess.check_output(['dpkg-query', '-W', '-f=${Version}', name], text=True)
+                self.assertEqual(receipt['php_packages'][name], installed)
 
     def test_setup_failure_receipt_records_the_checkout_tree(self):
         for launch in (False, True):
@@ -431,7 +407,7 @@ sudo() {
                 output = Path(temp)
                 with mock.patch.object(runner, 'git_tree', return_value=('a'*40, None)), \
                      mock.patch.object(runner, 'manifest', side_effect=ValueError('bad manifest')), \
-                     mock.patch.object(runner.php_suite, 'IMAGE_ARCHIVES', output/'missing-archives'), \
+                     mock.patch.object(runner.php_suite, 'RUNTIME', output/'missing-runtime'), \
                      mock.patch.object(runner.tempfile, 'mkdtemp', return_value=str(output)), \
                      mock.patch.dict(os.environ, {}, clear=True), \
                      mock.patch.object(runner.sys, 'argv', ['test.py']), contextlib.redirect_stderr(io.StringIO()), \

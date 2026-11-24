@@ -110,10 +110,6 @@ jobs:
           test "$(git -C "$PAYMENTER_TEST_APP" rev-parse HEAD)" = "$COMMIT"
           composer install --working-dir="$PAYMENTER_TEST_APP" --no-scripts --no-plugins --no-interaction \
             --prefer-dist --no-progress --ignore-platform-reqs
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .cache/php-runtime/*.deb
-          key: domains-php-native-${{ runner.os }}-${{ hashFiles('scripts/php-runtime-packages.json') }}
       - run: python3 scripts/bootstrap.py --download --native
       - name: Run native tests
         id: suite

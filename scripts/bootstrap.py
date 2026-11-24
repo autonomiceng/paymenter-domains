@@ -1,68 +1,27 @@
 #!/usr/bin/env python3
-"""Prepare hash-verified PHP 8.4.27; network downloads require --download."""
+"""Prepare the PHP 8.4 suite image. Network access requires --download."""
 import argparse
-import hashlib
-import json
 import os
 from pathlib import Path
-import platform
 import shutil
 import subprocess
 import tempfile
-import urllib.request
 
-ROOT = Path(__file__).resolve().parents[1]
-CACHE = ROOT / '.cache/php-runtime'
-LOCK = ROOT / 'scripts/php-runtime-packages.json'
+import php_suite
 
 
-def archives(download=False, native=False):
-    if platform.system() != 'Linux' or platform.machine() != 'x86_64':
-        raise RuntimeError('The pinned runner requires Linux x86_64.')
-    CACHE.mkdir(parents=True, exist_ok=True)
-    source = os.environ.get('PHP_RUNTIME_ARCHIVE_CACHE')
-    archives = []
-    for package in json.loads(LOCK.read_text()):
-        if package.get('native', False) and not native:
-            continue
-        archive = CACHE / package['url'].rsplit('/', 1)[1]
-        if not archive.exists() and source and (Path(source) / archive.name).is_file():
-            with tempfile.NamedTemporaryFile(dir=CACHE, delete=False) as pending:
-                with (Path(source) / archive.name).open('rb') as incoming:
-                    shutil.copyfileobj(incoming, pending)
-            Path(pending.name).replace(archive)
-        if not archive.exists():
-            if not download:
-                raise RuntimeError('PHP archive missing. Run scripts/bootstrap.py --download or set PHP_RUNTIME_ARCHIVE_CACHE.')
-            with urllib.request.urlopen(package['url'], timeout=60) as response:
-                payload = response.read(16 * 1024 * 1024 + 1)
-            if len(payload) > 16 * 1024 * 1024:
-                raise RuntimeError('Runtime archive exceeds limit.')
-            if hashlib.sha256(payload).hexdigest() != package['sha256']:
-                raise RuntimeError('Downloaded PHP archive checksum mismatch.')
-            with tempfile.NamedTemporaryFile(dir=CACHE, delete=False) as pending:
-                pending.write(payload)
-            Path(pending.name).replace(archive)
-        if hashlib.sha256(archive.read_bytes()).hexdigest() != package['sha256']:
-            raise RuntimeError('Cached PHP archive checksum mismatch; remove the archive and bootstrap again.')
-        archives.append(archive)
-    return archives
-
-
-def prepare(download=False, native=False):
-    packages = archives(download, native)
-    # Re-extract verified archives rather than trusting an existing executable or wrapper.
-    runtime = Path(tempfile.mkdtemp(prefix='runtime-', dir=CACHE))
+def prepare(*, native=False):
+    """Give host-side renderers and contract checks their own disposable copy."""
+    runtime = Path(tempfile.mkdtemp(prefix='php-runtime-'))
     try:
-        for archive in packages:
-            subprocess.run(['dpkg-deb', '-x', str(archive), str(runtime)], check=True,
-                           stdout=subprocess.DEVNULL)
+        if php_suite.RUNTIME.is_dir():
+            shutil.copytree(php_suite.RUNTIME, runtime, dirs_exist_ok=True, symlinks=True)
+        else:
+            with php_suite.image_container(php_suite.image_id()) as cid:
+                subprocess.run(['docker', 'cp', f'{cid}:{php_suite.RUNTIME}/.', str(runtime)], check=True)
         binary = runtime / 'usr/bin/php8.4'
         extension = runtime / 'usr/lib/php/20240924/curl.so'
         env = dict(os.environ, PHP_INI_SCAN_DIR='', PHPRC='')
-        version = subprocess.check_output([str(binary), '-n', '-r', 'echo PHP_VERSION;'], env=env, text=True)
-        if version != '8.4.27' or not extension.is_file():
-            raise RuntimeError('Pinned PHP runtime verification failed.')
         if native:
             gd = subprocess.run([str(binary), '-n', '-d', 'extension='+str(extension.parent/'gd.so'),
                                  '-r', 'exit(extension_loaded("gd") ? 0 : 1);'],
@@ -81,11 +40,10 @@ if __name__ == '__main__':
     parser.add_argument('--download', action='store_true')
     parser.add_argument('--native', action='store_true', help='Accepted for compatibility. The image always includes native modules.')
     args = parser.parse_args()
-    import php_suite
     if args.download:
-        php_suite.build(archives(download=True, native=True))
+        php_suite.build()
     try:
-        php_suite.image_id()
+        image = php_suite.image_id()
     except subprocess.CalledProcessError:
-        raise SystemExit('Pinned PHP suite image unavailable. Run scripts/bootstrap.py --download to prepare it.') from None
-    print('PHP 8.4.27 suite image ready.')
+        raise SystemExit('PHP suite image unavailable. Run scripts/bootstrap.py --download to prepare it.') from None
+    print(f'PHP 8.4 suite image ready ({image}).')
