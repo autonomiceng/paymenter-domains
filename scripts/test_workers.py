@@ -52,7 +52,10 @@ def environment(index, *, env, output, runtime, fixture, fixture_snapshot, runti
     return child
 
 
-def prepared_hashes(fixture, vendor_hashes):
+def prepared_hashes(fixture, vendor_hashes=None):
+    if vendor_hashes is None:
+        vendor = (fixture/'vendor').resolve(strict=True)
+        vendor_hashes = {'vendor/'+name: digest for name, digest in native.admitted_vendor_hashes(vendor).items()}
     snapshot = dict(vendor_hashes)
     for entry in fixture.iterdir():
         if entry.name == 'vendor':
@@ -69,11 +72,7 @@ def prepared_hashes(fixture, vendor_hashes):
 def environments(env, output, jobs, runtime=None):
     output = output.resolve()
     fixture = Path(env['PAYMENTER_TEST_FIXTURE']) if env.get('PAYMENTER_TEST_FIXTURE') else None
-    fixture_snapshot = None
-    if fixture:
-        vendor = (fixture/'vendor').resolve(strict=True)
-        fixture_snapshot = prepared_hashes(fixture, {'vendor/'+name: value for name, value
-                                                     in native.admitted_vendor_hashes(vendor).items()})
+    fixture_snapshot = prepared_hashes(fixture) if fixture else None
     runtime_snapshot = runtime_hashes(runtime) if runtime else None
     create = partial(environment, env=env, output=output, runtime=runtime, fixture=fixture,
                      fixture_snapshot=fixture_snapshot, runtime_snapshot=runtime_snapshot)
@@ -114,8 +113,9 @@ def verify(workers, fixture_snapshot, runtime_snapshot):
 def pristine_fixture_check(env, original):
     fixture = Path(env['PAYMENTER_TEST_FIXTURE'])
     vendor = fixture/'vendor'
-    snapshot = prepared_hashes(fixture, {name: digest for name, digest in original.items()
-                                         if name.startswith('vendor/')})
+    vendor_hashes = None if original is None else {name: digest for name, digest in original.items()
+                                                  if name.startswith('vendor/')}
+    snapshot = prepared_hashes(fixture, vendor_hashes)
     return partial(native.verify, fixture, fixture_snapshot=snapshot,
                    shared_vendor=vendor.resolve(strict=True) if vendor.is_symlink() else None,
                    force_vendor=True)

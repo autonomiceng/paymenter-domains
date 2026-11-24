@@ -284,7 +284,7 @@ class RunnerTests(unittest.TestCase):
             contaminate = ("from pathlib import Path; import os; "
                            "app=Path(os.environ['PAYMENTER_TEST_FIXTURE']); "
                            "(app/'bootstrap/cache/routes-v7.php').write_text('cached storefront'); "
-                           "(app/'database/runtime.sqlite').touch(); "
+                           "(app/'database/runtime.sqlite').touch(); (app/'pristine').write_text('case-local'); "
                            "(app/'extensions').mkdir(); (app/'extensions/Domains').symlink_to(app/'pristine'); "
                            "print((app/'vendor').resolve())")
             probe = ("from pathlib import Path; import os; "
@@ -299,6 +299,17 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(runner.run(commands, env, output, ['native'], {}), 0)
             self.assertEqual((output/'000.stdout.txt').read_text().strip(), str(fixture/'vendor'))
             self.assertEqual((output/'001.stdout.txt').read_text().strip(), str(fixture/'vendor'))
+
+            (root/'changed').mkdir()
+            change_vendor = ("from pathlib import Path; import os; "
+                             "app=Path(os.environ['PAYMENTER_TEST_FIXTURE']); "
+                             "(app/'vendor/autoload.php').write_text('changed')")
+            with mock.patch.object(runner, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(runner.run([('native', [sys.executable, '-c', change_vendor])], env,
+                                            root/'changed', ['native'], {}), 1)
+            receipt = json.loads((root/'changed/receipt.json').read_text())
+            self.assertFalse(receipt['dependency_unchanged'])
+            self.assertEqual(receipt['results'][0]['exit'], 0)
 
     def test_worker_copies_use_canonical_paths_under_a_linked_output_parent(self):
         with tempfile.TemporaryDirectory() as temp:

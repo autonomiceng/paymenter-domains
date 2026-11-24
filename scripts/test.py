@@ -352,8 +352,12 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
     with timing('runtime_snapshot', timings):
         before = hashes()
         fingerprint = runtime_fingerprint() if jobs > 1 else None
-        if worker_check is None and not workers and dependency and (env or {}).get('PAYMENTER_TEST_FIXTURE'):
-            worker_check = test_workers.pristine_fixture_check(env, dependency[1])
+        if worker_check:
+            worker_checks = [worker_check]
+        else:
+            original = dependency[1] if dependency else None
+            worker_checks = [test_workers.pristine_fixture_check(child, original)
+                             for child in (workers or [env]) if (child or {}).get('PAYMENTER_TEST_FIXTURE')]
     stopped, scheduling = threading.Event(), threading.Lock()
     processes, failures = Processes(), []
 
@@ -517,8 +521,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                     test_workers.record_source_check(rows, runtime_matches(before, fingerprint), worker=worker)
             try:
                 dependency_unchanged = dependency is None or native.verify(dependency[0])[1] == dependency[1]
-                if worker_check:
-                    worker_check()
+                for check in worker_checks:
+                    check()
             except (ValueError, RuntimeError, OSError, KeyError, TypeError, subprocess.CalledProcessError) as error:
                 dependency_unchanged = False
                 dependency_error, dependency_detail = type(error).__name__, str(error)
