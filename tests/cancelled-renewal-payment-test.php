@@ -1,6 +1,8 @@
 <?php
 // Native payment on a cancelled renewal is recorded, then returned as account credit; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$fixtureReadyRegistration = true;
+$reuseRenewalHolding = true;
 require __DIR__.'/Support/renewal-execution.php';
 use App\Models\{Credit,Gateway,InvoiceTransaction};
 use App\Helpers\ExtensionHelper;

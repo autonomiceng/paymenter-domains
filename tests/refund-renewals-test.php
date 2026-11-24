@@ -1,6 +1,8 @@
 <?php
 // Enom d1392a8 late retired and unsuitable paid renewal refunds; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$fixtureReadyRegistration = true;
+$reuseRenewalHolding = true;
 require __DIR__.'/Support/renewal-execution.php';
 use App\Models\{Credit, InvoiceTransaction, Role};
 use Illuminate\Support\Facades\{Cache,DB};
