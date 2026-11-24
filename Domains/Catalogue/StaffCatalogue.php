@@ -124,7 +124,7 @@ final class StaffCatalogue
                 }
                 if(!$this->work||!$readable($b=$binding())){return $missing('Check account setup on Registrar account.','account');}
                 $status=$once['synced'][$server]??$once['status'][$server]??=$this->work->status($b);
-                if(!$observation&&($status['succeeded_at']??0)>$now->getTimestamp()-86400&&empty($status['remaining'])){
+                if(!$observation&&($status['succeeded_at']??0)>$now->getTimestamp()-86400&&empty($status['remaining'])&&$this->readSinceSelected($t,(int)$status['succeeded_at'])){
                     [$needed,$years]=explode(':',$key);$name=$names[$needed];
                     $at=\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at((int)$status['succeeded_at']);
                     return $missing('The registrar lists no '.$years.'-year '.$name.' cost. Prices updated '.$at.'.',null);
@@ -157,6 +157,12 @@ final class StaffCatalogue
         return $once['pricing']===null?Pricing::rule($t):Pricing::rule($t,...$once['pricing']);
     }
     /** This account is already the chosen registrar but its seller row has the action off: name that switch. */
+    /** An absent cost is the registrar's answer only when the feed was read after this TLD's seller was last saved. */
+    private function readSinceSelected(Tld $t,int $succeededAt): bool
+    {
+        $saved=\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',$t->tld)->value('updated_at');
+        return TldFacts::feedConfirmed(['selected_at'=>$saved?\Carbon\CarbonImmutable::parse($saved)->getTimestamp():null,'succeeded_at'=>$succeededAt]);
+    }
     private function sellerStep(Tld $t,string $action): string
     {
         $p=\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',$t->tld)->first();

@@ -116,7 +116,7 @@ final class SellTable
         if($s['reason']===null){return ['label'=>$s['label'],'tone'=>$s['tone']];}
         if(!$this->grants()->costs){return ['label'=>$s['label'],'tone'=>$s['tone'],'next'=>$s['reason'],'open'=>null];}
         // A price or terms update cannot choose a seller. Show the same seller decision as the detail page.
-        if(!$this->queueRecovery&&($s['reason']===TldFacts::NO_SELLER||str_starts_with($s['reason'],TldFacts::OTHER_SELLER.' '))){
+        if(!$this->queueRecovery&&($s['reason']===TldFacts::NO_SELLER&&($facts['seller']??null)===null||str_starts_with($s['reason'],TldFacts::OTHER_SELLER.' '))){
             return ['label'=>$s['label'],'tone'=>$s['tone'],'next'=>$s['reason'],'open'=>'tld'];
         }
         $action=in_array('register',$facts['intent']['stops']??[],true)?'transfer':'register';

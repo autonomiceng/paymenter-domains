@@ -164,8 +164,10 @@ class WhatYouSell extends Page implements HasTable
     }
     private function readerReason(int $server): string
     {
-        return AccountStatus::for(app(AccountBindings::class)->configurationStatus($server))['reason']
-            ??'Its saved credentials could not be verified.';
+        $status=app(AccountBindings::class)->configurationStatus($server);
+        // Verified credentials are not the cause; say what failed instead.
+        return AccountStatus::for($status)['reason']
+            ??($status==='matched'?'Its credentials are verified, but its price list could not be read.':'Its saved credentials could not be verified.');
     }
     protected function catalogue(): ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue
     {return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\FreshInstallation::MESSAGE);}
