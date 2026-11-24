@@ -23,11 +23,6 @@ extract(commerceFixture(true,nameSiloLocal:$registrarsPart!=='features'));$clock
 app()->instance(AccountBindings::class,$bindings);app()->instance(Clock::class,$clock);app()->instance(RegistrarBalances::class,new RegistrarBalances($bindings,$clock,new Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock)));
 $enom=Account::where('server_id',$tlds[0]->server_id)->sole();$silo=Account::where('server_id',$tlds[1]->server_id)->sole();
 App\Models\Server::whereKey($enom->server_id)->update(['name'=>'Enom test account']);App\Models\Server::whereKey($silo->server_id)->update(['name'=>'NameSilo test account']);
-// Native checkout still creates invoices and dispatches every admission/binding event. Only the
-// unrelated PDF attachment renderer uses Paymenter's supported document-extension event here.
-Illuminate\Support\Facades\Event::listen(App\Events\Invoice\GeneratePdf::class,static function(App\Events\Invoice\GeneratePdf $event):void {
-    $event->setPdfFromContent("%PDF-1.4\n% Synthetic registrar-page invoice attachment.\n%%EOF\n");
-});
 $user=commerceUser();$product=$native->product($tlds[0],'register');
 // This page fixture needs real checkout, not a separate credit-checkbox render. Livewire's
 // native update batches that property and the checkout call, as one browser request does.

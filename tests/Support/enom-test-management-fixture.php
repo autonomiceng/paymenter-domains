@@ -6,10 +6,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{NativeCatalogue,RuntimeWork};
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 require __DIR__.'/enom-test-registration-fixture.php';
-// Paid native orders and all invoice events remain real; this fixture does not inspect PDF layout.
-Illuminate\Support\Facades\Event::listen(App\Events\Invoice\GeneratePdf::class,static function(App\Events\Invoice\GeneratePdf $event):void {
-    $event->setPdfFromContent("%PDF-1.4\n% Synthetic management-fixture invoice attachment.\n%%EOF\n");
-});
+require_once __DIR__.'/synthetic-invoice-attachment.php';
 require_once __DIR__.'/installed-offer-evidence.php';
 config(['domains.enom_writes.renewal'=>true]);
 $write('test_renewal',['accept'=>true,'verified'=>true]);
