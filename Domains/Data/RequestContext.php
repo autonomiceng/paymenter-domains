@@ -9,7 +9,19 @@ final class RequestContext
 {
     public function __construct(public readonly AccountBinding $binding, public readonly RequestOrigin $origin,
         public readonly \DateTimeImmutable $deadline, public readonly RequestBudget $budget, private readonly Clock $clock = new SystemClock, private readonly ?\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter $limiter = null, private readonly bool $stopOnReadFailure = false, public readonly bool $readNameservers = false, private readonly ?\Closure $current = null,
-        public readonly bool $deferOnReservationLimit = false) {}
+        public readonly bool $deferOnReservationLimit = false, private readonly ?string $observationName = null) {}
+
+    /** Parsed primary replies for record discovery in this account-bound observation only. */
+    private array $observationReplies = [];
+    /** @param array<string,object> $replies */
+    public function retainObservationReplies(string $name, #[\SensitiveParameter] array $replies): void
+    {
+        if ($name === $this->observationName) { $this->observationReplies = $replies; }
+    }
+    public function observationReply(string $name, string $command): ?object
+    {
+        return $name === $this->observationName ? ($this->observationReplies[$command] ?? null) : null;
+    }
 
     /** Drivers must call before each wire request, not just once per logical operation. */
     public function claimRead(#[\SensitiveParameter] AccountBinding $driver): int

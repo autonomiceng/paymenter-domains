@@ -401,7 +401,7 @@ final class SettingsActions
         return implode(' ',array_filter([
             $count.' '.($count===1?'TLD':'TLDs').' synced.',
             $failed===[]?null:'Not synced: '.$list($failed).'. They keep their last cost.',
-            $later===[]?null:'Left for the next sync: '.$list($later).'. Sync prices again in a minute.',
+            $later===[]?null:'Left for the next sync: '.$list($later).'.',
         ]));
     }
     /** Sync needs an account whose price list we can read. */
@@ -440,8 +440,7 @@ final class SettingsActions
         $t=$tld?Tld::find($tld):null;
         if($t===null||$rule===null){return new \Illuminate\Support\HtmlString('');}
         try{$rows=(StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\FreshInstallation::MESSAGE))->preview($t,$rule);}catch(\Throwable){$rows=[];}
-        $canSync=self::cached(fn()=>TldRegistrar::canRecheck((int)$t->server_id));
-        if($rows===[]){return new \Illuminate\Support\HtmlString('<p>Exact registrar costs missing. '.e(TldFacts::refreshText(TldFacts::snapshot($t)['refresh']??[],$canSync())).'</p>');}
+        if($rows===[]){return new \Illuminate\Support\HtmlString('<p>Exact registrar costs missing. '.e(TldFacts::refreshText(TldFacts::snapshot($t)['refresh']??[])).'</p>');}
         $registrarRequirement=self::cached(fn()=>self::previewRegistrarRequirement($t));
         $canEditTerms=self::canSee(Staff::POLICY)&&self::canSee(Review::permission('acceptance'));
         $costs=Staff::can(Staff::COSTS);$money=static fn(?string $v)=>$v===null?'None':'$'.preg_replace('/(\.\d{2}\d*?)0+$/D','$1',$v);
@@ -451,7 +450,7 @@ final class SettingsActions
         $html.='</tr></thead><tbody>';
         $notices=[];
         foreach($rows as $row){
-            $note=self::previewNote($row,$canSync,$registrarRequirement,$canEditTerms);
+            $note=self::previewNote($row,$registrarRequirement,$canEditTerms);
             if($note!==null){$notices[$note][$row['action']][]=$row['term'];}
             $html.='<tr><th scope="row">'.e(ucfirst($row['action']).', '.self::years([$row['term']])).'</th>'
                 .($costs?$cell(e($money($row['cost']))):'').$cell(e($money($row['current'])))
@@ -469,11 +468,11 @@ final class SettingsActions
         }
         return new \Illuminate\Support\HtmlString(($summary===''?'':'<ul class="domains-price-notices domains-warn">'.$summary.'</ul>').$html);
     }
-    private static function previewNote(array $row,\Closure $canSync,\Closure $registrarRequirement,bool $canEditTerms): ?string
+    private static function previewNote(array $row,\Closure $registrarRequirement,bool $canEditTerms): ?string
     {
         if($row['hold']===null&&$row['synced']&&$row['cost']===null){return TldFacts::NOT_OFFERED.' by this registrar for this term.';}
         if($row['hold']==='stale_price'||(!$row['synced']&&$row['action']==='renew')){
-            return 'Cost out of date.'.($canSync()?' Use Sync prices on the TLD page.':' See the next refresh on the TLD page.');
+            return 'Cost out of date.';
         }
         if($row['alert']==='below_cost'){return 'Below cost. Renewals are still billed and affected domains get an alert.';}
         return match($row['hold']){
@@ -489,7 +488,7 @@ final class SettingsActions
             'stale_facts'=>'Registrar terms are out of date. Check them on the TLD page.',
             'unsupported_facts'=>$registrarRequirement(),
             'unsupported_term','provider_disabled'=>'A required term is not offered by this registrar. Check the TLD terms.',
-            'unknown_price'=>'A required cost is missing.'.($canSync()?' Use Sync prices on the TLD page.':' The registrar price feed must supply it.'),
+            'unknown_price'=>'A required cost is missing from the registrar price feed.',
             'unpublished_price'=>'A required price is missing. Check the prices for this term and annual renewal.',
             'cost_limit'=>'Over the cost limit.'.($canEditTerms?' Check Default for new TLDs in What you sell.':''),
             null=>$row['new']===null?'Price missing. Check the costs and pricing for this term.':null,
@@ -532,7 +531,7 @@ final class SettingsActions
     {
         $count=$reach['default'];$waiting=$reach['waiting'];
         if($count===0){return 'No TLDs use Default pricing yet.';}
-        return $count.' '.($count===1?'TLD uses':'TLDs use').' Default pricing.'.($waiting===[]?'':' Costs are missing for '.\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($waiting).'. '.(count($waiting)===1?'Its prices stay':'Their prices stay').' the same until you sync prices.');
+        return $count.' '.($count===1?'TLD uses':'TLDs use').' Default pricing.'.($waiting===[]?'':' Costs are missing for '.\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($waiting).'. '.(count($waiting)===1?'Its prices stay':'Their prices stay').' the same until current costs are available.');
     }
     /** Notification text after resuming Orders or changing price freshness: the TLDs whose prices are not on sale yet. */
     public static function republished(?array $summary): ?string

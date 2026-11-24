@@ -19,7 +19,7 @@ $due=static function()use($clock,$work):void{$clock->instant=$clock->now()->setT
 $money=$nativeMoney();$originalBefore=$original->fresh()->getAttributes();
 
 // A failed settings read saves its successful siblings and retries through the ordinary scheduler.
-$state->fault='GetRegLock';$tick();
+$state->fault='GetContacts';$tick();
 same('read_failed',$worker->turn($queue,$guard),'A partial settings read schedules a retry');
 same([1,60],[(int)$work()->tries,$work()->due_at-$clock->now()->getTimestamp()],'First partial failure uses the existing backoff');
 expect(ObservationRecords::held($d->fresh()),'Partial settings remain unconfirmed');
@@ -38,7 +38,7 @@ same([0,false],[(int)$work()->tries,HoldingObservationWork::stopped($d->fresh())
 $page->call('pollManagement')->assertDontSee('Sync will retry automatically')->assertDontSee('Sync stopped');
 
 // Manual Sync now must schedule the same recovery instead of leaving the old daily due time.
-$state->fault='GetWPPSInfo';$tick();
+$state->fault='GetContacts';$tick();
 $manual=new SyncDomainRecords((int)$actor->id,(int)$d->id,$d->authority_generation,$d->account_fingerprint);
 $manual->handle($wired);
 same([1,60],[(int)$work()->tries,$work()->due_at-$clock->now()->getTimestamp()],'Manual partial read schedules automatic recovery');
@@ -48,34 +48,29 @@ $state->fault='';$due();same('refreshed',$worker->turn($queue,$guard),'Scheduled
 same(null,SyncDomainRecords::result($d->fresh()),'Automatic success clears the cached partial result');
 
 // A partial job saved by the previous policy resumes without staff resetting its budget.
-$state->fault='GetRegLock';$tick();$wired->run($d->id,readRecords:true);
+$state->fault='GetContacts';$tick();$wired->run($d->id,readRecords:true);
 HoldingObservationWork::current($d)->update(['safe_code'=>'read_exception','tries'=>1,'due_at'=>$clock->now()->getTimestamp()]);
 same('read_failed',$worker->turn($queue,$guard),'An old partial stop resumes through the existing worker');
 same(2,(int)$work()->tries,'Resuming old partial work preserves its attempts');
 $state->fault='';$due();$worker->turn($queue,$guard);
 
 // Unknown flag values are partial without a transport exception, and need the same bounded retries.
-$unknownFlags=static function(...$args)use($exchange):string{
-    $body=$exchange(...$args);
-    return $args[1]==='GetRegLock'?str_replace('<Reg-Lock>1</Reg-Lock>','<Reg-Lock></Reg-Lock>',$body):$body;
-};
-$unknown=new DomainObservation($readBindings,$clock,$budget,$ports,null,static fn($binding)=>new ObservationReader($binding,$unknownFlags));
-$unknownWorker=new HoldingObservationWork($unknown,$clock);
+$observation->fault='unknown_lock';
 HoldingObservationWork::current($d)->update(['due_at'=>$clock->now()->getTimestamp()+61]);$due();
 for($try=1;$try<=HoldingReadRetry::LIMIT;$try++){
-    same('read_failed',$unknownWorker->turn($queue,$guard),'Partial flag retry '.$try);
+    same('read_failed',$worker->turn($queue,$guard),'Partial flag retry '.$try);
     same($try,(int)$work()->tries,'Each failed attempt consumes its retry budget');
     same(HoldingReadRetry::delay($try),$work()->due_at-$clock->now()->getTimestamp(),'Bounded backoff '.$try);
     same($try===HoldingReadRetry::LIMIT,HoldingObservationWork::stopped($d->fresh()),'Warning appears only after the retry budget');
     if($try<HoldingReadRetry::LIMIT){same(null,DomainFacts::notice($d->fresh()),'No warning before retries finish');}
     $due();
 }
-$state->calls=[];same('idle',$unknownWorker->turn($queue,$guard),'Exhausted work stays stopped');same([],$state->calls,'Exhaustion sends no more reads');
+$state->calls=[];same('idle',$worker->turn($queue,$guard),'Exhausted work stays stopped');same([],$state->calls,'Exhaustion sends no more reads');
 $notice=DomainFacts::notice($d->fresh());
 same("Couldn't read lock, auto-renew and privacy settings after 5 attempts; use Sync now to try again.",$notice['title'],'Exhausted warning names the settings and one action');
 same(null,$notice['body'],'No duplicate recovery instruction');
 $page->call('pollManagement')->assertSee('after 5 attempts')->assertActionEnabled('sync_now');
-$manual->handle($wired);
+$observation->fault='';$manual->handle($wired);
 expect(!ObservationRecords::held($d->fresh()),'Manual override succeeds after exhaustion');
 same(0,(int)$work()->tries,'Manual success resets the exhausted budget');
 

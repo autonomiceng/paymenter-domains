@@ -31,7 +31,7 @@ $save=static function(array $state)use($queue):void{$queue->update(['offer_work'
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);$save($state);
 same(TldFacts::TERMS_FAILED,TldFacts::salesState($t->fresh())['reason'],'A current failed terms read is named: '.json_encode(TldFacts::salesState($t->fresh())));
 Livewire::actingAs($actor)->test(ListTlds::class)->assertSee(TldFacts::TERMS_FAILED);
-Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertSee('Sync prices tries again now.');
+Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertSee(TldFacts::TERMS_FAILED);
 // A successful read clears failure but deliberately retains the historical failed_at.
 $state['failure']=null;$state['succeeded_at']=$now->getTimestamp();$save($state);
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>$facts]);
@@ -53,7 +53,7 @@ $classify=static fn(string $notice):array=>[
 same(['prices_unpublished'=>true,'terms_stale'=>true,'terms_unreadable'=>false],$classify($staleNote),'Expired terms notice names the stale cause');
 same(['prices_unpublished'=>true,'terms_stale'=>false,'terms_unreadable'=>true],$classify($missingNote),'Missing terms notice names the unreadable cause');
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::json($stale)]);
-Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertDontSee('Sync prices tries again now.')->assertSee('Set to sell; checking registrar terms');
+Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertSee('Set to sell; checking registrar terms');
 same(0,$reads->calls,'Staff guidance never resolves a registry reader');
 same([0,0],[$feedFactories,$feed->calls],'Staff list and detail guidance never resolve or read the catalogue feed');
 // The same production worker can reach the offline feed, so the zero-call control observes a live path.

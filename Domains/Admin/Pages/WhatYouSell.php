@@ -2,8 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Pages;
-use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
-use Carbon\CarbonImmutable;
+use App\Models\Server;
 use Filament\Actions\{Action,BulkAction};
 use Filament\Forms\Components\{Radio,Select,TextInput,Toggle};
 use Filament\Notifications\Notification;
@@ -23,11 +22,11 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,HelpHint,SellTable,SettingsActions,Sheet,Staff,StaffTabs,StatusMark,TldFacts,TldTerms};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\SetUpSales;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Row,Value};
-use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Reader,State};
+use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus,Fact,Reader,State};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,CanonicalName};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,OfferRow};
-use Paymenter\Extensions\Servers\Domains\Services\{EndingChoices,PriceList,StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EndingChoices,LocalAccountEnrollment,NameSiloSandbox,PriceList,StaffSettingsReview as Review,StaffSettingsWrites};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Both catalogue views use the same account price table and saved settings. */
 class WhatYouSell extends Page implements HasTable
@@ -156,6 +155,19 @@ class WhatYouSell extends Page implements HasTable
     {
         $binding??=$this->binding();
         return $binding!==null&&($binding->registrarKey!=='enom'||config($binding->environment->value==='live'?'domains.enom_live.catalogue':'domains.enom_catalogue.enabled')===true)&&!$this->hasReader($binding);
+    }
+    /** The old NameSilo TEST connection reads the balance and nothing else, and its account page cannot change that. */
+    private function balanceOnly(int $server): bool
+    {
+        return NameSiloSandbox::enrolled(Account::where('server_id',$server)->sole())
+            &&Server::find($server)?->settings()->where('key',LocalAccountEnrollment::KEY)->exists()===false;
+    }
+    private function readerReason(int $server): string
+    {
+        $status=app(AccountBindings::class)->configurationStatus($server);
+        // Verified credentials are not the cause; say what failed instead.
+        return AccountStatus::for($status)['reason']
+            ??($status==='matched'?'Its credentials are verified, but its price list could not be read.':'Its saved credentials could not be verified.');
     }
     protected function catalogue(): ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue
     {return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\FreshInstallation::MESSAGE);}
@@ -338,18 +350,22 @@ class WhatYouSell extends Page implements HasTable
         foreach($all?$this->bindings():array_filter([(int)$this->account=>$this->binding()]) as $server=>$binding){
             $name=$this->accounts()[$server]??'Registrar account #'.$server;
             $progress=$this->catalogue()->progress($binding->serverId);
-            $state=(object)['filled_at'=>$progress['succeeded_at']??null,'failed_at'=>$progress['failed_at']??null];$readerFailed=$this->readerNeedsAttention($binding);
+            $readerFailed=$this->readerNeedsAttention($binding);
             if($readerFailed){
-                $components[]=Callout::make($all?'Check '.$name.' to sync prices':'Check the registrar account to sync prices')->warning()->columnSpanFull()
-                    ->footer($button('Open registrar account',RegistrarAccount::getUrl(['account'=>$server])));
+                $components[]=$this->balanceOnly($server)
+                    ?Callout::make($name.' does not supply prices')->warning()->columnSpanFull()
+                        ->description('It uses the old balance-only TEST connection.')
+                    :Callout::make("Can't read prices from ".$name)->warning()->columnSpanFull()
+                        ->description($this->readerReason($server))
+                        ->footer($button('Open registrar account',RegistrarAccount::getUrl(['account'=>$server])));
             }
             if($progress['state']==='retrying'||!empty($progress['failure'])){
                 $cause=isset($progress['failure'])?TldFacts::currentCause($server,$progress['failure']).'. ':'';
                 $scope=['account'=>$server];
                 if($this->switchedOn('for_sale')){$scope['filters']=['for_sale'=>['isActive'=>1]];}
                 $components[]=Callout::make($all?'Prices for '.$name.' are out of date':'Prices are out of date')->warning()->columnSpanFull()
-                    ->description(new HtmlString(e($cause).($state->filled_at===null?'We have not been able to read prices yet.':'The last good read was '.view('domains::partials.moment',['at'=>CarbonImmutable::createFromTimestamp((int)$state->filled_at,config('app.timezone'))])->render().'. Those prices are still shown.').' We try again once a day. '
-                        .($readerFailed?'Check the registrar account.':($all?'Show this account and use Sync prices to see what stopped the read.':'Use Sync prices to see what stopped the read.'))))
+                    ->description(new HtmlString(e($cause).(!isset($progress['succeeded_at'])?'No prices have been read yet.':Sheet::moment((int)$progress['succeeded_at'],'Prices updated')->toHtml().'.')
+                        .(isset($progress['due_at'])?' '.Sheet::moment((int)$progress['due_at'],'Next update')->toHtml().'.':'')))
                     ->footer($all&&!$readerFailed?$button('Show this account',TldResource::getUrl('index',$scope)):null);
             }
         }
@@ -407,7 +423,7 @@ class WhatYouSell extends Page implements HasTable
     private function otherNarrowing(): bool {return $this->hasTableSearch()||$this->show()!==null||$this->otherFilters();}
     private function emptyDescription(): ?string
     {
-        if($this->focused()){return 'This TLD has no prices here yet. To load them, use Sync prices.';}
+        if($this->focused()){return 'No prices are saved for this TLD.';}
         if($this->emptyHeading()===self::LEFT_OUT){
             $causes=$this->reads()->leftOutCauses((string)$this->show());
             $restore=in_array('unreadable',$causes,true)?"Their saved settings can't be read. Ask your site admin to restore them from a backup.":'';
@@ -419,8 +435,9 @@ class WhatYouSell extends Page implements HasTable
         if($this->emptyHeading()===self::NOT_FOR_SALE){return 'Matching TLDs are not for sale. Turn off For sale to see them.';}
         if($this->otherNarrowing()){return null;}
         if($this->emptyHeading()==='No TLDs are for sale.'){return 'Clear filters to see every TLD.';}
-        return $this->readerNeedsAttention()?'Check the registrar account to read prices.':'The first read runs by itself. To get prices now, use Sync prices.';
+        return $this->readerNeedsAttention()?'No prices have been read from this account.':'Prices appear after the first update.';
     }
+    private static function sameText(mixed $a,mixed $b): bool {return $a!==null&&$b!==null&&(string)$a===(string)$b;}
     /** A search or filter is why rows are gone, so the way back is to clear it, not to read prices again. */
     private function narrowed(): bool {return $this->otherNarrowing()||$this->switchedOn('for_sale');}
     /** Cost, Price and Profit for one sale. Renew and Transfer start off so the page stays one screen wide. */
@@ -428,7 +445,8 @@ class WhatYouSell extends Page implements HasTable
     {
         $cell=fn(OfferRow $record,string $field)=>$this->reads()->cell($record,$action,$field);
         $column=fn(string $field,string|\Closure $label)=>TextColumn::make($action.'_'.$field)->label($label)->alignEnd()->extraHeaderAttributes(['class'=>'domains-sell-'.$action])->extraCellAttributes(['class'=>'domains-sell-'.$action])->visible(fn()=>$this->canSeeCosts())->toggleable(isToggledHiddenByDefault:$action!=='register')
-            ->description(fn(OfferRow $record)=>$cell($record,$field)['next']??null)
+            // Status already gives the row's reason; a missing amount adds a line only when its own reason differs.
+            ->description(fn(OfferRow $record)=>self::sameText($cell($record,$field)['next']??null,$this->reads()->status($record)['next']??null)?null:($cell($record,$field)['next']??null))
             ->url(fn(OfferRow $record)=>match($cell($record,$field)['open']??null){'tld'=>TldResource::getUrl('view',['record'=>$this->reads()->tldId($record)]),'account'=>RegistrarAccount::getUrl(['account'=>$record->server_id]),default=>null})
             ->state(fn(OfferRow $record)=>$cell($record,$field)['text'])->color(fn(OfferRow $record)=>$cell($record,$field)['tone'])->tooltip(fn(OfferRow $record)=>$cell($record,$field)['hint'])
             ->badge(fn(OfferRow $record)=>$cell($record,$field)['mark'])->extraAttributes(fn(OfferRow $record)=>$cell($record,$field)['mark']?['data-domains-tone'=>'err']:[]);

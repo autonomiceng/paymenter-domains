@@ -108,7 +108,7 @@ $accountCodes=[
     'usd_balance_required'=>null,'enom_test_transfer_usd_balance_required'=>null,
     'awaiting_acceptance'=>'Go to System checks','write_disabled'=>'Go to System checks','write_acceptance_required'=>'Go to System checks','renewal_acceptance_required'=>'Go to System checks','grace_capability_unaccepted'=>'Go to System checks'];
 foreach([...$accountCodes,'staff_review_required'=>null,'enom_test_call_cap'=>'Open account','nameservers_required'=>null,
-    'name_unavailable'=>null,'premium_name'=>null,'order_not_supported'=>null,'registrar_price_missing'=>'Sync prices','registrar_read_failed'=>null] as $code=>$label){
+    'name_unavailable'=>null,'premium_name'=>null,'order_not_supported'=>null,'registrar_price_missing'=>'Open account','registrar_read_failed'=>null] as $code=>$label){
     DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>$code]);
     $copy=RequestFacts::for($heldOp->fresh());$copy['reason']='Reviewed cause with different wording';
     $notice=RequestFacts::notice($heldOp->fresh(),$copy);

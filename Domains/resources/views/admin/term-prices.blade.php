@@ -16,7 +16,7 @@
 @php $price=$group['price']; @endphp
 <div><dt>{{ $group['start'] }}{{ $group['end']!==$group['start'] ? ' to '.$group['end'] : '' }} {{ $group['end']===1 ? 'year' : 'years' }}</dt><dd>
 @if ($group['missing']){{ \Paymenter\Extensions\Servers\Domains\Presentation\Missing::html($loop->index === $firstMissing ? 'No saved registrar total for these terms.' : null) }}@if ($loop->index === $firstMissing)<span class="domains-sub">{{ \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::refreshText($refresh ?? []) }}</span>@endif
-@else<strong>Customer total {{ $price['current']===null ? 'Missing' : '$'.$price['current'] }}</strong><span class="domains-sub">Registrar cost {{ $price['cost']===null ? 'Missing' : '$'.number_format((float)$price['cost'],2,'.','') }}.@if (!$price['synced'] && $price['cost']!==null) Out of date. Sync prices to refresh this cost.@endif</span>@endif
+@else<strong>Customer total {{ $price['current']===null ? 'Missing' : '$'.$price['current'] }}</strong><span class="domains-sub">Registrar cost {{ $price['cost']===null ? 'Missing' : '$'.number_format((float)$price['cost'],2,'.','') }}.@if (!$price['synced'] && $price['cost']!==null) Out of date.@endif</span>@endif
 </dd></div>
 @endforeach
 </dl></div>

@@ -89,8 +89,11 @@ DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld',
 try {
 $reset();DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->delete();
 $queue->update(['offer_work'=>OfferState::json(['feed_due'=>$now->getTimestamp()+86400]),'offer_feed_succeeded_at'=>$now->getTimestamp()]);
-[$table,$row]=nextTable();$cell=$table->cell($row,'register','cost');same('Missing',$cell['text'],'A completed read with no registrar cost needs a person');
-same('Ask the registrar for a 1-year registration cost for .com.',$cell['next'],'Missing registrar cost names the exact question and where to ask');
+DB::table('domains_sales_policies')->where('tld','com')->update(['updated_at'=>$now->modify('-1 minute')->format('Y-m-d H:i:s')]);
+[$table,$row]=nextTable();$cell=$table->cell($row,'register','cost');same('Missing',$cell['text'],'A completed read with no registrar cost keeps the amount missing');
+expect(str_contains((string)$cell['next'],'1-year registration cost'),'Missing cost identifies the action and term');
+DB::table('domains_sales_policies')->where('tld','com')->update(['updated_at'=>$now->modify('+1 minute')->format('Y-m-d H:i:s')]);
+[$table,$row]=nextTable();expect(!str_contains((string)($table->cell($row,'register','cost')['next']??''),'lists no'),'A read from before the seller was saved does not speak for the registrar');
 
 } catch (Throwable $error) {$failures[]='Case 3: '.$error->getMessage();}
 try {
@@ -212,6 +215,14 @@ try {
         ->assertSet('account',NextStepStaffPage::ALL);
     same($beforeQueue,$queue->value('offer_work'),'Opening All TLDs does not enqueue missing registrar terms');
 
+    // A priced ending without a selected seller must have the same sale blocker in the list and on its detail page.
+    DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>null,'registrar_key'=>null,'account_fingerprint'=>null]);
+    $pageRows=[];
+    $table=new SellTable([$binding->serverId=>$binding],1,true,static function()use(&$pageRows){return $pageRows;},false,$source,queueRecovery:false);
+    $pageRows=$table->rows('com')->get()->all();
+    $detail=$source->page(collect([$t->fresh()]))[$t->id];
+    same($detail['sales']['reason'],$table->status($pageRows[0])['next'],'Missing terms cannot replace the saved seller decision');
+
     $reset();
     DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','transfer')->update(['retail'=>null]);
     $beforeQueue=$queue->value('offer_work');
@@ -278,7 +289,8 @@ case 'cost limit':
 case 'registrar cost':
     DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->delete();
     $queue->update(['offer_work'=>OfferState::json(['feed_due'=>$now->getTimestamp()+86400]),'offer_feed_succeeded_at'=>$now->getTimestamp()]);
-    $next='Ask the registrar for a 1-year registration cost for .com.';break;
+    DB::table('domains_sales_policies')->where('tld','com')->update(['updated_at'=>$now->modify('-1 minute')->format('Y-m-d H:i:s')]);
+    $next='1-year registration cost';break;
 case 'registrar terms':
     DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);
     $queue->update(['offer_work'=>OfferState::json(['facts'=>['com'=>['unsupported'=>true,'authority'=>$factAuthority,'due_at'=>null]]])]);
@@ -294,7 +306,7 @@ case 'price choice':
     $url=$detailUrl;break;
 }
 [$table,$row]=nextTable();$status=$table->status($row);
-same($next,$status['next'],'The Status step names the action for '.$scenario);
+expect(str_contains($status['next'],$next),'The Status step names the reason for '.$scenario);
 same($open,$status['open'],'The Status preserves the step destination for '.$scenario);
 $sales=\Livewire\Livewire::actingAs($actor)->test(NextStepStaffPage::class)->filterTable('for_sale',false);
 $page=$sales->instance();$record=$page->getTableRecords()->items()[0];

@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, ManagementProtocol};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName, Capabilities, Capability, ManagementRequest, ManagementResult, PrivacyMode, RequestContext, RequestOrigin, Support};
 use Paymenter\Extensions\Servers\Domains\Services\{ContactDetails, ManagementPayload, RegistrationProfiles, RegistryInputs};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Tld};
-use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Environment, Outcome, RegistrarRequest, ResponseParser};
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Environment, Outcome, RegistrarRequest, RegistrarResult, ResponseParser};
 /** Baseline management only. No default sender, purchases, profile updates or advanced tools. */
 class Management extends ManagementProtocol
 {
@@ -102,11 +102,11 @@ class Management extends ManagementProtocol
         foreach (['order_amount','order_number','order_id'] as $key) { if (array_key_exists($key, $p)) { throw new \DomainException('Contradictory management reply.'); } }
         return $p;
     }
-    protected function owned(ManagementRequest $r, RequestContext $c): array
+    protected function owned(ManagementRequest $r, RequestContext $c, ?RegistrarResult $info=null): array
     {
         if ($r->providerId !== null || CanonicalName::normalize($r->name) !== $r->name) { throw new \DomainException('Domain identity unavailable.'); }
         $request = RegistrarRequest::domainInfo($r->name);
-        $info = (new ResponseParser)->parse($this->read($r, $c, 'getDomainInfo', $request->parameters()), $request, '');
+        $info ??= (new ResponseParser)->parse($this->read($r, $c, 'getDomainInfo', $request->parameters()), $request, '');
         if ($info->outcome !== Outcome::Success || $info->value('status') !== 'Active') { throw new \DomainException('Owned active domain required.'); }
         return ['locked' => self::flag($info->value('locked')), 'privacy' => self::flag($info->value('private')),
             'auto_renew' => self::flag($info->value('auto_renew')), 'nameservers' => $info->value('nameservers'), 'contact_ids' => $info->value('contact_ids')];
@@ -124,7 +124,7 @@ class Management extends ManagementProtocol
     }
     public function discover(ManagementRequest $r, RequestContext $c, array $knownGlue=[]): array
     {
-        $out=parent::discover($r,$c); $this->owned($r,$c);
+        $out=parent::discover($r,$c); $this->owned($r,$c,$c->observationReply($r->name,'getDomainInfo'));
         $out['glue']=['state'=>'complete','records'=>$this->glue($r,$c)]; return $out;
     }
     public function prepare(ManagementRequest $r, RequestContext $c): array

@@ -70,6 +70,8 @@ $configure($first,'enom','PRIVATE-ORIGINAL-ENOM');$configure($second,'namesilo',
 foreach([$first,$second] as $server){
     $a=Account::where('server_id',$server->id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
     same(false,$a->processing_enabled,'Owned verified configuration starts paused');
+    $work=json_decode(DB::table('domains_observation_queues')->where('server_id',$server->id)->value('offer_work')??'{}',true,flags:JSON_THROW_ON_ERROR);
+    same($clock->now()->getTimestamp(),$work['feed_due']??null,'Verified account save queues its first background price read');
     Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertActionEnabled($processingAction($server));
     $bindings->setProcessing($server->id,true,static fn()=>null);
     BalanceReads::record($binding,new Money('42.17','USD'),$clock->now(),'manual');

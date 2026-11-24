@@ -1,7 +1,7 @@
 {{-- MIT, Copyright (c) 2026 Autonomic Engineering. --}}
 @php
     use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
-    use Paymenter\Extensions\Servers\Domains\Admin\Support\{RegistrarFacts, SalesSetupReview, SettingsActions, Staff, TldFacts};
+    use Paymenter\Extensions\Servers\Domains\Admin\Support\{RegistrarFacts, SalesSetupReview, Staff, TldFacts};
     use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value;
     use Paymenter\Extensions\Servers\Domains\Presentation\{Fact, Reader, State};
     [$review, $result, $problem, $previous] = [$page->review, $page->outcome, $page->problem, $page->previousReview];
@@ -45,7 +45,6 @@
         $names = \App\Models\Server::whereIn('id', [$server, ...array_filter(array_column($rows, 'seller_before')), ...array_column($rows, 'problem_account')])->pluck('name', 'id');
         $account = $names[$server] ?? 'Selected registrar account';
         $accountLink = RegistrarFacts::accountLink($server, 'Open '.$account);
-        $canSync = in_array('Seller price missing.', array_column($rows, 'reason'), true) && SettingsActions::syncAll($server)->isVisible();
         $status = ['ready' => 'Ready to save', 'saved' => 'Saved', 'blocked' => 'Refused', 'unchanged' => 'Unchanged'];
     @endphp
     <div class="fi-prose" wire:key="{{ $result ? 'sales-setup-result' : 'sales-setup-review' }}">
@@ -104,9 +103,6 @@
                     @endif
                     @if ($blocked)
                         {{ SalesSetupReview::blocked($row['reason'], $names[$row['problem_account'] ?? $server] ?? 'the registrar account') }}
-                        @if ($canSync && $row['reason'] === 'Seller price missing.')
-                            Use Sync prices on this account to check for new prices. Registrar terms are checked separately.
-                        @endif
                     @elseif ($row['orders_paused'])
                         Orders are paused on {{ $account }}.
                     @endif

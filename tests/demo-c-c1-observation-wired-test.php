@@ -23,7 +23,12 @@ $state->fault='GetContacts';$tick();$wired->run($d->id,readRecords:true);
 same(['records_unavailable','contacts'],$hold(),'Failed contacts read is named on the hold');
 same("Sync stopped: couldn't read contacts. Other domain facts were saved. Use Sync now to try again.",DomainFacts::recordHold($d->fresh()),'Staff copy names the failed contacts read');
 $state->fault='';$tick();
+$observation->calls=[];$recordStart=count($state->calls);
 $wired->run($d->id,readRecords:true);
+$commands=[...array_column($observation->calls,'value'),...array_column(array_slice($state->calls,$recordStart),0)];
+sort($commands);
+same(['GetContacts','GetDNS','GetDnsSec','GetDomainInfo','GetDomainSRVHosts','GetHosts','GetRegLock','GetRenew','GetWPPSInfo'],
+    $commands,'One Enom record observation sent '.implode(', ',$commands));
 expect(!ObservationRecords::held($d->fresh()),'Complete wired refresh clears the hold');
 same($clock->now()->format(DATE_ATOM),ObservationProjection::recordStatus($d->fresh(),$clock->now())['last_complete_at'],'Complete wired refresh advances last complete time');
 same([],$writes(),'Wired family failures and resume send no registrar writes');

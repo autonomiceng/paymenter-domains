@@ -41,7 +41,7 @@ final class RequestHoldReasons
         'profile'=>['The site administrator','check contact creation for this NameSilo account','registrars','Open account'],
         'invoice'=>['Staff','check the invoice and its payments','invoice',null],
         'domain'=>['Staff','review the saved order and domain settings','domain',null],
-        'price'=>['Staff','sync prices for this registrar account before retrying the cost check','registrars','Sync prices'],
+        'price'=>['Staff','retry the cost check once the registrar supplies a current price','registrars','Open account'],
         'increase'=>['Staff','review the spending limit on the domain before retrying','domain',null],
         'read'=>['Staff','retry the registrar check after its automatic retries finish',null,null],
         'limit'=>['The site administrator','check the request limit for this registrar account before retrying','registrars','Open account'],

@@ -37,9 +37,9 @@ final class Management extends ManagementProtocol
         }
         return $reply;
     }
-    private function owned(ManagementRequest $r, RequestContext $c): void
+    private function owned(ManagementRequest $r, RequestContext $c, ?ProtocolResult $v=null): void
     {
-        $v=$this->get($r,$c,R::Info); $d=$v->value('getdomaininfo.domainname'); $s=$v->value('getdomaininfo.status');
+        $v??=$this->get($r,$c,R::Info); $d=$v->value('getdomaininfo.domainname'); $s=$v->value('getdomaininfo.status');
         $name=is_array($d)?($d['#text']??null):$d; $attr=is_array($d)?($d['@attributes']??[]):[]; $parts=$this->parts($r);
         $alias=$v->value('getdomaininfo.domainnameid'); $id=$attr['domainnameid']??$alias;
         if(!is_array($attr)||(isset($attr['sld'])&&strtolower($attr['sld'])!==$parts['SLD'])||(isset($attr['tld'])&&strtolower($attr['tld'])!==$parts['TLD'])
@@ -49,9 +49,10 @@ final class Management extends ManagementProtocol
             || !$this->binding->matches(new AccountBinding('enom',$this->binding->serverId,$this->binding->environment,$owner))) { throw new \DomainException('Owned domain identity required.'); }
     }
     /** Frozen Enom 444f31c snapshot/currentHostIp paths, through the existing bounded read seam. */
-    public function discover(ManagementRequest $r, RequestContext $c, array $knownGlue = [], int $reservedReads = 0): array
+    public function discover(ManagementRequest $r, RequestContext $c, array $knownGlue = [], int $reservedReads = 0, int $maxGlueReads = 13): array
     {
-        $out=parent::discover($r,$c); $this->owned($r,$c);
+        $out=parent::discover($r,$c);
+        $this->owned($r,$c,$c->observationReply($r->name,R::Info->value));
         $out['glue']['records']=array_filter($knownGlue,fn($ip)=>$ip!=='');
         foreach (['dns'=>R::Hosts,'srv'=>R::Srv,'ds'=>R::Ds] as $kind=>$command) {
             try {
@@ -60,7 +61,7 @@ final class Management extends ManagementProtocol
             } catch (\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred|\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit $e) { throw $e; }
             catch (\Throwable $error) { $out['failure_code']=\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error); if ($error instanceof CaaRecords) { $out[$kind]['caa']=true; } return $out; } // Stop at first failure; never retry a failed wire.
         }
-        $limit=min(13,max(0,$c->budget->remaining()-$reservedReads));
+        $limit=max(0,min(13,$maxGlueReads,$c->budget->remaining()-$reservedReads));
         foreach (array_slice($knownGlue,0,$limit,true) as $host=>$prior) {
             try {
                 $ip=ManagementRead::glue($this->get($r,$c,R::HostStatus,['CheckNSName'=>$host]),$host);

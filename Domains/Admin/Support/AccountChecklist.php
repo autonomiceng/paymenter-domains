@@ -378,8 +378,8 @@ final class AccountChecklist
                 $queue=DB::table('domains_observation_queues')->where('server_id',$binding->serverId)->where('account_fingerprint',$binding->fingerprint)->first();
                 $due=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($queue?->offer_work)['facts'][$ending]['due_at']??null;
             }}catch(\Throwable){/* Saved refresh metadata is also missing; never invent a next check. */}
-            return [['Supported terms','Missing',"We haven't read the registrar's terms for .".$ending.', so terms longer than 1 year stay off. '
-                .($due?'Next terms check '.\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at((int)$due).'. ':'').'Sync prices tries again now.']];
+            return [['Supported terms','Missing',"We haven't read the registrar's terms for .".$ending.', so terms longer than 1 year stay off.'
+                .($due?' Next terms check '.\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at((int)$due).'.':'')]];
         }
     }
     public static function termYears(array $years): string

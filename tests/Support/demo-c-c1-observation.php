@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ObservationReader;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationProjection,ObservationRecords,ObservationSchema,OwnerRecords};
 $ports=new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts(function($b)use(&$driver){return $driver;});
 ObservationSchema::install();$budget=new AccountReadBudget($clock);$observer=new DomainObservation($readBindings,$clock,$budget,$ports);
-$state->ns=['dns1.name-services.com','dns2.name-services.com'];
+$observation->nameservers=$state->ns=['dns1.name-services.com','dns2.name-services.com'];
 [$d,$driver,$original]=$holding(placeholderComFixtureName('c1-observation-placeholder.com'),\Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence::observed($state->ns,'enom_getdns',$clock->now()));
 // These checks drive every read by hand. Activation queues a first scheduled read, and while it waits a record hold is not stopped.
 Illuminate\Support\Facades\DB::table('domains_observation_work')->where('domain_id',$d->id)->delete();

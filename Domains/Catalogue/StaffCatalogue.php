@@ -58,8 +58,8 @@ final class StaffCatalogue
         $names=['register'=>'registration','renew'=>'renewal','transfer'=>'transfer'];
         $step=static fn(string $state,string|HtmlString $next,?string $open=null)=>compact('state','next','open');
         $missing=static fn(string $next,?string $open='tld')=>$step('missing',$next,$open);
-        $waiting=static fn(array $s)=>!empty($s['local_failure'])?$missing('Check the registrar account and read prices again.','account'):
-            $step('checking',isset($s['due_at'])&&$s['due_at']>=$now->getTimestamp()&&empty($s['remaining'])?self::nextCheck((int)$s['due_at']):'Queued for the next background run.');
+        $waiting=static fn(array $s)=>!empty($s['local_failure'])?$missing('Last registrar read failed. See the registrar account.','account'):
+            $step('checking',isset($s['due_at'])&&$s['due_at']>=$now->getTimestamp()&&empty($s['remaining'])?self::nextCheck((int)$s['due_at']):'Registrar check queued.');
         if(!$offers){return $missing('Check saved settings on .'.$t->tld.'.');}
         if($reason==='account_unavailable'){return $missing('Check account setup on Registrar account.','account');}
         try{$rule=self::ruleOnce($t,$once);}catch(\DomainException|\InvalidArgumentException){return $missing('Fix the pricing rule in Edit prices on .'.$t->tld.'.');}
@@ -98,9 +98,11 @@ final class StaffCatalogue
             if($queueRecovery){$this->work->requestFacts($b,$t->tld);}
             $status=$once['terms'][$server][$t->tld]??=$this->work->status($b,$t->tld);
             if($status['state']==='waiting_for_evidence'){return $missing(TldFacts::TERMS_EVIDENCE_MISSING.'.');}
-            if(!$queueRecovery&&$status['state']==='unknown'){return $missing('Use Sync prices on the TLD page.');}
-            if($status['state']!=='unsupported'){return $waiting($status);}
-            $human=$missing('Ask the registrar to confirm terms for .'.$t->tld.'.',null);
+            if(!$queueRecovery&&$status['state']==='unknown'){
+                $human=$missing('Registrar terms not read yet.');
+            }elseif($status['state']==='unsupported'){
+                $human=$missing('Ask the registrar to confirm terms for .'.$t->tld.'.',null);
+            }else{return $waiting($status);}
         }
         $expiredRefusal=static function(string $key)use($offers,$now):bool {
             $cost=($offers[$key]??null)?->observation();
@@ -122,13 +124,15 @@ final class StaffCatalogue
                 }
                 if(!$this->work||!$readable($b=$binding())){return $missing('Check account setup on Registrar account.','account');}
                 $status=$once['synced'][$server]??$once['status'][$server]??=$this->work->status($b);
-                if(!$observation&&($status['succeeded_at']??0)>$now->getTimestamp()-86400&&empty($status['remaining'])){
+                if(!$observation&&($status['succeeded_at']??0)>$now->getTimestamp()-86400&&empty($status['remaining'])&&$this->readSinceSelected($t,(int)$status['succeeded_at'],$once)){
                     [$needed,$years]=explode(':',$key);$name=$names[$needed];
-                    return $missing('Ask the registrar for a '.$years.'-year '.$name.' cost for .'.$t->tld.'.',null);
+                    $at=\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at((int)$status['succeeded_at']);
+                    return $missing('The registrar lists no '.$years.'-year '.$name.' cost. Prices updated '.$at.'.',null);
                 }
                 if(!$queueRecovery){
+                    if(!empty($status['failure'])){return $missing(TldFacts::syncCause($status['failure']).'.','account');}
                     return isset($status['due_at'])||in_array($status['state'],['queued','running','retrying'],true)
-                        ?$waiting($status):$missing('Use Sync prices on the registrar account.','account');
+                        ?$waiting($status):$missing('No current registrar cost for this term.');
                 }
                 if(!isset($once['synced'][$server])){$this->work->sync($b,RequestOrigin::Background);$once['synced'][$server]=$this->work->status($b);}
                 return $waiting($once['synced'][$server]);
@@ -153,6 +157,13 @@ final class StaffCatalogue
         return $once['pricing']===null?Pricing::rule($t):Pricing::rule($t,...$once['pricing']);
     }
     /** This account is already the chosen registrar but its seller row has the action off: name that switch. */
+    /** An absent cost is the registrar's answer only when the feed was read after this TLD's seller was last saved. */
+    private function readSinceSelected(Tld $t,int $succeededAt,array &$once): bool
+    {
+        // One read of the seller save times serves every row on the page.
+        $saved=($once['seller_saved']??=\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::pluck('updated_at','tld')->all())[$t->tld]??null;
+        return TldFacts::feedConfirmed(['selected_at'=>$saved?\Carbon\CarbonImmutable::parse($saved)->getTimestamp():null,'succeeded_at'=>$succeededAt]);
+    }
     private function sellerStep(Tld $t,string $action): string
     {
         $p=\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',$t->tld)->first();
@@ -371,7 +382,7 @@ final class StaffCatalogue
                 elseif($reason==='staff_stopped'&&($raw['sell']??null)===null&&!($d['defaultSell']??true)&&($raw['stops']??[])===[]
                     &&!\Paymenter\Extensions\Servers\Domains\Services\EndingChoices::hidden($t->tld)){$reason='not_sold_by_default';}
             }
-            $label=match($reason){'staff_stopped','staff_term_stopped','renewal_stopped'=>'Stopped by staff','not_sold_by_default'=>'Not sold by default','seller_changed'=>'No registrar selected','publication_pending'=>'Prices not published','renewals_off'=>TldFacts::RENEWALS_OFF,'stale_price'=>'Cost out of date','below_cost'=>'Below cost','unknown_price'=>'Cost missing','unknown_facts','stale_facts'=>TldFacts::TERMS_CHECKING,'unsupported_facts'=>($stopped?'This':'Set to sell, but this').' registrar '.Writer::unsupportedCause($facts,(string)$t->registrar_key,(string)$t->tld),'unsupported_term','provider_disabled'=>'Not offered by this registrar','unpublished_price'=>'Price missing','account_unavailable'=>'Check registrar account','cost_limit'=>'Over the cost limit',default=>'Check TLD settings'};
+            $label=match($reason){'staff_stopped','staff_term_stopped','renewal_stopped'=>'Stopped by staff','not_sold_by_default'=>'Not sold by default','seller_changed'=>TldFacts::NO_SELLER,'publication_pending'=>'Prices not published','renewals_off'=>TldFacts::RENEWALS_OFF,'stale_price'=>'Cost out of date','below_cost'=>'Below cost','unknown_price'=>'Cost missing','unknown_facts','stale_facts'=>TldFacts::TERMS_CHECKING,'unsupported_facts'=>($stopped?'This':'Set to sell, but this').' registrar '.Writer::unsupportedCause($facts,(string)$t->registrar_key,(string)$t->tld),'unsupported_term','provider_disabled'=>'Not offered by this registrar','unpublished_price'=>'Price missing','account_unavailable'=>'Check registrar account','cost_limit'=>'Over the cost limit',default=>'Check TLD settings'};
             $selected=!$unreadable&&$policy!==null&&TldTerms::chosen($t,(array)$policy,$d);
             $chosen=$invalidRule?null:$chosen;
             if(!$selected&&!isset($sellers[$t->tld])){$label=TldFacts::NO_SELLER;}

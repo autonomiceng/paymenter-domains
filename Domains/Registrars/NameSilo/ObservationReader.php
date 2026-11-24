@@ -22,7 +22,7 @@ final class ObservationReader extends Management
     {
         $this->binding->requireMatch($r->binding);$this->binding->requireMatch($c->binding);
         if (count($knownGlue)>50) { throw new \DomainException('Child-host history limit reached.'); }
-        $facts=$this->owned($r,$c);
+        $facts=$this->owned($r,$c,$c->observationReply($r->name,'getDomainInfo'));
         $out=array_fill_keys(['dns','srv','ds'],['state'=>'unknown','records'=>[]]);
         $out['glue']=['state'=>'partial','records'=>array_filter($knownGlue,fn($ip)=>$ip!=='')];
         $out['settings']=array_fill_keys(['nameservers','contacts','flags'],['state'=>'unknown','facts'=>[]]);

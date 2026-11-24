@@ -21,7 +21,7 @@ $offer=(new StaffCatalogue($ports,$clock))->rows([\Paymenter\Extensions\Servers\
 $page=Livewire::actingAs($actor)->test(WhatYouSell::class);$key=$page->instance()->getTableRecordKey($offer);
 $page->mountTableBulkAction('edit',[$key])->call('$refresh');$modal=$page->effects['partials']['action-modals.0']??'';
 expect(str_contains($modal,'Missing'),'Fixture includes unpriced registrar term totals');$errors=[];
-foreach(['No saved registrar total for these terms.','Prices updated ','Next update ','Sync prices is an optional retry.']as$text){if(!str_contains($modal,$text)){$errors[]='Terms dialog lacks '.$text;}}
+foreach(['No saved registrar total for these terms.','Prices updated ','Next update ']as$text){if(!str_contains($modal,$text)){$errors[]='Terms dialog lacks '.$text;}}
 if(str_contains($modal,'Sync prices to read these term totals')){$errors[]='Terms still requires a sync';}
 // Restore the saved amount with an expired cost and render the same native action again.
 DB::table('domains_prices')->where('id',$termPrice->id)->update(['retail'=>$termPrice->retail,...costColumns(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeCost($stale)))]);
@@ -32,7 +32,7 @@ foreach(['Customer total $'.number_format((float)$termPrice->retail,2,'.',''),'R
 
 // r16: two separate missing ranges say why once, on the first.
 $gaps=view('domains::admin.term-prices',['prices'=>array_map(fn($term)=>['term'=>$term,'current'=>in_array($term,[1,2,5,10],true)?'10.99':null,'cost'=>in_array($term,[1,2,5,10],true)?'8.9500':null,'synced'=>in_array($term,[1,2,5,10],true)],range(1,10))])->render();
-same([1,2,1],[substr_count($gaps,'No saved registrar total for these terms.'),substr_count(strip_tags($gaps),'Missing'),substr_count($gaps,'Sync prices is an optional retry.')],'Missing on 3 to 4 and 6 to 9 years, its cause once');
+same([1,2,1],[substr_count($gaps,'No saved registrar total for these terms.'),substr_count(strip_tags($gaps),'Missing'),substr_count($gaps,'Prices not updated yet.')],'Missing on 3 to 4 and 6 to 9 years, its cause once');
 // Three selected endings with fresh term facts, and no ending needing attention.
 $policy=\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',$t->tld)->sole()->getAttributes();unset($policy['id']);
 foreach(['net','org']as$ending){$copy=$t->replicate();$copy->tld=$ending;$copy->save();DB::table('domains_sales_policies')->insert([...$policy,'tld'=>$ending]);}
