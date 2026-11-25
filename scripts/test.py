@@ -334,8 +334,7 @@ def cancel_on_error(processes):
         raise
 
 def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, workers=None, worker_check=None, timings=None, only=None,
-        fail_fast=False, requested_jobs=None, memory_mib=None, jobs_explicit=False, lint_base=None, checkout=None, coverage=None,
-        retry=frozenset()):
+        fail_fast=False, requested_jobs=None, memory_mib=None, jobs_explicit=False, lint_base=None, checkout=None, coverage=None, retry=frozenset()):
     started_run = time.monotonic()
     image = os.environ.get('PHP_SUITE_IMAGE') if selected != ['mariadb'] else None
     php_version, php_packages = php_suite.installed_versions() if image else (None, {})
@@ -764,8 +763,6 @@ def main(*, launch=False):
         if not commands:
             raise ValueError('No runnable suites selected.')
         commands = order_commands(commands, previous)
-        retry = frozenset(index for index, (kind, argv) in enumerate(commands)
-                          if previous.get((kind, argv[-1]), (False,))[0])
         (output/'plan.json').write_text(json.dumps([{'index': i, 'kind': kind, 'argv': argv} for i, (kind, argv) in enumerate(commands)]))
         if not env.get('DOMAINS_TEST_CGROUP') and args.memory_mib < 2048 and any(kind == 'ui' or Path(argv[-1]).name.startswith('test_installed_') for kind, argv in commands if kind != 'lint'):
             raise ValueError('Installed-package and UI checks require a memory budget of at least 2048 MiB.')
@@ -780,7 +777,8 @@ def main(*, launch=False):
                 test_workers.prepare_funded_registration(env, output)
         return run(commands, env, output, selected, suites, dependency, jobs=jobs, workers=workers, worker_check=worker_check,
                    timings=timings, only=args.only, fail_fast=args.fail_fast, requested_jobs=args.jobs, memory_mib=args.memory_mib,
-                   jobs_explicit=jobs_explicit, lint_base=args.lint_base, checkout=checkout, coverage=coverage, retry=retry)
+                   jobs_explicit=jobs_explicit, lint_base=args.lint_base, checkout=checkout, coverage=coverage,
+                   retry=test_scheduling.known_failures(commands, previous))
     except BaseException as error:
         setup_failure(output, error)
         raise

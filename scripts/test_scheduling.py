@@ -96,3 +96,8 @@ def parallel(pool, commands, env, jobs, stopped, scheduling, command, record, su
             available.append(worker)
             if index == exclusive_running:
                 exclusive_running = None
+
+
+def known_failures(commands, previous):
+    """Indexes of commands that failed in the timing receipt; nothing starts beside UI while one waits."""
+    return frozenset(index for index, (kind, argv) in enumerate(commands) if previous.get((kind, argv[-1]), (False,))[0])
