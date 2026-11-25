@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Data\SendState;
+use Paymenter\Extensions\Servers\Domains\Data\{ExecutionRecord, SendState};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
@@ -54,19 +54,24 @@ same([true, SendState::PossiblySent, 'ordinary', 'USD', false, null, null, str_r
     $f->locallyRefused(), $f->replyOutcome(), $f->settlement(), $f->claimKey(), $f->orderReference(), $f->observed()], 'A sealed renewal without a reply is possibly sent');
 expect(WriteMoney::compare($cost->amount, '8.12') === 0, 'Authorized cost');
 same(['2026-11-25T12:00:00+00:00', 'UTC'], [$f->sentAt()->format(DATE_ATOM), $f->sentAt()->getTimezone()->getName()], 'Seal time in UTC');
-same((new DateTimeImmutable($at))->getTimestamp(), $f->windowStart()->getTimestamp(), 'The read window starts at the attempt start');
-same((new DateTimeImmutable($at))->getTimestamp() + ExecuteOperation::EXECUTION_SECONDS, $f->windowEnd()->getTimestamp(), 'The read window ends after the execution limit');
+// Proofs and identities save the window start as recorded, so it keeps the stored zone.
+same($at, $f->windowStart()->format(DATE_ATOM), 'The read window starts at the seal time as recorded');
+same([$start->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds')->format(DATE_ATOM), 'UTC'], [$f->windowEnd()->format(DATE_ATOM), $f->windowEnd()->getTimezone()->getName()], 'The read window ends after the execution limit, in UTC');
+same([ExecutionRecord::Absent, null, null, null], [$f->replyRecord(), $f->reply(), $f->acceptance(), $f->readProof()], 'No reply, acceptance or proof yet');
 
 $f = $facts[$refused];
 same([true, SendState::DefinitelyUnsent, 'unsent', null], [$f->locallyRefused(), $f->sendState(), $f->replyOutcome(), $f->settlement()], 'A prewire refusal is the local refusal');
+same([ExecutionRecord::Recorded, $refusal], [$f->replyRecord(), $f->reply()], 'The refusal reply as saved');
 
 $f = $facts[$settled];
 same([false, SendState::Sent, 'accepted', '1234', true], [$f->locallyRefused(), $f->sendState(), $f->replyOutcome(), $f->orderReference(), $f->observed()], 'An accepted reply with its order and observation');
 same(['outcome' => 'succeeded', 'evidence' => $proof, 'recorded_at' => '2026-11-25 12:05:00'], $f->settlement(), 'A confirmed renewal settled on its proof');
+same([$accepted, ['query' => ['name' => 'placeholder.com', 'years' => 1], 'order_reference' => '1234'], $proof], [$f->reply(), $f->acceptance(), $f->readProof()], 'The accepted reply, its acceptance and the read proof');
 
 $f = $facts[$lost];
 same([false, SendState::PossiblySent, 'unknown', null], [$f->locallyRefused(), $f->sendState(), $f->replyOutcome(), $f->settlement()], 'A lost reply stays possibly sent');
-same(null, $facts[$review]->settlement(), 'Captured proof under charge review is no settlement');
+same([ExecutionRecord::RecordedNull, null], [$f->replyRecord(), $f->reply()], 'A lost reply is recorded as null');
+same([null, $proof], [$facts[$review]->settlement(), $facts[$review]->readProof()], 'Captured proof under charge review is read proof, not a settlement');
 
 $f = $facts[$unpaid];
 same([false, null, false], [$f->sealed(), $f->sendState(), $f->locallyRefused()], 'An unpaid closure was never sealed');
