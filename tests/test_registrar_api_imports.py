@@ -131,9 +131,9 @@ def provider_names(source, blade=False, own=None):
             found.update('path:'+path for path in STRING_PATH.findall(text))
     if blade:
         found.update(name for name in map(provider, QUALIFIED.findall(source)) if name)
-        for block in BLADE_PHP.finditer(source):
-            found |= provider_names('<?php\n'+(block[1] if block[1] is not None else block[2])+';\n')
-        return found
+        # Blade compiles every block into one PHP file, so an import in one block names classes in later blocks.
+        blocks = ''.join((block[1] if block[1] is not None else block[2])+';\n' for block in BLADE_PHP.finditer(source))
+        return found | (provider_names('<?php\n'+blocks) if blocks else set())
     code = NOISE.sub("''", source)
     namespace, level, depth, aliases, spans = '', 0, 0, {}, []
     for match in SCOPE.finditer(code):
@@ -291,6 +291,12 @@ class RegistrarApiImports(unittest.TestCase):
         blade = (f'@php\n    use {BASE}Registrars\\NameSilo\\Client;\n@endphp\n'
                  f'@php($driver = {BASE}Registrars\\Enom\\Driver::make())\n{{{{ Client::name() }}}}\n')
         self.assertEqual({'Registrars\\NameSilo\\Client', 'Registrars\\Enom\\Driver'},
+                         provider_names(blade, blade=True))
+
+    def test_reverse_reader_keeps_blade_imports_for_later_blocks(self):
+        blade = (f'@php\n    use {BASE}Registrars as R;\n    use {BASE}Registrars\\{{NameSilo}};\n@endphp\n'
+                 '@php($driver = R\\Enom\\Driver::make())\n@php $client = NameSilo\\Client::name(); @endphp\n')
+        self.assertEqual({'Registrars\\Enom\\Driver', 'Registrars\\NameSilo\\Client'},
                          provider_names(blade, blade=True))
 
     def test_reverse_reader_counts_the_enom_call_limit_service(self):
