@@ -132,6 +132,14 @@ final class OfferState
             || TestCatalogueFacts::current($binding, $tld, $facts, $clock);
     }
 
+    /** Facts a worker or sale can rely on now: unexpired, read under the current reviewed authority and,
+     * on NameSilo TEST, backed by accepted local evidence. */
+    public static function readyFacts(AccountBinding $binding, string $tld, ?Facts $facts, Clock $clock): bool
+    {
+        return $facts !== null && $facts->fresh($clock->now()) && TermSupport::currentFacts($binding, $tld, $facts)
+            && self::testFactsAccepted($binding, $tld, $facts, $clock);
+    }
+
     /** Ordinary acquisition terms use the account's accepted observation. Longer renewal approvals are separate. */
     public static function acquisitionFacts(AccountBinding $binding, object $tld, Clock $clock): ?Facts
     {

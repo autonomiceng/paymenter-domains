@@ -70,7 +70,7 @@ final class OfferWork
                 $work['facts'][$tld]['due_at'] = $this->at();
             } else {
                 if (count($work['facts'] ?? []) >= 5000) { throw new \DomainException('Offer facts queue is full.'); }
-                $work['facts'][$tld] = ['sold_only' => $soldOnly, 'authority' => $authority, 'due_at' => !$rejected && $current && $facts->fresh($this->clock->now()) ? $facts->freshUntil->getTimestamp() : $this->at()];
+                $work['facts'][$tld] = ['sold_only' => $soldOnly, 'authority' => $authority, 'due_at' => OfferState::readyFacts($binding, $tld, $facts, $this->clock) ? $facts->freshUntil->getTimestamp() : $this->at()];
             }
             $q->update(['offer_work' => OfferState::json($work)]);
         });
@@ -105,8 +105,7 @@ final class OfferWork
             if ($failure) { return $failure; }
             $state = $work['facts'][$tld] ?? []; $facts = OfferState::facts($t->catalogue_facts);
             $status = match (true) {
-                $facts && $facts->fresh($this->clock->now()) && TermSupport::currentFacts($binding, $tld, $facts)
-                    && OfferState::testFactsAccepted($binding, $tld, $facts, $this->clock) => 'ready',
+                OfferState::readyFacts($binding, $tld, $facts, $this->clock) => 'ready',
                 !$state => 'unknown',
                 !empty($state['waiting_for_evidence']) => 'waiting_for_evidence',
                 !empty($state['unsupported']) => 'unsupported',
