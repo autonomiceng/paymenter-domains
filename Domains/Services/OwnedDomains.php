@@ -9,6 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{OwnedDomain,RequestStatus,StatusPill};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Dns;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 final readonly class OwnedDomains
 {
     /** Legacy registrar-reset evidence only; management forms use the saved site DNS choice. */

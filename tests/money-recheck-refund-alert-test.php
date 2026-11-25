@@ -76,7 +76,7 @@ $retirement->inspect($domain->id);same(0,$alerts()->count(),'Only an audited sta
 DB::table('domains_obligation_alerts')->where('id',$hold)->update(['resolved_at'=>$clock->now()->getTimestamp()]); // The owner hold above refuses new domain carts.
 $retired=$new('recheck-retired-placeholder.com');$retiredPayment=InvoiceTransaction::where('invoice_id',$retired->invoice_id)->where('amount','>','0')->sole();
 DB::table('invoice_transactions')->where('id',$retiredPayment->id)->update(['amount'=>'1.00']);
-DB::table('domains_operations')->where('id',$retired->id)->update(['state'=>'rejected','safe_code'=>\Paymenter\Extensions\Servers\Domains\Services\UnpaidAcquisitionProof::CODE]);
+DB::table('domains_operations')->where('id',$retired->id)->update(['state'=>'rejected','safe_code'=>\Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof::CODE]);
 $retired->refresh()->update(['funding'=>['late_credits'=>[['to'=>'account_credit','amount'=>'1.00','currency'=>'USD','payments'=>[['id'=>(int)$retiredPayment->id,'amount_minor'=>100]]]]]]);
 $activity=new ReflectionMethod(AcquisitionRetirement::class,'activity');
 $retiredActivity=static fn()=>$activity->invoke(null,$retired->fresh(),'cancelled','cancelled',InvoiceTransaction::where('invoice_id',$retired->invoice_id)->orderBy('id')->get());

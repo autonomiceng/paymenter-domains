@@ -5,7 +5,8 @@ require __DIR__.'/Support/acquisition-retirement.php';
 use App\Models\{Service,ServiceCancellation};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Illuminate\Support\Facades\{Auth,DB};
-use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,DomainReservations,HoldingLocks,NativeCancellation,NativeIdentity,NativeIntentSchema,ReminderSchema,StaffHoldingReview,UnpaidAcquisitionProof};
+use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,DomainReservations,HoldingLocks,NativeCancellation,NativeIdentity,NativeIntentSchema,ReminderSchema,StaffHoldingReview};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionActions;
 // The durable cursor does not need model events (the native cron invoice UPDATE bypasses them).
 $solo=$new(placeholderComFixtureName('unpaid-solo-placeholder.com'),paid:false);$cancel($solo);$retirement->inspect($solo->domain_id);

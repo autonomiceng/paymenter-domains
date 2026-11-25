@@ -9,7 +9,8 @@ use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\{Auth,Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,HoldingLocks,StaffHoldingReview,UnpaidAcquisitionProof};
+use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,HoldingLocks,StaffHoldingReview};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 final class AcquisitionActions
 {
     public const DESCRIPTION='Closes the unpaid order and releases the domain name.';

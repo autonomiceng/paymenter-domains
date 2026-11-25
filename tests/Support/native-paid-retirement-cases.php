@@ -5,7 +5,8 @@ require __DIR__.'/native-paid-cases.php';
 use App\Models\{Credit,Invoice,InvoiceTransaction,Service};
 use Illuminate\Support\Facades\{DB,Event,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,ContactRecovery,ContactSetup,NativeActivationInformation,NativePaidHooks,Refunds,UnpaidAcquisitionProof};
+use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,ContactRecovery,ContactSetup,NativeActivationInformation,NativePaidHooks,Refunds};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionPaymentReview;
 // A proven unpaid retirement releases its name; late money and native Active never reclaim it.
 $retired=$new(placeholderComFixtureName('paid-retired-placeholder.com'),paid:false);DB::table('invoices')->where('id',$retired->invoice_id)->update(['status'=>'cancelled']);DB::table('services')->where('id',$retired->service_id)->update(['status'=>'cancelled']);$retirement->inspect($retired->domain_id);

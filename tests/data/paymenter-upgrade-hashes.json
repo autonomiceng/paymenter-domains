@@ -287,7 +287,7 @@
           "Domains/Services/NativeStock.php",
           "Domains/Services/NativeCancellation.php",
           "Domains/Services/AcquisitionRetirement.php",
-          "Domains/Services/UnpaidAcquisitionProof.php"
+          "Domains/Registration/Checkout/UnpaidAcquisitionProof.php"
         ],
         "review": "Re-review all-null stock arithmetic and model events, old pending cron whole-invoice bulk cancellation, immediate unpaid cancellation writes, after-commit wakes and locked unfunded retirement.",
         "files": {

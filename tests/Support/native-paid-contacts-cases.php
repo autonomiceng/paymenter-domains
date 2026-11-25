@@ -5,7 +5,8 @@ require __DIR__.'/native-paid-cases.php';
 use App\Models\{Credit,Invoice,InvoiceTransaction,Service};
 use Illuminate\Support\Facades\{DB,Event,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,ContactRecovery,ContactSetup,NativeActivationInformation,NativePaidHooks,Refunds,UnpaidAcquisitionProof};
+use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,ContactRecovery,ContactSetup,NativeActivationInformation,NativePaidHooks,Refunds};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionPaymentReview;
 // Missing account contacts keep native callbacks from automatically readmitting the hold.
 $phone=$user->properties()->where('key','phone')->sole();$savedPhone=$phone->value;$phone->update(['value'=>'']);

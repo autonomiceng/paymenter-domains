@@ -1,8 +1,9 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Registration\Checkout;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Services\{InvoiceBinding, InvoiceScope, RefundProof};
 /** Caller owns HoldingLocks. No transaction, status or absence of provider reads proves a send failed. */
 final class UnpaidAcquisitionProof
 {

@@ -147,7 +147,7 @@ expect($reviewFailures===[],implode('; ',$reviewFailures));
 // Cancellation alone never proves no send. Reuse the engine's terminal no-send proof.
 $cancelled=clone $enom;$cancelled->status='cancelled';$cancelled->observation=[];$cancelled->service_id=1;
 $op=new Paymenter\Extensions\Servers\Domains\Models\Operation(['domain_id'=>$cancelled->id,'service_id'=>1,'server_id'=>$cancelled->server_id,'registrar_key'=>'enom','account_fingerprint'=>$cancelled->account_fingerprint,'authority_generation'=>1,'action'=>'register','funding_basis'=>'paid_invoice','state'=>'rejected','safe_code'=>'acquisition_cancelled_unpaid','completed_at'=>$now,'funding'=>[],'cost'=>[],'policy'=>[]]);
-$op->attempt=Paymenter\Extensions\Servers\Domains\Services\UnpaidAcquisitionProof::attempt($op);$cancelled->setRelation('operations',collect([$op]));
+$op->attempt=Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof::attempt($op);$cancelled->setRelation('operations',collect([$op]));
 $facts=RecordFamilies::read($cancelled,$now);$cancelHtml=view('domains::partials.record-families',['recordFamilies'=>$facts,'staff'=>true])->render();
 expect(str_contains($cancelHtml,'Registration cancelled; no registrar records to check')&&!str_contains($cancelHtml,'Sync this domain'),'No-send cancellation has no fictional inventory');
 

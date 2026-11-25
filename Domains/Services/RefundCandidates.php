@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Database\{Eloquent\Builder, Query\Builder as Query};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 /** Shared queue selection only. Encrypted funding and refusal proof are checked under holding locks.
  * A candidate is never proof of credit eligibility; SQL intentionally includes credited rows.
  */
