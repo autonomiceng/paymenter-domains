@@ -1,6 +1,8 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+// Each mode starts from a paid order: native registration checkout runs without rendering the cart.
+$fixtureReadyRegistration = true;
 require __DIR__.'/Support/registration-enom.php';
 use Paymenter\Extensions\Servers\Domains\Contracts\RegistrationTransport;
 use Paymenter\Extensions\Servers\Domains\Data\{Action, AdmittedOperation, DriverResult, Money, NameserverEvidence, Query, RequestBudget, RequestContext, RequestOrigin};
