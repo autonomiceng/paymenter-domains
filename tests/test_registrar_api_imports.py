@@ -33,31 +33,36 @@ ALLOWED = {
     'NameSilo/Api/ResponseParser.php': ['Registrars\\NameSilo\\DefaultContact'],
 }
 
-USE = re.compile(r'^\s*use\s+(?:function\s+|const\s+)?([^;]+);', re.MULTILINE)
 QUALIFIED = re.compile(r'(?<![\w\\])\\([A-Z]\w*(?:\\[A-Z]\w*)+)')
-NAMESPACE = re.compile(r'^\s*namespace\s+([\w\\]+)\s*[;{]', re.MULTILINE)
-DECLARATION = re.compile(r'^\s*(?:(?:final|abstract|readonly)\s+)*(?:class|trait|interface|enum)\s', re.MULTILINE)
+# Comments and strings, blanked before reading scope so their braces and words do not count.
+NOISE = re.compile(r"""//[^\n]*|#(?!\[)[^\n]*|/\*.*?\*/|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*\"""", re.DOTALL)
+SCOPE = re.compile(r'(?<![\w$>\\])(?:namespace\s+(?P<space>[\w\\]*)\s*(?P<opener>[;{])'
+                   r'|use\s+(?!\()(?:function\s+|const\s+)?(?P<text>[^;{]*)(?P<block>\{[^}]*\})?\s*;?)|(?P<brace>[{}])')
 
 
 def names(source):
     """Every class a PHP file imports, uses as a trait or names fully qualified, without the leading backslash.
 
-    `use` before the first class-like declaration imports an absolute name. Inside a class body `use` names a trait,
-    resolved against the file's namespace unless it starts with a backslash."""
+    PHP decides by scope: `use` at namespace level imports an absolute name wherever it appears in the file, and
+    `use` inside a class-like body names a trait, resolved against the file's namespace unless it starts with a
+    backslash."""
     found = set(QUALIFIED.findall(source))
-    body = DECLARATION.search(source)
-    header, classes = (source[:body.start()], source[body.start():]) if body else (source, '')
-    namespace = (NAMESPACE.search(source) or [None, ''])[1]
-    for statement in USE.findall(classes):
-        found.update(item if item.startswith('\\') else namespace+'\\'+item
-                     for item in (part.strip() for part in statement.split(',')) if item)
-    found = {name.lstrip('\\') for name in found}
-    for statement in USE.findall(header):
-        group = re.fullmatch(r'\s*\\?([\w\\]+)\\\{([^}]*)\}\s*', statement)
-        items = [item.strip() for item in (group[2] if group else statement).split(',')]
-        found.update((group[1]+'\\' if group else '')+re.split(r'\s+as\s+', item)[0].lstrip('\\')
-                     for item in items if item)
-    return found
+    namespace, level, depth = '', 0, 0
+    for match in SCOPE.finditer(NOISE.sub("''", source)):
+        if match['brace']:
+            depth += 1 if match['brace'] == '{' else -1
+        elif match['opener']:
+            namespace = match['space']
+            depth += match['opener'] == '{'
+            level = depth
+        elif depth == level:
+            prefix = match['text'].strip().lstrip('\\') if match['block'] else ''
+            items = (match['block'][1:-1] if match['block'] else match['text']).split(',')
+            found.update(prefix+re.split(r'\s+as\s+', item.strip())[0].lstrip('\\') for item in items if item.strip())
+        else:
+            found.update(item if item.startswith('\\') else namespace+'\\'+item
+                         for item in (part.strip() for part in match['text'].split(',')) if item)
+    return {name.lstrip('\\') for name in found}
 
 
 def outside(path, root=API):
@@ -90,9 +95,13 @@ class RegistrarApiImports(unittest.TestCase):
     def test_reader_sees_grouped_aliased_and_qualified_names(self):
         source = ('<?php\nnamespace A\\B;\nuse C\\{D, E as F};\nuse G\\H as I;\n'
                   'class X { use Trait; function f() { return "\\r\\n".\\J\\K::L; } }\n')
-        self.assertEqual({'C\\D', 'C\\E', 'G\\H', 'J\\K'}, names(source))
+        self.assertEqual({'A\\B\\Trait', 'C\\D', 'C\\E', 'G\\H', 'J\\K'}, names(source))
         bracketed = '<?php\nnamespace A\\B {\n    use \\C\\{D};\n    use E\\F;\n}\n'
         self.assertEqual({'C\\D', 'E\\F'}, names(bracketed))
+        late = ('<?php\nnamespace A;\nenum Encoding\n{\n    case Url; // use Not\\Code;\n}\n'
+                'use B\\C;\nfinal class Y\n{\n    use T;\n'
+                '    function f() { return function () use ($x) { return "{$x}"; }; }\n}\n')
+        self.assertEqual({'A\\T', 'B\\C'}, names(late))
 
     def test_nested_api_files_are_scanned_and_relative_traits_stay_inside(self):
         api = BASE+'Registrars\\Enom\\Api'
