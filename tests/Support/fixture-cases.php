@@ -197,6 +197,8 @@ function nativeCaseCheckpoint(array $state = []): Closure
         date_default_timezone_set($zone); setlocale(LC_ALL, $locale); app()->setLocale($appLocale); Carbon\Carbon::setLocale($carbonLocale);
         Carbon\Carbon::setTestNow($nativeNow); Carbon\CarbonImmutable::setTestNow($immutableNow);
         nativeRestoreStorage($files);
+        // Laravel remembers each compiled string view, such as a mail subject, by the file the storage restore removes.
+        Illuminate\View\Component::flushCache();
         same($prepared, $witness(), 'Case reset restores schema, bindings, listeners, config, timezone, locale, globals and files');
     };
 }
