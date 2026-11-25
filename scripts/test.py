@@ -651,6 +651,8 @@ def main(*, launch=False):
     os.umask(0o077)
     checkout = git_tree()
     selected = args.suite or []
+    # Every receipt records the requested plan's coverage. A default run without the native fixture is smaller.
+    coverage = 'only' if args.only else 'suites' if args.suite else 'full' if FIXTURE_SUITES <= set(default_suites()) else 'fixture-free'
     timings = {}
 
     def setup_output():
@@ -663,7 +665,7 @@ def main(*, launch=False):
             tree, tree_error = unchanged_tree(checkout)
             receipt.write_text(json.dumps({'complete': False, 'phase': 'setup', 'error_type': type(error).__name__, 'selected_suites': selected,
                                            'git_tree': tree, 'git_tree_error': tree_error,
-                                           'only_tests': args.only or [], 'lint_base': args.lint_base, 'timings': timings})+'\n')
+                                           'only_tests': args.only or [], 'lint_base': args.lint_base, 'coverage': coverage, 'timings': timings})+'\n')
             print('Setup failed; receipt: '+str(receipt), file=sys.stderr)
 
     try:
@@ -682,7 +684,7 @@ def main(*, launch=False):
         raise
     if launch and selected != ['mariadb'] and not php_suite.RUNTIME.is_dir():
         _, arguments = timing_option.parse_known_args()
-        return php_suite.domains(ROOT, arguments, history=args.timings_from)
+        return php_suite.domains(ROOT, arguments, coverage=coverage, history=args.timings_from)
     jobs_explicit = args.jobs is not None or 'DOMAINS_TEST_JOBS' in os.environ
     if args.jobs is None:
         try:
@@ -771,8 +773,7 @@ def main(*, launch=False):
                 test_workers.prepare_funded_registration(env, output)
         return run(commands, env, output, selected, suites, dependency, jobs=jobs, workers=workers, worker_check=worker_check,
                    timings=timings, only=args.only, fail_fast=args.fail_fast, requested_jobs=args.jobs, memory_mib=args.memory_mib,
-                   jobs_explicit=jobs_explicit, lint_base=args.lint_base, checkout=checkout,  # A default run without the native fixture is smaller.
-                   coverage='only' if args.only else 'suites' if args.suite else 'full' if FIXTURE_SUITES <= set(selected) else 'fixture-free')
+                   jobs_explicit=jobs_explicit, lint_base=args.lint_base, checkout=checkout, coverage=coverage)
     except BaseException as error:
         setup_failure(output, error)
         raise

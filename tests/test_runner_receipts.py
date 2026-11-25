@@ -350,13 +350,13 @@ sudo() {
                      mock.patch.object(suite, 'git_inputs', side_effect=ValueError('Invalid Git alternate object directory.')), \
                      mock.patch.object(suite, 'image_root') as image, contextlib.redirect_stderr(io.StringIO()):
                     with self.assertRaises(expected) as failure:
-                        suite.domains(root, [])
+                        suite.domains(root, [], coverage='full')
                 if reason == 'cgroup':
                     self.assertIn('delegated memory controller', str(failure.exception))
                 image.assert_not_called()
                 receipt, = root.glob('domains-tests-*/receipt.json')
                 self.assertEqual(json.loads(receipt.read_text()),
-                                 dict(complete=False, phase='setup', runtime_unchanged=False))
+                                 dict(complete=False, phase='setup', coverage='full', runtime_unchanged=False))
 
     def test_fail_fast_cancelled_sibling_is_not_a_failure(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -684,8 +684,28 @@ sudo() {
                  mock.patch.object(tempfile, 'tempdir', temp), \
                  mock.patch.object(suite, 'image_root', return_value=contextlib.nullcontext((output, 'image'))), \
                  mock.patch.object(suite, 'run_bundle', side_effect=launched), contextlib.redirect_stderr(io.StringIO()):
-                suite.domains(ROOT, ['--only', 'tests/money-lock-scale-test.php'])
+                suite.domains(ROOT, ['--only', 'tests/money-lock-scale-test.php'], coverage='only')
         self.assertEqual(seen.get('DOMAINS_TEST_MONEY_SCALE_FULL_MATRIX'), '1')
+
+    def test_setup_refusal_and_container_startup_failure_record_the_requested_coverage(self):
+        """A run that stops before its commands still records which plan it was asked for."""
+        suite = runner.php_suite
+        for option, arguments, phase, expected in [({'DOMAINS_TEST_MONEY_SCALE_FULL_MATRIX': '1'}, ['--suite', 'provider'], 'setup', 'suites'),
+                                                   ({}, ['--jobs', '1'], 'container', 'fixture-free')]:
+            with self.subTest(expected=expected), tempfile.TemporaryDirectory() as temp:
+                output = Path(temp)
+                group = output/'cgroup'; group.mkdir(); (group/'cgroup.subtree_control').write_text('memory')
+                with mock.patch.dict(os.environ, {**option, 'DOMAINS_TEST_CGROUP': str(group), 'DOMAINS_TEST_BUDGET': 'x'}), \
+                     mock.patch.object(suite, 'CGROUP', output), mock.patch.object(suite, 'membership', return_value=Path('/cgroup')), \
+                     mock.patch.object(suite, 'RUNTIME', output/'absent'), mock.patch.object(tempfile, 'tempdir', temp), \
+                     mock.patch.object(suite, 'image_root', side_effect=RuntimeError('image start failed')), \
+                     mock.patch.object(runner.sys, 'argv', ['test.py', *arguments]), \
+                     contextlib.redirect_stderr(io.StringIO()), self.assertRaises((ValueError, RuntimeError)):
+                    os.environ.pop('PAYMENTER_TEST_APP', None)
+                    runner.main(launch=True)
+                receipt, = output.glob('domains-tests-*/receipt.json')
+                receipt = json.loads(receipt.read_text())
+                self.assertEqual((receipt['complete'], receipt['phase'], receipt.get('coverage')), (False, phase, expected))
 
     def test_checkout_tree_ignores_the_callers_git_overrides(self):
         with tempfile.TemporaryDirectory() as temp:

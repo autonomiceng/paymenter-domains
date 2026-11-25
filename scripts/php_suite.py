@@ -209,7 +209,7 @@ def grant_scope():
     os.execvp(command[0], [*command, '--', sys.executable, *sys.argv])
 
 
-def domains(root, arguments, *, history=None):
+def domains(root, arguments, *, coverage, history=None):
     output = None
     phase = 'setup'
     try:
@@ -271,7 +271,7 @@ def domains(root, arguments, *, history=None):
             output = Path(tempfile.mkdtemp(prefix='domains-tests-')).resolve()
         receipt = output/'receipt.json'
         if not receipt.exists():
-            receipt.write_text(json.dumps(dict(complete=False, phase=phase, runtime_unchanged=False))+'\n')
+            receipt.write_text(json.dumps(dict(complete=False, phase=phase, coverage=coverage, runtime_unchanged=False))+'\n')
             print('Suite startup or execution failed; receipt: '+str(receipt), file=sys.stderr)
 
 
