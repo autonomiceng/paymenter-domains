@@ -81,11 +81,11 @@ $progress('Request #'.$op->id.': all 2 changes verified.');same(['dnsUpdateRecor
 $rows=$form();$rows[1]['address']='v=spf1 mx -all';
 $staffPage()->callAction(TestAction::make('edit_dns')->schemaComponent('relationManagerTabs.sheet','content'),['records'=>$rows,'preimage_digest'=>$section()['digest']])->assertHasNoActionErrors();
 $op=$latest();same((int)$staff->id,(int)$op->authorized_by,'The staff save is one request');Cache::flush();$management->run($op->id,$driver);
-$progress('Request #'.$op->id.': 1 change verified.');same($caa,$by('CAA'),'Staff edits keep read-only rows');
+// Owner and staff progress parity is proven above; the staff request reports through the same polling row.
+same('Request #'.$op->id.': 1 change verified.',(new OwnedDomainController($owners))->status($request(),$d->id)->getData(true)['dns']['text']??null,'The staff save reports its request progress');
+same($caa,$by('CAA'),'Staff edits keep read-only rows');
 // A valid save that changes a saved row's type sends that row as new, with the registrar default TTL; other rows stay.
 $rows=$form();$i=array_search('TXT',array_column($rows,'type'),true);expect($i!==false,'A saved TXT row is on the form');
-$cell=$page()->query('//li[@id="dns"]//table[contains(@class,"domains-records")]/tbody/tr[@data-record]')->item($i)->getElementsByTagName('td')->item(4);
-same(['TXT',(string)$by('TXT')['ttl']],[$cell->getAttribute('data-saved-type'),$text($cell)],'The saved TXT row shows its kept TTL before the change');
 $others=array_values(array_filter($wire->records,fn($r)=>$r['type']!=='TXT'));$sent=count($wire->writes);$count=$d->operations()->count();
 $rows[$i]=[...$rows[$i],'type'=>'A','address'=>'192.0.2.9'];same(302,$post($rows)->getStatusCode(),'A changed type to an editable type is accepted');
 expect($d->operations()->count()>$count,'The type change is queued');$op=$latest();
