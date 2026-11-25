@@ -18,6 +18,13 @@ $offer=static fn(string $action)=>$ports->readOffers(new Query($binding,['com'],
 $ports->apply(new FactsObserved($binding,'com',new Facts(['register'=>[1,3],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day'))),$offer('register')->revision);
 $catalogue=Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::class,['account'=>$t->server_id])->assertSuccessful();
 expect($catalogue->instance()->getTableRecords()->contains('tld','com'),'The default sale list keeps a purchasable TLD');
+// The table's own cells say why a price is red or off: a registration below cost, and a term the registrar does not offer (it sells 1 and 3 years).
+DB::table('domains_prices')->where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'register','term'=>1])->update(['retail'=>'1.00']);
+$cell=static fn(string $column)=>$catalogue->instance()->getTable()->getColumn($column)->record($catalogue->instance()->getTableRecords()->firstWhere('tld','com'));
+$catalogue->call('$refresh');same('This price is below registrar cost.',$cell('register_profit')->getTooltip(),'A below-cost registration says so in its Profit cell');
+$catalogue->set('years',2);
+same(['Off','Not offered by this registrar for this term.'],[$cell('register_price')->getState(),$cell('register_price')->getDescriptionBelow()],'An unsupported term is Off with its reason');
+$catalogue->set('years',1);
 $ports->apply(Edit::override($binding,'com',new Intent(sell:false,stops:['register','transfer'])),$offer('register')->revision);
 $catalogue->call('$refresh')->assertSuccessful();
 expect(!$catalogue->instance()->getTableRecords()->contains('tld','com'),'What you sell excludes a TLD when sales stop');
