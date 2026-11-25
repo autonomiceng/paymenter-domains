@@ -9,10 +9,10 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName, CatalogueFreshness, Environment};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName, CatalogueFreshness};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
 use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferTerms;
-use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestCatalogueFacts;
+use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\Offers;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AcquisitionOffers, CardFee, NativeCatalogue, PricingRules, StaffSettingsReview as Review};
 
 /** A normalized selection. Both the preview and the locked writer rebuild its local evidence. */
@@ -167,9 +167,8 @@ final readonly class SalesSetupDraft
                 };
                 [$row, $command] = $this->propose($row, $t, $before, $intent, $block, $rule, $defaultRule, $fee, $showCosts,
                     $readiness[$this->serverId], $now, $native[$t->id] ?? []);
-                if ($block === null && $binding->registrarKey === 'namesilo' && $binding->environment === Environment::Test
-                    && isset($credentials[$this->serverId])
-                    && TestCatalogueFacts::hasEvidence($binding, $credentials[$this->serverId], $name, $this->clock) === false) {
+                if ($block === null && isset($credentials[$this->serverId])
+                    && Offers::testFactsWaiting($binding, $credentials[$this->serverId], $name, $this->clock)) {
                     $row['facts_state'] = 'waiting_for_evidence';
                 }
                 if ($command || $row['status'] === 'unchanged' && $this->pricing !== 'keep') {
