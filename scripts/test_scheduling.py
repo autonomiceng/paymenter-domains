@@ -1,7 +1,10 @@
 """Admit installed lifecycles early, with room for ordinary native work."""
 # MIT, Copyright (c) 2026 Autonomic Engineering.
 from concurrent.futures import FIRST_COMPLETED, wait
+import contextlib
 from pathlib import Path
+
+LOCAL_BUDGET = Path(__file__).resolve().parent/'case_budget.py'
 
 
 def installed(kind, argv):
@@ -10,21 +13,44 @@ def installed(kind, argv):
         name.startswith('test_installed_package') or name == 'test_installed_namesilo_enrollment.py')
 
 
-# Ordinary native commands that may run beside a browser case under the
-# per-case memory ceilings: 768 MiB for the browser case and 256 MiB each
-# leave 256 MiB of a 2 GiB scope for the controller.
+# At most this many ordinary native commands run beside a browser case, and only
+# while every active case ceiling plus the controller reserve fits the scope.
 BESIDE_UI = 4
+CONTROLLER_RESERVE = 256*1024**2
 
 
-def parallel(pool, commands, env, jobs, stopped, scheduling, command, record, submitted, *, wait_for=wait):
+def memory_ceiling(kind, env):
+    """The memory cap the case budget gives one bounded command."""
+    if (env.get('DOMAINS_TEST_CGROUP') and env.get('DOMAINS_TEST_BUDGET') == str(LOCAL_BUDGET)
+            and env.get('DOMAINS_TEST_LIMITS') != 'wide'):
+        return 512*1024**2
+    return (768 if kind == 'ui' else 256)*1024**2
+
+
+def scope_bytes(env):
+    """The lowest memory limit on the delegated group or its ancestors, or None."""
+    limits = []
+    if group := env.get('DOMAINS_TEST_CGROUP'):
+        for path in (Path(group), *Path(group).parents):
+            with contextlib.suppress(OSError, ValueError):
+                limits.append(int((path/'memory.max').read_text()))
+    return min(limits, default=None)
+
+
+def parallel(pool, commands, env, jobs, stopped, scheduling, command, record, submitted, *, wait_for=wait,
+             retry=frozenset()):
+    """Run commands on jobs workers; retry holds the indexes that failed in the timing receipt."""
     waiting, pending, available = list(range(len(commands))), {}, list(range(jobs))
     exclusive_running = None
     installed_limit = min(2, max(1, jobs-1))
-    beside_limit = BESIDE_UI if env.get('DOMAINS_TEST_CGROUP') else 0
+    scope = scope_bytes(env)
     while pending or (waiting and not stopped.is_set()):
         while available and waiting and not stopped.is_set():
             beside_ui = exclusive_running is not None and commands[exclusive_running][0] == 'ui'
-            if exclusive_running is not None and not (beside_ui and len(pending) <= beside_limit):
+            if exclusive_running is not None and not (beside_ui and len(pending) <= BESIDE_UI):
+                break
+            # A known failure waiting behind the browser case runs before anything new.
+            if beside_ui and (scope is None or retry.intersection(waiting)):
                 break
             position = 0
             index = waiting[position]
@@ -46,6 +72,9 @@ def parallel(pool, commands, env, jobs, stopped, scheduling, command, record, su
                                          and argv[-1].endswith('.py')
                                          and Path(argv[-1]).name.startswith('test_installed_'))
             if (exclusive and pending) or (beside_ui and kind != 'native'):
+                break
+            if beside_ui and CONTROLLER_RESERVE + memory_ceiling(kind, env) + sum(
+                    memory_ceiling(commands[row][0], env) for row, _ in pending.values()) > scope:
                 break
             with scheduling:
                 if stopped.is_set():

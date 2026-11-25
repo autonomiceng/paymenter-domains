@@ -15,6 +15,8 @@ assertion, fixture or host quick-lane admission policy.
 two installed children must start before ordinary work, ordinary work must run while they
 are blocked, and later installed children must remain unstarted until a slot is free.
 A second case drives the scheduler with a UI check that outlasts its neighbours: with
-`DOMAINS_TEST_CGROUP` set, ordinary native work starts beside it, never more than four at
-once and never an installed lifecycle; without it, nothing starts beside the UI check.
+`DOMAINS_TEST_CGROUP` set, ordinary native work starts beside it, never an installed
+lifecycle and never more than the 2 GiB scope fits: four at wide ceilings, two at local
+ones; without it, nothing starts beside the UI check. A third case gives an installed
+lifecycle a previous failure: nothing starts beside the UI check, and it runs next.
 The existing runner tests retain fail-fast, interruption, output and integrity evidence.
