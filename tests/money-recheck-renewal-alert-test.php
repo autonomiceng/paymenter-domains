@@ -45,7 +45,7 @@ $historyRegistry=new RegistrarRegistry;
 $historyRegistry->register('enom',['token'],$verify,fn($b,$c)=>new Driver(new Client($b,'account-enom',$c['token'],$history),['com']));
 $historyBindings=new AccountBindings($historyRegistry);
 HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',60,2592000,'enom_renewal_v1'));
-$clock->instant=(new DateTimeImmutable($op->fresh()->attempt['dispatch_attempted_at']))->modify('+25 hours');Cache::flush();
+$clock->instant=renewalSentAt($op)->modify('+25 hours');Cache::flush();
 $state->after='2027-10-18';$state->lost=false;
 same('uncertain',(new RenewalCompletion($historyBindings,$clock))->run($op->id)->state,'No-order read alone does not settle the original outcome');
 $op=$op->fresh();

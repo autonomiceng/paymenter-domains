@@ -56,7 +56,7 @@ try {
     $reply = $first->run($op->id, $firstWriter);
     same(['awaiting_payment', 3, []], $duringAdmission, 'The second worker preserves the current admission');
     same(['uncertain', 5, array_diff_key($reply->attempt, ['execution' => true, 'renewal' => true])], $afterExpiry, 'Expired reservation is quarantined before the first reply');
-    same(['uncertain', 'stale_claim', 'accepted', 6], [$reply->state, $reply->safe_code, $reply->attempt['execution']['disposition'], $reply->transition_revision],
+    same(['uncertain', 'stale_claim', 'accepted', 6], [$reply->state, $reply->safe_code, renewalReply($reply)['outcome'], $reply->transition_revision],
         'Late acknowledgement observes the original reservation without reviving it');
     same(['item' => [$op->invoice_item_id => PricingRule::minor($op->amount)],
         'payment' => [$invoice->transactions()->sole()->id => PricingRule::minor($op->amount)]],

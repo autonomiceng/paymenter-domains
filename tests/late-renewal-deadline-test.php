@@ -24,7 +24,7 @@ foreach(['on','off','unknown'] as $case){
     [$dead,$dbind]=$holder('review-deadline-'.$case);Cache::flush();$dinv=$lateBilling->invoice($dead->id,$user,1);$dop=Operation::where('invoice_id',$dinv->id)->sole();
     \App\Helpers\ExtensionHelper::addPayment($dinv,null,$dop->amount);[$de,$dw]=$compose($dbind);
     if($case==='off'){$toggle(false);$de->run($dop->id,$dw);}
-    if($case==='unknown'){$dop->update(['attempt'=>['seal'=>'sealed','send_state'=>'possibly_sent']]);}
+    if($case==='unknown'){sealRenewal($dop,at:$clock->now());}
     $clock->instant=new DateTimeImmutable($dop->policy['renewal']['late']['deadline']);$before=$state->writes;$cashBefore=$cash();$de->run($dop->id,$dw);
     $cycles->expireUnpaid($dead->id);$refunds->closeRefused($account);$refunds->retryPending();
     $observed[$case]=[$dop->fresh()->state,$dop->fresh()->safe_code,$cash()-$cashBefore,$state->writes-$before];

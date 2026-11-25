@@ -41,7 +41,7 @@ app()->instance(AccountBindings::class, $bindings);
 [$op, $d, $b] = $makeRenewal(placeholderComFixtureName('history-deadline-proof-placeholder.com'));
 [$engine, $writer] = $compose($b); $state->lost = true;
 same('uncertain', $engine->run($op->id, $writer)->state, 'The original sent renewal loses its reply');
-$sent = new DateTimeImmutable($op->fresh()->attempt['dispatch_attempted_at']);
+$sent = renewalSentAt($op);
 HistoryAcceptances::save(new HistoryAcceptance($b, 'America/Los_Angeles', 0, 2592000, 'enom_renewal_v1'));
 $wire = new class($transport, $state, $clock, $sent) implements Transport {
     public bool $unavailable = false; public int $details = 0;
