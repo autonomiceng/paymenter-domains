@@ -40,8 +40,11 @@ $entry = new Domains([]);
 $entry->installed();
 $tables = Schema::getTableListing($database, false); sort($tables);
 $owned = array_values(array_diff($tables, $native));
-same(41,count($owned), 'Fresh native install created the complete Domains schema');
 $prefix = DB::connection()->getTablePrefix();
+$registered = array_map(static fn (string $table): string => $prefix.$table, Installation::expectedTables()); sort($registered);
+same(42, count($registered), 'The registry lists the complete Domains schema');
+same($registered, $owned, 'Fresh native install created exactly the registered Domains schema: '
+    .json_encode(['missing' => array_values(array_diff($registered, $owned)), 'extra' => array_values(array_diff($owned, $registered))]));
 foreach ($owned as $table) {
     expect(str_starts_with($table, $prefix.'domains_'), 'Fresh install left no reference table: '.$table);
     expect(isset($verified[substr($table, strlen($prefix))]), 'Fresh install verified every retained definition: '.$table);
