@@ -82,6 +82,11 @@ same([true, false, false, false], [$facts[$never]->untouched(), $f->untouched(),
 same([false, true, true, false, false], [$facts[$never]->provedUnsent(), $f->provedUnsent(), $facts[$refused]->provedUnsent(), $facts[$open]->provedUnsent(), $facts[$lost]->provedUnsent()],
     'Proved unsent: a closure before any seal or a local refusal of the sealed send; a sealed or lost send is not');
 
+$malformed = $make(['state' => 'held', 'attempt' => ['seal' => 'pending']]);
+same([true, true, false, false, false, false], [$facts[$never]->unsealed(), $facts[$unpaid]->unsealed(), $facts[$open]->unsealed(), $facts[$lost]->unsealed(),
+    RenewalAttempt::of(Operation::findOrFail($malformed))->unsealed(), RenewalAttempt::of(Operation::findOrFail($malformed))->sealed()],
+    'Unsealed: no seal and no reply recorded; a malformed seal counts as recorded, though it is not a seal');
+
 same([false, null, null], [$facts[$register]->sealed(), $facts[$register]->claimKey(), $facts[999]->sentAt()], 'Other actions and missing rows have no renewal attempt');
 
 DB::enableQueryLog(); DB::flushQueryLog();
