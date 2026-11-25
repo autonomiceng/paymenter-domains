@@ -5,15 +5,22 @@ namespace Paymenter\Extensions\Servers\Domains\Staff\Requests;
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
 /** One staff request page's reads, made once: the request's registrar account, and its release facts and offer.
- * The request page opens the scope for one Livewire request and closes it when the response is built, and after each staff
- * action. Outside a scope every call reads now, so jobs and other pages are unchanged. An entry is keyed by the signed-in staff
- * member and by the request and domain rows as loaded, so a changed or refreshed row reads again. Never kept across requests. */
+ * The container holds one instance per HTTP request and per queued job (a scoped binding), and the request page names the
+ * record it shows. Only reads for that record object are kept, so jobs, lists, fresh copies and direct calls read now. An entry
+ * is keyed by the signed-in staff member and by the request and domain rows as loaded: a staff action refreshes the record, so
+ * the page reads again after it. */
 final class RequestReads
 {
-    /** @var ?array<string,mixed> */
-    private static ?array $reads=null;
-    public static function open(): void { self::$reads=[]; }
-    public static function close(): void { self::$reads=null; }
+    /** @var ?\WeakReference<Operation> */
+    private ?\WeakReference $page=null;
+    /** @var array<string,mixed> */
+    private array $reads=[];
+    /** The record the request page shows in this request. */
+    public static function page(Operation $op): void
+    {
+        $reads=app(self::class);
+        if ($reads->page?->get()!==$op) { $reads->page=\WeakReference::create($op); $reads->reads=[]; }
+    }
     /** Account name, registrar and mode for the Registrar account fact, and the account row the notice reads its switches from.
      * @return array{value:?string,sub:?string,account:?Account} */
     public static function account(Operation $op): array
@@ -32,10 +39,11 @@ final class RequestReads
     public static function offered(Operation $op, \Closure $decide): bool { return self::once('offer',$op,$decide); }
     private static function once(string $kind, Operation $op, \Closure $read): mixed
     {
-        if (self::$reads===null) { return $read(); }
+        $reads=app(self::class);
+        if ($reads->page?->get()!==$op) { return $read(); }
         $rows=serialize([$op->getAttributes(),$op->domain?->getAttributes()]);
-        $key=$kind."\0".Auth::id()."\0".$op->getKey()."\0".hash('sha256',$rows);
+        $key=$kind."\0".Auth::id()."\0".hash('sha256',$rows);
         // A failed read is not kept, so the next caller reads again and sees the same failure.
-        return array_key_exists($key,self::$reads) ? self::$reads[$key] : self::$reads[$key]=$read();
+        return array_key_exists($key,$reads->reads) ? $reads->reads[$key] : $reads->reads[$key]=$read();
     }
 }

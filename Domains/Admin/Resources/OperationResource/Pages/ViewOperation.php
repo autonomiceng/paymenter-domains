@@ -38,9 +38,8 @@ class ViewOperation extends RecordDetailPage
     public string $reviewStamp='';
     #[\Livewire\Attributes\Locked]
     public string $answerStamp='';
-    /** Each Livewire request reads the request's account and release facts once (RequestReads), and drops them with its response. */
-    public function boot(): void { RequestReads::open(); }
-    public function dehydrate(): void { RequestReads::close(); }
+    /** The page reads its request's account and release facts once per request (RequestReads). */
+    public function getRecord(): Operation { $op=parent::getRecord(); RequestReads::page($op); return $op; }
     public function mount(int|string $record): void
     { parent::mount($record); $this->stamp($this->getRecord()); }
     private function stamp(Operation $op): void
@@ -79,7 +78,6 @@ class ViewOperation extends RecordDetailPage
     private function reloadRequest(): void
     {
         // Writers load their own locked models. Rebuild every snapshot, including after a caught partial failure.
-        RequestReads::open();
         $this->stamp($this->getRecord()->refresh());
         unset($this->cachedSchemas['content']);
         $this->cachedActions=[]; $this->cachedHeaderActions=[];
