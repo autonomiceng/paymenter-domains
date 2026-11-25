@@ -197,7 +197,7 @@ same(0,$forecast()['count'],'Sent obligation excluded');
 $far->update(['billing_managed'=>false]);$proven=$make(placeholderComFixtureName('balance-prewire-placeholder.com'),'2027-06-01');
 $proof=['safe_code'=>'renewal_definitely_unsent','lease_expires_at'=>null,'started_at'=>$clock->now(),'request_fingerprint'=>str_repeat('a',64),
     'attempt'=>['claim_key'=>str_repeat('b',32),'seal'=>'sealed','dispatch_attempted_at'=>$clock->now()->format(DATE_ATOM),
-        'send_state'=>'possibly_sent','authorized_cost'=>'8.00','renewal_mode'=>'ordinary',
+        'send_state'=>'possibly_sent','authorized_cost'=>['amount'=>'8.00','currency'=>'USD'],'renewal_mode'=>'ordinary',
         'execution'=>['disposition'=>'rejected','send_state'=>'definitely_unsent','reason'=>'unsent','discrepancies'=>[]]],
     'renewal_reserved_revision'=>2,'transition_revision'=>3,'cost'=>['estimated'=>'8.00','currency'=>'USD','unit'=>'term_total']];
 $validProof = $proof;

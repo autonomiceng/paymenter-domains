@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\{Cache, DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 use Paymenter\Extensions\Servers\Domains\Money\Returns\{ReceiptReturns, RefundCandidates, RefundPayment, RefundRepairs};
 /** Proved no-send returns. Commit credit or a receipt plan atomically, then let the gateway return its receipts. */
 final readonly class Refunds
@@ -80,7 +81,7 @@ final readonly class Refunds
             $review?->check($l); $op = $l['operations']->firstWhere('id', $id);
             // A cancelled in-flight receipt and later money use incremental returns; neither assumes full settlement.
             if ($op?->state === 'rejected' && (RefundProof::retired($op, $l['domain'])
-                || ((isset($op->funding['refund'])||isset($op->attempt['terminal']['transactions']))&&FundsWaits::closedRenewal($op,$l['domain'])))) { return $this->creditLate($op, $l, $review); }
+                || ((isset($op->funding['refund'])||self::closedReceipts($op)!==null)&&FundsWaits::closedRenewal($op,$l['domain'])))) { return $this->creditLate($op, $l, $review); }
             if (!$op || $op->state !== 'rejected' || array_key_exists('refund', $op->funding ?? [])) { if($review){throw new \DomainException('No pending account credit. Reload this page.');} return null; }
             if(RenewalRetries::resolved($op,$l['domain'])){$review?->record($l);return null;} // Its paid debt belongs to the proved retry, not a refund.
             RefundProof::requireReturnable($op, $l['domain']);
@@ -148,7 +149,7 @@ final readonly class Refunds
     public function departLocked(array $l, Operation $op, int &$released = 0): int
     {
         if (!MoneyDecisions::running() || ($l['advisory'] ?? true) || !$l['operations']->contains(static fn ($row) => $row === $op)
-            || $op->state !== 'rejected' || !isset($op->attempt['terminal']['transactions']) || !FundsWaits::closedRenewal($op, $l['domain'])) {
+            || $op->state !== 'rejected' || self::closedReceipts($op) === null || !FundsWaits::closedRenewal($op, $l['domain'])) {
             throw new \DomainException('Closed renewal proof unavailable.');
         }
         $released = 0;
@@ -294,7 +295,7 @@ final readonly class Refunds
         }
         // Only a renewal closed with its receipts is credited here; one closed before any payment keeps the native late path.
         $seen->refresh();
-        if ($seen->state !== 'rejected' || ($seen->attempt['terminal']['transactions'] ?? []) === []
+        if ($seen->state !== 'rejected' || (self::closedReceipts($seen) ?? []) === []
             || \App\Models\Invoice::whereKey($seen->invoice_id)->value('status') !== 'cancelled') { return null; }
         return $this->creditRejected($id);
     }
@@ -449,4 +450,7 @@ final readonly class Refunds
         }
         return $done;
     }
+    /** The receipts a renewal's local terminal proof closed it with; null when it has none. */
+    private static function closedReceipts(Operation $op): ?array
+    { return RenewalAttempt::of($op)->terminal()['evidence']['transactions'] ?? null; }
 }
