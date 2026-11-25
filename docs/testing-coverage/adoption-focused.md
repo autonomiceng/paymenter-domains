@@ -12,7 +12,7 @@ selector. Add new consumers when these dependencies change.
 | `Domains/Presentation/AccountStatus.php` | Direct status assertions and `RegistrarFacts`/`AccountChecklist` consumers on registrar pages and installed scenarios. |
 | `tests/Support/namesilo-enrollment-staff.php` | Native enrollment and installed enrollment/lifecycle callers. |
 
-The 48 core tests include 26 adoption fixture consumers, 20 registrar page/shared
+The 46 core tests include 24 adoption fixture consumers, 20 registrar page/shared
 fixture consumers, direct account-status assertions and static reader-label assertions.
 Some shared fixtures only register routes. Their inclusion does not establish preview
 behavior. The original mid-read owner/role/property/price/site matrix is in
@@ -23,14 +23,14 @@ All 13 installed tests build and verify the changed runtime archive members. Ten
 exercise affected page/helper branches. The fresh, upgrade and NameSilo package wrappers
 provide archive-byte coverage here, without establishing those page branches. Seven
 source-wide checks inspect runtime PHP, service callsites, fixture hostnames, package
-members or tracked-file inventory. These groups total 68 unique registered tests.
+members or tracked-file inventory. These groups total 66 unique registered tests.
 
 With the pristine native dependency and pinned runtime configured, run:
 
 ```sh
 python3 scripts/test.py --jobs 1 --only \
-  tests/adopted-complimentary-test.php tests/adopted-renewal-deadline-test.php \
-  tests/adopted-renewal-history-test.php tests/adopted-renewal-refusals-test.php \
+  tests/adopted-renewal-deadline-test.php \
+  tests/adopted-renewal-history-test.php \
   tests/adopted-renewal-test.php tests/adopted-test-environment-test.php \
   tests/adoption-commit-test.php tests/adoption-confirm-test.php \
   tests/adoption-customer-test.php \

@@ -14,7 +14,7 @@ or route reference qualifies for this conservative selection; it does not establ
 that the changed marker branch executes in that test. No suite category is selected
 as a substitute for this dependency inventory.
 
-The command below selects the 287 offline tests (274 regular and 13 installed) through
+The command below selects the 285 offline tests (272 regular and 13 installed) through
 the existing selector. Run installed tests with the full resource slot. The two
 MariaDB scenario registrations are recorded separately below; they require a supplied
 MariaDB environment and are not included in offline pass counts.
@@ -23,9 +23,9 @@ MariaDB environment and are not included in offline pass counts.
 python3 scripts/test.py --jobs 2 --only \
   tests/acquisition-binding-test.php tests/acquisition-payment-review-test.php \
   tests/acquisition-retirement-refusals-test.php tests/acquisition-retirement-staff-test.php \
-  tests/acquisition-retirement-test.php tests/adopted-complimentary-test.php \
+  tests/acquisition-retirement-test.php \
   tests/adopted-renewal-deadline-test.php tests/adopted-renewal-history-test.php \
-  tests/adopted-renewal-refusals-test.php tests/adopted-renewal-test.php \
+  tests/adopted-renewal-test.php \
   tests/adopted-test-environment-test.php tests/adoption-commit-test.php \
   tests/adoption-confirm-test.php tests/adoption-customer-test.php \
   tests/adoption-enom-test.php \
