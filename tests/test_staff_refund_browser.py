@@ -19,8 +19,9 @@ import installed_fixture
 
 ROOT = Path(__file__).resolve().parents[1]
 REASON = 'Customer asked to cancel this renewal'
-# The browser driver answers this origin itself through the app's kernel; no port is opened.
-ORIGIN = 'http://paymenter.test'
+# The browser driver answers this origin itself through the app's kernel; nothing listens on it. Chromium refuses
+# other hosts as offline before interception in the suite's network-less namespace, so it is a loopback address.
+ORIGIN = 'http://127.0.0.1'
 
 
 def release_fixture_cache(app, *, copied=True):
