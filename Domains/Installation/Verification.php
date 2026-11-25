@@ -12,8 +12,8 @@ final class Verification
 {
     public const KEY = 'domains_schema_verified';
 
-    /** Physical shape after the last complete check in this process, before its migration was recorded. */
-    private static ?string $checked = null;
+    /** Package identity and repaired physical shape from the last complete check in this process, before its migration was recorded. */
+    private static ?array $checked = null;
 
     public static function run(): void
     {
@@ -26,20 +26,21 @@ final class Verification
     {
         // Invalidate first: a failed explicit check must not leave an older success usable.
         self::$checked = null; self::record()->delete();
+        $version = Registry::version(); // Before the check: files swapped mid-check record the old identity and fail current().
         if (Registry::tables() !== Registry::expectedTables()) {
             throw new \RuntimeException('Retained Domains table inventory differs from the installed schema.');
         }
         SchemaVerifier::batch(static function (): void { foreach (Registry::SCHEMAS as $schema) { $schema::verify(); } });
-        self::$checked = SchemaVerifier::fingerprint();
+        self::$checked = ['version'=>$version, 'schema'=>SchemaVerifier::fingerprint()];
     }
 
-    /** Record the checked, repaired shape; a changed or unchecked shape takes the full check first. */
+    /** Record exactly what the full check saw; a changed or unchecked package or shape takes the full check first. */
     public static function finish(): void
     {
-        if (self::$checked === null || self::$checked !== SchemaVerifier::fingerprint()) { self::check(); }
-        self::$checked = null; self::record()->delete();
+        if (self::$checked === null || self::$checked !== self::live()) { self::check(); }
+        $checked = self::$checked; self::$checked = null; self::record()->delete();
         self::record()->create(['key'=>self::KEY,'settingable_type'=>null,'settingable_id'=>null,
-            'type'=>'string','encrypted'=>false,'value'=>self::state()]);
+            'type'=>'string','encrypted'=>false,'value'=>self::state($checked)]);
     }
 
     /** True only while the single record matches this package, migration history and physical schema. */
@@ -47,7 +48,7 @@ final class Verification
     {
         $records = self::record()->get();
         if ($records->count() !== 1) { return false; }
-        try { return $records->sole()->value === self::state(); }
+        try { return $records->sole()->value === self::state(self::live()); }
         catch (\RuntimeException) { return false; } // A failed metadata read or missing migration takes the full refusal path.
     }
 
@@ -59,13 +60,18 @@ final class Verification
     private static function record(): Builder
     { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key', self::KEY); }
 
-    private static function state(): string
+    /** @return array{version: string, schema: string} */
+    private static function live(): array
+    { return ['version'=>Registry::version(), 'schema'=>SchemaVerifier::fingerprint()]; }
+
+    /** @param array{version: string, schema: string} $checked */
+    private static function state(array $checked): string
     {
         $ran = app(Migrator::class)->getRepository()->getRan(); sort($ran);
         $domains = array_values(array_filter($ran, static fn ($name) => str_contains(strtolower($name), 'domains')));
         if ($domains !== [Registry::BASELINE]) {
             throw new \RuntimeException('Retained Domains migration history is incomplete.');
         }
-        return json_encode(['version'=>Registry::version(),'migrations'=>$ran,'schema'=>SchemaVerifier::fingerprint()], JSON_THROW_ON_ERROR);
+        return json_encode(['version'=>$checked['version'],'migrations'=>$ran,'schema'=>$checked['schema']], JSON_THROW_ON_ERROR);
     }
 }
