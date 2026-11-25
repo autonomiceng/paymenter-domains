@@ -6,14 +6,16 @@ $fixtureRegistrars=['enom'];
 require_once __DIR__.'/operation-fixture.php';
 // Every scenario retains real checkout, funded registration, reconciliation and its own renewal invoice.
 // Batch only acquisition to avoid rebuilding Livewire for each otherwise independent holding.
-$registrationNames=match($cycleFixtureGroup){
+// One checkout buys every case's holdings; each case consumes only its own group.
+$cycleGroups=[
     'unpaid'=>['renew-replacement',...array_map(static fn($case)=>'expiry-cancel-'.$case,['manual-on','manual-off','scheduled-on','scheduled-off','transaction','sent','collecting','pending','uncertain'])],
-    'complimentary'=>array_map(static fn($case)=>'complimentary-'.$case,['complete','revoked','unknown','over','exact','term','unauthorized']),
     'credit'=>array_map(static fn($case)=>'renew-credit'.($case===''?'':'-'.$case),['global-off','','default','scheduled','insufficient','exact','partial','settled','overpaid']),
     'early'=>array_map(static fn($case)=>'renew-'.$case,['early','dropped','early-window','early-processing','early-succeeded','early-failed','early-edge']),
     'late'=>array_map(static fn($case)=>'renew-late-'.$case,['partial','twice','frozen','declined','good','open']),
-};
-$registrationNames=array_map(static fn($name)=>placeholderComFixtureName($name.'-placeholder.com'),$registrationNames);
+    'complimentary'=>array_map(static fn($case)=>'complimentary-'.$case,['complete','revoked','unknown','over','exact','term','unauthorized']),
+];
+$cycleGroups=array_map(static fn(array $names)=>array_map(static fn($name)=>placeholderComFixtureName($name.'-placeholder.com'),$names),$cycleGroups);
+$registrationNames=array_merge(...array_values($cycleGroups));
 same(count($registrationNames),count(array_unique($registrationNames)),'Every cycle scenario has an independent acquisition');
 $runtime=app()->bound(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)?app(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class):null;
 app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);
