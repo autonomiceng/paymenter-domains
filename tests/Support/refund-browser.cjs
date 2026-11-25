@@ -104,6 +104,7 @@ async function follow(request) {
     if (target.origin !== base) throw new Error(`Redirect from ${new URL(url).pathname} to another origin: ${target.origin}`);
     if (hop === REDIRECT_LIMIT) throw new Error(`More than ${REDIRECT_LIMIT} redirects from ${request.url()}`);
     await context.addCookies(reply.cookies.map((line) => parsedCookie(line, new URL(url))));
+    // Unlike Chromium: plain path prefix match, last duplicate name wins; fine for the app's root-path, unique cookies.
     const sent = await context.cookies(target.href);
     receipt.redirects.push({ from: new URL(url).pathname, to: target.pathname, status: reply.status,
       set: reply.cookies.map(cookieName), sent: sent.map((cookie) => cookie.name) });
