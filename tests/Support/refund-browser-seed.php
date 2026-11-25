@@ -13,16 +13,12 @@ $held=static function(string $name)use($makeRenewal,$run):array{
     same(['held','paid_invoice','renew',[]],[$op->state,$op->funding_basis,$op->action,$op->attempt??[]],'A paid renewal is held before any send');
     return ['id'=>(int)$op->id,'invoice'=>(int)$invoice->id,'amount'=>(string)$op->amount];
 };
-$cases=[];
-if(getenv('REFUND_BROWSER_CASE')==='refusals'){
-    $cases['failing']=$held('refund-browser-failing-placeholder.com');
-    [$sent,,$binding,$sentInvoice]=$makeRenewal(placeholderComFixtureName('refund-browser-unknown-placeholder.com'));
-    [$engine,$writer]=$compose($binding);$state->lost=true;
-    same('uncertain',$engine->run($sent->id,$writer)->state,'A lost registrar reply leaves the renewal uncertain');$state->lost=false;
-    $cases['unknown']=['id'=>(int)$sent->id,'invoice'=>(int)$sentInvoice->id,'amount'=>(string)$sent->amount];
-}else{
-    $cases['refund']=$held('refund-browser-placeholder.com');
-}
+// Each browser scenario gets its own copy of this database and acts on its own cases only.
+$cases=['refund'=>$held('refund-browser-placeholder.com'),'failing'=>$held('refund-browser-failing-placeholder.com')];
+[$sent,,$binding,$sentInvoice]=$makeRenewal(placeholderComFixtureName('refund-browser-unknown-placeholder.com'));
+[$engine,$writer]=$compose($binding);$state->lost=true;
+same('uncertain',$engine->run($sent->id,$writer)->state,'A lost registrar reply leaves the renewal uncertain');$state->lost=false;
+$cases['unknown']=['id'=>(int)$sent->id,'invoice'=>(int)$sentInvoice->id,'amount'=>(string)$sent->amount];
 same(null,App\Models\Credit::where('user_id',$user->id)->value('id'),'No account credit exists before the browser check');
 $target=(string)getenv('REFUND_BROWSER_ROOT');
 file_put_contents($target.'/seed.json',json_encode($cases+['user'=>(int)$user->id,
