@@ -70,3 +70,13 @@ def package(source, output, *, builder=None):
         receipt = builder.build(source, cache)
     output.symlink_to(cache, target_is_directory=True)
     return receipt
+
+
+def upload(root, package, receipt):
+    """Give the native uploader its own copy of a cached ZIP, verified once at that boundary."""
+    upload = root / 'upload' / receipt['archive']
+    upload.parent.mkdir(exist_ok=True)
+    # The uploader consumes the file it installs. Verifying the copy also refuses changed cache bytes.
+    shutil.copyfile(root / package / receipt['archive'], upload)
+    build.verify(upload, receipt)
+    return upload

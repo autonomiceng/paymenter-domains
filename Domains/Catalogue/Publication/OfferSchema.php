@@ -6,7 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Catalogue\Publication;
 
 // Column declarations adapted from Enom d2c55e2.
 use Illuminate\Database\Schema\Blueprint;
-use Paymenter\Extensions\Servers\Domains\Services\TableSchema;
+use Paymenter\Extensions\Servers\Domains\Installation\TableSchema;
 
 /** Offer listing intent, publication revision and the selected seller per ending. */
 final class OfferSchema extends TableSchema

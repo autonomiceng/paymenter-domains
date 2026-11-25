@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Services\Installation;
 $key='domains_schema_verified';
 $record=static fn()=>DB::table('settings')->whereNull('settingable_type')->whereNull('settingable_id')->where('key',$key);
-$sourceVersion=Installation::schemaVersion();
+$sourceVersion=\Paymenter\Extensions\Servers\Domains\Installation\Registry::version();
 $version=$record()->value('value');
 $failures=[];
 $check=static function(bool $ok,string $why)use(&$failures):void {if(!$ok){$failures[]=$why;echo "FAIL: $why\n";}};

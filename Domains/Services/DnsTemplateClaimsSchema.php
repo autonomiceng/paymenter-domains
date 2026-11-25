@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Illuminate\Database\Schema\Blueprint;
+use Paymenter\Extensions\Servers\Domains\Installation\TableSchema;
 
 final class DnsTemplateClaimsSchema extends TableSchema
 {

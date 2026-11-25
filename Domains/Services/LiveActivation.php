@@ -8,6 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,LiveActivationEvidence
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,HistoryAcceptance};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
+use Paymenter\Extensions\Servers\Domains\Installation\Installer;
 /** Local readiness and retained receipts only. No transport, feature writes or processing authority. */
 final class LiveActivation
 {
@@ -113,7 +114,7 @@ final class LiveActivation
             }
             foreach(self::FEATURES as $feature){if(($features[$feature]??false)&&!$this->provider->enabled($b,$feature)){throw new \DomainException(ucfirst($feature).' setup Missing. Ask your site admin to enable it for this account.');}}
             if(!app(RuntimePorts::class)->accepted($a)){throw new \DomainException('Site setup Missing. Ask your site admin to install the registrar runtime.');}
-            Installation::legacy();
+            Installer::legacy();
         });
         $cache=config('cache.stores.'.config('cache.default').'.driver');
         if(!in_array($cache,['redis','database','memcached'],true)||!in_array(config('session.driver'),['redis','database','memcached'],true)

@@ -3,186 +3,20 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
-use App\Models\{Setting,NotificationTemplate};
-use Illuminate\Database\Migrations\Migrator;
-use Illuminate\Support\Facades\{Cache,DB};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting,OfferState,CatalogueActivation};
+use Paymenter\Extensions\Servers\Domains\Installation\Installer;
 
-/** The extension lifecycle owns new-install authority; schema maintenance alone never grants it. */
+/**
+ * Stable entry point. Landing's archive rebuild check loads this file from a candidate ZIP, and an upload over an
+ * older package runs that package's Domains class, which calls these members after the new files are in place.
+ */
 final class FreshInstallation
 {
-    public const CONTRACT = '907d219e28e91b6d556793f7f1bd243521b99e1e65ccaa04c00a55ff4f910c00';
-    public const MESSAGE = 'Domains catalogue activation is missing or incompatible. Verify the installation before processing.';
-    public const STAFF = 'Ask your site admin to verify the Domains installation, then try again.';
+    public const CONTRACT = Installer::CONTRACT;
+    public const MESSAGE = Installer::MESSAGE;
+    public const STAFF = Installer::STAFF;
 
-    public static function requireCompatible(): void
-    {
-        try {
-            $state = CatalogueActivation::initializationState();
-            if ($state['state'] === 'active' && hash_equals(self::CONTRACT, $state['contract'])) { return; }
-            if ($state['state'] === 'initializing') { return; }
-            if ($state['state'] === 'absent' && $state['generation'] === 0 && FreshInstallation::uninstalled()) { return; }
-        } catch (\DomainException) { /* A damaged receipt cannot authorize replacement or migration. */ }
-        throw new \DomainException(self::MESSAGE);
-    }
-
-    private static ?self $owner = null;
-    private function __construct(private readonly string $intent, private readonly string $manifest) {}
-    private static function query(): \Illuminate\Database\Eloquent\Builder
-    { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key', CatalogueActivation::KEY); }
-    private static function files(): array
-    { return app(Migrator::class)->getMigrationFiles([dirname(__DIR__).'/database/migrations']); }
-
-    private static function history(): bool
-    {
-        $ran = app(Migrator::class)->getRepository()->getRan();
-        return array_intersect($ran, array_keys(self::files())) !== []
-            || array_filter($ran, static fn ($name) => str_contains(strtolower($name),'domains')) !== [];
-    }
-
-    private static function manifest(): string
-    {
-        $root = dirname(__DIR__); $files = [];
-        foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS)) as $file) {
-            if ($file->isFile() && $file->getExtension() === 'php') {
-                $files['Domains/'.substr($file->getPathname(),strlen($root)+1)] = hash_file('sha256',$file->getPathname());
-            }
-        }
-        ksort($files);
-        if (is_file($root.'/manifest.json')) {
-            $package = json_decode(file_get_contents($root.'/manifest.json'), true, flags: JSON_THROW_ON_ERROR);
-            $members = $package['members'] ?? null;
-            if (!is_array($members)) { throw new \DomainException('Invalid Domains package manifest.'); }
-            $expected = array_filter($members, static fn ($path) => str_ends_with($path, '.php'), ARRAY_FILTER_USE_KEY);
-            ksort($expected);
-            if ($expected !== $files) { throw new \DomainException('Installed Domains PHP files differ from the package manifest.'); }
-        }
-        return hash('sha256', OfferState::json($files));
-    }
-
-    /** Advisory bootstrap check; only the locked lifecycle proof may create initialization authority. */
-    public static function uninstalled(): bool
-    {
-        if (Installation::tables() !== [] || self::history()) { return false; }
-        try { self::empty(true); return true; } catch (\DomainException) { return false; }
-    }
-
-    public static function install(): void
-    {
-        OperationClaims::outside(); self::requireCompatible(); Installation::legacy();
-        Cache::lock('domains-fresh-installation', 60)->block(5, static function (): void {
-            // MariaDB DDL commits transactions. A connection lock survives both DDL and cache TTL expiry.
-            $connection = DB::connection(); $mysql = in_array($connection->getDriverName(), ['mysql','mariadb'], true);
-            $lock = hash('sha256', 'domains-install-'.$connection->getDatabaseName());
-            if ($mysql && (int) $connection->selectOne('SELECT GET_LOCK(?, 0) AS owned', [$lock])->owned !== 1) {
-                throw new \DomainException('Another Domains initializer is running. Retry installation.');
-            }
-            try { self::run(); }
-            finally { if ($mysql) { $connection->selectOne('SELECT RELEASE_LOCK(?) AS released', [$lock]); } }
-        });
-    }
-
-    private static function run(): void
-    {
-        $manifest = self::manifest();
-        $owner = DB::transaction(static function () use ($manifest): ?self {
-            // Lock the global settings range before proving absence or creating the durable intent.
-            Setting::orderBy('id')->lockForUpdate()->get();
-            $rows = self::query()->lockForUpdate()->get();
-            if ($rows->isNotEmpty()) {
-                $state = CatalogueActivation::initializationState();
-                if ($state['state'] !== 'initializing') { return null; }
-                if ($state['manifest'] !== $manifest) { throw new \DomainException('Domains initialization package changed. Restore the initializing package.'); }
-                return new self($state['intent'], $manifest);
-            }
-            if (self::history() || Installation::tables() !== []) { return null; } // Existing installations require their own receipt.
-            self::empty(true);
-            $intent = bin2hex(random_bytes(16));
-            $row = new Setting; $row->forceFill(['key'=>CatalogueActivation::KEY,'type'=>'string','encrypted'=>true,
-                'value'=>OfferState::json(['state'=>'initializing','generation'=>1,'intent'=>$intent,'manifest'=>$manifest])])->save();
-            return new self($intent, $manifest);
-        });
-        if ($owner === null) { app(Installation::class)->install(); return; }
-        self::$owner = $owner;
-        try {
-            $owner->check();
-            app(Migrator::class)->run([dirname(__DIR__).'/database/migrations'], ['force'=>true]);
-            app(Installation::class)->verify(); ReminderTemplates::ensure();
-            CatalogueActivation::initialize($owner);
-        } finally { self::$owner = null; CallerRouting::reset(); }
-    }
-
-    private static function empty(bool $new = false): void
-    {
-        // Native plans/services route through these products even without extension storage.
-        DB::table('products')->orderBy('id')->lockForUpdate()->chunk(250, static function ($rows): void {
-            if (NativeIdentity::productRows($rows->map(static fn ($row) => (array) $row)->all())) {
-                throw new \DomainException('Retained native Domains identity refuses fresh initialization.');
-            }
-        });
-        if (DB::table('extensions')->where('extension','Domains')->lockForUpdate()->exists()
-            || Setting::where('key','like','domains%')->where(static fn ($q) => $q->whereNotIn('key',[CatalogueActivation::KEY,...($new?[]:[Installation::VERIFIED_KEY])])
-                ->orWhereNotNull('settingable_type')->orWhereNotNull('settingable_id'))->exists()
-            || $new && NotificationTemplate::where('key','like','domains%')->exists()) {
-            throw new \DomainException('Retained Domains settings or identity refuse fresh initialization. Restore and verify installation history.');
-        }
-        if ($new) { self::work(); }
-        foreach (Installation::tables() as $table) {
-            $query = DB::table($table)->lockForUpdate();
-            if ($table === BusinessSettingsSchema::TABLE) {
-                foreach($query->get() as $row){
-                    if((int)$row->id!==1||!$row->imported||$row->pricing_rule!==null||$row->card_fee!==null||$row->dns_template!==null){throw new \DomainException('Domains initialization has retained global choices.');}
-                }
-            } elseif ($query->exists()) { throw new \DomainException('Domains initialization is no longer empty. Keep it paused and investigate.'); }
-        }
-    }
-
-    private static function work(): void
-    {
-        $namespace = 'Paymenter\\Extensions\\Servers\\Domains\\';
-        $escaped = str_replace('\\', '\\\\', $namespace);
-        foreach (['jobs','failed_jobs'] as $table) {
-            DB::table($table)->orderBy('id')->lockForUpdate()->chunk(250, static function ($rows) use ($namespace, $escaped): void {
-                foreach ($rows as $row) {
-                    if (stripos($row->payload,$namespace) !== false || stripos($row->payload,$escaped) !== false) {
-                        throw new \DomainException('Retained Domains queued work refuses fresh initialization. Preserve it and restore installation history.');
-                    }
-                }
-            });
-        }
-    }
-
-    /** The source-bound package owns only this storage, not every empty domains_* table. */
-    private static function progress(bool $complete): void
-    {
-        $expected = array_keys(self::files());
-        $ran = DB::table('migrations')->orderBy('id')->lockForUpdate()->pluck('migration')->all();
-        $extra = array_filter($ran, static fn ($name) => str_contains(strtolower($name),'domains') && !in_array($name,$expected,true));
-        $tables = Installation::tables();
-        $allowed = Installation::expectedTables();
-        if (array_diff($tables, $allowed) || ($complete && $tables !== $allowed) || $extra) {
-            throw new \DomainException('Unexpected Domains schema or migration history refuses initialization. Preserve it and investigate.');
-        }
-    }
-
-    /** Partial DDL is repairable only inside the owning lifecycle invocation, never by retained installers. */
-    public static function recovering(): bool
-    { if (self::$owner === null) { return false; } self::$owner->check(); return true; }
-
-    /** Capability check: only the current lifecycle invocation can complete its proven durable intent. */
-    public function check(bool $complete = false): array
-    {
-        if (self::$owner !== $this) { throw new \LogicException('Owned initialization required.'); }
-        $state = CatalogueActivation::initializationState();
-        if ($state['state'] !== 'initializing' || $state['generation'] !== 1 || $state['intent'] !== $this->intent || $state['manifest'] !== $this->manifest) {
-            throw new \DomainException('Domains initialization intent changed.');
-        }
-        self::progress($complete); self::empty();
-        if ($complete) { self::work(); }
-        if ($complete && (self::manifest() !== $this->manifest
-            || array_diff(array_keys(self::files()), DB::table('migrations')->orderBy('id')->lockForUpdate()->pluck('migration')->all()))) {
-            throw new \DomainException('Domains initialization source or migration history changed.');
-        }
-        return $state;
-    }
+    public static function requireCompatible(): void { Installer::requireCompatible(); }
+    public static function install(): void { Installer::installFresh(); }
+    public static function uninstalled(): bool { return Installer::uninstalled(); }
+    public static function recovering(): bool { return Installer::recovering(); }
 }

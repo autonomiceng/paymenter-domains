@@ -6,6 +6,7 @@ use App\Models\Server;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Tld};
 use Paymenter\Extensions\Servers\Domains\Data\{Environment,RequestBudget,RequestContext,RequestOrigin,SystemClock};
+use Paymenter\Extensions\Servers\Domains\Installation\{Installer,Verification};
 /** Local reviews and deliberately composed account reads; connection access defaults off. */
 class StaffSettingsWrites
 {
@@ -96,7 +97,7 @@ class StaffSettingsWrites
         if($r->action==='processing'){
             if(($data['confirmed']??false)!==true){throw new \DomainException('Explicit processing confirmation required.');}
             $enabled=($data['enabled']??false)===true;
-            if($enabled){app(Installation::class)->verifyForOrders();} // Schema verification creates reference tables; keep DDL outside financial locks.
+            if($enabled){Verification::forOrders();} // Schema verification creates reference tables; keep DDL outside financial locks.
             $r->local(function()use($r,$enabled):void {
                 $live=Account::where('server_id',$r->serverId)->sole();
                 if($enabled&&$live->environment==='live'){
@@ -106,7 +107,7 @@ class StaffSettingsWrites
                 }
                 if((bool)Account::where('server_id',$r->serverId)->lockForUpdate()->firstOrFail()->processing_enabled===$enabled){throw new \DomainException('Processing state unchanged.');}
                 $this->bindings->setProcessing($r->serverId,$enabled,function($server,$account):void {
-                    Installation::legacy();
+                    Installer::legacy();
                     if(self::processingBlocker($account)!==null){
                         throw new \DomainException('Runtime acceptance and shared workers are required.');
                     }

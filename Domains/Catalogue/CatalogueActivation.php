@@ -5,7 +5,8 @@ namespace Paymenter\Extensions\Servers\Domains\Catalogue;
 use App\Models\{Server, Setting};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{FreshInstallation, StorefrontCatalogueCache};
+use Paymenter\Extensions\Servers\Domains\Installation\Installer;
+use Paymenter\Extensions\Servers\Domains\Services\StorefrontCatalogueCache;
 
 final class CatalogueActivation
 {
@@ -39,8 +40,8 @@ final class CatalogueActivation
     public static function initializationState(): array { return self::state(); }
     private static function executable(array $state): array
     {
-        if ($state['state'] !== 'active' || !hash_equals(FreshInstallation::CONTRACT, $state['contract'])) {
-            throw new \DomainException(FreshInstallation::MESSAGE);
+        if ($state['state'] !== 'active' || !hash_equals(Installer::CONTRACT, $state['contract'])) {
+            throw new \DomainException(Installer::MESSAGE);
         }
         return $state;
     }
@@ -87,7 +88,7 @@ final class CatalogueActivation
     }
 
     /** Only the invocation owning the durable install intent can activate the catalogue. */
-    public static function initialize(FreshInstallation $intent): array
+    public static function initialize(Installer $intent): array
     {
         self::outside();
         return DB::transaction(static function () use ($intent): array {

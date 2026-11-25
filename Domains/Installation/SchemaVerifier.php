@@ -1,7 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Installation;
 
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -54,7 +54,7 @@ final class SchemaVerifier
         $statements = $blueprint->toSql();
         $key = hash('sha256', serialize([spl_object_id($connection), str_replace($reference, $table, $statements)]));
         // Fresh-install recovery may add missing indexes and still needs its physical reference.
-        $reuse = self::$references !== null && !FreshInstallation::recovering();
+        $reuse = self::$references !== null && !Installer::recovering();
         if ($reuse && isset(self::$references[$key])) {
             [$columns, $indexes] = self::$references[$key];
             if (self::columns($table) !== $columns || self::indexes($table) !== $indexes || Schema::getForeignKeys($table) !== []) {
@@ -72,7 +72,7 @@ final class SchemaVerifier
                 $created = true;
             }
             if (self::columns($table) === self::columns($reference) && Schema::getForeignKeys($table) === []
-                && str_starts_with($table, 'domains_') && FreshInstallation::recovering()) {
+                && str_starts_with($table, 'domains_') && Installer::recovering()) {
                 self::resumeIndexes($table, $reference);
             }
             if (self::columns($table) !== self::columns($reference)
