@@ -110,5 +110,5 @@
     "tests/native-database.php": ["tests/test_runner.py"],
     "scripts/php-test": ["tests/test_runner.py"]
   },
-  "no_tests": ["*.md", "LICENSE", "*.png", "*.svg", "tests/enom-answer-render.php", "tests/Support/request-review-render.php", "tests/Support/registrar-transfer-render.php", "tests/Support/dns-template-render.php", "tests/Support/billing-hold-render.php", "tests/Support/request-order-unproven-render.php"]
+  "no_tests": ["*.md", "LICENSE", "*.png", "*.svg", "tests/enom-answer-render.php", "tests/Support/request-review-render.php", "tests/Support/registrar-transfer-render.php", "tests/Support/dns-template-render.php", "tests/Support/billing-hold-render.php", "tests/Support/request-order-unproven-render.php", "tests/runtime-render.php", "tests/staff-tld-render.php", "tests/what-you-sell-render.php"]
 }

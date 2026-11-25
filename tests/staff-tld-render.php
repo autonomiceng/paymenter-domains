@@ -1,5 +1,5 @@
 <?php
-// Native static panel fixture; MIT, Copyright (c) 2026 Autonomic Engineering.
+// Optional native TLD, account and dialog captures (scripts/render-reminders.py OUTPUT_DIR tests/staff-tld-render.php); MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 use Filament\Facades\Filament;
@@ -37,14 +37,8 @@ $view=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee
 // The header More menu, opened: its panel is hidden until clicked, so show it for the capture.
 $render($view,'tld-more-menu','.fi-ac .fi-dropdown-panel{display:block!important;position:absolute;right:0;z-index:50}');
 $render(Livewire::actingAs($u)->test(RegistrarSetup::class),'setup-both');$render(Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id]),'setup-account');$strings=[];
-// TLD page actions, then the account actions this Enom TEST fixture shows. Live and test renewal or DNS changes
-// and NameSilo enrollment do not appear for it: their server config is off. Late renewal waits for Renewals, live transfers need a Live account, and Sync prices has nothing to sync here.
-$tldActions=['override','tld_settings','seller'];
-// Price freshness is its own inline row editor on the registrar account.
-$rowActions=['price_freshness'];
-$hiddenAccountActions=['live_management','live_renewal','test_management','test_renewal','test_transfer','enroll_sandbox','late_renewal','live_transfer','import'];
-$accountActions=array_values(array_diff(staffSetupActions(),$hiddenAccountActions));
-same([],array_values(array_diff(array_keys(Review::ACTIONS),$tldActions,$accountActions,$hiddenAccountActions,$rowActions,staffNoButtonActions())),'Every settings action is placed');
+// TLD page actions, then the account actions this Enom TEST fixture shows (tld-pricing-publish-test checks the placement).
+['tld'=>$tldActions,'account'=>$accountActions,'row'=>$rowActions]=staffActionPlaces();
 // tld_settings is a link to What you sell, so it has no dialog to render.
 foreach(array_intersect_key(Review::ACTIONS,array_flip(array_diff([...$tldActions,...$accountActions,...$rowActions],['tld_settings']))) as $action=>$label){
     app()->instance(StaffSettingsWrites::class,in_array($action,['configure','probe'],true)?new StaffSettingsWrites($native,$sellers,$bindings,true):$writer);
