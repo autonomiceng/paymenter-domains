@@ -1,4 +1,155 @@
 <?php
-// MIT, Copyright (c) 2026 Autonomic Engineering. Native bounded policy reads.
+// Synthetic input-bounded policy reads; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-$policyEndingMode='full';require __DIR__.'/Support/policy-ending-reads.php';
+require __DIR__.'/native-app.php';
+require __DIR__.'/Support/commerce.php';
+require __DIR__.'/Support/native-commerce.php';
+require __DIR__.'/Support/storefront.php';
+require_once __DIR__.'/Support/fixture-cases.php';
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\{Auth, Cache, DB, Schema};
+use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
+use Paymenter\Extensions\Servers\Domains\Http\Controllers\StorefrontController;
+use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
+use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaries, PolicyEndings, Rdap, Storefront, TransferPrecheck};
+
+extract(commerceFixture(true, static fn() => null));
+$owner = commerceUser();
+$at = $now->getTimestamp();
+$rdap = new Rdap(static fn ($url) => ['status' => 200, 'body' => json_encode(str_contains($url, 'dns.json')
+    ? ['services' => [[['com'], ['https://rdap.example.com/']]]]
+    : ['objectClassName' => 'domain', 'ldhName' => 'example.com', 'status' => ['active'], 'events' => [
+        ['eventAction' => 'registration', 'eventDate' => '2020-01-01T00:00:00Z'],
+        ['eventAction' => 'expiration', 'eventDate' => gmdate('Y-m-d\TH:i:s\Z', $at + 45 * 86400)]]])]);
+$eligibility = activeFixtureEligibility($bindings, $clock, new TransferPrecheck($rdap));
+$store = activeFixtureStorefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
+app()->instance(Storefront::class, $store);
+$tlds[0]->server->settings()->create(['key' => 'domains_transfer_endings', 'value' => 'com']);
+require dirname(__DIR__).'/Domains/routes/web.php'; require dirname(__DIR__).'/Domains/routes/owned.php';
+storefrontViews(); $session = app('request')->session(); Auth::login($owner);
+(activeFixtureAdmission($native, $sellers, $eligibility, $clock))->boot();
+$controller = new StorefrontController($store); app()->instance(StorefrontController::class, $controller);
+$summaries=new DomainSummaries;
+$request = static function (array $data = []) use ($owner, $session): Request {
+    $r = Request::create('/domains/check', 'POST', $data); $r->setLaravelSession($session); $r->setUserResolver(fn () => $owner); return $r;
+};
+$product = $native->product($tlds[0], 'register');
+$plan = $product->plans()->where('billing_period', 1)->sole();
+$order = \App\Models\Order::create(['user_id'=>$owner->id,'currency_code'=>'USD']);
+// Seed the service for an existing holding before exercising the checkout and summary reads.
+$service = \App\Models\Service::createQuietly(['user_id'=>$owner->id,'order_id'=>$order->id,'product_id'=>$product->id,'plan_id'=>$plan->id,
+    'status'=>'active','quantity'=>1,'price'=>'5.00','currency_code'=>'USD']);
+$managed = DB::table('domains_domains')->insertGetId(['service_id' => $service->id, 'user_id' => $owner->id,
+    'server_id' => $tlds[0]->server_id, 'registrar_key' => 'enom', 'account_fingerprint' => $tlds[0]->account_fingerprint,
+    'domain' => 'managed-placeholder.com', 'reservation_name' => 'managed-placeholder.com', 'sld' => 'managed-placeholder', 'tld' => 'com', 'status' => 'active']);
+foreach (['test' => true, 'example.test' => false, 'net' => false] as $ending => $enabled) {
+    DB::table('domains_sales_policies')->insert(['tld' => $ending, 'transfer_enabled' => $enabled]);
+}
+// The actual lookup column already has a unique index, not merely a transfer-enabled index.
+expect(Schema::hasIndex('domains_sales_policies', ['tld'], 'unique'), 'Policy suffix lookup uses the existing unique TLD index');
+$stats = null;
+DB::listen(static function ($query) use (&$stats): void {
+    if ($stats === null) { return; }
+    $stats['queries']++;
+    if ($query->sql === 'select * from "settings" where "settingable_type" is null and "settingable_id" is null and "key" = ?'
+        && $query->bindings === ['domains_catalogue_activation']) { $stats['gateQueries']++; }
+    foreach (['domains_sales_policies' => 'policy', 'domains_tlds' => 'tld'] as $table => $key) {
+        if (!preg_match('/^select\b.*\bfrom\s+["`]?'.preg_quote($table, '/').'["`]?\b/is', $query->sql)) { continue; }
+        // Replay only local SELECTs immediately in the same snapshot via raw PDO (no listener recursion).
+        // SQLite PDO rowCount() does not report SELECT cardinality; count the returned rows themselves.
+        $statement = $query->connection->getPdo()->prepare($query->sql);
+        $statement->execute($query->connection->prepareBindings($query->bindings));
+        $stats[$key.'Rows'] += count($statement->fetchAll(PDO::FETCH_NUM));
+        $stats[$key.'Queries']++;
+    }
+});
+$measure = static function (Closure $read) use (&$stats): array {
+    $stats = ['queries' => 0, 'gateQueries' => 0, 'policyRows' => 0, 'policyQueries' => 0, 'tldRows' => 0, 'tldQueries' => 0];
+    try { $result = $read(); return [$result, $stats]; } finally { $stats = null; }
+};
+$fill = static function (int $size): void {
+    $rows = [];
+    for ($i = DB::table('domains_sales_policies')->count(); $i < $size; $i++) {
+        // Alphabetic supported suffixes, with every unrelated transfer enabled to expose a global subset read.
+        $rows[] = ['tld' => 'extra'.chr(97 + intdiv($i, 676)).chr(97 + intdiv($i % 676, 26)).chr(97 + $i % 26), 'transfer_enabled' => true];
+    }
+    foreach (array_chunk($rows, 100) as $chunk) { DB::table('domains_sales_policies')->insert($chunk); }
+};
+$paths = [
+    'check' => static function () use ($controller, $request) {
+        $r = $request(); $key = FormKeys::issue($r, 'search');
+        $response = $controller->check($request(['domain' => 'check-placeholder.com', '_request_key' => $key]));
+        same('available', $response->getData(true)['status'], 'Actual check POST succeeds');
+    },
+    'order' => static function () use ($controller, $request) {
+        $r = $request(); $key = FormKeys::issue($r, 'order:order-placeholder.com');
+        $response = $controller->order($request(['domain' => 'order-placeholder.com', 'action' => 'register', 'term' => '1', '_request_key' => $key]));
+        same(route('cart'), $response->getTargetUrl(), 'Actual order POST reaches native cart');
+    },
+    'portal-batch' => static function () use ($summaries,$owner,$managed,$at) {
+        same(1,count($summaries->batch($owner,[$managed],$at+2)),'Page retains its owned domain');
+    },
+    'service-summary' => static function () use ($summaries, $owner, $service, $at) {
+        same(1, count($summaries->services($owner, [$service->id], $at + 2)), 'Native service summary remains owner scoped');
+    },
+];
+// The intent table check runs once per connection; warm it so both sizes compare steady reads.
+\Paymenter\Extensions\Servers\Domains\Services\NativeCancellation::withIntents(collect(), [], true);
+// Full (cold) and warm reads are separate named cases on the one storefront fixture. The reset restores the policy rows,
+// the price, the array cache contents and the session, so each case starts from the prepared catalogue.
+// Pin each case to the prepared read and Carbon clocks explicitly, whatever a reset restores.
+$pinned = [$clock->now(), Carbon\Carbon::getTestNow(), Carbon\CarbonImmutable::getTestNow()];
+$pin = static function () use ($clock, $pinned): void { [$clock->instant, $native, $immutable] = $pinned; Carbon\Carbon::setTestNow($native); Carbon\CarbonImmutable::setTestNow($immutable); };
+$cacheStore = Cache::store()->getStore();
+nativeFixtureCases([
+    'full' => static function () use ($pin, $fill, $measure, $paths, $store, $native, $tlds, $request, $controller): void {
+        $pin();
+        $observed = [];
+        foreach ([10, 1500] as $size) {
+            $fill($size);
+            foreach ($paths as $path => $read) {
+                [, $counts] = $measure($read); $observed[$size][$path] = $counts;
+                expect($counts['policyRows'] <= 30, $path.' fetches bounded policy rows');
+                if ($size === 1500) { same($observed[10][$path], $counts, $path.' row and query counts are catalogue-independent'); }
+                echo $size.' '.$path.' '.json_encode($counts)."\n";
+            }
+            Cache::flush(); [$cold, $counts] = $measure(fn () => $store->endings());
+            same(['com'], array_column($cold, 'tld'), 'Cold display preserves available offers');
+            expect($counts['policyRows'] <= 2 * $size + 30 && $counts['queries'] <= 3 * $size + 100, 'Cold display stays linear per ending, independent of term retries');
+            echo $size.' cold-display '.json_encode($counts)."\n";
+
+        }
+        foreach (['Name.Example.Test.' => ['domain' => 'name.example.test', 'sld' => 'name', 'tld' => 'example.test'], 'name.test' => ['domain' => 'name.test', 'sld' => 'name', 'tld' => 'test']] as $input => $expected) {
+            same($expected, PolicyEndings::parse($input), 'Longest suffix and normalization parity');
+            same($expected['tld'], $store->check($input)['tld'], 'Check uses the same longest ending');
+        }
+        foreach (['name.unknown', 'sub.name.example.test', 'sub.name.test', 'sub.name.unknown', 'bad..com', 'xn--name.com'] as $input) {
+            $message = static function (Closure $parse): string {
+                try { $parse(); expect(false, 'Expected parse refusal'); } catch (InvalidArgumentException $e) { return $e->getMessage(); }
+            };
+            same($message(fn () => CanonicalName::parse($input, ['com', 'example.test', 'test', 'net'])),
+                $message(fn () => PolicyEndings::parse($input)), 'Unknown/subdomain/syntax refusal parity');
+        }
+        // Warm display never becomes money authority, including raw changes without cache invalidation.
+        $store->endings();
+        $product = $native->product($tlds[0], 'register');
+        $product->plans()->where('billing_period', 1)->sole()->prices()->where('currency_code', 'USD')->update(['price' => '99.00']);
+        $r = $request(); $key = FormKeys::issue($r, 'order:changed-placeholder.com');
+        $response = $controller->order($request(['domain' => 'changed-placeholder.com', 'action' => 'register', 'term' => '1', '_request_key' => $key]));
+        same(route('domains.domains.search', ['name' => 'changed-placeholder.com']), $response->getTargetUrl(), 'Order refuses a changed authoritative price inside display TTL');
+    },
+    'warm' => static function () use ($pin, $fill, $measure, $store): void {
+        $pin();
+        foreach ([10, 1500] as $size) {
+            $fill($size);
+            Cache::flush();[$cold,$coldCounts]=$measure(fn()=>$store->endings());
+            [$warm,$counts]=$measure(fn()=>$store->endings());same($cold,$warm,'Warm display parity');
+            // Cache evidence: the cold read filled the display cache that serves the warm read, whatever ran before this case.
+            expect($counts['queries']<$coldCounts['queries'],'The warm display is served from the cache the cold read filled');
+            echo $size.' warm-display '.json_encode($counts)."\n";
+            // The catalogue cache fence (77e182036) adds four reads to every warm request; the gate is still read once.
+            same([5, 1], [$counts['queries'], $counts['gateQueries']], 'Warm display reads the cache fence and the current catalogue gate once');
+        }
+    },
+], compact('clock', 'store', 'controller', 'owner', 'session', 'eligibility', 'cacheStore', 'summaries'));
+$nativeSuccessful = true; echo "Bounded policy rows, indexed suffix parity, batch links, uncached money decisions and warm gate checks passed.\n";
