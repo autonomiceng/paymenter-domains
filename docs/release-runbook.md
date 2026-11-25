@@ -30,6 +30,9 @@ Keep credentials, contact data, transfer codes and raw provider replies out of t
    This opt-in rehearsal proves fresh install and retained reinstall/upgrade on real
    MariaDB, including reference cleanup, with empty and prefixed table names. Retain its
    receipt separately; the default native install tests use SQLite.
+   A database created before the catalogue publication split still has the retired
+   `catalogue_converted` TLD column, and the retained check refuses it as a schema
+   mismatch. No upgrade drops that column: rebuild such a database with a fresh install.
 4. Record the settings and acceptance checks below. Inspect both registrar accounts independently: binding/environment, exact accepted
    terms, annual renewal support, retail publication and selected seller. Install
    creates no account or sale offer. Processing, billing, optional reminders and every
