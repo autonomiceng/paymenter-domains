@@ -169,8 +169,8 @@ foreach (['127.0.0.1', '::ffff:8.8.8.8'] as $ip) {
     expect(fixtureIpAllowed($ip, 'owner-record-errors-test.php'), 'Existing negative glue fixture is permitted only in its error test');
     expect(!fixtureIpAllowed($ip, 'owner-record-confirmation-test.php'), 'Negative glue exception does not allow positive confirmation fixtures');
 }
-// DNS and SRV confirmation cases share the extracted record fixture.
-foreach (['Support/owner-record-confirmation.php', 'owner-record-errors-test.php', 'client-script-render.php'] as $fixture) {
+// DNS and SRV confirmation cases share one multi-case file.
+foreach (['owner-record-confirmation-test.php', 'owner-record-errors-test.php', 'client-script-render.php'] as $fixture) {
     $ips = fixtureIpLiterals(file_get_contents(__DIR__.'/'.$fixture));
     expect($ips !== [], $fixture.' must contain IP literals for this policy check');
     foreach ($ips as $ip) { expect(fixtureIpAllowed($ip, $fixture), $fixture.' uses a permitted IP fixture: '.$ip); }
