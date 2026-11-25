@@ -58,9 +58,9 @@ final class FeedQueue
             if (isset($values['offer_work'])) {
                 // Hints may arrive outside locks while the provider read is in flight.
                 $stored = OfferState::decode((clone $q)->value('offer_work')); $next = OfferState::decode($values['offer_work']);
-                $copied = OfferState::decode($job->offer_work)['facts'] ?? [];
+                $copied = $job->factsRead;
                 foreach ($next['facts'] ?? [] as $tld => $state) {
-                    // Keep hints promoted since the claim unless this turn actually processed the entry.
+                    // Keep hints promoted since the turn last read the facts unless it processed the entry.
                     if (isset($stored['facts'][$tld], $copied[$tld]) && $state === $copied[$tld]) {
                         $next['facts'][$tld] = $stored['facts'][$tld];
                     }

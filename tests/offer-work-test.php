@@ -63,11 +63,13 @@ $writer = new Writer(new Projection($native), $clock, static function ($command)
 }, static fn () => true);
 $nsWire = new class implements DeadlineTransport {
     public int $calls = 0;
+    public ?Closure $during = null;
     public function send(NsEnvironment $environment, NsContext $context, RegistrarRequest $request, string $apiKey): TransportResponse
     { throw new LogicException('Deadline required.'); }
     public function sendWithin(NsEnvironment $environment, NsContext $context, RegistrarRequest $request, string $apiKey, int $timeoutMs): TransportResponse
     {
         expect(DB::transactionLevel() === 0, 'NameSilo provider reads also happen outside locks'); $this->calls++;
+        if ($this->during) { ($this->during)(); }
         return new TransportResponse(200, json_encode(['request' => ['operation' => 'getPrices', 'ip' => '192.0.2.1'],
             'reply' => ['code' => 300, 'detail' => 'synthetic', 'com' => ['registration' => '7.00', 'renew' => '8.00', 'transfer' => '9.00']]], JSON_THROW_ON_ERROR));
     }
@@ -100,6 +102,7 @@ $clock->time = $clock->time->modify('+61 seconds'); $worker->sync($b);
 $afterFeed = static function () use ($worker, $b, $clock): void {
     same($clock->now()->getTimestamp(), $worker->status($b)['succeeded_at'], 'The provider success is stored before the manual Sync');
     same('running', $worker->status($b)['state'], 'The completed feed still owns its worker claim');
+    same(3, $worker->status($b)['remaining'], 'The provider success stores its buffer before per-offer writes');
     $worker->sync($b);
 };
 $before = count($wire->calls); $worker->tick(1);
@@ -163,6 +166,7 @@ $wire->fail = ReadCommand::RetailPricing; $worker->sync($b); $worker->tick(1);
 $feedFailure = $worker->status($b);
 same('retrying', $feedFailure['state'], 'A feed failure exposes its automatic retry');
 same($lastGood, $feedFailure['succeeded_at'], 'Feed failure retains the previous success timestamp');
+same($clock->now()->getTimestamp() + 120, $feedFailure['due_at'], 'A feed failure stores its retry backoff');
 $before = count($wire->calls); $worker->sync($b); $worker->tick(1);
 same($before, count($wire->calls), 'Manual Sync coalesces with a scheduled failure retry');
 $wire->fail = null; $clock->time = $clock->time->modify('+121 seconds'); $worker->tick(1); $worker->tick(1);
@@ -174,6 +178,7 @@ $clock->time = $clock->time->modify('+61 seconds'); $allowance = 0; $before = co
 $tried = $worker->status($b)['tried_at']; $worker->sync($b); $worker->tick(1);
 same($before, count($wire->calls), 'No physical read starts without whole-group daily headroom');
 same($tried, $worker->status($b)['tried_at'], 'Unsent capacity deferral does not invent an attempt');
+same($clock->now()->getTimestamp() + 120, $worker->status($b)['due_at'], 'Unsent capacity deferral stores its short retry');
 $allowance = 1; $worker->sync($n); $worker->tick(1);
 same(1, $nsWire->calls, 'Fair account rotation services the one-read NameSilo feed while Enom waits');
 $worker->requestFacts($n, 'com'); $worker->tick(2);
@@ -332,6 +337,16 @@ $oneCheck=$evidenceReads;$evidenceReads=0;
 $worker->requestFacts($n,'com');
 same($oneCheck,$evidenceReads,'A first hint for fresh TEST facts reads the saved evidence once');
 same($fresh->freshUntil->getTimestamp(),$worker->status($n,'com')['due_at'],'A first hint for fresh TEST facts waits for their expiry');
+// Republication creates the entry after the claim; a second hint promotes it while the feed reads.
+DB::table('domains_observation_queues')->where('server_id',$n->serverId)->update(['offer_work'=>'{}','offer_claim'=>null,'offer_lease'=>0]);
+$nsWire->during=static function()use($worker,$n,$fresh):void{
+    same($fresh->freshUntil->getTimestamp(),$worker->status($n,'com')['due_at'],'Republication queued the fresh facts after the claim');
+    DB::table('domains_tlds')->where('server_id',$n->serverId)->where('tld','com')->update(['catalogue_facts'=>null]);
+    $worker->requestFacts($n,'com');
+};
+$nsBefore=$nsWire->calls;$worker->accountTurn($n->serverId);$nsWire->during=null;
+same($nsBefore+1,$nsWire->calls,'The turn reads the feed after republication');
+same($clock->now()->getTimestamp(),$worker->status($n,'com')['due_at'],'Worker save keeps a promotion made after it refreshed the facts');
 echo "Dormant offer queue and lazy facts checks passed.\n";
 
 // Shared scheduler account turns, merged here from the former runtime work test.
