@@ -177,9 +177,27 @@ def command_environment(env: dict[str, str], cases: Path, *, keep: frozenset[str
 NESTED = frozenset({'tests/test_lint.py', 'tests/test_runner.py', 'tests/test_runner_receipts.py', 'tests/test_runner_speed.py'})
 
 
-def confined(argv: list[str], root: Path, *, nested: bool = False) -> list[str]:
-    """ARGV run so that its case ROOT is the only place it can write; only a NESTED command may confine another."""
-    return [sys.executable, '-I', '-S', str(CONFINE), *(['--nested'] if nested else []), str(root), '--', *argv]
+def confined(argv: list[str], root: Path, *, nested: bool = False, cgroup: Path | None = None) -> list[str]:
+    """ARGV run so that its case ROOT, and its own CGROUP subtree when given, are the only places it can write; only a
+    NESTED command may confine another."""
+    return [sys.executable, '-I', '-S', str(CONFINE), *(['--nested'] if nested else []),
+            *(['--cgroup', str(cgroup)] if cgroup else []), str(root), '--', *argv]
+
+
+@contextmanager
+def delegated_subtree(group: Path):
+    """A private cgroup subtree under GROUP for a command that limits its own phases; its phases cannot reach a
+    sibling's limits. Each phase drains and removes its own group, and the subtree is removed after the command."""
+    subtree = group/('phases-'+uuid.uuid4().hex)
+    subtree.mkdir()
+    try:
+        (subtree/'cgroup.subtree_control').write_text('+memory')
+        yield subtree
+    finally:
+        for child in sorted(subtree.glob('test-*')):
+            (child/'cgroup.kill').write_text('1')
+            child.rmdir()
+        subtree.rmdir()
 
 
 def prepare_database(env, output, root):

@@ -632,5 +632,20 @@ sudo() {
             self.assertEqual(list((output/'cases').iterdir()), [], 'Each case root is removed with its command')
             self.assertEqual(sorted(str(path.relative_to(host)) for path in host.rglob('*')), ['.gitconfig', 'git', 'git/config'])
 
+    def test_a_command_cannot_change_cgroup_limits(self):
+        """A confined command cannot rewrite its own or the suite's cgroup limits, so it cannot reach a sibling's.
+        Phased commands get their own writable subtree; the installed package phases prove that grant."""
+        own = Path('/sys/fs/cgroup')/Path(Path('/proc/self/cgroup').read_text().split('0::/', 1)[1].strip())
+        probe = ("import errno, json, sys; outcome = {}\n"
+                 "for path in sys.argv[1:]:\n"
+                 "    try: open(path, 'w').write(open(path).read()); outcome[path] = 'written'\n"
+                 "    except OSError as error: outcome[path] = errno.errorcode[error.errno]\n"
+                 "print(json.dumps(outcome))")
+        limits = [str(own/'memory.max'), str(own.parent/'memory.max')]
+        with tempfile.TemporaryDirectory() as temp:
+            argv = runner.test_workers.confined([sys.executable, '-c', probe, *limits], Path(temp))
+            result = subprocess.run(argv, capture_output=True, text=True, check=True, timeout=10)
+        self.assertEqual(json.loads(result.stdout), dict.fromkeys(limits, 'EROFS'))
+
 if __name__ == '__main__':
     unittest.main()

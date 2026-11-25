@@ -2,6 +2,7 @@
 """Run registered offline suites with pinned PHP and optional pristine native fixture."""
 # Adapted from Paymenter Enom scripts/test.py; MIT, Copyright (c) 2026 Autonomic Engineering.
 import argparse
+import contextlib
 from contextlib import contextmanager
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import fnmatch
@@ -399,8 +400,13 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
             if pure and source_env:
                 source_env = {key: value for key, value in source_env.items() if key != 'PAYMENTER_TEST_FIXTURE'}
             keep = test_workers.MARIADB_HOST_PATHS if kind == 'mariadb' else frozenset()
-            with test_workers.command_environment(source_env or {}, cases, keep=keep) as (case, child):
-                test = argv if kind == 'mariadb' else test_workers.confined(argv, case, nested=argv[-1] in test_workers.NESTED)
+            with test_workers.command_environment(source_env or {}, cases, keep=keep) as (case, child), \
+                    (test_workers.delegated_subtree(Path(env['DOMAINS_TEST_CGROUP'])) if phased
+                     else contextlib.nullcontext()) as subtree:
+                if subtree:
+                    child = dict(child, DOMAINS_TEST_CGROUP=str(subtree))
+                test = argv if kind == 'mariadb' else test_workers.confined(argv, case, nested=argv[-1] in test_workers.NESTED,
+                                                                           cgroup=subtree)
                 launched = ([sys.executable, env['DOMAINS_TEST_BUDGET'], '--name', argv[-1],
                              '--test-scope', '--wall', str(test_limits['wall_seconds']),
                              '--memory', str(test_limits['memory_bytes']),
