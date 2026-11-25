@@ -9,13 +9,21 @@ use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{RequestFacts,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{EnomAnswerAction,OperationActions,RequestFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{CataloguePreview,EnomTestReconciliationReader};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationRecords,ObservationSchema,ObservationWork,OperationReconciliation,ReconciliationEvidence,RegistrarAnswers,RegistrarCheck,Refunds,RenewalCompletion,RenewalReplacements,StaffOperationReview,StaffOperations,StaffSettingsReview,StaffSyncReview};
 \Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
+// Rows that differ only in a decision input read the page's own action objects instead of mounting the page again.
+// Like a page test, the reader acts as staff: checkout fixtures sign the customer in.
+$shown=static function(Paymenter\Extensions\Servers\Domains\Models\Operation $op,string $name)use($staff):bool{
+    Auth::setUser($staff);$op=$op->fresh();if($name==='enom_answer'){return EnomAnswerAction::make($op,'')->isVisible();}
+    return (bool)collect(OperationActions::make($op,StaffOperationReview::stamp($op,$op->domain)))->first(fn($a)=>$a->getName()===$name)?->isVisible();
+};
+$more=static fn($op)=>array_values(array_filter(['approve_charge','hold','disposition','refund','credit','replacement'],fn($name)=>$shown($op,$name)));
+$domainResume=static function(Paymenter\Extensions\Servers\Domains\Models\Domain $d)use($staff):bool{Auth::setUser($staff);return (bool)(OperationActions::scheduledReads($d->fresh())[0]??null)?->isVisible();};
 try{
 // Native re-check calls the existing read-only reconciliation engine; actual proof alone can complete.
 [$check]=$prepare(placeholderComFixtureName('staff-recheck-placeholder.com'));$calls=count($observation->calls);
@@ -72,11 +80,11 @@ $stoppedKey=['domain_id'=>$check->domain_id,'generation'=>$check->authority_gene
 DB::table('domains_observation_work')->updateOrInsert($stoppedKey,['server_id'=>$check->server_id,'account_fingerprint'=>$check->account_fingerprint,'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
 $stopped=DB::table('domains_observation_work')->where($stoppedKey)->value('id');
 $stoppedPage=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionVisible('resume_observation');
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$check->id])->assertDontSee('More');
+same([],$more($check),'Stopped domain work adds no request action');
 foreach(array_keys(StaffOperationReview::ACTIONS) as $action){if($action!=='resume_observation'){commerceReject(fn()=>$run($check->fresh(),$action));}}
 $stoppedPage->callAction('resume_observation')->assertNotified('Sync resumed');
 same(1,(int)DB::table('domains_observation_work')->where('id',$stopped)->value('resumes'),'Stopped domain work remains resumable after purchase completion');
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$check->id])->assertDontSee('More');
+same([],$more($check),'Resumed domain work adds no request action');
 commerceReject(fn()=>$run($check->fresh(),'resume_observation'));
 // 875ef5d4 keeps a healthy queued retry automatic; only stopped work needs staff resume.
 ObservationRecords::hold($check->domain->fresh(),'records_unavailable',$clock->now());
@@ -107,21 +115,21 @@ $soloPage->callAction('resume_observation')->assertNotified('Sync resumed');
 same(1,(int)DB::table('domains_observation_work')->where('id',$soloWork)->value('resumes'),'No-request domain resumes');
 $soloEntries=\Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory::entries($soloDomain->fresh());
 same(1,count(array_filter($soloEntries,fn(array $row)=>$row['event']==='Sync resumed'&&$row['sub']===null)),'History names the resume once');
-Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$soloDomain->id])->assertActionHidden('resume_observation');
-// Independent literal boundaries for both shared acquisition actions.
+same(false,$domainResume($soloDomain),'A resumed no-request domain offers no second resume');
+// Read resume retains original attempt/funding; limits and current generation remain engine-owned.
+[$resume]=$prepare(placeholderComFixtureName('staff-resume-placeholder.com'));
+// Independent literal boundaries for both shared acquisition actions, decided on unsaved copies of one unsent order.
+Auth::setUser($staff);
 foreach(['register','transfer'] as $action){
-    [$boundary]=$prepare(placeholderComFixtureName('staff-'.$action.'-boundary-placeholder.com'));
     foreach([4,5] as $polls){
-        $policy=$boundary->fresh()->policy;$policy['reconciliation']=['polls'=>$polls];$policy['renewal_polls']=0;
-        $boundary->update(['policy'=>$policy]);DB::table('domains_operations')->where('id',$boundary->id)->update(['action'=>$action]);
-        $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$boundary->id]);
-        if($polls===4){$page->assertActionVisible('recheck')->assertActionHidden('resume_reads');}
-        else{$page->assertActionHidden('recheck')->assertActionVisible('resume_reads');}
+        $boundary=$resume->fresh();$policy=$boundary->policy;$policy['reconciliation']=['polls'=>$polls];$policy['renewal_polls']=0;
+        $boundary->setAttribute('policy',$policy);$boundary->setAttribute('action',$action);
+        $decide=collect(OperationActions::make($boundary,StaffOperationReview::stamp($boundary,$boundary->domain)))->keyBy(fn($a)=>$a->getName());
+        same([$polls===4,$polls===5],[$decide['recheck']->isVisible(),$decide['resume_reads']->isVisible()],$action.' read limit at '.$polls.' polls');
     }
 }
-
-// Read resume retains original attempt/funding; limits and current generation remain engine-owned.
-[$resume]=$prepare(placeholderComFixtureName('staff-resume-placeholder.com'));$p=$resume->policy;$p['reconciliation']=['polls'=>5];$resume->update(['policy'=>$p]);$original=$resume->fresh()->attempt;
+same($resume->getRawOriginal(),$resume->fresh()->getRawOriginal(),'Deciding on copies writes nothing');
+$p=$resume->policy;$p['reconciliation']=['polls'=>5];$resume->update(['policy'=>$p]);$original=$resume->fresh()->attempt;
 $resumedPage=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$resume->id])->callAction('resume_reads')->assertNotified('Status checks restarted')
     ->assertSee('Status checks restarted')->assertActionHidden('resume_reads')->assertActionVisible('recheck');
 same('scheduled',$resume->fresh()->policy['status_check']['outcome'],'Resume clears stale status');same($clock->now()->getTimestamp(),(int)DB::table('domains_runtime_operations')->where('operation_id',$resume->id)->value('due_at'),'Resume is due immediately');same(0,$resume->fresh()->policy['reconciliation']['polls'],'Bounded read budget reset');same($original,$resume->fresh()->attempt,'Read resume cannot reset attempt');
@@ -184,7 +192,7 @@ $state->fail=null;$state->expiry='2028-10-18';$state->charge='8.00';
 same([(int)$renew->id],RenewalReplacements::activityIds($domain->fresh()),'Late refunded-debt activity exposes the affected request ID');
 
 // The late payment shows on the refunded request it landed on; the replacement still offers Check status.
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$renew->id])->assertSee('Payment received after credit. Check the invoice.');
+Auth::setUser($staff);same('Payment received after credit. Check the invoice.',RequestFacts::notice($renew->fresh())['title']??null,'The late payment shows on the refunded request');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$replacement->id])->assertDontSee('Payment received after credit')
     ->callAction('recheck')->assertNotified('Registrar checked');
 same('succeeded',$replacement->fresh()->state,'Staff readback completes sealed replacement after old late payment');
@@ -197,9 +205,7 @@ $clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');commerceReject(fn(
 $runRenewal($readRenew,$binding);$readRenew->refresh();$policy=$readRenew->policy;$policy['renewal_polls']=5;$readRenew->update(['policy'=>$policy]);
 foreach([4,5] as $polls){
     $policy=$readRenew->fresh()->policy;$policy['renewal_polls']=$polls;$policy['reconciliation']=['polls'=>0];$readRenew->update(['policy'=>$policy]);
-    $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$readRenew->id]);
-    if($polls===4){$page->assertActionVisible('recheck')->assertActionHidden('resume_reads');}
-    else{$page->assertActionHidden('recheck')->assertActionVisible('resume_reads');}
+    same([$polls===4,$polls===5],[$shown($readRenew,'recheck'),$shown($readRenew,'resume_reads')],'Renewal read limit at '.$polls.' polls');
 }
 
 $before=[$readRenew->fresh()->attempt,$readRenew->fresh()->funding,$readRenew->domain->fresh()->reservation_name];
@@ -253,7 +259,7 @@ Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lost->id])->as
     ->assertDontSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\SupportDetails::LABEL);
 // Once checks stop, recording the answer is the way out.
 $lost->fresh()->update(['policy'=>[...$readPolicy,'status_check'=>[...$readPolicy['status_check'],'outcome'=>'checked','next_at'=>null]]]);
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lost->id])->assertActionVisible('enom_answer');
+same(true,$shown($lost,'enom_answer'),'Once checks stop, the answer is offered');
 $lost->fresh()->update(['policy'=>$readPolicy]);
 same('uncertain',$lost->state,'A found domain cannot settle a lost purchase');
 same(null,$lost->cost['actual']??null,'Unknown charge stays unknown');
