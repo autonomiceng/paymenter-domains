@@ -25,8 +25,7 @@
     "Domains/Renewal/Execution/RenewalExecution.php": ["tests/renewal-worker-contention-test.php", "tests/paid-renewal-hook-test.php", "tests/test_installed_package_enom_renewal.py"],
     "Domains/Services/RenewalFundingLedger.php": ["tests/renewal-worker-contention-test.php", "tests/refund-renewals-test.php"],
     "tests/staff-tld-pricing-render.php": ["tests/staff-sales-setup-action-test.php"],
-    "tests/Support/refund-browser-router.php": ["tests/test_staff_refund_browser.py", "tests/test_staff_refund_refusals_browser.py"],
-    "tests/Support/refund-browser-kernel.php": ["tests/test_staff_refund_browser.py", "tests/test_staff_refund_refusals_browser.py"],
+    "tests/Support/refund-browser-kernel.php": ["tests/test_staff_refund_browser.py"],
     "Domains/Data/RequestContext.php": ["tests/enom-history-scan-test.php", "tests/renewal-history-deadline-proof-test.php"],
     "Domains/Services/StaffSettingsReview.php": ["tests/renewal-answer-retained-proof-test.php"],
     "Domains/Services/HoldingLocks.php": ["tests/renewal-worker-contention-test.php", "tests/renewal-proof-observed-test.php"],
@@ -111,5 +110,5 @@
     "tests/native-database.php": ["tests/test_runner.py"],
     "scripts/php-test": ["tests/test_runner.py"]
   },
-  "no_tests": ["*.md", "LICENSE", "*.png", "*.svg", "tests/enom-answer-render.php", "tests/Support/request-review-render.php", "tests/Support/registrar-transfer-render.php", "tests/Support/dns-template-render.php", "tests/Support/billing-hold-render.php", "tests/Support/request-order-unproven-render.php"]
+  "no_tests": ["*.md", "LICENSE", "*.png", "*.svg", "tests/enom-answer-render.php", "tests/Support/request-review-render.php", "tests/Support/registrar-transfer-render.php", "tests/Support/dns-template-render.php", "tests/Support/billing-hold-render.php", "tests/Support/request-order-unproven-render.php", "tests/runtime-render.php", "tests/runtime-records-render.php", "tests/staff-tld-render.php", "tests/what-you-sell-render.php"]
 }

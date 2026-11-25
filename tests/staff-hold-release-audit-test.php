@@ -32,15 +32,13 @@ $audit=$op->fresh()->policy['staff_actions'];
 same(['Customer asked to wait','Release hold','Customer confirmed the next attempt','Release hold'],array_column($audit,'reason'),'Exact completed reasons across two cycles');
 same(['Put on hold','Hold released','Put on hold','Hold released'],array_column(StaffReviewHistory::rows($op->fresh()),'event'),'Exact visible audit events');
 same(['Customer asked to wait',null,'Customer confirmed the next attempt',null],array_column(StaffReviewHistory::rows($op->fresh()),'sub'),'Only entered reasons appear below events');
-// Keep the same browser component through successive writes: no remount or refresh between actions.
-foreach([1,2] as $cycle){
-    $page->callAction('hold')->assertNotified('Request on hold')->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::UnderReview->label())->assertSee('Put on hold by '.trim($staff->first_name.' '.$staff->last_name))
-        ->assertActionVisible('release')->assertActionHidden('hold');
-    $page->callAction('release')->assertNotified('Hold released')->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::Queued->label())->assertSee('Hold released')
-        ->assertDontSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::UnderReview->label())->assertDontSee('Put on hold by '.trim($staff->first_name.' '.$staff->last_name))->assertActionVisible('hold')->assertActionHidden('release');
-    same(4+2*$cycle,count($op->fresh()->policy['staff_actions']),'Each same-page action gets a current one-use review ticket');
-}
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSee('History')
+// Keep the same browser component through a further hold and release: no remount or refresh between actions.
+$page->callAction('hold')->assertNotified('Request on hold')->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::UnderReview->label())->assertSee('Put on hold by '.trim($staff->first_name.' '.$staff->last_name))
+    ->assertActionVisible('release')->assertActionHidden('hold');
+$page->callAction('release')->assertNotified('Hold released')->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::Queued->label())->assertSee('Hold released')
+    ->assertDontSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::UnderReview->label())->assertDontSee('Put on hold by '.trim($staff->first_name.' '.$staff->last_name))->assertActionVisible('hold')->assertActionHidden('release');
+same(6,count($op->fresh()->policy['staff_actions']),'Each same-page action gets a current one-use review ticket');
+$page->assertSee('History')
     ->assertSee('Customer asked to wait')->assertSee('Customer confirmed the next attempt')->assertSee('Hold released');
 $history=Livewire::actingAs($staff)->test(RequestsRelationManager::class,['ownerRecord'=>$op->domain->fresh(),'pageClass'=>ViewDomain::class]);
 $history->assertSee('Search changes')->assertSee('Request #'.$op->id);

@@ -2,6 +2,7 @@
 """Run registered offline suites with pinned PHP and optional pristine native fixture."""
 # Adapted from Paymenter Enom scripts/test.py; MIT, Copyright (c) 2026 Autonomic Engineering.
 import argparse
+import contextlib
 from contextlib import contextmanager
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import fnmatch
@@ -41,11 +42,9 @@ def kill_tree(pid):
     """Freeze parents before discovering children, including detached sessions."""
     owned, pending, stopped = set(), [pid], False
     try:
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.killpg(pid, signal.SIGSTOP)
             stopped = True
-        except ProcessLookupError:
-            pass
         while pending:
             current = pending.pop()
             if current in owned:
@@ -63,14 +62,10 @@ def kill_tree(pid):
                     pass
     finally:
         for current in owned:
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 os.kill(current, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.killpg(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
     return stopped or bool(owned)
 
 class Processes:
@@ -216,14 +211,18 @@ def order_commands(commands, previous=None):
     previous = previous or {}
     def priority(item):
         index, (kind, argv) = item
+        # Previous failures run first, shortest first, for quick feedback. Longer
+        # passing commands start before shorter ones so short ones fill the
+        # tail; a command without a timing may be long and starts first.
         failed, seconds = previous.get((kind, argv[-1]), (False, math.inf))
-        return ORDER.index(kind), not failed, not test_scheduling.installed(kind, argv), seconds, index
+        return (ORDER.index(kind), not failed, not failed and not test_scheduling.installed(kind, argv),
+                seconds if failed else -seconds, index)
     return [command for _, command in sorted(enumerate(commands), key=priority)]
 
 def git_tree():
     """Return (tree, reason): the HEAD tree only for a clean checkout rooted here."""
     def git(*args):
-        output = subprocess.run(['git', *args], cwd=ROOT, capture_output=True, check=True, timeout=30).stdout
+        output = subprocess.run(['git', *args], cwd=ROOT, capture_output=True, check=True, timeout=30, env=php_suite.host_environment()).stdout
         return os.fsdecode(output).strip()
     try:
         if Path(git('rev-parse', '--show-toplevel')).resolve() != ROOT.resolve():
@@ -280,20 +279,16 @@ def shutdown(process, graceful, *, supervised):
             pass
         try:
             stdout, stderr = process.communicate(timeout=graceful+3 if supervised else graceful)
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
             return stdout, stderr
         except subprocess.TimeoutExpired:
             pass
     if supervised:
         kill_tree(process.pid)
     else:
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
     try:
         return process.communicate(timeout=1)
     except subprocess.TimeoutExpired as drain:
@@ -339,7 +334,7 @@ def cancel_on_error(processes):
         raise
 
 def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, workers=None, worker_check=None, timings=None, only=None,
-        fail_fast=False, requested_jobs=None, memory_mib=None, jobs_explicit=False, lint_base=None, checkout=None):
+        fail_fast=False, requested_jobs=None, memory_mib=None, jobs_explicit=False, lint_base=None, checkout=None, coverage=None, retry=frozenset()):
     started_run = time.monotonic()
     image = os.environ.get('PHP_SUITE_IMAGE') if selected != ['mariadb'] else None
     php_version, php_packages = php_suite.installed_versions() if image else (None, {})
@@ -381,11 +376,11 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         phased = bounded and test_workers.installed_phases(argv[-1])
         local_budget = bounded and env.get('DOMAINS_TEST_BUDGET') == str(ROOT/'scripts/case_budget.py')
         resource_receipt = output / f'{index:04d}.resources.json'
-        # Browser cases run alone and include Chromium, Node and the PHP server.
+        # Browser cases include Chromium, Node and the PHP server.
         test_limits = dict(wall_seconds=60 if Path(argv[-1]).name in {'native-paid-baseline-test.php', 'renewal-safety-test.php', 'staff-release-parity-test.php', 'staff-transfer-release-parity-test.php'} else 30 if kind in ('ui', 'native') else 10,
-                           memory_bytes=(768 if kind == 'ui' else 256)*1024**2)
+                           memory_bytes=test_scheduling.memory_ceiling(kind, env or {}))
         if local_budget and env.get('DOMAINS_TEST_LIMITS') != 'wide':
-            test_limits = dict(wall_seconds=min(65, timeout), memory_bytes=512*1024**2)
+            test_limits['wall_seconds'] = min(65, timeout)
         syntax_lint = kind == 'lint' and len(argv) >= 3 and argv[1] == '-l'
         case_budget = bounded and not phased
         owns_descendants = case_budget and local_budget
@@ -399,8 +394,9 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
             if pure and source_env:
                 source_env = {key: value for key, value in source_env.items() if key != 'PAYMENTER_TEST_FIXTURE'}
             keep = test_workers.MARIADB_HOST_PATHS if kind == 'mariadb' else frozenset()
-            with test_workers.command_environment(source_env or {}, cases, keep=keep) as (case, child):
-                test = argv if kind == 'mariadb' else test_workers.confined(argv, case, nested=argv[-1] in test_workers.NESTED)
+            with test_workers.command_environment(source_env or {}, cases, keep=keep) as (case, child), \
+                    test_workers.delegated_subtree(child, phased) as (child, subtree):
+                test = argv if kind == 'mariadb' else test_workers.confined(argv, case, nested=argv[-1] in test_workers.NESTED, cgroup=subtree)
                 launched = ([sys.executable, env['DOMAINS_TEST_BUDGET'], '--name', argv[-1],
                              '--test-scope', '--wall', str(test_limits['wall_seconds']),
                              '--memory', str(test_limits['memory_bytes']),
@@ -485,7 +481,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
             else:
                 with ThreadPoolExecutor(max_workers=jobs) as pool, cancel_on_error(processes):
                     test_scheduling.parallel(pool, commands, env or {}, jobs, stopped, scheduling,
-                                             command, record, submitted, wait_for=wait)
+                                             command, record, submitted, wait_for=wait, retry=retry)
     except BaseException as error:
         runner_error = type(error).__name__
         runner_error_detail = str(error)
@@ -549,7 +545,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         receipt = {'php_suite_image': image, 'php_version': php_version, 'php_packages': php_packages,
                    'runner_error': runner_error, 'runner_error_detail': runner_error_detail, 'final_guard_complete': final_guard_complete,
                    'final_guard_error': final_guard_error, 'timings': timings, 'only_tests': sorted(set(only or [])),
-                   'lint_base': lint_base,
+                   'lint_base': lint_base, 'coverage': coverage, 'test_options': test_workers.test_options(),
                    'git_tree': tree, 'git_tree_error': tree_error,
                    'fail_fast': fail_fast, 'first_failure': first_failure, 'failures': failed_indexes,
                    'cancelled': cancelled, 'commands_planned': len(commands),
@@ -630,18 +626,18 @@ def lint_files(base=None):
                 for p in sorted((ROOT/area).rglob('*.php'))]
     # Resolve the ref first so a leading dash cannot become a diff option.
     revision = subprocess.check_output(['git', 'rev-parse', '--verify', '--end-of-options', base+'^{commit}'],
-                                       cwd=ROOT).decode().strip()
+                                       cwd=ROOT, env=php_suite.host_environment()).decode().strip()
     changed = subprocess.check_output(['git', 'diff', '--name-only', '-z', '--diff-filter=ACMRTUXB',
-                                      revision, '--', 'Domains', 'tests'], cwd=ROOT)
+                                      revision, '--', 'Domains', 'tests'], cwd=ROOT, env=php_suite.host_environment())
     untracked = subprocess.check_output(['git', 'ls-files', '--others', '--exclude-standard', '-z',
-                                        '--', 'Domains', 'tests'], cwd=ROOT)
+                                        '--', 'Domains', 'tests'], cwd=ROOT, env=php_suite.host_environment())
     return sorted({os.fsdecode(p) for p in (changed+untracked).split(b'\0') if p
                    and os.fsdecode(p).endswith('.php') and (ROOT/os.fsdecode(p)).is_file()})
 
 def main(*, launch=False):
     # The timing receipt is the only argument the host must mount and rewrite.
     timing_option = argparse.ArgumentParser(add_help=False)
-    timing_option.add_argument('--timings-from', metavar='RECEIPT', help='Prioritize previously failing and faster commands within each category.')
+    timing_option.add_argument('--timings-from', metavar='RECEIPT', help='Run previous failures first, then longer commands first, within each category.')
     parser = argparse.ArgumentParser(description=__doc__, parents=[timing_option])
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument('--suite', choices=CATEGORIES, action='append')
@@ -659,6 +655,8 @@ def main(*, launch=False):
     os.umask(0o077)
     checkout = git_tree()
     selected = args.suite or []
+    # Every receipt records the requested plan's coverage. A default run without the native fixture is smaller.
+    coverage = 'only' if args.only else 'suites' if args.suite else 'full' if FIXTURE_SUITES <= set(default_suites()) else 'fixture-free'
     timings = {}
 
     def setup_output():
@@ -671,7 +669,7 @@ def main(*, launch=False):
             tree, tree_error = unchanged_tree(checkout)
             receipt.write_text(json.dumps({'complete': False, 'phase': 'setup', 'error_type': type(error).__name__, 'selected_suites': selected,
                                            'git_tree': tree, 'git_tree_error': tree_error,
-                                           'only_tests': args.only or [], 'lint_base': args.lint_base, 'timings': timings})+'\n')
+                                           'only_tests': args.only or [], 'lint_base': args.lint_base, 'coverage': coverage, 'timings': timings})+'\n')
             print('Setup failed; receipt: '+str(receipt), file=sys.stderr)
 
     try:
@@ -684,12 +682,13 @@ def main(*, launch=False):
                     else list(dict.fromkeys(args.suite or default_suites())))
         if 'mariadb' in selected and len(selected) > 1:
             raise ValueError('Run MariaDB separately from the pinned PHP suites.')
+        test_workers.test_options(args.only or [])
     except BaseException as error:
         setup_failure(setup_output(), error)
         raise
     if launch and selected != ['mariadb'] and not php_suite.RUNTIME.is_dir():
         _, arguments = timing_option.parse_known_args()
-        return php_suite.domains(ROOT, arguments, history=args.timings_from)
+        return php_suite.domains(ROOT, arguments, coverage=coverage, history=args.timings_from)
     jobs_explicit = args.jobs is not None or 'DOMAINS_TEST_JOBS' in os.environ
     if args.jobs is None:
         try:
@@ -778,7 +777,8 @@ def main(*, launch=False):
                 test_workers.prepare_funded_registration(env, output)
         return run(commands, env, output, selected, suites, dependency, jobs=jobs, workers=workers, worker_check=worker_check,
                    timings=timings, only=args.only, fail_fast=args.fail_fast, requested_jobs=args.jobs, memory_mib=args.memory_mib,
-                   jobs_explicit=jobs_explicit, lint_base=args.lint_base, checkout=checkout)
+                   jobs_explicit=jobs_explicit, lint_base=args.lint_base, checkout=checkout, coverage=coverage,
+                   retry=test_scheduling.known_failures(commands, previous))
     except BaseException as error:
         setup_failure(output, error)
         raise

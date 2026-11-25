@@ -49,6 +49,15 @@ same('7.50',$prices->current($t->server_id,$t->account_fingerprint,'com','regist
 $plan=App\Models\Product::where('slug',\Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue::slug($t,'register'))->sole()->plans()->where('billing_period',1)->sole();
 same('7.50',number_format((float)$plan->prices()->where('currency_code','USD')->sole()->price,2,'.',''),'Store price follows: '.json_encode($plan->prices()->get()->toArray()));
 
+// Every settings action has a place, and each placed button is on its page for staff with every settings permission.
+$places=staffActionPlaces();
+same([],array_values(array_diff(array_keys(Review::ACTIONS),array_merge(...array_values($places)),staffNoButtonActions())),'Every settings action is placed');
+$tldPage=Livewire\Livewire::actingAs($u)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld::class,['record'=>$t->id]);
+foreach(array_diff($places['tld'],['tld_settings']) as $action){$tldPage->assertActionVisible($action);}
+$accountPage=Livewire\Livewire::actingAs($u)->test(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$t->server_id]);
+foreach([...$places['account'],...$places['row']] as $action){$accountPage->assertActionVisible(setupAction($action,$t->server_id));}
+unset($tldPage,$accountPage);
+
 // Below-cost rows: register and transfer are held; renew is still billed at the new price and alerts staff.
 $low=PricingRule::validate(['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>['register'=>'5.00','renew'=>'7.00','transfer'=>'9.00']]);
 $preview=collect((new \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue($ports,$clock))->preview($t->fresh(),$low))->keyBy(fn($r)=>$r['action'].$r['term']);

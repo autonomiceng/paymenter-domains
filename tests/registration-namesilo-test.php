@@ -3,8 +3,9 @@
 declare(strict_types=1);
 require __DIR__.'/Support/namesilo-registration-base.php';
 require_once __DIR__.'/Support/fixture-cases.php';
-// Every case buys its own paid NameSilo TEST order through the fixed OTE batch route, with one synthetic reply
-// mode for profile proof, purchase, readback and follow-up. The reset restores rows, the fake port and the clock.
+// One paid, still unsent NameSilo TEST order is bought before the checkpoint; each case sends it through the fixed
+// OTE batch route with one synthetic reply mode for profile proof, purchase, readback and follow-up. The reset
+// restores rows, the fake port and the clock, so every case starts from the same paid order.
 // The NameSilo checkout dates its native invoice by Carbon: pin Carbon to the fixture clock, as the Enom checkout does.
 Carbon\Carbon::setTestNow($clock->now()); Carbon\CarbonImmutable::setTestNow($clock->now());
 $pinned = [$clock->now(), Carbon\Carbon::getTestNow(), Carbon\CarbonImmutable::getTestNow()];
@@ -12,11 +13,14 @@ $pin = static function () use ($clock, $pinned): void { [$clock->instant, $nativ
 $nameSiloModes = ['300', '301', '302', 'amount', 'badns', 'mismatch',
     'remove', 'stillon', 'badexpiry', 'rereadfail', 'lost', 'unknown',
     'default', 'wrongcontact', 'authoritydrift', 'hyphenphone', 'wrongphone', 'missingphone'];
+$paid = $nsNew(placeholderComFixtureName('ns-registration-placeholder.com'));
+same(['awaiting_payment', null, 'paid'], [$paid->state, $paid->attempt, App\Models\Invoice::find($paid->invoice_id)->status], 'The shared order is paid and has no attempt yet');
+$paid = $paid->id;
 foreach ($nameSiloModes as $mode) {
-    $cases[$mode] = static function () use ($mode, $pin, $registration, $makeEngine, $binding, $exchange, $runRegistration, $nsNew, $assertRetained, $ownerPage, $clock, $user, &$engine, &$profiles): void {
+    $cases[$mode] = static function () use ($mode, $pin, $registration, $makeEngine, $binding, $exchange, $runRegistration, $paid, $assertRetained, $ownerPage, $clock, $user, &$engine, &$profiles): void {
         $pin();
         $registration->mode = $mode; $registration->calls = []; $registration->diagnostics = []; $makeEngine($binding, $exchange);
-        $result = $runRegistration($nsNew(placeholderComFixtureName('ns-'.$mode.'-placeholder.com')));
+        $result = $runRegistration(Paymenter\Extensions\Servers\Domains\Models\Operation::findOrFail($paid));
         if (in_array($mode, ['default', 'wrongcontact', 'authoritydrift', 'wrongphone', 'missingphone'], true)) {
             if ($mode === 'authoritydrift') {
                 same(['authority_before' => true, 'authority_after' => false], $registration->diagnostics, 'Actual original claim snapshot detects policy drift');

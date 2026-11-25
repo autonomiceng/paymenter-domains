@@ -22,8 +22,8 @@ $second->callAction('hold')->assertNotified('Request on hold')->assertSee(\Payme
 same(['held',$audit+1],[$stale->fresh()->state,count($stale->fresh()->policy['staff_actions'])],'Put on hold works on the same page after an old click');
 $first->call('mountAction','hold')->assertNotified('Already on hold')->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::UnderReview->label())->assertActionHidden('hold');
 same($audit+1,count($stale->fresh()->policy['staff_actions']),'An old Put on hold writes nothing');
-$same=$open($stale);
-$same->callAction('release')->assertNotified('Hold released')->call('mountAction','release')->assertNotified('Hold already released');
+// The page that already acted is current again, so a double click on it writes once.
+$second->callAction('release')->assertNotified('Hold released')->call('mountAction','release')->assertNotified('Hold already released');
 same($audit+2,count($stale->fresh()->policy['staff_actions']),'A double click on one page writes once');
 echo "Old clicks passed.\n";
 

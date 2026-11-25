@@ -27,12 +27,25 @@ expect($credit()>$creditBefore,'Notification failure cannot prevent immediate ac
 same('account_credit',$alertFailure->fresh()->funding['refund']['to']??null,'Immediate credit retains its once-only receipt');
 $op=$held('staff-actions-placeholder.com'); $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSuccessful();
 // Every action has an independent default-deny permission; a general manager has none of them.
-foreach(array_keys(StaffOperationReview::ACTIONS) as $action){
+// Each grant is checked on a mounted page where its action shows: removing only that grant hides the page's own action,
+// and the writer refuses for permission. A page action reads the grant when it is checked, so one page serves each record.
+$refusedWithout=static function(string $action,$op)use($staff,$all,$run):void {
     $staff->role->update(['permissions'=>array_values(array_diff($all,[StaffOperationReview::permission($action)]))]);
-    // Resume sync sits on the domain page; the other actions sit on the request page.
-    Livewire::actingAs($staff)->test(...($action==='resume_observation'?[\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$op->domain_id]]:[ViewOperation::class,['record'=>$op->id]]))->assertActionHidden($action);
-    commerceReject(fn()=>$run($op,$action));
-}
+    try{$run($op->fresh(),$action);expect(false,'Without its permission the '.$action.' writer refuses');}
+    catch(Paymenter\Extensions\Servers\Domains\Services\StaffReviewRefused $refused){same("You don't have permission to do this.",$refused->getMessage(),'The '.$action.' writer refuses for its permission');}
+    finally{$staff->role->update(['permissions'=>$all]);}
+};
+$hiddenWithout=static function($page,string $action,$op)use($staff,$all,$refusedWithout):void {
+    $page->assertActionVisible($action);
+    $staff->role->update(['permissions'=>array_values(array_diff($all,[StaffOperationReview::permission($action)]))]);
+    try{$page->assertActionHidden($action);}finally{$staff->role->update(['permissions'=>$all]);}
+    $refusedWithout($action,$op);
+};
+foreach(['recheck','release','refund'] as $action){$hiddenWithout($page,$action,$op);}
+// Hold, Resume sync, Retry refund, Close request and Reissue renewal invoice are checked below on records that offer them. Check status
+// after its limit (tests/staff-request-page-test.php), Mark as failed (tests/staff-management-outcome-test.php) and Approve
+// captured charge (tests/Support/captured-charge-review.php) have their page pairs on their own fixtures.
+foreach(['resume_reads','mark_failed','approve_charge'] as $action){$refusedWithout($action,$op);}
 $staff->role->update(['permissions'=>array_values(array_diff($all,[Staff::VIEW]))]);
 commerceReject(fn()=>$run($op,'refund')); $staff->role->update(['permissions'=>$all]);
 // Native modal reason validation on a money action, then allowed release, audit, immutable attempt and single-use key.
@@ -53,7 +66,8 @@ foreach([array_diff_key($op->fresh()->policy,['staff_actions'=>true]),[...$op->f
 echo "Release guard passed.\n";
 // Authorized native hold and refund confirmations invoke only the engine refund path.
 $holdText='Put on hold by '.trim($staff->first_name.' '.$staff->last_name);
-$actions=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('hold')->assertNotified('Request on hold')
+$actions=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id]);$hiddenWithout($actions,'hold',$op);
+$actions->callAction('hold')->assertNotified('Request on hold')
     ->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::UnderReview->label())->assertSee($holdText)->assertActionHidden('hold')->assertActionVisible('release');
 echo "Native hold passed.\n"; same('held',$op->fresh()->state,'Native hold action'); $before=$credit();
 $actions->assertActionVisible('refund')->callAction('refund',['reason'=>'Customer cancelled this unsent order'])->assertHasNoActionErrors()->assertNotified('Request cancelled')
@@ -73,7 +87,8 @@ $retryPage=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$ret
 same(App\Models\Service::STATUS_CANCELLED,App\Models\Service::findOrFail($retry->service_id)->status,'The service is cancelled before the credit');
 echo "Failed credit retained.\n";
 DB::unprepared('DROP TRIGGER staff_credit_fail'); same('rejected',$retry->fresh()->state,'Decision survives failed credit');same($before,$credit(),'Failed credit atomic');
-$retryPage->assertActionVisible('credit')->callAction('credit',['reason'=>'Retry verified retained credit'])->assertHasNoActionErrors()->assertNotified('Refund checked')
+$hiddenWithout($retryPage,'credit',$retry);
+$retryPage->callAction('credit',['reason'=>'Retry verified retained credit'])->assertHasNoActionErrors()->assertNotified('Refund checked')
     ->assertSee('Credit added')->assertSee('Refund checked')->assertDontSee('No credit added');
 echo "Native credit passed.\n";
 $after=$credit();commerceReject(fn()=>$run($retry->fresh(),'credit'));same($after,$credit(),'Repeat credit never duplicates');
@@ -84,7 +99,8 @@ $failed=Paymenter\Extensions\Servers\Domains\Services\OperationTerminalProof::en
 $copy=$failed->replicate();$copy->operation_key='synthetic-invalid-close-copy';$copy->retry_number=99;
 commerceReject(fn()=>$copy->save());
 $unchanged=[$nativeMoney(),$failed->attempt,$failed->domain->reservation_name];
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$failed->id])->callAction('disposition')->assertNotified('Request closed')->assertSee('Request closed')->assertActionHidden('disposition');
+$closing=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$failed->id]);$hiddenWithout($closing,'disposition',$failed);
+$closing->callAction('disposition')->assertNotified('Request closed')->assertSee('Request closed')->assertActionHidden('disposition');
 same($unchanged,[$nativeMoney(),$failed->fresh()->attempt,$failed->domain->fresh()->reservation_name],'Closing real unsent proof changes no money, send evidence or reservation');
 echo "Native disposition passed.\n";
 // Open page and old tickets cannot act after state changes, expiration, domain spoofing or role revocation.
@@ -105,8 +121,14 @@ $key=$ticket($foreign,'refund');$staff->role->update(['permissions'=>[Staff::VIE
 $key=$ticket($foreign,'release');$staff->role->update(['permissions'=>array_values(array_diff($all,[StaffOperationReview::permission('release')]))]);
 commerceReject(fn()=>$run($foreign,'release',$key));$staff->role->update(['permissions'=>$all]);same('held',$foreign->fresh()->state,'A revoked release changes nothing');
 // Every UI entry point preserves sent/null/unknown financial evidence, reservation and customer credit.
+// One sent request walks through each state; every state reads the same retained evidence.
+[$sent]=$prepare(placeholderComFixtureName('staff-sent-placeholder.com'),'null');
+// Resume sync sits on the domain page; a sent registration with stopped scheduled work offers it.
+$d=$sent->domain->fresh();$work=['domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::phase($d)];
+DB::table('domains_observation_work')->updateOrInsert($work,['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
+$hiddenWithout(Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$sent->domain_id]),'resume_observation',$sent);
 foreach(['uncertain','pending','held','rejected'] as $stateName){
-    [$sent]=$prepare(placeholderComFixtureName('staff-sent-'.$stateName.'-placeholder.com'),'null');$sent->update(['state'=>$stateName,'safe_code'=>$stateName==='held'?'transfer_needs_action':'transfer_provider_rejected']);
+    $sent->update(['state'=>$stateName,'safe_code'=>$stateName==='held'?'transfer_needs_action':'transfer_provider_rejected']);
     $before=[$sent->fresh()->attempt,$sent->fresh()->funding,$sent->domain->fresh()->reservation_name,$credit()];
     $view=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$sent->id]);
     foreach(['hold','release','refund','credit','disposition','replacement'] as $action){$view->assertActionHidden($action);commerceReject(fn()=>$run($sent->fresh(),$action));}
@@ -150,5 +172,8 @@ foreach(['read','decrypt'] as $failure){
 }
 same(2,$primaryFailures,'Both controls reach the original failure handler');
 same(1,$secondaryReads,'The read control reaches the secondary request lookup');
+// Reissue renewal invoice shows only on a failed renewal. The renewal moves the shared clock, so it runs last.
+[$renewal]=$makeRenewal(placeholderComFixtureName('staff-replacement-placeholder.com'),false);$renewal->update(['state'=>'rejected','safe_code'=>'refund_approved']);
+$hiddenWithout(Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$renewal->id]),'replacement',$renewal);
 echo "Native financial review and refusal boundaries passed.\n";
 $nativeSuccessful=true;

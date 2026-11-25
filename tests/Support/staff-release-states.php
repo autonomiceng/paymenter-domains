@@ -9,6 +9,8 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{Labels,OperationActions,
 
 $reset=nativeFixtureCheckpoint();$seeds=[];
 $kind = STAFF_RELEASE_KIND;
+// Every registrar read and send this fixture can reach: commerce and reconciliation readers, the renewal wire and writer, and the order sender.
+$registrarIo=static fn():array=>['reads'=>$reads->calls,'reconciliation'=>count($observation->calls),'renewal_reads'=>count($state->calls),'renewal_writes'=>$state->writes,'sends'=>$writer->calls];
 foreach(['ready','unpaid','registry','contacts','cancel','status','mixed-invoice','retained-cap-enabled','retained-cap-disabled','contact-recovery','contact-peer','contact-owner','contact-limit','contact-authority','contact-cutoff','permission','complimentary','complimentary-permission','missing-code','invalid-code','missing-paid-at','invalid-paid-at','expired-deadline'] as $fault){
     config($deployment);
     if(str_starts_with($fault,'retained-cap')&&$kind==='renew'){continue;}
@@ -71,7 +73,7 @@ foreach(['ready','unpaid','registry','contacts','cancel','status','mixed-invoice
     Auth::setUser($staff);config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true,'domains.enom_writes.transfer'=>true]);
     if($fault==='retained-cap-disabled'){config(['domains.enom_catalogue.enabled'=>false,'domains.enom_writes.registration'=>false,'domains.enom_writes.transfer'=>false]);}
     if(in_array($fault,['permission','complimentary-permission'],true)){$staff->role->update(['permissions'=>array_values(array_diff($all,[$fault==='permission'?'admin.domains.manage':'admin.domains.fund']))]);}
-    $row=$row->fresh();$before=$row->getRawOriginal();$reading=true;
+    $row=$row->fresh();$before=$row->getRawOriginal();$io=$registrarIo();$reading=true;
     $visible=OperationActions::relevant('release',$row);$notice=RequestFacts::notice($row);$reading=false;
     $guidance($row,$notice,$visible);
     $facts=RequestFacts::for($row);expect(!($facts['unreadable']??false),'Held request remains readable: '.$kind.':'.$fault);
@@ -88,6 +90,8 @@ foreach(['ready','unpaid','registry','contacts','cancel','status','mixed-invoice
     same(in_array($fault,['ready','complimentary','retained-cap-enabled'],true),$accepted,'Actual writer result: '.$kind.':'.$fault);
     if($visible!==$accepted||(($notice['action']??null)==='release')!==$accepted){$mismatches[]=$kind.':'.$fault;}
     if($visible===$accepted&&!$accepted){Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$row->id])->assertActionHidden('release');}
+    // A transfer's offer, notice, page and release never reach the registrar, whatever its saved inputs.
+    if($kind==='transfer'){same($io,$registrarIo(),'Release review reads and sends nothing at the registrar: '.$kind.':'.$fault);}
     $staff->role->update(['permissions'=>$all]);$user->properties()->where('key','phone')->update(['value'=>'+1.2025550100']);
 }
 expect($mismatches===[],'Actual state offer/writer mismatch: '.implode(', ',$mismatches));

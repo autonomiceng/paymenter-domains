@@ -237,8 +237,8 @@ class SchedulingTests(unittest.TestCase):
                 self.assertEqual((output/'000.stderr.txt').read_text(), 'guard-stderr\n')
 
     def test_short_categories_precede_native_and_profile_orders_within_category(self):
-        commands = [('native', ['slow.php']), ('runner', ['guard.py']),
-                    ('provider', ['provider.php']), ('native', ['fast.php']),
+        commands = [('native', ['fast.php']), ('runner', ['guard.py']),
+                    ('provider', ['provider.php']), ('native', ['slow.php']), ('native', ['new.php']),
                     ('native', ['failed.php']), ('native', ['changed.php']), ('package', ['package.py'])]
         with tempfile.TemporaryDirectory() as temporary:
             receipt = Path(temporary)/'receipt.json'
@@ -252,7 +252,7 @@ class SchedulingTests(unittest.TestCase):
         self.assertEqual(previous[('native', 'slow.php')], (False, 20))
         ordered = runner.order_commands(commands, previous)
         self.assertEqual([argv[-1] for _, argv in ordered],
-                         ['provider.php', 'guard.py', 'package.py', 'failed.php', 'changed.php', 'fast.php', 'slow.php'])
+                         ['provider.php', 'guard.py', 'package.py', 'failed.php', 'changed.php', 'new.php', 'slow.php', 'fast.php'])
         self.assertCountEqual(ordered, commands)
 
     def test_memory_budget_limits_workers_and_refuses_insufficient_memory(self):

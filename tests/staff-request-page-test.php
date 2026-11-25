@@ -267,8 +267,9 @@ DB::table('domains_operations')->where('id',$queued->id)->update(['action'=>'reg
 $flip=static function(bool $enabled) use ($orders): void {
     $armed=true;
     DB::listen(function($query) use (&$armed,$orders,$enabled): void {
+        if (!$armed) { return; }
         $sql=strtolower($query->sql);
-        if (!$armed||!str_contains($sql,'domains_accounts')||!str_contains($sql,'processing_enabled')||str_contains($sql,'exists')) { return; }
+        if (!str_contains($sql,'domains_accounts')||!str_contains($sql,'processing_enabled')||str_contains($sql,'exists')) { return; }
         $armed=false; (clone $orders)->update(['processing_enabled'=>$enabled]);
     });
 };

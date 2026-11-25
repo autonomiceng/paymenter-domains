@@ -4,6 +4,8 @@
 declare(strict_types=1);
 // This registry exercises only Enom retries; keep unrelated registrar facts out of its refreshes.
 $fixtureRegistrars=['enom'];
+// Retries start after the order exists: native registration checkout runs without rendering the cart.
+$fixtureReadyRegistration=true;
 require __DIR__.'/Support/operation-fixture.php';
 require __DIR__.'/Support/staff-panel.php';staffPanel();
 use Illuminate\Support\Facades\{Cache,DB,Queue};

@@ -54,6 +54,21 @@ class InstalledFixtureTests(unittest.TestCase):
                 self.assertFalse(root.exists())
             self.assertEqual((fixture / "app/state").read_text(), "pristine")
 
+    def test_runner_app_holds_one_lifecycle_after_private_copies(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = self.fixture(Path(temporary))
+            with installed_fixture.application(fixture, "case", verify_vendor=False, disposable=True) as (_, runner):
+                with installed_fixture.lifecycle(runner, "first", private_copy=True) as (_, app):
+                    self.assertNotEqual(app, runner)
+                    (app / "app/state").write_text("changed")
+                with installed_fixture.lifecycle(runner, "second") as (state, app):
+                    self.assertEqual((app, (app / "app/state").read_text()), (runner, "pristine"))
+                    self.assertTrue(state.is_relative_to(runner.parent))
+                for private_copy in (False, True):
+                    with self.assertRaisesRegex(RuntimeError, "already holds"):
+                        with installed_fixture.lifecycle(runner, "third", private_copy=private_copy):
+                            pass
+
     def test_shared_vendor_mutation_is_refused_even_after_scenario_failure(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = self.fixture(Path(temporary))

@@ -1,4 +1,4 @@
-"""Check invoice-only actions in the actual offline domain-page render artifacts."""
+"""Check the heading and invoice-only actions in the actual offline domain-page render artifacts."""
 # MIT, Copyright (c) 2026 Autonomic Engineering.
 from html.parser import HTMLParser
 import os
@@ -14,16 +14,26 @@ class Actions(HTMLParser):
         super().__init__()
         self.actions = []
         self.current = None
+        self.headings = []
+        self.heading = None
 
     def handle_starttag(self, tag, attrs):
+        # Every h1 start counts, closed or not, as the browser builds one heading for each.
+        if tag == 'h1':
+            self.heading = []
+            self.headings.append(self.heading)
         if tag in ('a', 'button'):
             self.current = {'tag': tag, 'href': dict(attrs).get('href'), 'text': []}
 
     def handle_data(self, data):
+        if self.heading is not None:
+            self.heading.append(data)
         if self.current is not None:
             self.current['text'].append(data)
 
     def handle_endtag(self, tag):
+        if tag == 'h1':
+            self.heading = None
         if self.current is not None and tag == self.current['tag']:
             self.actions.append((' '.join(''.join(self.current['text']).split()), self.current['href']))
             self.current = None
@@ -42,7 +52,9 @@ def main():
             parser.feed(artifact.read_text())
             assert ('Pay invoice', '/invoices/1043') in parser.actions, f'{mode}: current invoice is payable'
             assert all(label != 'Renew now' for label, _ in parser.actions), f'{mode}: no competing renewal request'
-        print('Invoice-due dark/light artifacts show Pay invoice without Renew now.')
+            headings = [' '.join(''.join(heading).split()) for heading in parser.headings]
+            assert len(headings) == 1 and 'invoice-due.example' in headings[0], f'{mode}: one heading names the domain: {headings}'
+        print('Invoice-due dark/light artifacts name the domain and show Pay invoice without Renew now.')
 
 
 if __name__ == '__main__':

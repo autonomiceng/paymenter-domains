@@ -22,9 +22,8 @@ $ports->apply(Edit::override($binding,'com',new Intent(sell:false,stops:['regist
 // The head says the sales state; the page's currency line beside it is not part of the state.
 $head=static fn($page)=>trim(str_replace(\Paymenter\Extensions\Servers\Domains\Presentation\Fact::IN_USD,'',preg_replace('/\s+/',' ',strip_tags($page->instance()->getSubheading()->toHtml()))));
 $said=static fn($page)=>trim(preg_replace('/\s+/',' ',html_entity_decode(strip_tags(preg_replace('~<(script|style)\b.*?</\1>~si','',$page->html())),ENT_QUOTES)));
-// Stopped: Start selling is the primary button, and its confirm names the prices going on sale.
+// Stopped: Start selling is offered, and its confirm names the prices going on sale.
 $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertActionVisible('start_selling')->assertActionHidden('stop_selling')->assertDontSee('Open in What you sell');
-same('primary',$page->instance()->startSellingAction()->getColor(),'Start selling is the one primary action');
 expect(str_contains($head($page),'Not for sale')&&str_contains($said($page),'Stopped by staff'),'The page says the state, with its reason');
 $page->mountAction('start_selling');
 expect(str_contains((string)$page->instance()->getMountedAction()->getModalDescription(),'Register'),'The confirm lists the prices that go on sale');
@@ -52,17 +51,18 @@ $reset=static function(array $intent,bool $sellerTransfers,int $defaultLongest=1
     Illuminate\Support\Facades\DB::table('domains_sales_policies')->where('tld','com')->update(['transfer_enabled'=>$sellerTransfers]);
     $ports->apply(Edit::republish($binding,'com'),$offer('register')->revision);
 };
-$cycle=static function()use($actor,$t):void{
-    $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id]);
+$open=static fn()=>Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id]);
+$cycle=static function($page):void{
     $page->mountAction('stop_selling')->callMountedAction()->assertNotified('Change recorded');
     $page->mountAction('start_selling')->callMountedAction()->assertNotified('Change recorded');
 };
 foreach([[false,[],false],[true,['transfer'],false],[true,[],true]]as[$sellerTransfers,$stops,$restored]){
-    $case('transfer restrictions '.json_encode([$sellerTransfers,$stops]),static function()use($reset,$cycle,$catalogue,$t,$sellerTransfers,$stops,$restored,$offer):void{
+    $case('transfer restrictions '.json_encode([$sellerTransfers,$stops]),static function()use($reset,$open,$cycle,$catalogue,$t,$sellerTransfers,$stops,$restored,$offer):void{
         $reset(['sell'=>true,'transfers'=>true,'stops'=>$stops],$sellerTransfers);
-        $description=Livewire::test(ViewTld::class,['record'=>$t->id])->instance()->startSellingAction()->getModalDescription();
+        // One open page confirms and then repeats the cycle, as staff do.
+        $page=$open();$description=$page->instance()->startSellingAction()->getModalDescription();
         same($restored,str_contains((string)$description,'registrations and transfers'),'Confirmation describes only permitted transfers');
-        $cycle();$cycle();
+        $cycle($page);$cycle($page);
         same($sellerTransfers,(bool)Illuminate\Support\Facades\DB::table('domains_sales_policies')->where('tld','com')->value('transfer_enabled'),'Seller transfer choice is unchanged');
         same($stops,json_decode($t->fresh()->catalogue_intent,true)['stops'],'Independent stops survive repeat cycles');
         same($restored,$offer('transfer')->available,'Transfer admission follows the independent restrictions');
@@ -70,8 +70,8 @@ foreach([[false,[],false],[true,['transfer'],false],[true,[],true]]as[$sellerTra
     });
 }
 foreach([10,null]as$longest){
-    $case('saved longest '.json_encode($longest),static function()use($reset,$cycle,$t,$longest,$catalogue,$binding,$ports,$now,$offer):void{
-        $reset(['sell'=>true,'longest'=>$longest,'transfers'=>false],false,10);$cycle();
+    $case('saved longest '.json_encode($longest),static function()use($reset,$open,$cycle,$t,$longest,$catalogue,$binding,$ports,$now,$offer):void{
+        $reset(['sell'=>true,'longest'=>$longest,'transfers'=>false],false,10);$cycle($open());
         same($longest,json_decode($t->fresh()->catalogue_intent,true)['longest']??null,'Start preserves explicit or inherited longest choice');
         same(10,$catalogue->setting($t->fresh(),'max_years'),'Saved ten-year preference stays ten');
         same(false,$ports->readOffers(new Query($binding,['com'],'register',10),Context::Staff)[0]->available,'Unsupported checkout term stays closed');

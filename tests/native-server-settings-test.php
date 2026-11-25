@@ -63,6 +63,8 @@ $unconfigured=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account
 $configure=static function(Server $s,string $registrar,string $secret)use($staff):void {
     $name=setupAction('configure',$s->id);
     $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->mountAction($name)->assertActionMounted($name);
+    // Every saved credential here starts PRIVATE-; Edit API credentials opens empty, in its HTML and its form data.
+    expect(!str_contains(($page->effects['partials']['action-modals.0']??'').json_encode($page->get('mountedActions.0.data')),'PRIVATE-'),'Edit API credentials never carries the stored credential');
     $data=['registrar'=>$registrar,'environment'=>'test','reason'=>'Verify the original synthetic account',...($registrar==='enom'?['uid'=>'synthetic-enom','token'=>$secret]:['api_key'=>$secret])];
     $page->setActionData($data)->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved');
 };

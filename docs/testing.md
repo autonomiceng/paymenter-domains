@@ -34,14 +34,14 @@ The browser blocks network/application scripts and measures both text axes: Tran
 wrapped height/padding, and the real Renewal card's Pay invoice link on one line at default size in both modes at 320/360/768/1280px.
 It compares Register/Transfer/Retry geometry with prior inline-flex/normal-wrap/1.25rem rules. Output artifacts and `button-layout-receipt.json` include failures; this minimal shell proves neither installed-theme nor browser-zoom acceptance.
 
-## Rendered data and links (UI suite)
+## Rendered data and links
 
-`tests/test_rendered_layout.py` and `tests/test_rendered_managed_dns.py` render real Blade and use
-`scripts/check-name-and-heading.cjs` in Chromium. They guard full domain and customer data and native record links
-at desktop and phone widths. `tests/test_domain_page_artifact.py` covers the customer heading in the invoice-due
-Blade fixture with populated history. Screenshots beside the approved mock cover visual presentation.
+`tests/staff-domains-list-test.php` reads full domain and customer names and each row's record links from the
+rendered staff Domains table. `tests/test_domain_page_artifact.py` checks that one heading names the domain in the
+invoice-due Blade fixture with populated history. Screenshots beside the approved mock cover visual presentation.
 Set `DOMAINS_PANEL_SETUP` to a PHP file that configures `$panel` and returns its
-built theme to render with a host skin. The UI suite uses the image’s Node.js, Playwright 1.60.0 and matching Chromium headless shell.
+built theme to render with a host skin. The UI suite (`tests/test_staff_refund_browser.py`) uses the image’s Node.js,
+Playwright 1.60.0 and matching Chromium headless shell.
 
 Build the PHP suite image with `python3 scripts/bootstrap.py --download`, then run
 `scripts/test.py` offline. Bootstrap without `--download` checks the local image only.
@@ -356,12 +356,13 @@ Independent view/cost permissions, unknown/below-cost labels, stale refresh, for
 and HTML/Livewire credential secrecy are checked offline. Native action tests cover reason/confirmation,
 stale/replayed keys, current permissions, encrypted audit, margin holds, seller/holder separation,
 acceptance narrowing/recovery and fake-only credential/probe paths. Default setup performs no I/O.
-`tests/staff-tld-render-test.php` and `tests/what-you-sell-render-test.php` run in the native suite. Give either an
-output directory to keep the pages. No panel registration is installed.
+`tests/staff-tld-render.php` and `tests/what-you-sell-render.php` are optional captures: run either with
+`scripts/render-reminders.py OUTPUT_DIRECTORY` to keep the pages. No panel registration is installed.
 `tests/staff-tld-pricing-render.php OUTPUT_DIRECTORY` captures TLDs & pricing and the TLD page when prices are synced,
 when sync failed with its stored cause, and with no registrar for new orders, across two registrar accounts (one demo).
-`tests/tld-pricing-publish-test.php` checks that saving **Edit prices** publishes the previewed
-prices with new revisions, keeps below-cost holds and alerts, publishes default-pricing followers
+`tests/retail-preview-test.php` saves **Edit prices** from the TLD page and checks that it publishes the
+amounts its preview showed. `tests/tld-pricing-publish-test.php` checks that every settings action has a place
+and that saving **Edit prices** publishes the previewed prices with new revisions, keeps below-cost holds and alerts, publishes default-pricing followers
 account by account (a failure is named, saving again repairs it, a disabled account is skipped)
 and refuses stale costs without changes. The TLD render also captures the price preview (below cost,
 Default pricing, stale costs) and the Default pricing dialog.
@@ -391,7 +392,7 @@ Render complete, unknown, partial, stale-generation and many-record owner pages 
 
 ### Native runtime registration
 
-`runtime-install-test.php`, `runtime-presenter-test.php`, `runtime-notices-test.php`, `runtime-worker-test.php`, `runtime-wire-registration-test.php`, `runtime-wire-renewal-test.php`, `runtime-wire-management-test.php` and `runtime-lifecycle-test.php` cover retained lifecycle verification, singleton hooks, activation refusal/audit, legacy exclusion, paired owner-scoped theme DTOs, mandatory notices with schedules off, encrypted audit rotation and no-resend notification review. They use pinned native SQLite fixtures and fakes only. `runtime-render.php` accepts an output directory and inert supplied-shell HTML as CLI arguments for installed native panel and customer captures. This is not provider, MariaDB or delivered-mail acceptance. See [runtime composition](runtime.md).
+`runtime-install-test.php`, `runtime-presenter-test.php`, `runtime-notices-test.php`, `runtime-worker-test.php`, `runtime-wire-registration-test.php`, `runtime-wire-renewal-test.php`, `runtime-wire-management-test.php` and `runtime-lifecycle-test.php` cover retained lifecycle verification, singleton hooks, activation refusal/audit, legacy exclusion, paired owner-scoped theme DTOs, mandatory notices with schedules off, encrypted audit rotation and no-resend notification review. They use pinned native SQLite fixtures and fakes only. `runtime-render.php` accepts an output directory and inert supplied-shell HTML as CLI arguments for optional installed native panel and customer captures; it is not in the suite. This is not provider, MariaDB or delivered-mail acceptance. See [runtime composition](runtime.md).
 
 ## Opt-in NameSilo OTE contract test
 

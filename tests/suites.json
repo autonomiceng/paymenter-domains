@@ -24,6 +24,7 @@
   ],
   "contracts": [
     "tests/renewal-dispatch-test.php",
+    "tests/test_staff_table_preferences.py",
     "tests/demo-c-record-readers-test.php",
     "tests/demo-c-contracts-test.php",
     "tests/demo-c-terms-test.php",
@@ -52,10 +53,7 @@
     "tests/installation-entry-points-test.php"
   ],
   "ui": [
-    "tests/test_staff_table_preferences.py",
-    "tests/test_rendered_layout.py",
-    "tests/test_staff_refund_browser.py",
-    "tests/test_staff_refund_refusals_browser.py"
+    "tests/test_staff_refund_browser.py"
   ],
   "runner": [
     "tests/runner-test.php",

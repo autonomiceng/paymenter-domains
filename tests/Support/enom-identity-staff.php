@@ -1,5 +1,5 @@
 <?php
-// Reused with installed bytes; MIT, Copyright (c) 2026 Autonomic Engineering.
+// Native staff identity witness, run in groups by tests/enom-identity-*-test.php; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 use App\Models\Server;
 use Illuminate\Support\Facades\{Auth,DB,Log};

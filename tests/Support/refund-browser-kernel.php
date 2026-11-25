@@ -7,13 +7,16 @@ $wire=json_decode((string)stream_get_contents(STDIN),true,8,JSON_THROW_ON_ERROR)
 // The app runs as an HTTP request, as under the PHP web server: in console mode Laravel skips the CSRF check.
 foreach(['APP_ENV'=>'testing','APP_RUNNING_IN_CONSOLE'=>'false','APP_DEBUG'=>'false','APP_KEY'=>'base64:'.base64_encode(str_repeat('t',32)),'APP_URL'=>(string)getenv('REFUND_BROWSER_URL'),
     'DB_CONNECTION'=>'sqlite','DB_DATABASE'=>(string)getenv('REFUND_BROWSER_DATABASE'),'CACHE_STORE'=>'file','QUEUE_CONNECTION'=>'sync',
-    'SESSION_DRIVER'=>'file','MAIL_MAILER'=>'array','TELEMETRY_ENABLED'=>'false','LOG_CHANNEL'=>'single'] as $key=>$value){
+    'SESSION_DRIVER'=>'file','MAIL_MAILER'=>'array','TELEMETRY_ENABLED'=>'false','LOG_CHANNEL'=>'single',
+    'VIEW_COMPILED_PATH'=>$fixture.'/storage/framework/views'] as $key=>$value){
     putenv($key.'='.$value);$_ENV[$key]=$_SERVER[$key]=$value;
 }
 $loader=require $fixture.'/vendor/autoload.php';
 $loader->addPsr4('App\\',$fixture.'/app/',true);
 $loader->addPsr4('Paymenter\\Extensions\\',$fixture.'/extensions/',true);
 $app=require $fixture.'/bootstrap/app.php';
+// Each scenario keeps its own sessions, cache and log; compiled views stay with the app.
+$app->useStoragePath((string)getenv('REFUND_BROWSER_STORAGE'));
 $app->booted(static function()use($app):void{
     config(['settings.mail_disabled'=>true,'settings.default_currency'=>'USD','settings.tax_enabled'=>false,'audit.enabled'=>false]);
     // Upstream has no compiled theme assets; the driver answers this prefix with empty files.

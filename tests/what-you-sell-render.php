@@ -1,5 +1,5 @@
 <?php
-// Native light/dark What you sell captures; MIT, Copyright (c) 2026 Autonomic Engineering.
+// Optional native light/dark What you sell captures (scripts/render-reminders.py OUTPUT_DIR tests/what-you-sell-render.php); MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';require __DIR__.'/Support/storefront-catalogue.php';
 use Filament\Facades\Filament;

@@ -35,6 +35,16 @@ function staffSetupActions(): array
         'test_renewal','test_transfer','test_management','live_renewal','live_management','live_transfer','late_renewal','renewal_billing','unpaid_hold'];
 }
 
+/** Where each settings action's button is for the Enom TEST fixture: the TLD page, the account page or an account price row.
+ * Live and test renewal or DNS changes and NameSilo enrollment are off in its server config. Late renewal waits for Renewals,
+ * live transfers need a Live account, and Sync prices has nothing to sync. tld_settings is a link to What you sell.
+ */
+function staffActionPlaces(): array
+{
+    $hidden=['live_management','live_renewal','test_management','test_renewal','test_transfer','enroll_sandbox','late_renewal','live_transfer','import'];
+    return ['tld'=>['override','tld_settings','seller'],'account'=>array_values(array_diff(staffSetupActions(),$hidden)),'row'=>['price_freshness'],'hidden'=>$hidden];
+}
+
 /** No TLD/settings button: request answers belong to requests; price publication/defaults are choices in Edit prices; Default pricing lives on What you sell. */
 function staffNoButtonActions(): array
 {
