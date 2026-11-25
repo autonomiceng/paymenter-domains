@@ -710,8 +710,8 @@ sudo() {
     def test_checkout_tree_ignores_the_callers_git_overrides(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)/'repo'; root.mkdir(); (root/'file').write_text('tracked')
-            git = dict(os.environ, **runner.php_suite.FIXED_INPUTS, GIT_AUTHOR_NAME='a', GIT_AUTHOR_EMAIL='a@a',
-                       GIT_COMMITTER_NAME='a', GIT_COMMITTER_EMAIL='a@a')
+            git = dict(os.environ, **runner.php_suite.FIXED_INPUTS, GIT_AUTHOR_NAME='a', GIT_AUTHOR_EMAIL='test@example.com',
+                       GIT_COMMITTER_NAME='a', GIT_COMMITTER_EMAIL='test@example.com')
             for args in (['init', '-q'], ['add', 'file'], ['commit', '-qm', 'one']):
                 subprocess.run(['git', *args], cwd=root, env=git, check=True)
             tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], cwd=root, env=git, text=True).strip()
