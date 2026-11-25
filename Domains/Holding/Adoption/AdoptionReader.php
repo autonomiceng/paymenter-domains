@@ -1,7 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Holding\Adoption;
 
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -9,6 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\{Review, StaffContext, Target};
 use Paymenter\Extensions\Servers\Domains\Models\Adoption;
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, BillingCalendar};
 
 /** Preview-only consumer of retained evidence. No holding, invoice or operation mutation. */
 final class AdoptionReader

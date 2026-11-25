@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{DateEvidence, ExpiryPrecision};
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\Review;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Presentation\{Fact, Plain, Reader, State};
-use Paymenter\Extensions\Servers\Domains\Services\AdoptionRenewalEligibility;
+use Paymenter\Extensions\Servers\Domains\Holding\Adoption\AdoptionRenewalEligibility;
 /** The import preview as Detail sections: the domain, the last check's result and dates, then renewal and price. Reads
  * only what the page already holds (the record, the saved check and the reason typed for it); it queries nothing else
  * but the customer's name. */

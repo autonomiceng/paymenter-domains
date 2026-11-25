@@ -10,7 +10,8 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{A
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\Review;
 use Paymenter\Extensions\Servers\Domains\Models\{Adoption, Domain};
-use Paymenter\Extensions\Servers\Domains\Services\{AdoptionReader, ObservationSchema};
+use Paymenter\Extensions\Servers\Domains\Services\ObservationSchema;
+use Paymenter\Extensions\Servers\Domains\Holding\Adoption\AdoptionReader;
 extract(adoptionFixture()); ObservationSchema::install(); staffPanel();
 app()->instance(AdoptionReader::class, $reader);
 // Reviewed-conversion shape, inserted only in the disposable fixture. No runtime promotion seam exists.

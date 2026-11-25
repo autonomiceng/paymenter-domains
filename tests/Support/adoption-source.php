@@ -7,7 +7,8 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier,AdoptionSour
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,DateEvidence,Environment,ExpiryPrecision};
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\{AdoptionReadback,Target};
 use Paymenter\Extensions\Servers\Domains\Models\{Adoption,Operation,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AdoptionCommit,AdoptionMapping,AdoptionReader,RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Holding\Adoption\{AdoptionCommit, AdoptionMapping, AdoptionReader};
 
 /** Reuse the native fixture to prove mapping, holding locks and a local-only confirmation together. */
 function exerciseSharedImport($native,$prices,$clock,$staff,$owner,$context,$converted,$enomBinding): void

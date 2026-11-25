@@ -123,7 +123,7 @@ $cases['refusals']=static function()use($fixed):void {extract($fixed);
     $beforeAdoption = (array) DB::table('domains_adoptions')->where('id', $adoption->id)->first();
     $beforeDomain = (array) DB::table('domains_domains')->where('id', $domain->id)->first();
     $intent = $adoption->evidence; $intent['do_not_renew'] = true; $intent['requested_do_not_renew'] = true;
-    $digest = \Paymenter\Extensions\Servers\Domains\Services\AdoptionMapping::stamp($intent);
+    $digest = \Paymenter\Extensions\Servers\Domains\Holding\Adoption\AdoptionMapping::stamp($intent);
     $holding = $domain->snapshot; $holding['holding']['request_digest'] = $digest;
     DB::table('domains_adoptions')->where('id', $adoption->id)->update(['do_not_renew' => true, 'cancellation_id' => 999,
         'evidence' => encrypt(json_encode($intent), false), 'request_digest' => $digest]);

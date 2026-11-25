@@ -9,7 +9,8 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\{CatalogueEntry,CatalogueRate,Environment};
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\Target;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Adoption,Domain,Operation,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AdoptionCommit, AdoptionMapping, AdoptionReader, DomainBilling, HolderPricing, LiveReservations, LocalAccountEnrollment, NativeDomainGuard, RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, DomainBilling, HolderPricing, LiveReservations, LocalAccountEnrollment, NativeDomainGuard, RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Holding\Adoption\{AdoptionCommit, AdoptionMapping, AdoptionReader};
 function hrtime(bool $number=false): int {return 0;}
 function curl_init(): object {return new \stdClass;}
 function curl_setopt_array($h,array $options): bool {$GLOBALS['importOptions']=array_replace($GLOBALS['importOptions']??[],$options);return true;}
@@ -103,6 +104,6 @@ $alerts=[];$locks=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Se
 same(null,\Paymenter\Extensions\Servers\Domains\Services\RenewalReminders::plan($locks,(object)['before_days'=>'[30]','after_days'=>'[1]'],$clock->now(),$alerts,$bindings),'No reminder for a renewal we do not bill');
 $codes=DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->pluck('code')->all();
 same([true,false],[in_array('imported_renewal_unproven',$codes,true),in_array('missing_obligation',$codes,true)],'Unproven import alert replaces the missing invoice alert: '.implode(',',$codes));
-same(\Paymenter\Extensions\Servers\Domains\Services\AdoptionRenewalEligibility::STAFF,\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::LABELS['imported_renewal_unproven'],'The alert uses the import label staff see on the review');
+same(\Paymenter\Extensions\Servers\Domains\Holding\Adoption\AdoptionRenewalEligibility::STAFF,\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::LABELS['imported_renewal_unproven'],'The alert uses the import label staff see on the review');
 same($before,scenarioMoney(),'Ineligible renewals create no debt');same($ops,Operation::count(),'No renewal obligations');same(1,$GLOBALS['importCalls'],'Billing eligibility needs no provider request');
 $nativeSuccessful=true;echo "Admitted NameSilo import previews/commits locally, retains evidence and refuses unproven renewal billing.\n";

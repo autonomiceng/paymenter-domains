@@ -9,7 +9,8 @@ use Illuminate\Support\Facades\{DB, Queue};
 use Paymenter\Extensions\Servers\Domains\Data\{Money, RenewalRequest};
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\StaffContext;
 use Paymenter\Extensions\Servers\Domains\Models\{Adoption, Domain, HistoryLink, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AdoptionEnrollment, DomainBilling, HoldingAnchor, HoldingLocks, RenewalAuthority, RenewalCycles, RenewalFunding, RenewalReminders, RenewalStop, RuntimeDispatch};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, HoldingAnchor, HoldingLocks, RenewalAuthority, RenewalCycles, RenewalFunding, RenewalReminders, RenewalStop, RuntimeDispatch};
+use Paymenter\Extensions\Servers\Domains\Holding\Adoption\AdoptionEnrollment;
 // Confirmed adoption cases share one committed-fixture preparation; each case restores rows, schema, listeners,
 // container, config, clocks and fake ports before the next.
 extract($fixture=adoptionCommitFixture());

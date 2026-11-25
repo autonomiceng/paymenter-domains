@@ -9,7 +9,8 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\Target;
 use Paymenter\Extensions\Servers\Domains\Models\{Adoption,Domain};
-use Paymenter\Extensions\Servers\Domains\Services\{AdoptionCommit,DepartureProof,HoldingDeparture,HoldingLocks,MoneyOutcome,PricingRule,Refunds,StaffHoldingReview};
+use Paymenter\Extensions\Servers\Domains\Services\{DepartureProof,HoldingDeparture,HoldingLocks,MoneyOutcome,PricingRule,Refunds,StaffHoldingReview};
+use Paymenter\Extensions\Servers\Domains\Holding\Adoption\AdoptionCommit;
 
 $nativeSuccessful=false;
 staffPanel();

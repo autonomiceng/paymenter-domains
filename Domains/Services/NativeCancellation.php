@@ -6,6 +6,7 @@ use App\Models\{Invoice,InvoiceItem,Service,ServiceCancellation};
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Adoption,Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Holding\Adoption\AdoptionMapping;
 /** Scoped native write guards. No provider calls and no transaction spans two model events. */
 final class NativeCancellation
 {
