@@ -24,7 +24,9 @@ The state entrypoints retain complimentary renewal funding and fund permission, 
 invoices, missing contacts and registry support, contact recovery, peer work, owner,
 readmission limit, authority and transfer cutoff. They also exercise the retained
 unsent call cap in both modes and missing, invalid or expired transfer inputs.
-Each operation runs the faults that apply to it.
+Each operation runs the faults that apply to it. `staff-transfer-release-inputs-test.php` keeps
+only what the transfer state entrypoint cannot reach: a held transfer that genuinely awaits its
+code, and a release offer that a page rereads when the deadline passes after an action.
 
 All state entrypoints retain read-only offer SQL checks, financial facts/reason visibility,
 actual Livewire action visibility/enabled state, actual writer outcomes and immutable refusals.
