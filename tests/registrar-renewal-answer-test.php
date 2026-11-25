@@ -1,7 +1,7 @@
 <?php
 // Synthetic sent renewal support recovery; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/reconciliation-namesilo-test.php';$nativeSuccessful=false;
+require __DIR__.'/Support/namesilo-no-id-registered.php';
 require_once __DIR__.'/Support/namesilo-account-guard.php';
 use Illuminate\Support\Facades\{Cache,Queue};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,Cost,FeedObserved,Query};

@@ -1,7 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require dirname(__DIR__).'/namesilo-test-activation-test.php';$nativeSuccessful=false;
+require __DIR__.'/namesilo-test-activation.php';
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Route;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;

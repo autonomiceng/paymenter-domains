@@ -1,7 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/reconciliation-namesilo-test.php'; $nativeSuccessful = false;
+require __DIR__.'/Support/namesilo-no-id-registered.php';
 require_once __DIR__.'/Support/namesilo-account-guard.php';
 nameSiloGuardExpected($binding,'expected@example.com');
 require __DIR__.'/Support/lifecycle-scenarios.php';

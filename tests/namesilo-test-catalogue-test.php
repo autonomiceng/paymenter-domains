@@ -3,7 +3,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
-require __DIR__.'/namesilo-test-activation-test.php';$nativeSuccessful=false;
+require __DIR__.'/Support/namesilo-test-activation.php';
 require __DIR__.'/Support/native-commerce.php';
 // Checklist and checkout render the extension's scoped native views.
 app('view')->addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
