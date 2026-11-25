@@ -36,19 +36,15 @@ BROWSER_ENV = ['NODE_PATH', 'CHROME_BIN', 'PLAYWRIGHT_BROWSERS_PATH']
 NAMED = [('mariadb', 'tests/test_*_mariadb.py'), ('runner', 'tests/test_runner*.py'), ('package', 'tests/test_package*.py')]
 WORKER_MEMORY_MIB = 1024
 # About 85 s alone; parallel load pushed it past the 120 s native limit.
-# Test options a command reads, and the one registered test each applies to.
-TEST_OPTIONS = {'DOMAINS_TEST_MONEY_SCALE_FULL_MATRIX': 'tests/money-lock-scale-test.php'}
 SLOW_NATIVE = {'management-privacy-retirement-test.php', 'native-paid-baseline-test.php', 'transfer-completion-test.php'}
 
 def kill_tree(pid):
     """Freeze parents before discovering children, including detached sessions."""
     owned, pending, stopped = set(), [pid], False
     try:
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.killpg(pid, signal.SIGSTOP)
             stopped = True
-        except ProcessLookupError:
-            pass
         while pending:
             current = pending.pop()
             if current in owned:
@@ -66,14 +62,10 @@ def kill_tree(pid):
                     pass
     finally:
         for current in owned:
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 os.kill(current, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.killpg(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
     return stopped or bool(owned)
 
 class Processes:
@@ -226,8 +218,7 @@ def order_commands(commands, previous=None):
 def git_tree():
     """Return (tree, reason): the HEAD tree only for a clean checkout rooted here."""
     def git(*args):
-        output = subprocess.run(['git', *args], cwd=ROOT, capture_output=True, check=True, timeout=30,
-                                env=php_suite.host_environment()).stdout
+        output = subprocess.run(['git', *args], cwd=ROOT, capture_output=True, check=True, timeout=30, env=php_suite.host_environment()).stdout
         return os.fsdecode(output).strip()
     try:
         if Path(git('rev-parse', '--show-toplevel')).resolve() != ROOT.resolve():
@@ -284,20 +275,16 @@ def shutdown(process, graceful, *, supervised):
             pass
         try:
             stdout, stderr = process.communicate(timeout=graceful+3 if supervised else graceful)
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
             return stdout, stderr
         except subprocess.TimeoutExpired:
             pass
     if supervised:
         kill_tree(process.pid)
     else:
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
     try:
         return process.communicate(timeout=1)
     except subprocess.TimeoutExpired as drain:
@@ -404,12 +391,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                 source_env = {key: value for key, value in source_env.items() if key != 'PAYMENTER_TEST_FIXTURE'}
             keep = test_workers.MARIADB_HOST_PATHS if kind == 'mariadb' else frozenset()
             with test_workers.command_environment(source_env or {}, cases, keep=keep) as (case, child), \
-                    (test_workers.delegated_subtree(Path(env['DOMAINS_TEST_CGROUP'])) if phased
-                     else contextlib.nullcontext()) as subtree:
-                if subtree:
-                    child = dict(child, DOMAINS_TEST_CGROUP=str(subtree))
-                test = argv if kind == 'mariadb' else test_workers.confined(argv, case, nested=argv[-1] in test_workers.NESTED,
-                                                                           cgroup=subtree)
+                    test_workers.delegated_subtree(child, phased) as (child, subtree):
+                test = argv if kind == 'mariadb' else test_workers.confined(argv, case, nested=argv[-1] in test_workers.NESTED, cgroup=subtree)
                 launched = ([sys.executable, env['DOMAINS_TEST_BUDGET'], '--name', argv[-1],
                              '--test-scope', '--wall', str(test_limits['wall_seconds']),
                              '--memory', str(test_limits['memory_bytes']),
@@ -558,8 +541,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         receipt = {'php_suite_image': image, 'php_version': php_version, 'php_packages': php_packages,
                    'runner_error': runner_error, 'runner_error_detail': runner_error_detail, 'final_guard_complete': final_guard_complete,
                    'final_guard_error': final_guard_error, 'timings': timings, 'only_tests': sorted(set(only or [])),
-                   'lint_base': lint_base, 'coverage': coverage,
-                   'test_options': {name: os.environ[name] for name in TEST_OPTIONS if name in os.environ},
+                   'lint_base': lint_base, 'coverage': coverage, 'test_options': test_workers.test_options(),
                    'git_tree': tree, 'git_tree_error': tree_error,
                    'fail_fast': fail_fast, 'first_failure': first_failure, 'failures': failed_indexes,
                    'cancelled': cancelled, 'commands_planned': len(commands),
@@ -694,12 +676,7 @@ def main(*, launch=False):
                     else list(dict.fromkeys(args.suite or default_suites())))
         if 'mariadb' in selected and len(selected) > 1:
             raise ValueError('Run MariaDB separately from the pinned PHP suites.')
-        for name, path in TEST_OPTIONS.items():
-            if name in os.environ and args.only != [path]:
-                raise ValueError(f'{name} applies only to --only {path}.')
-        # A default run without the native fixture is a smaller plan; its receipt says so.
-        coverage = ('only' if args.only else 'suites' if args.suite
-                    else 'full' if FIXTURE_SUITES <= set(selected) else 'fixture-free')
+        test_workers.test_options(args.only or [])
     except BaseException as error:
         setup_failure(setup_output(), error)
         raise
@@ -794,7 +771,8 @@ def main(*, launch=False):
                 test_workers.prepare_funded_registration(env, output)
         return run(commands, env, output, selected, suites, dependency, jobs=jobs, workers=workers, worker_check=worker_check,
                    timings=timings, only=args.only, fail_fast=args.fail_fast, requested_jobs=args.jobs, memory_mib=args.memory_mib,
-                   jobs_explicit=jobs_explicit, lint_base=args.lint_base, checkout=checkout, coverage=coverage)
+                   jobs_explicit=jobs_explicit, lint_base=args.lint_base, checkout=checkout,  # A default run without the native fixture is smaller.
+                   coverage='only' if args.only else 'suites' if args.suite else 'full' if FIXTURE_SUITES <= set(selected) else 'fixture-free')
     except BaseException as error:
         setup_failure(output, error)
         raise

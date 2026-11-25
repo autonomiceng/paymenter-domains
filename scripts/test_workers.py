@@ -11,13 +11,16 @@ import shutil
 import subprocess
 import sys
 import uuid
+import case_budget
 import native
 import installed_fixture
 import php_suite
 
+# Named test options and the one registered test each applies to.
+TEST_OPTIONS = {'DOMAINS_TEST_MONEY_SCALE_FULL_MATRIX': 'tests/money-lock-scale-test.php'}
 # Runner controls and named test options that reach commands; other DOMAINS_TEST_ values stay with the caller.
 RUNNER_ENV = ['DOMAINS_TEST_CGROUP', 'DOMAINS_TEST_BUDGET', 'DOMAINS_TEST_LIMITS',
-              'DOMAINS_TEST_JOBS', 'DOMAINS_TEST_FIXTURE_COSTS', 'DOMAINS_TEST_MONEY_SCALE_FULL_MATRIX']
+              'DOMAINS_TEST_JOBS', 'DOMAINS_TEST_FIXTURE_COSTS', *TEST_OPTIONS]
 # The MariaDB launcher reaches the caller's Docker client, and keeps its short socket scratch path, through
 # these, and runs unconfined, until it gets its own isolated home.
 MARIADB_HOST_PATHS = frozenset({'HOME', 'XDG_RUNTIME_DIR', 'TMPDIR'})
@@ -26,6 +29,15 @@ PRIVATE_PATHS = {'HOME': 'home', 'XDG_CONFIG_HOME': 'home/.config', 'XDG_DATA_HO
                  'XDG_STATE_HOME': 'home/.local/state', 'XDG_CACHE_HOME': 'cache', 'XDG_RUNTIME_DIR': 'run',
                  'TMPDIR': 'tmp', 'TMP': 'tmp', 'TEMP': 'tmp', 'DOMAINS_TEST_RECEIPTS': 'receipts'}
 CONFINE = Path(__file__).resolve().parent/'confine.py'
+
+
+def test_options(only=None):
+    """The named test options this run requested. Given the run's ONLY selection, refuse an option whose test is not
+    the whole selection, so a full matrix is never mistaken for, or mixed into, another run."""
+    options = {name: os.environ[name] for name in TEST_OPTIONS if name in os.environ}
+    if only is not None and (refused := [name for name in options if only != [TEST_OPTIONS[name]]]):
+        raise ValueError(', '.join(refused)+' applies only to --only '+', '.join(TEST_OPTIONS[name] for name in refused))
+    return options
 
 
 def runtime_hashes(root):
@@ -185,17 +197,21 @@ def confined(argv: list[str], root: Path, *, nested: bool = False, cgroup: Path 
 
 
 @contextmanager
-def delegated_subtree(group: Path):
-    """A private cgroup subtree under GROUP for a command that limits its own phases; its phases cannot reach a
-    sibling's limits. Each phase drains and removes its own group, and the subtree is removed after the command."""
-    subtree = group/('phases-'+uuid.uuid4().hex)
+def delegated_subtree(env: dict[str, str], phased: bool):
+    """For a PHASED command, which limits its own phases, a private subtree of ENV's suite cgroup and ENV pointing at
+    it, so its phases cannot reach a sibling's limits; otherwise ENV unchanged. Each phase drains and removes its own
+    group, and the subtree is removed after the command."""
+    if not phased:
+        yield env, None
+        return
+    subtree = Path(env['DOMAINS_TEST_CGROUP'])/('phases-'+uuid.uuid4().hex)
     subtree.mkdir()
     try:
         (subtree/'cgroup.subtree_control').write_text('+memory')
-        yield subtree
+        yield dict(env, DOMAINS_TEST_CGROUP=str(subtree)), subtree
     finally:
         for child in sorted(subtree.glob('test-*')):
-            (child/'cgroup.kill').write_text('1')
+            case_budget.drain(child)
             child.rmdir()
         subtree.rmdir()
 
