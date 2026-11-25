@@ -1,9 +1,9 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementProgress;
 // Native management completion and customer Blade share durable operation evidence.
 require __DIR__.'/Support/management.php';
-use Paymenter\Extensions\Servers\Domains\Services\ManagementProgress;
 
 [$d,$driver]=$holding(placeholderComFixtureName('customer-deferred-placeholder.com'));
 $op=$submit($d,$driver,'nameservers',['nameservers'=>['ns1.example.net','ns2.example.net']]);

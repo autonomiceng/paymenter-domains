@@ -326,7 +326,7 @@ $excluded=[
 // Auto Pay uses its own explicit labels in this class.
 preg_match_all("/'([a-z][a-z0-9_]*)'\\s*=>/",explode('public static function statuses()', $labelsSource, 2)[0],$autoPay);
 $excluded['RenewalAutoPay.php']=$autoPay[1];
-foreach(['Services','Holding','Renewal','Registrars/Dispatch'] as $folder){foreach(new RecursiveIteratorIterator(new RecursiveDirectoryIterator(dirname(__DIR__).'/Domains/'.$folder)) as $file){
+foreach(['Services','Holding','Renewal','Registrars/Dispatch','Management'] as $folder){foreach(new RecursiveIteratorIterator(new RecursiveDirectoryIterator(dirname(__DIR__).'/Domains/'.$folder)) as $file){
     if($file->getExtension()!=='php'){continue;}
     foreach(array_diff($inventory(file_get_contents($file->getPathname())),$excluded[$file->getBasename()]??[]) as $code){$emitted[$code][]=$file->getBasename();}
 }}

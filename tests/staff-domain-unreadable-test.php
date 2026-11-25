@@ -11,8 +11,9 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Relation
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainEditActions,DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainManagement,DomainObservation,ManagementForms,ObservationSchema,OwnedDomains,OwnerPorts};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainManagement,DomainObservation,ObservationSchema,OwnedDomains,OwnerPorts};
 use Paymenter\Extensions\Servers\Domains\Services\{StaffOperationReview,StaffOperations};
+use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementForms;
 // Corrupt encrypted storage must not take down staff pages or either customer projection.
 // These real native models/Livewire pages exercise casts and action construction, not a mocked read.
 $pages=[\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class,\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarBalances::class,\Paymenter\Extensions\Servers\Domains\Admin\Pages\ActivationStatus::class];

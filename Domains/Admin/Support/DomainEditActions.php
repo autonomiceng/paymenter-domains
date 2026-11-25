@@ -10,7 +10,8 @@ use Illuminate\Support\Facades\{Auth,Log};
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsForm;
-use Paymenter\Extensions\Servers\Domains\Services\{ContactDetails,ContactValidation,DomainManagement,ManagementForms,OwnedDomains,OwnerFormValidation,ManagementProgress};
+use Paymenter\Extensions\Servers\Domains\Services\{ContactDetails,ContactValidation,DomainManagement,OwnedDomains,OwnerFormValidation};
+use Paymenter\Extensions\Servers\Domains\Management\Changes\{ManagementForms, ManagementProgress};
 /** Staff edits on the domain page: the owner's form path and every check it runs, credited to the staff member. */
 final class DomainEditActions
 {
@@ -77,7 +78,7 @@ final class DomainEditActions
     {
         return self::edit($d,'nameservers','Change','Change nameservers?',[
             Textarea::make('nameservers')->label('Nameservers')->rows(4)
-                ->helperText('2 to '.$m['max'].', like ns1.example.com.'.($m['defaults']?'':' '.\Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::MISSING))
+                ->helperText('2 to '.$m['max'].', like ns1.example.com.'.($m['defaults']?'':' '.\Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementNameservers::MISSING))
                 ->hintActions($m['defaults']?[Action::make('fill_site_default_nameservers')->label('Use site default nameservers')
                     ->action(fn(Set $set)=>$set('nameservers',implode("\n",$m['defaultServers'])))]:[])],
             fn(array $data)=>['nameservers'=>(string)($data['nameservers']??'')],

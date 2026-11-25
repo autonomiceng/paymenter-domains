@@ -1,13 +1,13 @@
 <?php
 // Synthetic storage/authority integration. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+use Paymenter\Extensions\Servers\Domains\Management\Changes\{ManagementProgress, ManagementSequence};
 $fixtureTransferRegistrars=['namesilo'];
 require __DIR__.'/Support/management-namesilo.php';
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol;
 use Paymenter\Extensions\Servers\Domains\Data\{Capabilities,Capability,ManagementRequest,ManagementResult,RequestContext,RequestOrigin,Support};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{ManagementProgress,ManagementSequence};
 final class SyntheticSequence extends ManagementProtocol {
     public function capabilities():Capabilities {return new Capabilities($this->binding,['dns'=>new Capability(Support::Supported)]);}
     public function validate(string $a,array $p,string $n):array {return $p;}

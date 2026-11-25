@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol;
 use Paymenter\Extensions\Servers\Domains\Data\PrivacyMode;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
+use Paymenter\Extensions\Servers\Domains\Management\Changes\{ManagementCorrections, ManagementDeferred};
 /** Deterministic, nonfinancial corrections to frozen details. Sealed requests are only observed. */
 final class CorrectionWork
 {

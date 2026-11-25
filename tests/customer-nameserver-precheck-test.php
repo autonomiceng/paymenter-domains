@@ -3,7 +3,8 @@
 declare(strict_types=1);
 // The nameserver editor checks a list the server would refuse before the warning, and the warning takes the editor's place.
 require __DIR__.'/Support/management.php';
-use Paymenter\Extensions\Servers\Domains\Services\{OwnerFormValidation,OwnerNameservers};
+use Paymenter\Extensions\Servers\Domains\Services\OwnerFormValidation;
+use Paymenter\Extensions\Servers\Domains\Management\Changes\OwnerNameservers;
 [$d,$driver]=$holding(placeholderComFixtureName('customer-precheck-placeholder.com'),Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence::observed(['ns1.example.com','ns2.example.com'],'enom_getdns',$clock->now()));
 require __DIR__.'/Support/owner-pages.php';
 $section=$owners->present($d->fresh(),true)->management['nameservers']; $max=$section['max'];

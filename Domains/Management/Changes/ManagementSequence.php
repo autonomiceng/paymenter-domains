@@ -1,10 +1,11 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Management\Changes;
 use Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol;
 use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, ManagementEvidence, ManagementReadRecovery};
 /** Frozen management deltas in the existing ledger. The final delta carries the owner request. */
 final class ManagementSequence
 {

@@ -1,10 +1,11 @@
 <?php
 // Enom 444f31c DomainOrders::billPrivacy; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Management\Changes;
 use App\Models\{Currency, Invoice};
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, ManagementProtocol};
 use Paymenter\Extensions\Servers\Domains\Data\PrivacyMode;
+use Paymenter\Extensions\Servers\Domains\Services\{InvoiceDescription, ManagementEvidence, PricingRule, PrivacyRetirement, RefundPayment, RetailLine};
 final class ManagementPrivacy
 {
     /** Same-action debt admission is independent of whether an unsent request blocks renewal. */

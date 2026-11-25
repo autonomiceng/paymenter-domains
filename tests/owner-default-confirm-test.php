@@ -25,7 +25,7 @@ $show=static function($dto=null)use($d,$user,$session,$owners){
 $dialogText=static fn($dom)=>trim(preg_replace('/\s+/u',' ',$dom->query('//dialog[@id="edit-nameservers"]')->item(0)?->textContent??''));
 $editor=$show($dto);$text=$dialogText($editor);
 expect(str_contains($text,'We could not read the site default nameservers. Enter your own nameservers, or try again later.'),'The nameserver dialog explains the lookup failure');
-expect(!str_contains($text,\Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::MISSING),'A lookup failure is not shown as a missing default');
+expect(!str_contains($text,\Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementNameservers::MISSING),'A lookup failure is not shown as a missing default');
 same(1,$editor->query('//dialog[@id="edit-nameservers"]//textarea[@name="nameservers"]')->length,'Custom nameserver editing stays in the dialog');
 same(0,$editor->query('//dialog[@id="edit-nameservers"]//button[@name="fill_site_default"]')->length,'No site-default fill is offered without readable defaults');
 // A saved default the registrar refuses cannot be fixed by trying again; custom editing remains.

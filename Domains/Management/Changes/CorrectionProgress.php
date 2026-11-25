@@ -1,7 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Management\Changes;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 /** Frozen link on a separately authorized operation; progress never edits original requirements. */
 final class CorrectionProgress

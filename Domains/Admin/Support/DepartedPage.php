@@ -7,7 +7,8 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Row,Value};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\Section;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Reader,StaffTime,State};
-use Paymenter\Extensions\Servers\Domains\Services\{HoldingDeparture,ManagementNameservers};
+use Paymenter\Extensions\Servers\Domains\Services\HoldingDeparture;
+use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementNameservers;
 /** The staff page of a confirmed departure (mock 07), read from its saved record and the confirmation's history entry
  * only. The suspected review's sections, notices and steps no longer apply, so the page shows Departure, Registration and
  * Billing. */

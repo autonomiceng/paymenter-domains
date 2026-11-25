@@ -11,6 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Dns;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalRepeatWait;
+use Paymenter\Extensions\Servers\Domains\Management\Changes\{ManagementNameservers, ManagementProgress};
 final readonly class OwnedDomains
 {
     /** Legacy registrar-reset evidence only; management forms use the saved site DNS choice. */

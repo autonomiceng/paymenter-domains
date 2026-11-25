@@ -37,7 +37,7 @@ class ViewDomain extends RecordDetailPage
         return \Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::pending($this->getRecord());
     }
     public function managementProgress(): array
-    { return \Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::for($this->getRecord()); }
+    { return \Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementProgress::for($this->getRecord()); }
     public function syncRetryAt(): ?int
     {
         try {
@@ -88,7 +88,7 @@ class ViewDomain extends RecordDetailPage
         if (($r=DepartedPage::record($d))!==null) { [$note,$confirmed]=DepartedPage::head($d,$r); $head->note($note); return $confirmed===null?$head:$head->detail($confirmed); }
         if (!$this->departureSuspected()) { return $head; }
         $at=$this->absenceReadAt();
-        return $head->note('Not in our registrar account.')->detail(\Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::registrar($d).($d->server?->name?', '.$d->server->name:'').'.'.($at?' Read '.StaffTime::at($at).'.':''));
+        return $head->note('Not in our registrar account.')->detail(\Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementNameservers::registrar($d).($d->server?->name?', '.$d->server->name:'').'.'.($at?' Read '.StaffTime::at($at).'.':''));
     }
     private function absenceReadAt(): ?int { return HoldingDeparture::absenceAt($this->getRecord()); }
     private function headLine(): array { return $this->head??=DomainFacts::head($this->getRecord(),$this->status(),$this->facts(),$this->edits()['request'],$this->notice()); }
@@ -316,7 +316,7 @@ class ViewDomain extends RecordDetailPage
     {
         $d=$this->getRecord();$check=$d->observation['departure_check']??[];$registry=$check['registry']??[];$read=$d->observation['record_failure']??[];
         $fact=\Paymenter\Extensions\Servers\Domains\Presentation\Fact::class;
-        $registrar=\Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::registrar($d);
+        $registrar=\Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementNameservers::registrar($d);
         $latest=$this->absenceReadAt(); [$at,$found]=self::departureReadTimes($d,$latest);
         // The head carries the review state once; each read row says what that read found and when.
         $absent='Not in our registrar account';$where=$registrar.($d->server?->name?', '.$d->server->name:'');

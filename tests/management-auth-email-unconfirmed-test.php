@@ -1,13 +1,14 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementProgress;
 // An auth code email whose send reply was lost stays unconfirmed: never resent and never marked sent. It no longer holds
 // nameserver changes, the customer gets a step instead of an endless wait, and Check status says what the read showed.
 $fixtureTransferRegistrars=['namesilo'];
 require __DIR__.'/Support/management-namesilo.php';
 require __DIR__.'/Support/staff-panel.php';
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{ManagementCheck,StaffReviewHistory};
-use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,ManagementProgress,OwnerPorts,StaffOperationReview,StaffOperations};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,OwnerPorts,StaffOperationReview,StaffOperations};
 [$d,$driver]=$holding('email-unconfirmed'); $ms->fault='lost'; $op=$submit($d,$driver,'auth_code_email');
 same('uncertain',$management->run($op->id,$driver)->state,'Fixture: the email acknowledgement is lost');
 $ms->fault=''; $ms->route='apibatch'; same('uncertain',$management->reconcile($op->id,$driver)->state,'Fixture: a read cannot confirm the email');

@@ -1,8 +1,9 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Management\Changes;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
+use Paymenter\Extensions\Servers\Domains\Services\{OwnerPorts, SiteDnsDefault};
 /** A saved site choice fills ordinary nameservers; it never resets registrar DNS. */
 final class ManagementNameservers
 {

@@ -20,7 +20,7 @@ $fixed=compact('holding','state','management','user','staff','role','refunds','b
 $cases['purchase']=static function()use($fixed):void {extract($fixed);
     $pin();
 [$d,$driver]=$holding(placeholderComFixtureName('manage-privacy-placeholder.com'));$state->privacy=false;$state->enabled=false;$state->cost='unknown';
-$forms=new \Paymenter\Extensions\Servers\Domains\Services\ManagementForms($management,new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts(fn()=>$driver));
+$forms=new \Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementForms($management,new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts(fn()=>$driver));
 $before=[Invoice::count(),$d->operations()->count(),$state->calls];
 commerceReject(fn()=>$forms->submit($user,$d,'privacy_purchase',['privacy'=>'1'],$key()));
 same($before,[Invoice::count(),$d->operations()->count(),$state->calls],'Hidden privacy form creates no purchase, invoice or provider read');

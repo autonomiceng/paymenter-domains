@@ -6,6 +6,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{NameserverEvidence, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Registrars\{Enom, NameSilo};
+use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementCorrections;
 /** Observation never replays a write. No rejection/refund can be inferred from an empty read. */
 final class OperationReconciliation
 {

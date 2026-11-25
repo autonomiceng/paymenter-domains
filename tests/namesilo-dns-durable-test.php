@@ -1,6 +1,7 @@
 <?php
 // Synthetic provider adapter through durable management. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementProgress;
 require __DIR__.'/bootstrap.php';
 $transferEnvironment=\Paymenter\Extensions\Servers\Domains\Data\Environment::Live;
 require __DIR__.'/Support/management-namesilo.php';
@@ -9,7 +10,6 @@ $legacyManagementExchange=$managementExchange;$managementExchange=static fn($o,$
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Data\{RequestOrigin,Support};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{DnsManagement,Dns};
-use Paymenter\Extensions\Servers\Domains\Services\ManagementProgress;
 expect(is_file(dirname(__DIR__).'/Domains/Registrars/NameSilo/DnsManagement.php'),'Dormant DNS adapter executes only independently granted deltas');
 $wire=(object)['records'=>[],'writes'=>[],'fault'=>'','next'=>0,'lists'=>0];
 $dnsExchange=static function($origin,$cmd,$p,$timeout)use($wire,$managementExchange):string {

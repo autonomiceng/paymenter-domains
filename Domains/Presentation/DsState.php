@@ -28,7 +28,7 @@ final class DsState
     }
     public static function progress(Domain $d): array
     {
-        $rows=\Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::for($d);
+        $rows=\Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementProgress::for($d);
         if(isset($rows['ds']['id'])&&($op=$d->operations()->whereKey($rows['ds']['id'])->first())){
             $event=self::event($op,$d);$rows['ds']=[...$rows['ds'],'state'=>$event['state'],'text'=>$event['text'],'tone'=>$event['tone']];
         }
@@ -43,7 +43,7 @@ final class DsState
         try{$records=ObservationProjection::sections($d)['ds']['facts']['records']??null;}catch(\Illuminate\Contracts\Encryption\DecryptException){$records=null;}
         $fact=['value'=>$records===null?'Unknown':($records===[]?'Off':'On'),'tone'=>'gray','url'=>null,'demo'=>false,'help'=>null,
             'sub'=>(self::off($d)?($d->tld?str_replace('this TLD','.'. $d->tld,self::STAFF):self::STAFF).' ':'').($records===null?'Current DS records have not been confirmed.'.(in_array($d->status,['registration_pending','transfer_pending'],true)?' Records can be checked after registration or transfer finishes.':(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::syncNow($d)?' Use Sync now to read them.':'')):($records===[]?'The registrar confirmed there are no DS records.':implode('; ',array_map(fn($ds)=>'Key tag '.$ds['key_tag'].', algorithm '.$ds['algorithm'].', digest type '.$ds['digest_type'].': '.$ds['digest'],$records))))];
-        $progress=\Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::for($d)['ds']??null;
+        $progress=\Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementProgress::for($d)['ds']??null;
         if($progress&&($op=$d->operations()->whereKey($progress['id'])->first())&&!($progress['settled']??false)){
             $event=self::event($op,$d,true);$fact['value']=$event['state'];$fact['tone']=$event['tone'];
             $fact['progress']=['text'=>$event['text'],'request'=>$op->id,'waiting'=>$progress['pending']??false,'tone'=>$event['tone']];

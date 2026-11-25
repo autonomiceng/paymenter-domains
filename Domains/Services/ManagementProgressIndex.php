@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementProgress;
 /** Derived display candidacy only; execution still requires the original encrypted evidence. */
 final class ManagementProgressIndex
 {

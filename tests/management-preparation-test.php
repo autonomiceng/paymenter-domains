@@ -5,7 +5,7 @@ require __DIR__.'/Support/management.php';
 use App\Models\InvoiceTransaction;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\ManagementPreparation;
+use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementPreparation;
 [$d,$driver]=$holding(placeholderComFixtureName('manage-dispatch-day-placeholder.com')); $state->privacy=false;
 $product->server->settings()->create(['key'=>'domains_privacy_price','value'=>'5.00','type'=>'string']);
 $op=$submit($d,$driver,'privacy_purchase'); $requestDay=$clock->now();

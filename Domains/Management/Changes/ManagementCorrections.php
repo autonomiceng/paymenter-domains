@@ -1,8 +1,9 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Management\Changes;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Services\{ContactDetails, DomainManagement, ManagementEvidence, ManagementPayload, RefundPayment};
 /** Explicit nonfinancial correction authority; never acquisition completion, refund or replay. */
 final class ManagementCorrections
 {

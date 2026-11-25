@@ -489,7 +489,7 @@ final class DomainDecisions
      * DNS and SRV share one setting, one zone write at a time: a waiting change shows on both rows, since neither can change, and a finished one only on its own row. */
     public static function progress(array $progress, string $section, ?int $named=null): ?array
     {
-        $row=$progress[\Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::setting($section)]??null;
+        $row=$progress[\Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementProgress::setting($section)]??null;
         if ($row!==null&&!($row['pending']??false)&&($row['section']??$section)!==$section) { $row=$row['sections'][$section]??null; }
         if ($row===null||($row['settled']??false)||($row['replaced']??false)) { return null; }
         $stopped=isset($row['outcome']); $request=$stopped&&$row['id']===$named?$row['id']:null;

@@ -6,7 +6,8 @@ require __DIR__.'/Support/management-namesilo.php';
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol;
 use Paymenter\Extensions\Servers\Domains\Data\{Capabilities, Capability, ManagementRequest, ManagementResult, RequestContext, Support};
-use Paymenter\Extensions\Servers\Domains\Services\{ManagementCorrections, ManagementPayload};
+use Paymenter\Extensions\Servers\Domains\Services\ManagementPayload;
+use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementCorrections;
 [$d,$driver]=$holding('adverse');
 $restoreHolding=nativeRegistrarCheckpoint($clock,$ms);
 foreach (['replace','add','remove','old_ip','privacy_terms'] as $mode) {

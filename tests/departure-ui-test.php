@@ -39,7 +39,7 @@ $check($dom->getElementById('glue')!==null,'The suspected customer page keeps it
 $staffDom=Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.$page->html(),LIBXML_NOERROR);
 $fresh=$d->fresh();$read=\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at(strtotime($fresh->observation['renewal_ownership']['at']));
 $detail=(string)$staffDom->querySelector('[data-piece="head-detail"]')?->textContent;
-foreach([\Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::registrar($fresh),(string)$fresh->server->name,$read] as $fact){$check($fact!==''&&str_contains($detail,$fact),'The staff head names the registrar, account and absence read time: '.$fact);}
+foreach([\Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementNameservers::registrar($fresh),(string)$fresh->server->name,$read] as $fact){$check($fact!==''&&str_contains($detail,$fact),'The staff head names the registrar, account and absence read time: '.$fact);}
 $owned=null;foreach($staffDom->querySelectorAll('[data-piece="row"]') as $row){if(trim((string)$row->querySelector('.domains-panel-row-k')?->textContent)==='In registrar account'){$owned=$row->textContent;}}
 $check($owned!==null&&str_contains($owned,$read),'In registrar account carries the absence read time');
 $absenceAt=strtotime($fresh->observation['renewal_ownership']['at']);
