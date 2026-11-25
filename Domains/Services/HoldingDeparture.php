@@ -7,6 +7,7 @@ use App\Models\{Invoice,InvoiceTransaction,User};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 use Paymenter\Extensions\Servers\Domains\Money\Returns\{ReceiptReturns, RefundPayment};
 use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 /** Staff confirm a suspected departure once. One full money decision closes unpaid renewals, returns paid unsent renewals
@@ -233,7 +234,7 @@ final class HoldingDeparture
     /** A renewal the funds closure already closed unsent with its retained receipts, as the departure credit requires. */
     private static function closedUnsent(Operation $op,array $l): bool
     {
-        if(!isset($op->attempt['terminal']['transactions'])||!FundsWaits::closedRenewal($op,$l['domain'])){return false;}
+        if(!isset(RenewalAttempt::of($op)->terminal()['evidence']['transactions'])||!FundsWaits::closedRenewal($op,$l['domain'])){return false;}
         try{RefundProof::requireUnsent($op,$l['domain']);RefundPayment::requireLine($op,$l);return true;}catch(\DomainException){return false;}
     }
     /** Proved unsent retry history whose chain on the same paid debt ends in a completed renewal. */
