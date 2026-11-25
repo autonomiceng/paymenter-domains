@@ -583,21 +583,28 @@ sudo() {
     def test_commands_write_only_inside_their_case_root_and_ignore_host_settings(self):
         """Two commands at once: the one that writes outside its case root fails, its neighbour passes, and neither
         reads the caller's Git, zone or home."""
-        probe = ("import json, os, subprocess, tempfile, time; from pathlib import Path; "
+        # The neighbour finishes after the writer has tried its writes, and the writer exits only after the runner
+        # has recorded the neighbour; the alarm fails a command whose partner never arrives.
+        probe = ("import json, os, signal, subprocess, sys, tempfile, time; from pathlib import Path; signal.alarm(20); "
                  "(Path.home()/'mark').write_text('home'); handle, scratch = tempfile.mkstemp(); "
                  "names = ['HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME', 'XDG_RUNTIME_DIR', 'TMPDIR']; "
                  "git = subprocess.run(['git', 'config', '--get', 'user.name'], capture_output=True, text=True); "
+                 "open(sys.argv[1]).read(); "
                  "print(json.dumps({'paths': [os.environ[n] for n in names] + [scratch], 'git': git.stdout, "
-                 "'zone': time.strftime('%Z'), 'locale': os.environ['LC_ALL']}), flush=True); time.sleep(0.5)")
-        # Fixed names where a later command could find them; this command outlives its neighbour.
-        leak = ("import errno, json, sys, time; outcome = {}\n"
-                "for path in sys.argv[1:]:\n"
+                 "'zone': time.strftime('%Z'), 'locale': os.environ['LC_ALL']}), flush=True)")
+        # Fixed names where a later command could find them.
+        leak = ("import ctypes, errno, json, os, signal, sys; signal.alarm(20); gate, recorded, *paths = sys.argv[1:]; outcome = {}\n"
+                "libc = ctypes.CDLL(None); watch = libc.inotify_init(); libc.inotify_add_watch(watch, os.path.dirname(recorded).encode(), 0x100)\n"
+                "for path in paths:\n"
                 "    try: open(path, 'w').write('state'); outcome[path] = 'written'\n"
                 "    except OSError as error: outcome[path] = errno.errorcode[error.errno]\n"
-                "print(json.dumps(outcome), flush=True); time.sleep(1); sys.exit(set(outcome.values()) != {'written'})")
+                "print(json.dumps(outcome), flush=True); open(gate, 'w').close()\n"
+                "while not os.path.exists(recorded): os.read(watch, 4096)\n"
+                "sys.exit(set(outcome.values()) != {'written'})")
         with tempfile.TemporaryDirectory() as temp:
-            root, host = Path(temp), Path(temp)/'host'
+            root, host, gate = Path(temp), Path(temp)/'host', Path(temp)/'gate'
             (root/'Domains').mkdir(); output = root/'output'; (output/'resources').mkdir(parents=True); (host/'git').mkdir(parents=True)
+            os.mkfifo(gate)
             for config in (host/'.gitconfig', host/'git/config'):
                 config.write_text('[user]\n\tname = Host Person\n')
             caller = {'PATH': os.environ['PATH'], 'TMPDIR': str(output), 'HOME': str(host), 'XDG_CONFIG_HOME': str(host),
@@ -605,14 +612,12 @@ sudo() {
             workers, _, _ = runner.test_workers.environments(caller, output, 2)
             # The shared output, the receipts directory every command used to get, and a worker's directory.
             targets = [str(output/'left-above'), str(output/'resources/left'), str(output/'workers/0/left')]
-            commands = [('runner', [sys.executable, '-c', probe]), ('runner', [sys.executable, '-c', leak, *targets])]
+            commands = [('runner', [sys.executable, '-c', probe, str(gate)]),
+                        ('runner', [sys.executable, '-c', leak, str(gate), str(output/'000.stdout.txt'), *targets])]
             with mock.patch.object(runner, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()), \
                  contextlib.redirect_stderr(io.StringIO()):
                 status = runner.run(commands, caller, output, ['runner'], {}, jobs=2, workers=workers)
             receipt = json.loads((output/'receipt.json').read_text())
-            first, second = receipt['results']
-            self.assertLess(max(first['started_seconds'], second['started_seconds']),
-                            min(first['finished_seconds'], second['finished_seconds']), 'The commands overlap')
             self.assertEqual((status, receipt['failures']), (1, [1]), 'Only the command that wrote outside its root fails')
             self.assertEqual(json.loads((output/'001.stdout.txt').read_text()), dict.fromkeys(targets, 'EROFS'))
             self.assertEqual([path for path in targets if Path(path).exists()], [])
