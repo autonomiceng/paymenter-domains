@@ -33,7 +33,8 @@ ALLOWED = {
     'NameSilo/Api/ResponseParser.php': ['Registrars\\NameSilo\\DefaultContact'],
 }
 
-QUALIFIED = re.compile(r'(?<![\w\\])\\([A-Z]\w*(?:\\[A-Z]\w*)+)')
+# Any PHP identifier segment, whatever its initial case: \Vendor\protocol\Client is a qualified name.
+QUALIFIED = re.compile(r'(?<![\w\\])\\([A-Za-z_]\w*(?:\\[A-Za-z_]\w*)+)')
 # Comments, strings, heredocs and nowdocs, blanked before reading scope so their braces and words do not count.
 NOISE = re.compile(r"""<<<[ \t]*(['"]?)(\w+)\1\r?\n.*?^[ \t]*\2\b|//[^\n]*|#(?!\[)[^\n]*|/\*.*?\*/"""
                    r"""|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*\"""", re.DOTALL | re.MULTILINE)
@@ -47,9 +48,10 @@ def names(source):
     PHP decides by scope: `use` at namespace level imports an absolute name wherever it appears in the file, and
     `use` inside a class-like body names a trait, resolved against the file's namespace unless it starts with a
     backslash."""
-    found = set(QUALIFIED.findall(source))
+    code = NOISE.sub("''", source)
+    found = set(QUALIFIED.findall(code))
     namespace, level, depth = '', 0, 0
-    for match in SCOPE.finditer(NOISE.sub("''", source)):
+    for match in SCOPE.finditer(code):
         if match['brace']:
             depth += 1 if match['brace'] == '{' else -1
         elif match['opener']:
@@ -104,6 +106,14 @@ class RegistrarApiImports(unittest.TestCase):
                 'use B\\C;\nfinal class Y\n{\n    use T;\n'
                 '    function f() { return function () use ($x) { return "{$x}"; }; }\n}\n')
         self.assertEqual({'A\\T', 'B\\C'}, names(late))
+
+    def test_reader_sees_lowercase_segments_and_skips_comments_and_strings(self):
+        code = '<?php\nnamespace A;\nfinal class Y { function f() { return new \\Vendor\\protocol\\Client(); } }\n'
+        self.assertEqual({'Vendor\\protocol\\Client'}, names(code))
+        comment = f'<?php\nnamespace A;\n// Callers reach \\{BASE}Services\\OperationClaims here.\nfinal class Y {{}}\n'
+        self.assertEqual(set(), names(comment))
+        string = f'<?php\nnamespace A;\nfinal class Y {{ const NAME = "\\{BASE}Services\\OperationClaims"; }}\n'
+        self.assertEqual(set(), names(string))
 
     def test_nested_api_files_are_scanned_and_relative_traits_stay_inside(self):
         api = BASE+'Registrars\\Enom\\Api'
