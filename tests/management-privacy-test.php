@@ -2,9 +2,23 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering. Synthetic privacy native coverage.
 declare(strict_types=1);
 require __DIR__.'/Support/management-privacy.php';
+require_once __DIR__.'/Support/fixture-cases.php';
 use App\Models\{Invoice,InvoiceItem,InvoiceTransaction,Role};
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Services\{ManagementEvidence,Refunds};
+// Every case starts from the same management fixture with a privacy price and a refund staff role, and makes its own
+// holdings. Purchase, authority gates, order reconciliation and recovery stay separate cases.
+$nativeSuccessful=false;
+// Shared staff panel routes are registered before the checkpoint; only the recovery case reads the operation page.
+staffPanel();
+// Pin each case to the prepared read and Carbon clocks explicitly, whatever a reset restores.
+$pinned=[$clock->now(),Carbon\Carbon::getTestNow(),Carbon\CarbonImmutable::getTestNow()];
+$pin=static function()use($clock,$pinned):void{[$clock->instant,$native,$immutable]=$pinned;Carbon\Carbon::setTestNow($native);Carbon\CarbonImmutable::setTestNow($immutable);};
+$fixed=compact('holding','state','management','user','staff','role','refunds','bindings','clock','key','submit','pay','pin');
+
+// Native privacy purchases, renewals and toggles.
+$cases['purchase']=static function()use($fixed):void {extract($fixed);
+    $pin();
 [$d,$driver]=$holding(placeholderComFixtureName('manage-privacy-placeholder.com'));$state->privacy=false;$state->enabled=false;$state->cost='unknown';
 $forms=new \Paymenter\Extensions\Servers\Domains\Services\ManagementForms($management,new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts(fn()=>$driver));
 $before=[Invoice::count(),$d->operations()->count(),$state->calls];
@@ -23,5 +37,59 @@ same(1,count(array_filter($state->calls,fn($call)=>$call[0]==='GetBalance')),'Pr
 DB::table('domains_domains')->where('id',$d->id)->update(['provider_expires_at'=>'2031-01-01']);same($item->description,$item->fresh()->description,'Domain expiry change never rewrites independent privacy cover');DB::table('domains_domains')->where('id',$d->id)->update(['provider_expires_at'=>'2027-10-18']);
 Cache::flush();$state->expiry='2027-10-18';$renew=$submit($d,$driver,'privacy_renew');$n=Invoice::count();same($renew->id,$submit($d,$driver,'privacy_renew')->id,'Distinct renewal nonce reuses outstanding debt');same($n,Invoice::count(),'No duplicate renewal invoice');same('WHOIS privacy: manage-privacy-placeholder.com (1 year, Oct 18, 2027 to Oct 18, 2028)', InvoiceItem::findOrFail($renew->invoice_item_id)->description, 'Privacy renewal starts at frozen privacy expiry, independently of domain expiry');$pay($renew);$state->balance='1,000';same('succeeded',$management->run($renew->id,$driver)->state,'Paid renewal extends frozen privacy base exactly one year');
 Cache::flush();$forms->submit($user,$d,'privacy_disable',[],$key());$toggle=$d->operations()->where('action','privacy_disable')->sole();same('succeeded',$management->run($toggle->id,$driver)->state,'Owned subscription disabled without invoice');same(null,$toggle->invoice_id,'Toggle nonbillable');Cache::flush();$forms->submit($user,$d,'privacy_enable',[],$key());$toggle=$d->operations()->where('action','privacy_enable')->sole();same('succeeded',$management->run($toggle->id,$driver)->state,'Owned subscription re-enabled');
+};
 
-$nativeSuccessful=true;echo "Native privacy purchases, renewals and toggles passed\n";
+// Disabled and staff requests, unrepresentable balances and the leap-day term.
+$cases['gates']=static function()use($fixed):void {extract($fixed);
+    $pin();
+[$d,$driver]=$holding(placeholderComFixtureName('manage-privacy-gates-placeholder.com'));$state->privacy=false;$off=new \Paymenter\Extensions\Servers\Domains\Services\DomainManagement($bindings,$clock);$n=Invoice::count();commerceReject(fn()=>$off->request($user,$d->id,'privacy_purchase',[],$key(),$driver));commerceReject(fn()=>$management->request($staff,$d->id,'privacy_purchase',[],$key(),$driver));same([],$state->calls,'Disabled/staff paid requests no provider reads');same($n,Invoice::count(),'Disabled/staff requests no customer invoice');
+foreach(['privacy_purchase','privacy_renew'] as $action) {
+    [$d,$driver]=$holding(placeholderComFixtureName(str_replace('_','-',$action).'-balance-placeholder.com'));
+    $state->privacy=$action==='privacy_renew';$state->enabled=true;$state->expiry='2027-10-18';$state->cost='8.00';
+    $op=$submit($d,$driver,$action);$pay($op);$state->balance='999,999,999,999,999,999,999.00';
+    foreach([1,2] as $pass) {
+        $result=$management->run($op->id,$driver);
+        same(1,count(array_filter($state->calls,fn($v)=>$v[0]==='GetBalance')),'The invalid balance reached preflight exactly once');
+        same('held',$result->state,'Unrepresentable balance never permits paid privacy');
+        same(0,count(array_filter($state->calls,fn($v)=>in_array($v[0],['PurchaseServices','RenewServices'],true))),'Invalid balance sends no privacy write');
+    }
+    $row=DB::table('domains_registrar_balances')->where('server_id',$op->server_id)->sole();
+    same('read_failed',$row->last_error_code,'Recording and spending agree on unknown balance');
+}
+$state->balance='100.00';
+[$d,$driver]=$holding(placeholderComFixtureName('manage-privacy-leap-placeholder.com'));$clock->instant=new \DateTimeImmutable('2028-02-29T12:00:00Z');$state->privacy=false;$op=$submit($d,$driver,'privacy_purchase');$pay($op);same('succeeded',$management->run($op->id,$driver)->state,'Leap-day purchase uses no-overflow year');same('2029-02-28',$op->fresh()->payload['privacy_terms']['expected'],'Leap-year target frozen at dispatch');same('WHOIS privacy: manage-privacy-leap-placeholder.com (1 year, Feb 29, 2028 to Feb 28, 2029)', InvoiceItem::findOrFail($op->invoice_item_id)->description, 'Privacy invoice leap day clamps without overflow');
+$clock->instant=new \DateTimeImmutable('2026-10-18T12:00:00Z');
+};
+
+// Captured order reconciliation, unrelated free uncertainty and unknown paid writes.
+$cases['order-proof']=static function()use($fixed):void {extract($fixed);
+    $pin();
+[$d,$driver]=$holding(placeholderComFixtureName('manage-privacy-order-proof-placeholder.com'));$state->privacy=false;$op=$submit($d,$driver,'privacy_purchase');$pay($op);$state->fault='order_pending';same('uncertain',$management->run($op->id,$driver)->state,'Matching privacy expiry cannot confirm pending order');foreach(['order_id','order_domain','order_term'] as $fault){$state->fault=$fault;same('uncertain',$management->reconcile($op->id,$driver)->state,'Captured order must match identity/domain/one-year term');}$state->fault='';same('succeeded',$management->reconcile($op->id,$driver)->state,'Exact completed captured order plus expiry resolves');same(1,count(array_filter($state->calls,fn($v)=>$v[0]==='PurchaseServices')),'Order reconciliation never replays purchase');
+[$freeDomain,$freeDriver]=$holding(placeholderComFixtureName('manage-free-unknown-peer-placeholder.com'));$freeOp=$submit($freeDomain,$freeDriver,'lock',['locked'=>false]);$state->fault='SetRegLock';same('uncertain',$management->run($freeOp->id,$freeDriver)->state,'Unrelated free operation remains unresolved');
+[$d,$driver]=$holding(placeholderComFixtureName('manage-privacy-free-peer-placeholder.com'));$state->privacy=false;$op=$submit($d,$driver,'privacy_purchase');$pay($op);same('succeeded',$management->run($op->id,$driver)->state,'Unrelated free uncertainty never blocks reseller spending');
+[$d,$driver]=$holding(placeholderComFixtureName('manage-privacy-unknown-placeholder.com'));$state->cost='8.00';$state->privacy=false;$op=$submit($d,$driver,'privacy_purchase');$pay($op);$state->fault='PurchaseServices';same('uncertain',$management->run($op->id,$driver)->state,'Unknown paid write quarantined');commerceReject(fn()=>$refunds->refundHeld($staff,$op->id,'privacy_unavailable'));$count=count($state->calls);$management->run($op->id,$driver);same($count,count($state->calls),'Unknown paid privacy no retry');
+$state->fault='';$state->privacy=true;$state->enabled=true;$state->expiry='2027-10-18';same('uncertain',$management->reconcile($op->id,$driver)->state,'Readback alone cannot invent missing original paid acknowledgement');
+};
+
+// Unsent refund, unpaid retirement and the write slot race with the staff hold action.
+$cases['recovery']=static function()use($fixed):void {extract($fixed);
+    $pin();
+[$d,$driver]=$holding(placeholderComFixtureName('manage-privacy-unsent-placeholder.com'));$state->privacy=false;$op=$submit($d,$driver,'privacy_purchase');$pay($op);$state->cost='unknown';same('held',$management->run($op->id,$driver)->state,'Unknown cost never treated as zero');
+
+same(['amount'=>$op->amount,'currency'=>'USD'],$refunds->refundHeld($staff,$op->id,'privacy_unavailable'),'Definitely unsent paid privacy uses slice26 account credit');same(null,$refunds->creditRejected($op->id),'Privacy refund once');same('active',$d->service->fresh()->status,'Refund preserves hosting of acquired domain');
+[$d,$driver]=$holding(placeholderComFixtureName('manage-privacy-retire-placeholder.com'));$state->privacy=false;$state->cost='8.00';$op=$submit($d,$driver,'privacy_purchase');same(true,ManagementEvidence::resolved($op,$d),'Unpaid unsent privacy never blocks renewal');$calls=count($state->calls);same('rejected',$management->retire($user,$op->id)->state,'Unpaid privacy safely retired');same('cancelled',Invoice::find($op->invoice_id)->status,'Unpaid invoice cancelled');same($op->id,$management->retire($user,$op->id)->id,'Retirement idempotent');same($calls,count($state->calls),'Retirement no provider I/O');
+[$d,$driver]=$holding(placeholderComFixtureName('manage-privacy-slot-placeholder.com'));$state->privacy=false;$state->cost='unknown';$op=$submit($d,$driver,'privacy_purchase');$pay($op);$state->cost='8.00';Cache::put('domains-write-slot:'.$op->account_fingerprint,true,25);same('awaiting_payment',$management->run($op->id,$driver)->state,'Busy slot defers before claim');same([],$op->fresh()->attempt??[],'Preclaim slot has no attempt');
+// Extend the real consume-slot race: native action visibility must agree with the unchanged writer.
+$role->update(['permissions'=>[...$role->permissions,\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW,\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::permission('hold')]]);
+\Livewire\Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$op->id])->assertActionVisible('hold');
+Cache::flush();$state->during=static fn()=>Cache::put('domains-write-slot:'.$op->account_fingerprint,true,25);same('queued',$management->run($op->id,$driver)->state,'Consume slot race remains retryable unsent');same('absent',$op->fresh()->attempt['seal'],'Temporary consume rejection never seals');
+$op=$op->fresh();$attempt=$op->attempt;$calls=count($state->calls);
+commerceReject(fn()=>\Paymenter\Extensions\Servers\Domains\Services\StaffOperationWrites::hold($op,[]));
+\Livewire\Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$op->id])
+    ->assertActionHidden('hold')->assertSee('This change has already started and cannot be put on hold. It will retry automatically.')->assertDontSee('Go to Orders switch');
+same($attempt,$op->fresh()->attempt,'Reading deferred privacy retains its attempt');same($calls,count($state->calls),'Reading deferred privacy makes no registrar calls');
+Cache::flush();same('succeeded',$management->run($op->id,$driver)->state,'Deferred consume retries before first send');same(1,count(array_filter($state->calls,fn($v)=>$v[0]==='PurchaseServices')),'Exactly one privacy write after deferral');
+};
+nativeFixtureCases($cases,compact('clock','state','management','user','staff','role','refunds','bindings','product'));
+echo "Native privacy purchases, renewals, toggles, gates, order proof and recovery passed\n";
+$nativeSuccessful=true;
