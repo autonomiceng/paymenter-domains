@@ -273,13 +273,18 @@ function nativeCaseEffects(array $prepared, array $state): string
         }
     }
     ksort($changes);
-    $ports = static function (mixed $value, int $depth = 0) use (&$ports): mixed {
+    // An anonymous class name holds the absolute path of its file, which differs for each export: use file and line.
+    $class = static function (object $value): string {
+        $class = new ReflectionClass($value);
+        return $class->isAnonymous() ? 'anonymous@'.basename((string) $class->getFileName()).':'.$class->getStartLine() : $value::class;
+    };
+    $ports = static function (mixed $value, int $depth = 0) use (&$ports, $class): mixed {
         return match (true) {
             is_array($value) => array_map(static fn ($item) => $ports($item, $depth), $value),
             $value instanceof DateTimeInterface => $value->format(DATE_ATOM),
             $value instanceof Illuminate\Database\Eloquent\Model => [$value::class, $value->getKey()],
             $value instanceof Closure, $value instanceof UnitEnum => is_object($value) ? $value::class : $value,
-            is_object($value) => $depth > 2 ? $value::class : [$value::class, $ports(get_object_vars($value), $depth + 1)],
+            is_object($value) => $depth > 2 ? $class($value) : [$class($value), $ports(get_object_vars($value), $depth + 1)],
             default => $value,
         };
     };
