@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
@@ -39,9 +40,9 @@ final class PriceHoldRetries
             if($policy===null){return false;}
             try{
                 app(AccountBindings::class)->requireProcessingLocked($l['server'],$l['account']);
-                StaffOperationWrites::requireRelease($op,$l,$now);
+                HeldRelease::require($op,$l,$now);
             }catch(\Throwable){return false;}
-            StaffOperationWrites::release($op,$l,$now);
+            HeldRelease::release($op,$l,$now);
             $op->update(['policy'=>$policy]);
             return true;
         });

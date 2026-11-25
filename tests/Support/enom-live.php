@@ -1,6 +1,7 @@
 <?php
 // Installed live deployment, socket-free cURL; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
 require __DIR__.'/enom-wire.php';require_once __DIR__.'/staff-tlds.php';require_once __DIR__.'/native-commerce.php';
 use App\Models\{Currency,Server};
 use Illuminate\Support\Facades\{Auth,Cache,DB,Queue};
@@ -276,7 +277,7 @@ $renewReply=static function(array $p)use($state,$clock):string {
         default=>throw new LogicException('Unexpected live renewal command '.$p['Command']),
     };return '<interface-response><Command>'.$p['Command'].'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$body.'</interface-response>';
 };
-$release=static function()use($renew,$clock):void {DB::transaction(static function()use($renew,$clock):void {$l=Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($renew->domain()->firstOrFail());Paymenter\Extensions\Servers\Domains\Services\StaffOperationWrites::release($l['operations']->firstWhere('id',$renew->id),$l,$clock->now());});};
+$release=static function()use($renew,$clock):void {DB::transaction(static function()use($renew,$clock):void {$l=Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($renew->domain()->firstOrFail());Paymenter\Extensions\Servers\Domains\Services\HeldRelease::release($l['operations']->firstWhere('id',$renew->id),$l,$clock->now());});};
 resetWire(['reply'=>$renewReply]);Cache::flush();config(['domains.enom_live.renewal'=>false]);$worker->operation($renew->id);same([],$GLOBALS['enomWire']['forms'],'Renewal off sends no request');expect(!isset($renew->fresh()->attempt['dispatch_attempted_at']),'Renewal off remains unsealed');config(['domains.enom_live.renewal'=>true]);same('queued',$renew->fresh()->state,'Off renewal remains queued for fresh admission');
 config(['domains.enom_live.accounts'=>['live-uid'=>[...$accountConfig,'daily_call_cap'=>1]]]);Cache::flush();$worker->operation($renew->id);same('held',$renew->fresh()->state,'Renewal call cap holds unsent intent');expect(!in_array('Extend',array_column($GLOBALS['enomWire']['forms'],'Command'),true),'Renewal call cap sends no Extend');expect(!isset($renew->fresh()->attempt['dispatch_attempted_at']),'Renewal call refusal precedes seal');config(['domains.enom_live.accounts'=>['live-uid'=>$accountConfig]]);$release();
 config(['domains.enom_live.accounts'=>['live-uid'=>[...$accountConfig,'daily_spend_limit_usd'=>'0.00']]]);Cache::flush();$worker->operation($renew->id);same('held',$renew->fresh()->state,'Renewal spend limit holds unsent intent');expect(!in_array('Extend',array_column($GLOBALS['enomWire']['forms'],'Command'),true),'Renewal spend limit sends no Extend');expect(!isset($renew->fresh()->attempt['dispatch_attempted_at']),'Renewal spend refusal precedes seal');config(['domains.enom_live.accounts'=>['live-uid'=>$accountConfig]]);$release();

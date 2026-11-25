@@ -3,6 +3,7 @@
 // on the staff hold with Release hold and Cancel and refund.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
 require __DIR__.'/Support/namesilo-registration-fixture.php';
 require_once __DIR__.'/Support/staff-panel.php';
 use Illuminate\Support\Facades\{Auth,Cache};
@@ -67,7 +68,7 @@ foreach(ContactStepRetries::WAITS as $i=>$wait){
 }
 $grants->fail=null;$clock->instant=$clock->now()->modify('+1 hour');
 expect(!ContactStepRetries::readmit($op->id,$clock),'Read limit retries stop after the last try');
-expect(StaffOperationWrites::canRelease($op->fresh(),$clock->now())&&OperationActions::relevant('refund',$op->fresh()),'Staff get Release hold and Cancel and refund');
+expect(HeldRelease::offered($op->fresh(),$clock->now())&&OperationActions::relevant('refund',$op->fresh()),'Staff get Release hold and Cancel and refund');
 same($before,[$sent->contactAdd,$sent->registerDomain],'Read limit tries sent nothing');
 echo "Contact read limits stay on the bounded retries and end with staff.\n";
 $nativeSuccessful=true;

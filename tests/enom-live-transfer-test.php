@@ -2,6 +2,7 @@
 // Native checkout, funding, seal and physical-send guards need the real Paymenter fixture; no sockets.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
 require __DIR__.'/native-app.php';
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Data\{HistoryAcceptance,RequestOrigin,SaleSelection};
@@ -132,7 +133,7 @@ foreach(['config','acceptance','calls','spend'] as $missing){
     expect(!isset($op->fresh()->attempt['dispatch_attempted_at']),'Refusal is before seal: '.$missing);
     config(['domains.enom_live.transfer'=>true,'domains.enom_live.accounts'=>$accountConfig]);$write('live_transfer',['accept'=>true]);
     if($op->fresh()->state==='held'){
-        DB::transaction(static function()use($op,$clock):void {$l=\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($op->domain()->firstOrFail());\Paymenter\Extensions\Servers\Domains\Services\StaffOperationWrites::release($l['operations']->firstWhere('id',$op->id),$l,$clock->now());});
+        DB::transaction(static function()use($op,$clock):void {$l=\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($op->domain()->firstOrFail());HeldRelease::release($l['operations']->firstWhere('id',$op->id),$l,$clock->now());});
     }
 }
 $reset();$run();same('uncertain',$op->fresh()->state,'Live transfer pending status');
