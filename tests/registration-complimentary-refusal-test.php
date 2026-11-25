@@ -48,7 +48,7 @@ $missingMatches=Paymenter\Extensions\Servers\Domains\Services\RefundCandidates::
 require __DIR__.'/Support/staff-panel.php';staffPanel();
 $details=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$op->id])->assertSuccessful();
 if(!$missingMatches){$details->assertDontSee('No credit added');}
-expect(!Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::creditReview(Paymenter\Extensions\Servers\Domains\Models\Domain::whereKey($op->domain_id))->exists(),'Missing service leaves the real credit-review filter');
+expect(!Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainQueries::creditReview(Paymenter\Extensions\Servers\Domains\Models\Domain::whereKey($op->domain_id))->exists(),'Missing service leaves the real credit-review filter');
 DB::table('domains_operations')->where('id',$op->id)->update(['service_id'=>$nativeService]);
 DB::table('domains_domains')->where('id',$op->domain_id)->update(['service_id'=>$nativeService]);
 same(false,$missingMatches,'Missing native service also has no staff credit obligation');
@@ -60,7 +60,7 @@ same('registration_rejected',$op->domain->fresh()->status,'Automatic closure pre
 same(['paid',0,0],[Invoice::findOrFail($op->invoice_id)->status,InvoiceTransaction::count(),Credit::count()],'Zero receipt stays Paid without transactions or credit');
 expect(!Paymenter\Extensions\Servers\Domains\Services\RefundCandidates::query(Paymenter\Extensions\Servers\Domains\Models\Operation::whereKey($op->id))->exists(),'Completed complimentary closure leaves the runtime refund candidates');
 expect(!Paymenter\Extensions\Servers\Domains\Services\RefundCandidates::matches($op->fresh(),$op->fresh()->funding),'Completed complimentary closure is not a staff credit obligation');
-expect(!Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::creditReview(Paymenter\Extensions\Servers\Domains\Models\Domain::whereKey($op->domain_id))->exists(),'Completed closure leaves the real credit-review filter');
+expect(!Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainQueries::creditReview(Paymenter\Extensions\Servers\Domains\Models\Domain::whereKey($op->domain_id))->exists(),'Completed closure leaves the real credit-review filter');
 Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$op->id])->assertDontSee('No credit added')->assertSee('No paid invoice recorded');
 $refundLocks=0;DB::listen(static function($q)use(&$refundLocks,$op):void{if(!str_contains($q->sql,'from "domains_domains"')||!in_array($op->domain_id,$q->bindings,true)){return;}foreach(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS,65)as$frame){if(($frame['class']??null)===Refunds::class&&($frame['function']??null)==='creditRejected'){$refundLocks++;break;}}});
 $evidence=static fn()=>array_intersect_key($op->fresh()->getAttributes(),array_flip(['state','safe_code','attempt','funding']));$closed=$evidence();$serviceClosed=Service::findOrFail($op->service_id)->getRawOriginal();$clock->instant=$clock->now()->modify('+1 minute');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());$runtime->tick();

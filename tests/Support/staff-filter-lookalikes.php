@@ -7,7 +7,8 @@ use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ListDomains;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ListOperations;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, DomainQueries};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts;
+use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainQueries;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus;
 

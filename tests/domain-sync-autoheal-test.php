@@ -43,7 +43,7 @@ $manual=new SyncDomainRecords((int)$actor->id,(int)$d->id,$d->authority_generati
 $manual->handle($wired);
 same([1,60],[(int)$work()->tries,$work()->due_at-$clock->now()->getTimestamp()],'Manual partial read schedules automatic recovery');
 same('Sync retry scheduled',SyncDomainRecords::result($d->fresh())['title'],'Manual partial read reports automatic recovery');
-expect(in_array('Sync retry scheduled',array_column(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($d->fresh()),'event'),true),'History records that manual sync scheduled automatic recovery');
+expect(in_array('Sync retry scheduled',array_column(\Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory::entries($d->fresh()),'event'),true),'History records that manual sync scheduled automatic recovery');
 $state->fault='';$due();same('refreshed',$worker->turn($queue,$guard),'Scheduled worker heals manual partial read');
 same(null,SyncDomainRecords::result($d->fresh()),'Automatic success clears the cached partial result');
 

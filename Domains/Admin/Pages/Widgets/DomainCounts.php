@@ -4,7 +4,8 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Pages\Widgets;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainQueries, Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
+use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainQueries;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 /** Dormant until explicitly registered. No polling or provider calls. */
 class DomainCounts extends StatsOverviewWidget

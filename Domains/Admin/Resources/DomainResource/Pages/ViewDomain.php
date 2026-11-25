@@ -8,7 +8,8 @@ use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions,AcquisitionPaymentReview,DepartedPage,DomainEditActions,DomainFacts,DomainHistory,DomainRows,HoldingActions,NoticeReview,OperationActions,RegistrarRows,Sheet,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions,AcquisitionPaymentReview,DepartedPage,DomainEditActions,DomainFacts,DomainRows,HoldingActions,NoticeReview,OperationActions,RegistrarRows,Sheet,Staff};
+use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head,Partial,Row,Value};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{RecordDetailPage,Section};
 use Paymenter\Extensions\Servers\Domains\Presentation\{Reader,StaffTime,State};
@@ -250,10 +251,10 @@ class ViewDomain extends RecordDetailPage
         // The notice above the sheet gives the cause and the next step once, so the rows it explains stay calm.
         $this->calmMissing=$late;
         // The summary above the sheet says once why values are missing, so rows drop the repeated cause.
-        if ($late) { foreach ($facts as $label=>$fact) { if (is_string($fact['sub']??null)&&str_contains($fact['sub'],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainDecisions::NOT_RETURNED)) { $facts[$label]['sub']=trim(str_replace(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainDecisions::NOT_RETURNED,'',$fact['sub']))?:null; } } }
+        if ($late) { foreach ($facts as $label=>$fact) { if (is_string($fact['sub']??null)&&str_contains($fact['sub'],\Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainDecisions::NOT_RETURNED)) { $facts[$label]['sub']=trim(str_replace(\Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainDecisions::NOT_RETURNED,'',$fact['sub']))?:null; } } }
         // Values the registrar read fills in show Not read, in a neutral tone, until a read fails; Missing (red) is kept for that.
         if ($this->unread($d)) { foreach (self::READ_FACTS as $label) { if (isset($facts[$label])&&$facts[$label]['value']===null) { $facts[$label]=[...$facts[$label],'value'=>\Paymenter\Extensions\Servers\Domains\Presentation\Missing::NOT_READ,'tone'=>'gray','alert'=>false,
-            'sub'=>is_string($facts[$label]['sub']??null)?(trim(str_replace(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainDecisions::NOT_RETURNED,'',$facts[$label]['sub']))?:null):($facts[$label]['sub']??null)]; } } }
+            'sub'=>is_string($facts[$label]['sub']??null)?(trim(str_replace(\Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainDecisions::NOT_RETURNED,'',$facts[$label]['sub']))?:null):($facts[$label]['sub']??null)]; } } }
         // WHOIS privacy stays stored and read, but the page does not show it (PrivacyVisibility).
         if (!\Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN) { unset($facts['WHOIS privacy']); }
         // Reminder issues sit on Renewal, then on Open alerts, which they open when neither row exists.

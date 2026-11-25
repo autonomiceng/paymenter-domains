@@ -3,7 +3,8 @@
 declare(strict_types=1);
 require __DIR__.'/departure-email.php';
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DepartedHistory,DomainHistory};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\DepartedHistory;
+use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory;
 
 $nativeSuccessful=false;
 $held=$d->fresh();$entry=DepartedHistory::entry($held);

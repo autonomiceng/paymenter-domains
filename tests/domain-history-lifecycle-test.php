@@ -2,7 +2,8 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/staff-operation-fixture.php';
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainHistory,StaffReviewHistory};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory;
+use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory;
 use Paymenter\Extensions\Servers\Domains\Presentation\State;
 $op=$new(placeholderComFixtureName('history-lifecycle-placeholder.com'));
 $sent=$clock->now()->modify('+1 day');$ended=$sent->modify('+5 minutes');

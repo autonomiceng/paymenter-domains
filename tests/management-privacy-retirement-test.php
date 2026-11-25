@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\{Auth,Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{ManagementEvidence, PrivacyRetirement, RefundCandidates, RefundProof, Refunds, StaffOperationReview, StaffOperations};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries;
+use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainQueries;
 $product->server->settings()->create(['key'=>'domains_privacy_price','value'=>'5.00','type'=>'string']);
 $refunds=new Refunds($clock);app()->instance(Refunds::class,$refunds);
 $role=Role::create(['name'=>'Privacy credit','permissions'=>['admin.domains.view','admin.domains.manage','admin.invoices.update','admin.domains.operations.credit']]);

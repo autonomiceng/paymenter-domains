@@ -2,7 +2,8 @@
 // Adapted from Enom 444f31c Admin/Support/DomainFacts and DomainAdministration read paths.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+namespace Paymenter\Extensions\Servers\Domains\Staff\Holdings;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainNotices,Facts,RegistrarFacts,Staff,StaffDomainInputs,StaffDomainStatus};
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus,Missing,RequestStatus,StaffTime};

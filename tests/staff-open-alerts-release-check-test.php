@@ -8,7 +8,8 @@ use Illuminate\Support\Facades\{Cache, DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ListDomains;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, DomainQueries, StaffDomainInputs};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,StaffDomainInputs};
+use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainQueries;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts, OperationClaims};
 

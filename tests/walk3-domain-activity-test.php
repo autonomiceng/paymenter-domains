@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 require __DIR__.'/Support/staff-operation-fixture.php';
 require __DIR__.'/Support/money-receipt.php';
-use Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory;
+use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory;
 use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks,ReceiptReturns};
 $op=$held('walk3-activity-placeholder.com');$run($op,'refund');
 $events=array_column(array_filter(DomainHistory::entries($op->domain->fresh()),'is_array'),'event');

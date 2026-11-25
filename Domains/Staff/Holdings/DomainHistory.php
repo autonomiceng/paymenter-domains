@@ -1,7 +1,8 @@
 <?php
 // Adapted from Enom 444f31c RequestsRelationManager; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+namespace Paymenter\Extensions\Servers\Domains\Staff\Holdings;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DepartedHistory,Labels,RequestFacts,RequestRows,Sheet,Staff,StaffDomainStatus,StaffReviewHistory};
 use App\Models\User;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, DomainAudit};
@@ -134,9 +135,9 @@ final class DomainHistory
     }
     /** The same steps as a panel trace, for the domain's Detail page rail. A step's word comes from its request status; a
      * staff note or sync event has no state of its own. */
-    public static function trace(Domain $domain, array $entries, ?int $request = null, ?string $said = null): Panel\Trace
+    public static function trace(Domain $domain, array $entries, ?int $request = null, ?string $said = null): \Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Trace
     {
-        $off=self::ordersOff($domain); $trace=Panel\Trace::make(\Paymenter\Extensions\Servers\Domains\Presentation\Reader::Staff);
+        $off=self::ordersOff($domain); $trace=\Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Trace::make(\Paymenter\Extensions\Servers\Domains\Presentation\Reader::Staff);
         foreach ($entries as $entry) {
             $row=self::row($entry,$domain,$off);
             $sub=$row['sub']?StaffDomainStatus::sentence($row['sub']):null;

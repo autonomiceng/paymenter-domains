@@ -105,7 +105,7 @@ commerceReject(fn()=>app(ObservationWork::class)->resume($soloWork,'staff_review
 same(0,(int)DB::table('domains_observation_work')->where('id',$soloWork)->value('resumes'),'A stale or foreign review resumes nothing');
 $soloPage->callAction('resume_observation')->assertNotified('Sync resumed');
 same(1,(int)DB::table('domains_observation_work')->where('id',$soloWork)->value('resumes'),'No-request domain resumes');
-$soloEntries=\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($soloDomain->fresh());
+$soloEntries=\Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory::entries($soloDomain->fresh());
 same(1,count(array_filter($soloEntries,fn(array $row)=>$row['event']==='Sync resumed'&&$row['sub']===null)),'History names the resume once');
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$soloDomain->id])->assertActionHidden('resume_observation');
 // Independent literal boundaries for both shared acquisition actions.
