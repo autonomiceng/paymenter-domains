@@ -1,10 +1,11 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Renewal\Execution;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,RenewalCode};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, RenewalAuthority};
 /** A paid Enom renewal waiting out Enom's 24-hour repeat-renewal refusal. The time it may go is fixed when the wait
  * starts: the last finished renewal of the same domain plus 24 hours. Staff and customers read the same words. */
 final class RenewalRepeatWait

@@ -9,7 +9,9 @@ use Paymenter\Extensions\Servers\Domains\Data\{Environment, Money};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation, Price};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, DomainBilling, HolderPricing, NativeDomainGuard, RenewalAcceptance, RenewalAdmission, RenewalAuthority, RenewalCompletion, RenewalCycles, RenewalExecution, RenewalFunding, RenewalWriter, RegistrarRegistry, WriteFeatures, HoldingLocks};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, DomainBilling, HolderPricing, NativeDomainGuard, RenewalAcceptance, RenewalAuthority, RenewalCycles, RenewalFunding, RegistrarRegistry, WriteFeatures, HoldingLocks};
+use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAdmission, RenewalCompletion, RenewalExecution};
 // Shared scenarios fund invoices explicitly; credit-policy cases override this immediately before billing.
 \App\Models\Setting::updateOrCreate(['key'=>'credits_auto_use','settingable_type'=>null], ['value'=>false,'type'=>'boolean']);
 $state = (object) ['name' => '', 'expiry' => '10/18/2027 5:00:00 AM', 'day' => '10/18/2027',

@@ -10,6 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Presentation\{OwnedDomain,RequestStatus
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Dns;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalRepeatWait;
 final readonly class OwnedDomains
 {
     /** Legacy registrar-reset evidence only; management forms use the saved site DNS choice. */

@@ -43,7 +43,7 @@ try{foreach(array_intersect_key($chargeCases,[$capturedCase=>true])as$case=>[$li
  // The changed case is captured while auto-renew is still on at the registrar, so its frozen proof keeps that correction.
  if($case==='changed'){$state->auto='1';}
  $held=$completion->run($op->id);same($reason,$held->safe_code,'Real captured financial hold');same($case==='changed'?['auto_renew']:[],$held->attempt['reconciliation']['observed_corrections'],'Frozen proof keeps the auto-renew correction it saw');
- app()->instance(\Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::class,$completion);app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$renewBindings);
+ app()->instance(\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion::class,$completion);app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$renewBindings);
  $work=$renewalRuntime($b,$engine,$writer,$completion);$observe=static function()use($work,$op):void{app(\Paymenter\Extensions\Servers\Domains\Services\RuntimeDispatch::class)->enqueue($op->id,true);\Illuminate\Support\Facades\Queue::assertPushed(\Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class,fn($job)=>$job->operationId===$op->id);(new \Paymenter\Extensions\Servers\Domains\Jobs\RunOperation($op->id))->handle($work);};
  $rawProof=[$held->getRawOriginal('attempt'),$held->getRawOriginal('cost')];$attempt=$held->attempt;$cost=$held->cost;$amount=$held->amount;$expiry=$d->fresh()->provider_expires_at->format('Y-m-d');$writes=$state->writes;$calls=count($state->calls);
  $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id]);$page->assertActionVisible('resume_reads')->callAction('resume_reads')->assertNotified('Status checks restarted');
@@ -131,7 +131,7 @@ $state->years=2;$state->after='2029-10-18';$state->expiry='10/18/2027 5:00:00 AM
 [$engine,$writer,$completion]=$compose($b);$state->lost=true;same('uncertain',$engine->run($op->id,$writer)->state,'Lost two-year reply');$state->lost=false;$writes=$state->writes;
 $accept($b);
 $clock->instant=$clock->now()->modify('+10 minutes');$state->expiry='2029-10-18';
-app()->instance(\Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::class,$completion);app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$renewBindings);
+app()->instance(\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion::class,$completion);app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$renewBindings);
 $held=$completion->run($op->id);same(['actual_charge_changed','accepted_history'],[$held->safe_code,$held->attempt['reconciliation']['source']??null],'Accepted history proves the captured charge');
 $rawProof=[$held->getRawOriginal('attempt'),$held->getRawOriginal('cost')];$work=$renewalRuntime($b,$engine,$writer,$completion);
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('resume_reads');(new \Paymenter\Extensions\Servers\Domains\Jobs\RunOperation($op->id))->handle($work);
@@ -155,7 +155,7 @@ $clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');$review($d);$op=$c
 $state->years=2;$state->after='2029-10-18';$state->expiry='10/18/2027 5:00:00 AM';$state->charge='16.01';$state->fail=null;$clock->instant=new DateTimeImmutable('2027-10-18T11:59:00Z');Cache::flush();config(['domains.enom_identity.environment'=>'test']);
 [$engine,$writer,$completion]=$compose($b);$state->lost=true;same('uncertain',$engine->run($op->id,$writer)->state,'Lost two-year reply before history expires');$state->lost=false;$writes=$state->writes;$accept($b);
 $clock->instant=$clock->now()->modify('+10 minutes');$state->expiry='2029-10-18';
-app()->instance(\Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::class,$completion);app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$renewBindings);
+app()->instance(\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion::class,$completion);app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$renewBindings);
 $held=$completion->run($op->id);same('accepted_history',$held->attempt['reconciliation']['source']??null,'Current history proves the captured charge');
 $rawProof=[$held->getRawOriginal('attempt'),$held->getRawOriginal('cost')];$work=$renewalRuntime($b,$engine,$writer,$completion);
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('resume_reads');(new \Paymenter\Extensions\Servers\Domains\Jobs\RunOperation($op->id))->handle($work);

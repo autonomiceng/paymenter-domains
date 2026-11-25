@@ -3,7 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
 use Carbon\CarbonImmutable;
-use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts,RenewalRepeatWait};
+use Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalRepeatWait;
 /** Cells of the client Domains list, derived from the registration summary. */
 final class DomainListRow
 {

@@ -202,8 +202,8 @@ if($phase==='server-delete'){
     $installedFixture=true;$fixtureActivation=static fn()=>null;
     foreach([\Paymenter\Extensions\Servers\Domains\Services\RegistryInputs::class,
         \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Registration::class,
-        \Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::class,
-        \Paymenter\Extensions\Servers\Domains\Services\RenewalWriter::class] as $type){
+        \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion::class,
+        \Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter::class] as $type){
         expect(str_starts_with((new ReflectionClass($type))->getFileName(),base_path('extensions/Servers/Domains/')),'NameSilo preparation uses installed ZIP runtime');
     }
     if($phase==='namesilo-registration'){

@@ -471,7 +471,7 @@ final class RequestFacts
             $ordersLink=!ManagementEvidence::retryable($op)||!RequestReads::account($op)['account']?->processing_enabled;
             return ['title'=>$ready,'tone'=>'warning',...($ordersLink?['link'=>'registrars','link_label'=>self::ORDERS_SWITCH]:[])];
         }
-        if (($until=\Paymenter\Extensions\Servers\Domains\Services\RenewalRepeatWait::until($op))!==null) { return self::repeatWait($op,$until); }
+        if (($until=\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalRepeatWait::until($op))!==null) { return self::repeatWait($op,$until); }
         if ($op->state==='held'&&$op->safe_code==='management_unconfirmed'&&ManagementEvidence::idle($op)) { return self::unsent($op); }
         $review=BalanceRetries::pending($op)?OperationClaims::balanceAdmissionReason($op)
             :(in_array($op->safe_code,BalanceRetries::REVIEW_CODES,true)?$op->safe_code:null);
@@ -574,7 +574,7 @@ final class RequestFacts
     /** A paid renewal waiting out Enom's 24-hour repeat refusal: why, the fixed time it goes and that nothing is needed. Blue: it is not a problem. */
     private static function repeatWait(Operation $op, \DateTimeImmutable $until): array
     {
-        $wait=\Paymenter\Extensions\Servers\Domains\Services\RenewalRepeatWait::class;
+        $wait=\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalRepeatWait::class;
         $paid=$op->funding_basis==='paid_invoice'?'Paid. ':'';
         return ['title'=>$wait::STAFF.'.','tone'=>'info','body'=>new \Illuminate\Support\HtmlString(e($paid.$wait::NOTHING.' '.$wait::GOES).' '
             .Sheet::moment($until->getTimestamp())->toHtml().e(', after fresh checks.'))];

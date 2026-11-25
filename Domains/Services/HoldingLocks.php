@@ -7,6 +7,7 @@ use App\Models\Server;
 use Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain, Operation, Price, Tld};
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalProof;
 
 /** Internal billing/save prefix, joining exactly one caller-owned transaction. Never performs I/O. */
 final class HoldingLocks

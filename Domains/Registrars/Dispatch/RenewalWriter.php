@@ -1,12 +1,14 @@
 <?php
 // Enom d1392a8 Extend/UpdateExpiredDomains; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Registrars\Dispatch;
 use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver,WriteReservation};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AdmittedOperation, Disposition, DriverResult, Evidence, RenewalEvidence, RejectionBasis, Money, RequestContext, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{RegistrationCommand, ResponseParser as EnomParser};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Environment as NameSiloEnvironment, Outcome, PurchaseMapping, ResponseParser as NameSiloParser};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalExecution;
+use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit, EnomTestWriteReservation, NameSiloAccountGuard, OperationClaims, ReadDeferred, RenewalAcceptance, WriteFeatures, WriteHeld};
 /** Named bounded protocol port; default composition supplies no sender. One call consumes one live grant. */
 final class RenewalWriter implements AdmittedRegistrarDriver
 {

@@ -89,7 +89,7 @@
 </dd></div></noscript>
 @if (isset($renewalChoices['next_annual']))<div><dt>Next annual renewal</dt><dd>${{ $renewalChoices['next_annual'] }}/yr<span class="domains-sub">Auto-renew stays yearly. Renewal prices may change.</span></dd></div>@endif
 </dl>
-@if ($domain->renewNow['repeat_at'] ?? null)<p class="domains-hint" role="note" data-renewal-repeat>{{ \Paymenter\Extensions\Servers\Domains\Services\RenewalRepeatWait::NEXT }} @include('domains::partials.moment', ['at' => $domain->renewNow['repeat_at']]). The invoice is due now.</p>@endif
+@if ($domain->renewNow['repeat_at'] ?? null)<p class="domains-hint" role="note" data-renewal-repeat>{{ \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalRepeatWait::NEXT }} @include('domains::partials.moment', ['at' => $domain->renewNow['repeat_at']]). The invoice is due now.</p>@endif
 @if ($domain->renewNow['late'] ?? false)<p class="domains-hint">Late renewal @include('domains::partials.help', ['id' => 'late-renewal', 'label' => 'Late renewal', 'helpText' => \Paymenter\Extensions\Servers\Domains\Services\EnomLateRenewal::HELP])</p>@endif
 @include('domains::partials.edit-buttons', ['open' => $renewOpen, 'cancel' => $show,
     'label' => $complimentary ? 'Confirm renewal' : 'Create invoice',

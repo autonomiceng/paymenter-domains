@@ -11,8 +11,10 @@ require __DIR__.'/owner-records.php';
 require __DIR__.'/installed.php';
 require_once __DIR__.'/staff-panel.php';
 require_once __DIR__.'/offline-acquisition.php';
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, RuntimePorts, NativeCatalogue, PriceCatalogue, SellerPolicies, RenewalAuthority, RenewalAcceptance, RenewalAdmission, RenewalExecution, RenewalWriter, RenewalCompletion, WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, RuntimePorts, NativeCatalogue, PriceCatalogue, SellerPolicies, RenewalAuthority, RenewalAcceptance, WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
+use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAdmission, RenewalCompletion, RenewalExecution};
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 // Installation may already have resolved the limiter with the previous app clock. Rebuild it with the same scoped fixture clock and unchanged native background ceiling.
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock,48));

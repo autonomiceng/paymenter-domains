@@ -128,9 +128,9 @@ $queued = count(Queue::pushedJobs()); $dispatch->enqueue($op->id, true); same($q
 $accepted = new \Paymenter\Extensions\Servers\Domains\Services\RenewalAcceptance($binding, true, true, 25);
 $features = new \Paymenter\Extensions\Servers\Domains\Services\WriteFeatures(renewal: true);
 $authorityPort = new RenewalAuthority($bindings, $clock,offers: $GLOBALS['caps']??null);
-$admission = new \Paymenter\Extensions\Servers\Domains\Services\RenewalAdmission($authorityPort, $bindings, $accepted, $clock);
-$engine = new \Paymenter\Extensions\Servers\Domains\Services\RenewalExecution($bindings, $authorityPort, $admission, $accepted, $features, $clock);
-$writes = 0; $writer = new \Paymenter\Extensions\Servers\Domains\Services\RenewalWriter($binding, $features, $accepted, fn () => $engine, static function () use (&$writes): never { $writes++; throw new LogicException('Forbidden renewal send'); });
+$admission = new \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAdmission($authorityPort, $bindings, $accepted, $clock);
+$engine = new \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalExecution($bindings, $authorityPort, $admission, $accepted, $features, $clock);
+$writes = 0; $writer = new \Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter($binding, $features, $accepted, fn () => $engine, static function () use (&$writes): never { $writes++; throw new LogicException('Forbidden renewal send'); });
 $calls = count($wire->calls);
 same('held', $engine->run($op->id, $writer)->state, 'Direct installed executor holds funded DNR before admission');
 same('renewal_funding_or_authority', $op->fresh()->safe_code, 'Executor reaches current funding/authority refusal');
@@ -148,7 +148,7 @@ $grantMap[$descriptor] = ['context' => $ctx, 'stamp' => $l['stamp'], 'id' => $op
 try {
     $engine->consume($descriptor, $ctx, $writer);
     throw new LogicException('Last local consume boundary admitted a stopped renewal');
-} catch (\Paymenter\Extensions\Servers\Domains\Services\RenewalUnsent $refusal) {
+} catch (\Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalUnsent $refusal) {
     expect($refusal->getPrevious()?->getMessage() === $stopReason, 'Final consume preserves the funding authority refusal');
 }
 same(0, $writes, 'Final consume never reaches writer');

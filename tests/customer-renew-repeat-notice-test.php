@@ -62,7 +62,7 @@ for($i=0;$i<205;$i++){
 }
 DB::flushQueryLog();DB::connection()->enableQueryLog();
 try {
-    $preview=Paymenter\Extensions\Servers\Domains\Services\RenewalRepeatWait::forDomain($d->fresh(),$clock->now())?->format(DATE_ATOM);
+    $preview=Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalRepeatWait::forDomain($d->fresh(),$clock->now())?->format(DATE_ATOM);
     $queries=DB::getQueryLog();
 } finally { DB::connection()->disableQueryLog();DB::flushQueryLog(); }
 $operationReads=array_values(array_filter($queries,fn($query)=>str_contains($query['query'],'from "domains_operations"')));
@@ -74,7 +74,7 @@ foreach($operationReads as $query){
 }
 $check(count($accountReads)===1,'The repeat preview reads its account once, not for each completion');
 $locked=DB::transaction(static fn()=>Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d->fresh()));
-$executionWait=Paymenter\Extensions\Servers\Domains\Services\RenewalRepeatWait::next($locked['domain'],$locked['operations'],$clock->now(),Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($locked['account']));
+$executionWait=Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalRepeatWait::next($locked['domain'],$locked['operations'],$clock->now(),Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($locked['account']));
 $check($preview!==null&&$executionWait!==null&&(new DateTimeImmutable($preview))->getTimestamp()===$executionWait->getTimestamp()&&$executionWait->getTimestamp()===$goes->getTimestamp(),'Invalid recent rows beyond two pages do not hide the authoritative locked completion');
 Operation::whereIn('id',$decoys)->delete();
 // A lookup failure keeps settled invoice state and emits only a safe exception class.
@@ -96,7 +96,7 @@ $check($diagnostics===[['exception_class'=>RuntimeException::class]],'Failure lo
 $failLookup=false;
 same($goes->getTimestamp(),(new DateTimeImmutable($renewNow->invoke($owners,$d->fresh(),true,$projection)['repeat_at']))->getTimestamp(),'Successful recovery restores the repeat notice');
 $offsetNow=$completedAt->modify('+23 hours')->setTimezone(new DateTimeZone('Pacific/Kiritimati'));
-same($goes->getTimestamp(),Paymenter\Extensions\Servers\Domains\Services\RenewalRepeatWait::forDomain($d->fresh(),$offsetNow)?->getTimestamp(),'The recent-completion SQL cutoff preserves the instant across time zones');
+same($goes->getTimestamp(),Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalRepeatWait::forDomain($d->fresh(),$offsetNow)?->getTimestamp(),'The recent-completion SQL cutoff preserves the instant across time zones');
 $other=clone $d;$other->registrar_key='namesilo';
 $otherOptions=$renewNow->invoke($owners,$other,true,$projection);
 expect(($otherOptions['terms']??[])!==[]&&!isset($otherOptions['repeat_at']),'Non-Enom renewal options remain available without a repeat time');

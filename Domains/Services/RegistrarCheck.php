@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence,Evidence,RequestContext};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion;
 /** One bounded read result, shared by background work, staff feedback and customer notices. */
 final class RegistrarCheck
 {

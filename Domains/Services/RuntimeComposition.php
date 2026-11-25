@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,ManagementProtocol,RegistrationProtocol,TransferProtocol};
 use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
+use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAdmission, RenewalCompletion, RenewalExecution};
 /** Explicit deployment factory. No credentials, default exchanges, provider reads or processing changes. */
 final class RuntimeComposition
 {

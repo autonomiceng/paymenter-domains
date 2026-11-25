@@ -45,7 +45,7 @@ expect(method_exists($caps,'identities'),'Historical Enom reconciliation needs i
 $identityRegistry=new \Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
 $identityRegistry->register('enom',['token'],$verify,fn($b,$c)=>new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(
     new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($b,'account-enom',$c['token'],$transport),$caps->identities($b)));
-$completion=new \Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion(new \Paymenter\Extensions\Servers\Domains\Services\AccountBindings($identityRegistry),$clock);
+$completion=new \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion(new \Paymenter\Extensions\Servers\Domains\Services\AccountBindings($identityRegistry),$clock);
 same('succeeded',$completion->run($pending->id)->state,'Paid pending renewal reconciles its original charge with unknown public facts');
 same($writes,$state->writes,'Renewal completion is read only');
 // Expiry after admission/seal must revoke spending even when no retained row changes.
@@ -57,10 +57,10 @@ DB::table('domains_tlds')->where('server_id',$binding->serverId)->where('tld','c
 $authority=new \Paymenter\Extensions\Servers\Domains\Services\RenewalAuthority($renewBindings,$clock,$caps);
 $accepted=new \Paymenter\Extensions\Servers\Domains\Services\RenewalAcceptance($binding,true,true,25,true);
 $features=new \Paymenter\Extensions\Servers\Domains\Services\WriteFeatures(renewal:true);
-$admission=new \Paymenter\Extensions\Servers\Domains\Services\RenewalAdmission($authority,$renewBindings,$accepted,$clock);
-$engine=new \Paymenter\Extensions\Servers\Domains\Services\RenewalExecution($renewBindings,$authority,$admission,$accepted,$features,$clock);
+$admission=new \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAdmission($authority,$renewBindings,$accepted,$clock);
+$engine=new \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalExecution($renewBindings,$authority,$admission,$accepted,$features,$clock);
 $atBoundary=false;$sends=0;
-$writer=new \Paymenter\Extensions\Servers\Domains\Services\RenewalWriter($binding,$features,$accepted,
+$writer=new \Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter($binding,$features,$accepted,
     function()use($clock,$factsUntil,$engine,&$atBoundary){$atBoundary=true;$clock->instant=$factsUntil->modify('+1 second');return $engine;},
     static function()use(&$sends){$sends++;throw new RuntimeException('Synthetic exchange must remain unused');});
 $engine->run($virgin->id,$writer);
