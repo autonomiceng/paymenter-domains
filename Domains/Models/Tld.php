@@ -19,7 +19,7 @@ class Tld extends Model
 
     protected $table = 'domains_tlds';
     protected $guarded = [];
-    protected $hidden = ['catalogue_intent', 'catalogue_facts', 'catalogue_issues', 'account_fingerprint', 'markup', 'catalogue_revision', 'catalogue_published_revision', 'catalogue_retained_annual_retail', 'catalogue_converted', 'catalogue_created'];
+    protected $hidden = ['catalogue_intent', 'catalogue_facts', 'catalogue_issues', 'account_fingerprint', 'markup', 'catalogue_revision', 'catalogue_published_revision', 'catalogue_retained_annual_retail', 'catalogue_created'];
     protected $casts = [
         'use_default_rule' => 'boolean', 'markup' => 'decimal:2', 'fixed_register' => 'decimal:2', 'fixed_renew' => 'decimal:2', 'fixed_transfer' => 'decimal:2',
         'sort_order' => 'integer',

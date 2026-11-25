@@ -12,9 +12,10 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{Sheet,Staff,StaffGrants,
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,OfferRow,Tld};
+use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferTerms;
 use Paymenter\Extensions\Servers\Domains\Services\{CardFee,PriceList,PricingRule,PricingRules};
 
-/** Bounded Staff snapshots over converted identities; recovery only hints the existing read queue. */
+/** Bounded Staff snapshots over bound identities; recovery only hints the existing read queue. */
 final class StaffCatalogue
 {
     public static function routed(): ?self { return CallerRouting::resolve(self::class); }
@@ -47,7 +48,7 @@ final class StaffCatalogue
     private static function unsupportedNext(Tld $t,?Facts $facts=null): string
     {
         if($facts===null){try{$facts=OfferState::facts($t->catalogue_facts);}catch(\Throwable){$facts=null;}}
-        return 'This registrar '.Writer::unsupportedCause($facts,(string)$t->registrar_key,(string)$t->tld).' for .'.$t->tld.'. '.(TldFacts::canChangeSeller()?TldFacts::SELL_ELSEWHERE:TldFacts::ASK_SELLER);
+        return 'This registrar '.OfferTerms::unsupportedCause($facts,(string)$t->registrar_key,(string)$t->tld).' for .'.$t->tld.'. '.(TldFacts::canChangeSeller()?TldFacts::SELL_ELSEWHERE:TldFacts::ASK_SELLER);
     }
     /** When the queued read runs, in the viewer's time zone like the other staff times. */
     private static function nextCheck(int $at): HtmlString
@@ -201,7 +202,7 @@ final class StaffCatalogue
     public function rows(array $bindings,?string $focus): \Illuminate\Database\Eloquent\Builder
     {
         $costs=Staff::requireView()->costs;
-        $q=TldFacts::bound(DB::table('domains_tlds'))->where('catalogue_converted',true)->where(function($q)use($bindings):void {
+        $q=TldFacts::bound(DB::table('domains_tlds'))->where(function($q)use($bindings):void {
             foreach($bindings as $b){$q->orWhere(fn($q)=>$q->where('domains_tlds.server_id',$b->serverId)->where('domains_tlds.account_fingerprint',$b->fingerprint));}
             if(!$bindings){$q->whereRaw('1=0');}
         });
@@ -234,7 +235,7 @@ final class StaffCatalogue
         $years=(int)($raw['longest']??$d['defaultLongest']??1);
         $actions=self::startActions($t,$raw,$d,$policy);
         return ['years'=>$years,'actions'=>$actions,'checking'=>!$facts||!$facts->fresh($now),
-            'block'=>$actions===[]?null:Writer::termsBlock($facts,(string)$t->registrar_key,$t->tld,
+            'block'=>$actions===[]?null:OfferTerms::termsBlock($facts,(string)$t->registrar_key,$t->tld,
                 in_array('register',$actions,true),$years,in_array('transfer',$actions,true),$now)];
     }
     /** Resume the selected seller's actions with its independent transfer restrictions. */
@@ -382,7 +383,7 @@ final class StaffCatalogue
                 elseif($reason==='staff_stopped'&&($raw['sell']??null)===null&&!($d['defaultSell']??true)&&($raw['stops']??[])===[]
                     &&!\Paymenter\Extensions\Servers\Domains\Services\EndingChoices::hidden($t->tld)){$reason='not_sold_by_default';}
             }
-            $label=match($reason){'staff_stopped','staff_term_stopped','renewal_stopped'=>'Stopped by staff','not_sold_by_default'=>'Not sold by default','seller_changed'=>TldFacts::NO_SELLER,'publication_pending'=>'Prices not published','renewals_off'=>TldFacts::RENEWALS_OFF,'stale_price'=>'Cost out of date','below_cost'=>'Below cost','unknown_price'=>'Cost missing','unknown_facts','stale_facts'=>TldFacts::TERMS_CHECKING,'unsupported_facts'=>($stopped?'This':'Set to sell, but this').' registrar '.Writer::unsupportedCause($facts,(string)$t->registrar_key,(string)$t->tld),'unsupported_term','provider_disabled'=>'Not offered by this registrar','unpublished_price'=>'Price missing','account_unavailable'=>'Check registrar account','cost_limit'=>'Over the cost limit',default=>'Check TLD settings'};
+            $label=match($reason){'staff_stopped','staff_term_stopped','renewal_stopped'=>'Stopped by staff','not_sold_by_default'=>'Not sold by default','seller_changed'=>TldFacts::NO_SELLER,'publication_pending'=>'Prices not published','renewals_off'=>TldFacts::RENEWALS_OFF,'stale_price'=>'Cost out of date','below_cost'=>'Below cost','unknown_price'=>'Cost missing','unknown_facts','stale_facts'=>TldFacts::TERMS_CHECKING,'unsupported_facts'=>($stopped?'This':'Set to sell, but this').' registrar '.OfferTerms::unsupportedCause($facts,(string)$t->registrar_key,(string)$t->tld),'unsupported_term','provider_disabled'=>'Not offered by this registrar','unpublished_price'=>'Price missing','account_unavailable'=>'Check registrar account','cost_limit'=>'Over the cost limit',default=>'Check TLD settings'};
             $selected=!$unreadable&&$policy!==null&&TldTerms::chosen($t,(array)$policy,$d);
             $chosen=$invalidRule?null:$chosen;
             if(!$selected&&!isset($sellers[$t->tld])){$label=TldFacts::NO_SELLER;}
@@ -468,7 +469,7 @@ final class StaffCatalogue
         $out=[];
         foreach($tlds->groupBy('server_id') as $id=>$rows){
             $a=Account::where('server_id',$id)->sole();
-            $bound=$rows->filter(fn($t)=>$t->catalogue_converted&&$t->account_fingerprint===$a->account_fingerprint&&$t->registrar_key===$a->registrar_key)->keyBy('tld');
+            $bound=$rows->filter(fn($t)=>$t->account_fingerprint===$a->account_fingerprint&&$t->registrar_key===$a->registrar_key)->keyBy('tld');
             if($bound->isEmpty()){continue;}
             $saved=[];
             foreach(OfferState::query('domains_prices')->where('server_id',$id)->whereIn('tld',$bound->keys()->all())->whereIn('term',array_unique([1,$years]))->where('currency','USD')

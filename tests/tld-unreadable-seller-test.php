@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-use Paymenter\Extensions\Servers\Domains\Catalogue\SellerAvailability;
+use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\SellerAvailability;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 extract(commerceFixture());tldPanel();pinStaffClock($now);[$good,$bad]=$tlds;
 $actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);

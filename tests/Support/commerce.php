@@ -9,7 +9,7 @@ use App\Models\{Category, Currency, Server};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, CatalogueEntry, CatalogueRate, Disposition, DriverResult, Environment, Evidence, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, FoundationSchema, StaffAuditSchema, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry, SalesPolicySchema, SellerPolicies};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, FoundationSchema, StaffAuditSchema, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry, SellerPolicies};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 
 function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com', bool $active = true, ?Closure $authorize = null, array $registrars = ['enom','namesilo'], bool $nameSiloLocal = true, array $identities = [], ?InstalledCommerceFixture $installed = null, bool $freshOperation = false, bool $fundedRegistration = false): array
@@ -31,7 +31,7 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
     }
     // Active fixtures already ran every schema and verification through the native installer.
     if (!$active) {
-        FoundationSchema::install(); SalesPolicySchema::install();
+        FoundationSchema::install(); \Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferSchema::install(); \Paymenter\Extensions\Servers\Domains\Catalogue\Pricing\PriceSchema::install();
         if (class_exists(\Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::class)) { \Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::install(); }
         // Historical installed ZIPs predate this schema; current partial fixtures need it explicitly.
         if (class_exists(StaffAuditSchema::class)) { StaffAuditSchema::install(); }
@@ -104,7 +104,7 @@ function seedCommerceCatalogue(AccountBindings $bindings, ?\Paymenter\Extensions
         if ($environment === Environment::Live) { $bindings->confirmLiveSite($server->id, rtrim(config('app.url'), '/')); }
         $bindings->setProcessing($server->id, true, $activation ?? syntheticActivation());
         $tld = Tld::create(tldColumns(['server_id' => $server->id, 'registrar_key' => $key, 'account_fingerprint' => $binding->fingerprint,
-            'tld' => $ending, 'enabled' => true, 'min_years' => 1, 'max_years' => 3, ...($ports !== null?['catalogue_converted'=>true,'registry_fields'=>[]]:[])]));
+            'tld' => $ending, 'enabled' => true, 'min_years' => 1, 'max_years' => 3, ...($ports !== null?['registry_fields'=>[]]:[])]));
         $terms = $key === 'enom' ? [1, 3] : [1];
         if($ports !== null){
             $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,[$ending],'register');
@@ -137,7 +137,7 @@ function commerceReject(callable $call): void
 /** Independent synthetic provider support, with an explicit age for financial fixture preparation. */
 function activeCommerceFacts(DateTimeImmutable $now,DateTimeImmutable $until,?\Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts $ports=null): void
 {
-    foreach(Tld::where('catalogue_converted',true)->get() as $t){
+    foreach(Tld::all() as $t){
         $terms=$t->registrar_key==='enom'?[1,3]:[1];
         Illuminate\Support\Facades\DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>
             \Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeFacts(fixtureNameSiloFacts(AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole()),$t->tld,new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(
@@ -161,7 +161,7 @@ function activeCommerceFacts(DateTimeImmutable $now,DateTimeImmutable $until,?\P
 /** A new independent checkout observes the same synthetic costs at its own scenario clock. */
 function activeCommerceCostObservations(DateTimeImmutable $now,DateTimeImmutable $until,\Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts $ports): void
 {
-    foreach(Tld::where('catalogue_converted',true)->get() as $t){
+    foreach(Tld::all() as $t){
         $binding=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole());
         $costs=[];
         foreach(\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$t->server_id)->where('tld',$t->tld)->get() as $row){

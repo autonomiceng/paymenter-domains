@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, Dis
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, DomainReservations, FoundationSchema, RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
-use Paymenter\Extensions\Servers\Domains\Services\{LocalAccountEnrollment, StaffAuditSchema, StaffSettingsReview, SalesPolicySchema, NameSiloAccountGuard};
+use Paymenter\Extensions\Servers\Domains\Services\{LocalAccountEnrollment, StaffAuditSchema, StaffSettingsReview, NameSiloAccountGuard};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport, Environment as WireEnvironment, RegistrarRequest, RequestContext as WireContext, TransportResponse};
 use Paymenter\Extensions\Servers\Domains\Services\NameSiloSandbox;
 foreach ([10, 11, 12] as $id) { Server::forceCreate(['id' => $id, 'name' => 'Local registrar', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]); }

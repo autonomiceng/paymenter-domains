@@ -61,7 +61,7 @@ $refuse = static function (array $changes) use ($tld, $driver, $domain, $payload
     }
     same($before, $calls, 'Invalid local facts refuse before provider reads');
 };
-foreach ([['catalogue_converted'=>false], ['registrar_key'=>'enom'], ['account_fingerprint'=>str_repeat('f',64)],
+foreach ([['registrar_key'=>'enom'], ['account_fingerprint'=>str_repeat('f',64)],
     ['catalogue_facts'=>null],
     ...array_map(static fn ($schema) => ['catalogue_facts'=>json_encode([...$rawFacts, 'registryFields'=>$schema])],
         [null, [['name'=>'unaccepted']]])] as $changes) {

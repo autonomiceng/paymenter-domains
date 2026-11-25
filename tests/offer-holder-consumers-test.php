@@ -30,7 +30,7 @@ same('succeeded', $reconcile->run($paid->id)->state, 'Paid pending reconciliatio
 $d=$paid->domain->fresh();
 $holder=new HolderPricing($prices,$caps);
 $other=Tld::create(tldColumns(['server_id'=>$binding->serverId,'registrar_key'=>$binding->registrarKey,
-    'account_fingerprint'=>$binding->fingerprint,'tld'=>'net','catalogue_converted'=>true,'catalogue_retained_annual_retail'=>'22.00']));
+    'account_fingerprint'=>$binding->fingerprint,'tld'=>'net','catalogue_retained_annual_retail'=>'22.00']));
 $staleFingerprint=clone $d; $staleFingerprint->account_fingerprint=str_repeat('f',64);
 $staleRegistrar=clone $d; $staleRegistrar->registrar_key='namesilo';
 $locked=Tld::where('server_id',$binding->serverId)->where('tld','com')->sole();

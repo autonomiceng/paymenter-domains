@@ -56,7 +56,7 @@ class Management extends ManagementProtocol
         $facts = OfferState::facts($tld->catalogue_facts);
         if ($this->binding->environment === \Paymenter\Extensions\Servers\Domains\Data\Environment::Test
             && !TestCatalogueFacts::current($this->binding, $d->tld, $facts, app(Clock::class))) { $facts = null; }
-        if (!$tld->catalogue_converted || $tld->registrar_key !== $this->binding->registrarKey
+        if ($tld->registrar_key !== $this->binding->registrarKey
             || $tld->account_fingerprint !== $this->binding->fingerprint || !$facts
             || !$facts->fresh(app(Clock::class)->now())
             || !RegistryInputs::supported('namesilo', $d->tld, $facts->registryFields)) {

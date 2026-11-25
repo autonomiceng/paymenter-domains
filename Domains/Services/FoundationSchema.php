@@ -99,33 +99,6 @@ final class FoundationSchema extends TableSchema
                 $t->bigInteger('amount_minor');
                 $t->primary(['invoice_item_id', 'retry_number', 'source', 'source_id']);
             },
-            'domains_tlds' => static function (Blueprint $t): void {
-                $t->id();
-                $t->unsignedBigInteger('server_id');
-                $t->string('registrar_key', 32);
-                $t->string('account_fingerprint', 64);
-                $t->string('tld', 63);
-                $t->boolean('use_default_rule')->default(true);
-                $t->string('round_up', 16)->default('none');
-                $t->string('pricing_mode', 32)->default('markup_percent');
-                $t->decimal('markup', 12, 2)->nullable();
-                $t->decimal('fixed_register', 12, 2)->nullable();
-                $t->decimal('fixed_renew', 12, 2)->nullable();
-                $t->decimal('fixed_transfer', 12, 2)->nullable();
-                $t->unsignedInteger('sort_order')->default(100);
-                $t->json('registry_fields')->nullable();
-                $t->timestamp('created_at')->nullable();
-                $t->timestamp('updated_at')->nullable();
-                $t->json('catalogue_intent')->nullable();
-                $t->json('catalogue_facts')->nullable();
-                $t->unsignedBigInteger('catalogue_revision')->default(0);
-                $t->json('catalogue_published_revision')->nullable();
-                $t->decimal('catalogue_retained_annual_retail', 12, 2)->nullable();
-                $t->boolean('catalogue_converted')->default(false);
-                $t->boolean('catalogue_created')->default(false);
-                $t->json('catalogue_issues')->nullable();
-                $t->unique(['server_id', 'tld']);
-            },
             'domains_accounts' => static function (Blueprint $t): void {
                 $t->id();
                 $t->unsignedBigInteger('server_id');
@@ -140,29 +113,6 @@ final class FoundationSchema extends TableSchema
                 $t->timestamp('updated_at')->nullable();
                 $t->json('catalogue_defaults')->nullable();
                 $t->unique(['server_id']);
-            },
-            'domains_prices' => static function (Blueprint $t): void {
-                $t->id();
-                $t->unsignedBigInteger('server_id');
-                $t->string('registrar_key', 32);
-                $t->string('account_fingerprint', 64);
-                $t->string('tld', 63);
-                $t->string('action', 32);
-                $t->unsignedSmallInteger('term');
-                $t->string('currency', 3);
-                $t->unsignedBigInteger('revision')->default(1);
-                $t->decimal('wholesale', 20, 8)->nullable();
-                $t->decimal('retail', 20, 8)->nullable();
-                $t->string('unit', 32);
-                $t->string('source', 128);
-                $t->dateTime('observed_at');
-                $t->timestamp('fresh_until')->nullable();
-                $t->timestamp('created_at')->nullable();
-                $t->timestamp('updated_at')->nullable();
-                $t->boolean('catalogue_created')->default(false);
-                $t->boolean('cost_enabled')->nullable();
-                $t->string('cost_source_unit', 32)->nullable();
-                $t->unique(['server_id', 'tld', 'action', 'term', 'currency'], $t->getTable().'_price_unique');
             },
         ];
     }

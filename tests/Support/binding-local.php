@@ -17,9 +17,9 @@ $localBoot = new RegistrarRegistry;
 \Paymenter\Extensions\Servers\Domains\Services\RegistrarFactories::bootstrap($localBoot);
 expect(in_array('namesilo', $localBoot->keys(), true), 'NameSilo local enrollment is composed without an identity verifier');
 require __DIR__.'/staff-panel.php';
-use Paymenter\Extensions\Servers\Domains\Services\{LocalAccountEnrollment, StaffAuditSchema, StaffSettingsReview, SalesPolicySchema, NameSiloAccountGuard};
+use Paymenter\Extensions\Servers\Domains\Services\{LocalAccountEnrollment, StaffAuditSchema, StaffSettingsReview, NameSiloAccountGuard};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport, Environment as WireEnvironment, RegistrarRequest, RequestContext as WireContext, TransportResponse};
-SalesPolicySchema::install(); StaffAuditSchema::install();
+\Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferSchema::install(); \Paymenter\Extensions\Servers\Domains\Catalogue\Pricing\PriceSchema::install(); StaffAuditSchema::install();
 $staff = staffUser(['admin.domains.view', 'admin.domains.manage-policy', StaffSettingsReview::permission('configure')]);
 $review = static function (int $id) use ($staff): StaffSettingsReview {
     return new StaffSettingsReview((int) $staff->id, $id, null, 'configure',

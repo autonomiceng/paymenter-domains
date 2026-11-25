@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Price, Tld};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
 use Paymenter\Extensions\Servers\Domains\Services\{FoundationSchema, PriceCatalogue, PricingRule, PricingRules};
-FoundationSchema::install(); $account = fixtureAccount(1, 'enom', 'offline');
+FoundationSchema::install();\Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferSchema::install();\Paymenter\Extensions\Servers\Domains\Catalogue\Pricing\PriceSchema::install(); $account = fixtureAccount(1, 'enom', 'offline');
 Tld::create(tldColumns([...$account, 'tld' => 'com', 'enabled' => false, 'renew_enabled' => true]));
 $clock = new class implements Clock { public function now(): DateTimeImmutable { return new DateTimeImmutable('2026-10-18T12:00:00Z'); } };
 $binding = new AccountBinding('enom', 1, Environment::Test, 'offline');

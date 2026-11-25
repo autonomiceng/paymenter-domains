@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{Server,Setting};
 use Illuminate\Database\Migrations\Migrator;
+use Paymenter\Extensions\Servers\Domains\Catalogue\Pricing\PriceSchema;
+use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferSchema;
 use Illuminate\Support\Facades\{Cache,DB,Schema};
 /** No destructive rollback or automatic adoption of retained history. */
 final class Installation
@@ -11,7 +13,8 @@ final class Installation
     public const BASELINE = '2026_11_23_000001_create_domains_schema';
     public const SCHEMAS = [
         FoundationSchema::class,
-        SalesPolicySchema::class,
+        OfferSchema::class,
+        PriceSchema::class,
         ContactProfileSchema::class,
         ObservationSchema::class,
         ReminderSchema::class,

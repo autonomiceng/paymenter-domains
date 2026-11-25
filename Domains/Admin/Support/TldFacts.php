@@ -176,7 +176,7 @@ final class TldFacts
     /** The one fix for each reason a TLD with a saved price is not for sale. */
     public const FIXES=['Cost out of date'=>'See the next refresh on this TLD.','Cost missing'=>'The registrar price feed must supply the exact cost.','Prices not published'=>'Open Edit prices and save.','Below cost'=>'Raise the price in Edit prices.','Price missing'=>'Open Edit prices and save.','Prices need checking'=>'Check the registrar account and the last refresh failure.',self::RENEWALS_OFF=>'Turn on Renewals on the registrar account page.',self::NO_SELLER=>'Open the TLD and use Choose registrar.'];
     public const ASK_SELLER='Ask staff who can change the registrar.';
-    /** What a registrar asks that checkout can't meet, after "this registrar". Writer::unsupportedCause picks one. */
+    /** What a registrar asks that checkout can't meet, after "this registrar". OfferTerms::unsupportedCause picks one. */
     public const UNSUPPORTED=["needs registry details checkout doesn't collect",'needs nameservers at registration','renews only automatically',
         "doesn't confirm renewals can be sent",'has requirements checkout cannot meet'];
     public const SELL_ELSEWHERE='Use Change registrar to sell it through another account.';

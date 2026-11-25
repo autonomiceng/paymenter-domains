@@ -70,7 +70,7 @@ final class RegistrarFacts
             $chosen=DB::table('domains_sales_policies')->where('server_id',$account->server_id)->where('account_fingerprint',$b->fingerprint)->where('registrar_key',$b->registrarKey)
                 ->where(fn($q)=>$q->where('register_enabled',true)->orWhere('transfer_enabled',true))->pluck('tld');
             \Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$account->server_id)->where('account_fingerprint',$b->fingerprint)->where('registrar_key',$b->registrarKey)
-                ->where('catalogue_converted',true)->whereIn('tld',$chosen)->orderBy('id')->chunkById(100,function($rows)use($catalogue,&$selling,&$reasons):bool {
+                ->whereIn('tld',$chosen)->orderBy('id')->chunkById(100,function($rows)use($catalogue,&$selling,&$reasons):bool {
                     $page=$catalogue->page($rows);
                     foreach ($rows as $t) {
                         if (in_array(true,$page[$t->id]['acquisition'],true)) { $selling=true;return false; }

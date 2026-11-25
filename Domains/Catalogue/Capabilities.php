@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
+use Paymenter\Extensions\Servers\Domains\Catalogue\Pricing\CurrentCost;
 
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
@@ -47,7 +48,7 @@ final class Capabilities
     public function endings(AccountBinding $b, ?string $action = null): array
     {
         $out = [];
-        Tld::where('server_id', $b->serverId)->where('account_fingerprint', $b->fingerprint)->where('catalogue_converted', true)
+        Tld::where('server_id', $b->serverId)->where('account_fingerprint', $b->fingerprint)
             ->orderBy('id')->chunkById(100, function ($rows) use ($b, $action, &$out): void {
                 foreach ($rows as $t) {
                     try { $f = $this->facts($b, $t->tld); if ($action === null || ($f->terms[$action] ?? []) !== []) { $out[] = $t->tld; } }
@@ -61,7 +62,7 @@ final class Capabilities
     public function identities(AccountBinding $b): array
     {
         $out=[];
-        Tld::where('server_id',$b->serverId)->where('account_fingerprint',$b->fingerprint)->where('catalogue_converted',true)
+        Tld::where('server_id',$b->serverId)->where('account_fingerprint',$b->fingerprint)
             ->orderBy('id')->chunkById(100,function($rows)use($b,&$out):void {
                 ($this->authorize)(new Query($b,$rows->pluck('tld')->all(),'renew'),Context::Holder);
                 foreach($rows as $t){$this->identity($b,$t->tld,$t);$out[]=$t->tld;}
@@ -86,7 +87,7 @@ final class Capabilities
     public function costs(AccountBinding $b): array
     {
         $out=[];
-        Tld::where('server_id',$b->serverId)->where('account_fingerprint',$b->fingerprint)->where('catalogue_converted',true)
+        Tld::where('server_id',$b->serverId)->where('account_fingerprint',$b->fingerprint)
             ->orderBy('id')->chunkById(100,function($rows)use($b,&$out):void {
                 $q=new Query($b,$rows->pluck('tld')->all(),'renew'); ($this->authorize)($q,Context::Holder);
                 foreach($this->ports->loadBatch([$q],Context::Holder)[0] as $row){$out[$row->decision->tld]=$this->current($row->observation());}
@@ -151,7 +152,7 @@ final class Capabilities
     { return $cost && $cost->action === 'renew' && $cost->term === 1 && $cost->enabled && $cost->fresh($this->clock->now()) ? $cost : null; }
     private function identity(AccountBinding $b, string $name, Tld $t): void
     {
-        if (!$t->catalogue_converted || (int)$t->server_id !== $b->serverId || $t->tld !== $name
+        if ((int)$t->server_id !== $b->serverId || $t->tld !== $name
             || $t->account_fingerprint !== $b->fingerprint || $t->registrar_key !== $b->registrarKey) { throw new \DomainException('Holding offer binding changed.'); }
     }
 }

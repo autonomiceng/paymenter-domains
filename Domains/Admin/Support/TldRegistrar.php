@@ -4,7 +4,9 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\Server;
 use Illuminate\Support\{Facades\Blade,HtmlString};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Facts,OfferState,SellerAvailability,StaffCatalogue,Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Facts,OfferState,StaffCatalogue};
+use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\SellerAvailability;
+use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferTerms;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,SalesPolicy,Tld};
@@ -90,14 +92,14 @@ final class TldRegistrar
 
     public static function canRecheck(int $id,?array $status=null): bool
     {
-        // The account action also needs a converted TLD to enter the existing import writer.
+        // The account action also needs a bound TLD to enter the existing import writer.
         if(!SettingsActions::syncAll($id)->isVisible()){return false;}
         try{
             $status??=StaffCatalogue::routed()?->progress($id)??[];
             if(isset($status['failure'])||in_array($status['state']??null,['running','retrying'],true)
                 ||($status['state']??null)==='queued'&&(isset($status['due_at'])||!empty($status['remaining']))){return false;}
             $binding=AccountBindings::binding(Account::where('server_id',$id)->sole());
-            $first=Tld::where('server_id',$id)->where('catalogue_converted',true)->orderBy('id')->first();
+            $first=Tld::where('server_id',$id)->orderBy('id')->first();
             if($first===null||$first->account_fingerprint!==$binding->fingerprint||$first->registrar_key!==$binding->registrarKey){return false;}
             if($binding->registrarKey==='enom'){return TestCatalogue::enabled($binding);}
             if($binding->registrarKey!=='namesilo'||!class_exists(AdmittedTransport::class)){return false;}
@@ -127,7 +129,7 @@ final class TldRegistrar
 
     private static function facts(Account $account,?Tld $row,Clock $clock): ?Facts
     {
-        if($row===null||!$row->catalogue_converted||$row->account_fingerprint!==$account->account_fingerprint||$row->registrar_key!==$account->registrar_key){return null;}
+        if($row===null||$row->account_fingerprint!==$account->account_fingerprint||$row->registrar_key!==$account->registrar_key){return null;}
         try{return OfferState::acquisitionFacts(AccountBindings::binding($account),$row,$clock);}catch(\Throwable){return null;}
     }
     /** Known terms must fit the proposed sale. The writer can record intent while independent terms are pending. */
@@ -135,9 +137,9 @@ final class TldRegistrar
     {
         if(!$row||!$facts){return null;}
         $ending=$row->tld;$registrar=(string)$account->registrar_key;
-        $base=Writer::termsBlock($facts,$registrar,$ending,false,1,false,$now);
+        $base=OfferTerms::termsBlock($facts,$registrar,$ending,false,1,false,$now);
         if($base==='unsupported_facts'){
-            return 'This registrar '.Writer::unsupportedCause($facts,$registrar,$ending).' for .'.$ending.'.';
+            return 'This registrar '.OfferTerms::unsupportedCause($facts,$registrar,$ending).' for .'.$ending.'.';
         }
         if($base==='unsupported_term'){return 'This registrar does not offer annual renewals for .'.$ending.'.';}
         if(!$facts->fresh($now)){return null;}
@@ -146,10 +148,10 @@ final class TldRegistrar
             $defaults=OfferState::decode($account->catalogue_defaults);
         }catch(\Throwable){return "Saved sales settings can't be read for .".$ending.'.';}
         $longest=(int)($intent['longest']??$defaults['defaultLongest']??1);
-        if(($register||!$transfer)&&Writer::termsBlock($facts,$registrar,$ending,true,$longest,false,$now)!==null){
+        if(($register||!$transfer)&&OfferTerms::termsBlock($facts,$registrar,$ending,true,$longest,false,$now)!==null){
             return 'This registrar has no registration term within the saved limit for .'.$ending.'.';
         }
-        if($transfer&&Writer::termsBlock($facts,$registrar,$ending,false,$longest,true,$now)!==null){
+        if($transfer&&OfferTerms::termsBlock($facts,$registrar,$ending,false,$longest,true,$now)!==null){
             return 'This registrar does not offer transfers for .'.$ending.'.';
         }
         return null;
@@ -172,7 +174,7 @@ final class TldRegistrar
             'Seller account missing.'=>'This registrar account was removed. Choose another registrar.',
             'Seller account off.'=>'This registrar account is off. Turn it on in Servers.',
             'Explicit verified widening required.'=>$terms===null?null:$terms.' Nothing was saved.',
-            'Offer binding or conversion changed.','Price binding changed.','Seller offer group changed; retry.','Offer disappeared.'=>'Saved registrar prices changed. Reopen Change registrar and try again.',
+            'Offer binding changed.','Price binding changed.','Seller offer group changed; retry.','Offer disappeared.'=>'Saved registrar prices changed. Reopen Change registrar and try again.',
             default=>null,
         };
     }

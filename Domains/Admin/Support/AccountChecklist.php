@@ -167,7 +167,7 @@ final class AccountChecklist
             $offers??=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();$endings=[];$chosen=[];$defaults=0;
             if($offers){
                 \Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$binding->serverId)->where('account_fingerprint',$binding->fingerprint)
-                    ->where('catalogue_converted',true)->orderBy('id')->chunkById(100,function($rows)use($offers,&$endings,&$chosen,&$defaults):void {
+                    ->orderBy('id')->chunkById(100,function($rows)use($offers,&$endings,&$chosen,&$defaults):void {
                         $page=$offers->page($rows);
                         foreach($rows as $t){$sales=$page[$t->id]['acquisition'];if($page[$t->id]['selected']){$chosen[]=$t->tld;}if($sales['register']||$sales['transfer']){$endings[]=$t->tld;if(!$page[$t->id]['own']){$defaults++;}}}
                     });

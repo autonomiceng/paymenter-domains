@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
+use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferReader;
 use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
@@ -25,7 +26,7 @@ final class OfferReadiness
         }
         $b=AccountBindings::binding($a);$costs=$failures=[];$counts=['registration'=>0,'transfer'=>0];
         $defaults=OfferState::decode($a->catalogue_defaults);
-        Tld::where('server_id',$b->serverId)->where('account_fingerprint',$b->fingerprint)->where('catalogue_converted',true)
+        Tld::where('server_id',$b->serverId)->where('account_fingerprint',$b->fingerprint)
             ->orderBy('id')->chunkById(25,function($tlds)use($b,$features,$lock,$defaults,&$costs,&$failures,&$counts):void {
                 $names=$tlds->pluck('tld')->all();$queries=[];
                 foreach(['register','renew','transfer'] as $action){foreach($action==='register'?range(1,10):[1] as $term){$queries[]=new Query($b,$names,$action,$term);}}
