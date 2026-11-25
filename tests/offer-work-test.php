@@ -334,7 +334,7 @@ same($oneCheck,$evidenceReads,'A first hint for fresh TEST facts reads the saved
 same($fresh->freshUntil->getTimestamp(),$worker->status($n,'com')['due_at'],'A first hint for fresh TEST facts waits for their expiry');
 echo "Dormant offer queue and lazy facts checks passed.\n";
 
-// Shared scheduler account turns, formerly offer-runtime-work-test.php.
+// Shared scheduler account turns, merged here from the former runtime work test.
 // A paused generation is an explicit offline composition fixture, never an active parser shortcut.
 $generation = CatalogueActivation::generation();
 $guard = static function () use ($generation): void {
