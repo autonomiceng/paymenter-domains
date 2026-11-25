@@ -18,6 +18,7 @@ const ASSETS = '/refund-browser-assets/';
 // any other origin, fails the run.
 const isAvatar = (request, url) => url.origin === 'https://www.gravatar.com' && url.pathname.startsWith('/avatar/')
   && request.method() === 'GET' && request.resourceType() === 'image';
+const REDIRECTS = new Set([301, 302, 303, 307, 308]);
 const REDIRECT_LIMIT = 5;
 // Paymenter serves Livewire updates at /paymenter/update.
 const isUpdate = (url) => /\/update$/.test(new URL(url).pathname);
@@ -78,7 +79,7 @@ async function follow(request) {
   for (let hop = 0; ; hop += 1) {
     const reply = await call(method, url, headers, body);
     cookies.push(...reply.cookies);
-    if (reply.status < 300 || reply.status >= 400) return { ...reply, cookies };
+    if (!REDIRECTS.has(reply.status)) return { ...reply, cookies };
     const target = new URL(headerValue(reply.headers, 'location') ?? '', url);
     if (target.origin !== base) throw new Error(`Redirect from ${new URL(url).pathname} to another origin: ${target.origin}`);
     if (hop === REDIRECT_LIMIT) throw new Error(`More than ${REDIRECT_LIMIT} redirects from ${request.url()}`);
