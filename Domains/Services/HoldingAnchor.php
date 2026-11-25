@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Holding\Adoption\AdoptionMapping;
 
 /** Renewal-only union. Original adoption remains the root after completed renewals. */
 final readonly class HoldingAnchor

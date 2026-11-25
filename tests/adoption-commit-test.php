@@ -11,7 +11,8 @@ use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomAdoptionReader;
 use Paymenter\Extensions\Servers\Domains\Models\{Adoption, Domain, Operation, Price};
-use Paymenter\Extensions\Servers\Domains\Services\{AdoptionCommit, NativeDomainGuard, HolderPricing, RegistrarFactories, RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Services\{NativeDomainGuard, HolderPricing, RegistrarFactories, RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Holding\Adoption\AdoptionCommit;
 config(['app.url' => 'https://domains-tests.invalid']);
 // The alternate-provider contract below uses a synthetic provider identity, not local enrollment lineage.
 extract(adoptionFixture(Environment::Live,nameSiloLocal:false));  \Paymenter\Extensions\Servers\Domains\Services\HistoryLinkSchema::install();

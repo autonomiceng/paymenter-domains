@@ -1,8 +1,9 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Holding\Adoption;
 use Paymenter\Extensions\Servers\Domains\Models\{Adoption, Domain, HistoryLink};
+use Paymenter\Extensions\Servers\Domains\Services\HoldingIdentityLock;
 /** Separate retained associations. Never financial authority, settlement or reconciliation. */
 final class AdoptionHistory
 {

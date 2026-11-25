@@ -15,7 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Data\Adoption\{Review, StaffContext, Ta
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Presentation\Reader;
-use Paymenter\Extensions\Servers\Domains\Services\AdoptionReader;
+use Paymenter\Extensions\Servers\Domains\Holding\Adoption\AdoptionReader;
 
 /** Check one domain waiting for import at its registrar. The check changes nothing, and import is off on this site. */
 class AdoptionPreview extends RecordDetailPage

@@ -3,13 +3,14 @@
 declare(strict_types=1);
 require __DIR__.'/Support/reminders.php';
 use Illuminate\Support\Facades\{DB,Mail};
-use Paymenter\Extensions\Servers\Domains\Services\{HistoryRetention,RetentionSchema};
+use Paymenter\Extensions\Servers\Domains\Services\RetentionSchema;
+use Paymenter\Extensions\Servers\Domains\Holding\Retention\HistoryRetention;
 [$d,$invoice,$op]=$make(placeholderComFixtureName('retention-reminder-placeholder.com'));$enable();
 expect($reminders->remind((int)$d->id),'Existing fixture produces an accepted reminder');
 $receipt=DB::table('domains_reminder_deliveries')->sole();same('accepted',$receipt->state,'Actual native queue acceptance');
 $money=DB::table('domains_operations')->orderBy('id')->get()->toJson();
 $at=Carbon\CarbonImmutable::createFromTimestampUTC((int)$receipt->accepted_at)->addMonthsNoOverflow(13)->getTimestamp()+1;
-if(is_file(dirname(__DIR__).'/Domains/Services/HistoryRetention.php')){HistoryRetention::tick($at);}
+HistoryRetention::tick($at);
 expect(!DB::table('domains_reminder_deliveries')->where('id',$receipt->id)->exists(),'Closed reminder receipt leaves active history after thirteen months');
 expect(HistoryRetention::replayed('reminder',$receipt->delivery_key),'Reminder replay identity is separate from history');
 expect(!$reminders->remind((int)$d->id),'Same reminder cannot be queued again after its receipt archives');

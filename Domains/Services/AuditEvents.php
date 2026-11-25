@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\{Crypt,DB,Schema};
+use Paymenter\Extensions\Servers\Domains\Holding\Retention\HistoryRetention;
 /** Encrypted staff and reminder history. */
 final class AuditEvents
 {

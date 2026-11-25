@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\RefusalCode;
 use Paymenter\Extensions\Servers\Domains\Models\{Adoption, Domain};
-use Paymenter\Extensions\Servers\Domains\Services\{AdoptionCommit, AdoptionEnrollment, AdoptionReader, AdoptionRefused};
+use Paymenter\Extensions\Servers\Domains\Holding\Adoption\{AdoptionCommit, AdoptionEnrollment, AdoptionReader, AdoptionRefused};
 extract(adoptionCommitFixture()); staffPanel();
 app()->instance(AdoptionReader::class, $reader); app()->instance(AdoptionCommit::class, $commit); app()->instance(Clock::class, $clock);
 $viewOnly = staffUser([Staff::VIEW]); Livewire::actingAs($viewOnly)->test(AdoptDomain::class)->assertForbidden();

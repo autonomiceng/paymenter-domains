@@ -18,7 +18,8 @@ use Paymenter\Extensions\Servers\Domains\Data\{CanonicalName, Environment};
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\{RefusalCode, Review, StaffContext, Target};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain};
 use Paymenter\Extensions\Servers\Domains\Presentation\{Fact, Reader, StaffTime, State};
-use Paymenter\Extensions\Servers\Domains\Services\{AdoptionCommit, AdoptionReader, AdoptionRefused, StaffReason};
+use Paymenter\Extensions\Servers\Domains\Services\StaffReason;
+use Paymenter\Extensions\Servers\Domains\Holding\Adoption\{AdoptionCommit, AdoptionReader, AdoptionRefused};
 /** Native staff wizard. Request keys, digests and private evidence never leave the server. */
 class AdoptDomain extends Page
 {

@@ -6,7 +6,7 @@ selector. Add new consumers when these dependencies change.
 
 | Source trigger | Consumers to inspect |
 | --- | --- |
-| `Domains/Services/AdoptionReader.php` | `Support/adoption-preview.php` constructs the real reader. Follow its consumers through `adoption-confirm.php`, `adoption-holding.php`; retain `adoption-preview-test.php` and the static reason assertions in `staff-domains-test.php`. |
+| `Domains/Holding/Adoption/AdoptionReader.php` | `Support/adoption-preview.php` constructs the real reader. Follow its consumers through `adoption-confirm.php`, `adoption-holding.php`; retain `adoption-preview-test.php` and the static reason assertions in `staff-domains-test.php`. |
 | `Domains/Admin/Resources/DomainResource/Pages/AdoptDomain.php` | Staff preview and confirmation flows, plus the shared adoption fixture consumers. |
 | `Domains/Admin/Pages/RegistrarAccount.php` | Direct registrar page tests and transitive consumers of `Support/staff-tlds.php`, including route registration and settings actions. |
 | `Domains/Presentation/AccountStatus.php` | Direct status assertions and `RegistrarFacts`/`AccountChecklist` consumers on registrar pages and installed scenarios. |

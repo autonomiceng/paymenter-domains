@@ -49,7 +49,7 @@ final readonly class Review implements \JsonSerializable
         return match (self::renewalCase($details)) {
             'test' => 'Test only. No invoice or charge is created.',
             'off' => 'Do not renew. The domain ends at its expiry date.',
-            'unproven' => \Paymenter\Extensions\Servers\Domains\Services\AdoptionRenewalEligibility::STAFF,
+            'unproven' => \Paymenter\Extensions\Servers\Domains\Holding\Adoption\AdoptionRenewalEligibility::STAFF,
             'unconfirmed' => 'Renewal not confirmed yet. Run Check to see if this domain can renew here.',
             default => 'Renewal stays on. Normal invoices apply. If the domain is already due, an invoice may go out right away.',
         };

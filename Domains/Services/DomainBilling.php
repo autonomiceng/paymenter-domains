@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Holding\Adoption\AdoptionRenewalEligibility;
 
 /** Native renewal debts and collection. Late debt requires fresh reads; only execution can dispatch. */
 final class DomainBilling

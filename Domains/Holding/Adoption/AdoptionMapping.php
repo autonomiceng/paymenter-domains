@@ -1,7 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Holding\Adoption;
 
 use App\Models\{Invoice, Service, User};
 use Illuminate\Support\Facades\DB;
@@ -9,6 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName, En
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\{StaffContext, Target};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, BillingCalendar, DepartureProof, FreshInstallation, HoldingIdentityLock, HoldingNativeLocks, NativeCatalogue, NativeDomainGuard, OperationTerminalProof, PriceCatalogue, PricingRule};
 
 /** Same capture for preview and confirmation; locked confirmation retains the A0 prefix. */
 final class AdoptionMapping

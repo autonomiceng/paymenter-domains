@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Models\{Adoption, Domain};
+use Paymenter\Extensions\Servers\Domains\Holding\Adoption\AdoptionMapping;
 
 /** Derives provenance from retained locked rows, never a caller-provided identity. */
 final class HoldingIdentitySource

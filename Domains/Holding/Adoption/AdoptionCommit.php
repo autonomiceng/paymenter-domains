@@ -1,7 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Holding\Adoption;
 
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -10,6 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{CanonicalName, Environment};
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\{RefusalCode, StaffContext, Target};
 use Paymenter\Extensions\Servers\Domains\Models\{Adoption, Domain, Operation, Tld};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, ComplimentaryAccounts, HoldingIdentityLock, NativeCancellation, NativeDomainGuard, OperationClaims};
 
 /** Local adoption only. No checkout, funding, provider operation or network dependency. */
 final class AdoptionCommit

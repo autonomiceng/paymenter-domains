@@ -1,10 +1,11 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Holding\Adoption;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
+use Paymenter\Extensions\Servers\Domains\Services\{FreshTransaction, HoldingAnchor, HoldingLocks, OperationClaims};
 /** Repairable postcommit enrollment. The committed adoption itself is the durable retry intent. */
 final readonly class AdoptionEnrollment
 {

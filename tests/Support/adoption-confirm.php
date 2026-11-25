@@ -15,6 +15,6 @@ function adoptionCommitFixture(\Paymenter\Extensions\Servers\Domains\Data\Enviro
     Illuminate\Support\Facades\DB::table('roles')->where('id', $staff->role_id)->update(['permissions' => json_encode($permissions)]);
     $guard = new \Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard(new \Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices), $clock);
     $guard->boot(); \Paymenter\Extensions\Servers\Domains\Services\NativeIdentity::boot(); \Paymenter\Extensions\Servers\Domains\Services\NativeCancellation::boot();
-    $commit = new \Paymenter\Extensions\Servers\Domains\Services\AdoptionCommit($mapping, $bindings, $clock);
+    $commit = new \Paymenter\Extensions\Servers\Domains\Holding\Adoption\AdoptionCommit($mapping, $bindings, $clock);
     return [...$f, ...compact('commit', 'guard', 'permissions')];
 }

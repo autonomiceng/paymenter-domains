@@ -8,6 +8,7 @@ use App\Models\{EmailLog,NotificationTemplate,User};
 use Illuminate\Support\Facades\{DB,Mail};
 use Illuminate\View\Compilers\BladeCompiler;
 use Paymenter\Extensions\Servers\Domains\Mail\DomainNotice;
+use Paymenter\Extensions\Servers\Domains\Holding\Retention\HistoryRetention;
 /** Called under current holding locks. Marker commits before queue handoff; no uncertain resend. */
 final class ReminderDelivery
 {
