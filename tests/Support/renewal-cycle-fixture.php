@@ -33,10 +33,12 @@ try {
     $invoice=App\Models\Invoice::findOrFail($registration->invoice_id);
     same(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($invoice->total),\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$invoice->transactions()->sum('amount')),'Batch acquisition is exactly funded');
 } finally {if($runtime!==null){app()->instance(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class,$runtime);}}
-$new=static function(string $name,bool $paid=true,bool $setup=true,string $action='register',int $term=1)use(&$registrations){
+// The prepared lookup stays immutable; consumption is a plain global the case reset restores by value.
+$cycleConsumed=[];
+$new=static function(string $name,bool $paid=true,bool $setup=true,string $action='register',int $term=1)use($registrations){
     same([true,true,'register',1],[$paid,$setup,$action,$term],'Cycle acquisition keeps the original paid annual registration contract');
-    expect(isset($registrations[$name]),'Each acquisition is consumed exactly once: '.$name);
-    $op=$registrations[$name];unset($registrations[$name]);return $op->fresh();
+    expect(isset($registrations[$name])&&!isset($GLOBALS['cycleConsumed'][$name]),'Each acquisition is consumed exactly once: '.$name);
+    $GLOBALS['cycleConsumed'][$name]=true;return $registrations[$name]->fresh();
 };
 require __DIR__.'/renewal-execution.php';
 $at=static fn(string $when)=>new DateTimeImmutable($when);

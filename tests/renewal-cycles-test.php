@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks, PricingRule, Re
 // Every case starts from the same batch of paid, registered and unsent original holdings and buys its renewals from
 // its own group of them. Shared routes are registered before the checkpoint; the late case reads them.
 require_once dirname(__DIR__).'/Domains/routes/owned.php';require_once dirname(__DIR__).'/Domains/routes/web.php';app('router')->getRoutes()->refreshNameLookups();
-$consumed=static function(string $group)use(&$registrations,$cycleGroups):void{same([],array_values(array_intersect($cycleGroups[$group],array_keys($registrations))),'All independent acquisition scenarios ran');};
+$consumed=static function(string $group)use($cycleGroups):void{same([],array_values(array_diff($cycleGroups[$group],array_keys($GLOBALS['cycleConsumed']))),'All independent acquisition scenarios ran');};
 // Pin each case to the prepared read and Carbon clocks explicitly, whatever a reset restores.
 $pinned=[$clock->now(),Carbon\Carbon::getTestNow(),Carbon\CarbonImmutable::getTestNow()];
 $pin=static function()use($clock,$pinned):void{[$clock->instant,$carbon,$immutable]=$pinned;Carbon\Carbon::setTestNow($carbon);Carbon\CarbonImmutable::setTestNow($immutable);};

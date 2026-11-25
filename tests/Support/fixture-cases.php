@@ -236,13 +236,14 @@ function nativeRestoreStorage(array $files): void
     }
 }
 
-/** Committed rows by table and rowid, decrypted, with password hashes and real-clock times and epoch seconds masked. */
+/** Integer columns stamped from the real clock with time(); every other integer stays in the digest. */
+const NATIVE_CASE_WALL_CLOCK_INTEGERS = ['domains_retention_marks' => ['recorded_at']];
+
+/** Committed rows by table and rowid, decrypted, with password hashes, real-clock times and real-clock stamps masked. */
 function nativeCaseRows(): array
 {
     $pdo = DB::connection()->getPdo();
     $normal = static function (mixed $value): mixed {
-        // Epoch seconds from the real clock, such as the retention mark of an audit row.
-        if (is_int($value)) { return abs($value - time()) < 86400 ? 'wall-clock' : $value; }
         if (!is_string($value)) { return $value; }
         if (str_starts_with($value, '$2y$')) { return 'password-hash'; }
         if (str_starts_with($value, 'eyJpdiI6')) { try { $value = 'decrypted:'.Crypt::decryptString($value); } catch (Throwable) {} }
@@ -254,6 +255,9 @@ function nativeCaseRows(): array
         $rowid = $table === 'sqlite_sequence' ? 'name' : 'rowid';
         foreach ($pdo->query('SELECT '.$rowid.' AS fixture_rowid, * FROM main.'.$quoted.' ORDER BY 1')->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $key = $row['fixture_rowid']; unset($row['fixture_rowid']);
+            foreach (NATIVE_CASE_WALL_CLOCK_INTEGERS[$table] ?? [] as $column) {
+                if (is_int($row[$column] ?? null) && abs($row[$column] - time()) < 86400) { $row[$column] = 'wall-clock'; }
+            }
             $rows[$table][$key] = serialize(array_map($normal, $row));
         }
     }
