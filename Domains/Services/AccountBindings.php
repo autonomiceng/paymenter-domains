@@ -17,6 +17,7 @@ final class AccountBindings
     private const CREDENTIALS = 'domains_credentials';
     private const VERIFIED = 'domains_verified_credentials';
 
+    /** The old registry name is the container key until runtime assembly binds the Dispatch name. */
     public function __construct(private readonly RegistrarRegistry $registry) {}
 
     /** Provider identity or explicitly composed local enrollment; authentication never holds locks. */
