@@ -128,8 +128,8 @@ function nativeSchema(): array
 }
 
 /**
- * Capture committed rows, sequences, schema, container, events, config, auth, session, request, clocks, locale,
- * timezone, statics, globals, fake ports, queue fakes and storage files; the closure restores them all.
+ * Capture committed rows, sequences, schema, container, events, config (with the objects it holds), auth, session,
+ * request, clocks, locale, timezone, statics, globals, fake ports, queue fakes and storage files; the closure restores them all.
  */
 function nativeCaseCheckpoint(array $state = []): Closure
 {
@@ -157,6 +157,8 @@ function nativeCaseCheckpoint(array $state = []): Closure
         if ($value instanceof Illuminate\Support\Collection) { $value->each($walk); }
     };
     $walk($state);
+    // Paymenter keeps its settings in config as an object, and issuing an invoice advances its invoice number in place.
+    $walk(app('config')->all());
     $statics = nativeStatics();
     $globals = $GLOBALS;
     $clock = [date_default_timezone_get(), setlocale(LC_ALL, 0), app()->getLocale(), Carbon\Carbon::getLocale(),
