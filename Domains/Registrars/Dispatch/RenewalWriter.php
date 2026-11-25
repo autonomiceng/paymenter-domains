@@ -2,13 +2,13 @@
 // Enom d1392a8 Extend/UpdateExpiredDomains; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Dispatch;
-use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver,WireGate,WriteReservation};
+use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver,WriteReservation};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AdmittedOperation, Disposition, DriverResult, Evidence, RenewalEvidence, RejectionBasis, Money, RequestContext, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{RegistrationCommand, ResponseParser as EnomParser};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Environment as NameSiloEnvironment, Outcome, PurchaseMapping, ResponseParser as NameSiloParser};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit, EnomTestWriteReservation, NameSiloAccountGuard, OperationClaims, ReadDeferred, RenewalAcceptance, WriteFeatures, WriteHeld};
-/** Named bounded protocol port; default composition supplies no sender. One call consumes one live grant. */
+/** Named bounded protocol port; default composition supplies no sender. One call consumes one live grant from the engine's gate. */
 final class RenewalWriter implements AdmittedRegistrarDriver
 {
     private readonly \SensitiveParameterValue $exchange;
@@ -32,7 +32,7 @@ final class RenewalWriter implements AdmittedRegistrarDriver
     {return $this->reservationId!==null&&($this->reservation?->unconsumed($this->reservationId)??false);}
 
     public function __construct(private readonly AccountBinding $binding, private readonly WriteFeatures $features,
-        private readonly RenewalAcceptance $accepted, private readonly WireGate $gate, #[\SensitiveParameter] \Closure $exchange)
+        private readonly RenewalAcceptance $accepted, private readonly DispatchGate $gate, #[\SensitiveParameter] \Closure $exchange)
     { $this->exchange = new \SensitiveParameterValue($exchange); }
     public function guardAccount(RequestContext $context): void
     {

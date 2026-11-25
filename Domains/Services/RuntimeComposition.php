@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,ManagementProtocol,RegistrationProtocol,TransferProtocol};
 use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
-use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\{DispatchGate, RenewalWriter};
+use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter;
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAdmission, RenewalCompletion, RenewalExecution};
 /** Explicit deployment factory. No credentials, default exchanges, provider reads or processing changes. */
 final class RuntimeComposition
@@ -21,10 +21,9 @@ final class RuntimeComposition
             AcquisitionPort::registration($binding,$bindings,$clock,$features,$accepted,$registration,$profiles),
             AcquisitionPort::transfer($binding,$bindings,$clock,$features,$accepted,$transfer,$precheck,$profiles));
         $authority=new RenewalAuthority($bindings,$clock);
-        $gate=new DispatchGate;
-        $renewal=new RenewalExecution($bindings,$authority,new RenewalAdmission($authority,$bindings,$renewalAccepted,$clock),$renewalAccepted,$features,$clock,$gate);
+        $renewal=new RenewalExecution($bindings,$authority,new RenewalAdmission($authority,$bindings,$renewalAccepted,$clock),$renewalAccepted,$features,$clock);
         return ['acquisition'=>$acquisition,'reconciliation'=>new OperationReconciliation(new OperationClaims($bindings,$clock),$bindings,$clock),
-            'renewal'=>$renewal,'renewal_writer'=>new RenewalWriter($binding,$features,$renewalAccepted,$gate,$renewalExchange),
+            'renewal'=>$renewal,'renewal_writer'=>new RenewalWriter($binding,$features,$renewalAccepted,$renewal->gate,$renewalExchange),
             'renewal_completion'=>new RenewalCompletion($bindings,$clock),
             'management'=>new DomainManagement($bindings,$clock,$features,$managementAccepted,testManagement:$testManagement,localCheck:$managementAcceptanceCheck),'management_protocol'=>$management,
             ...($observationReader === null ? [] : ['observation_reader'=>$observationReader])];

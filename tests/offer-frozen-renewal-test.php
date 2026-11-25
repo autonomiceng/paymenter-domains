@@ -60,16 +60,16 @@ $features=new \Paymenter\Extensions\Servers\Domains\Services\WriteFeatures(renew
 $admission=new \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAdmission($authority,$renewBindings,$accepted,$clock);
 $engine=new \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalExecution($renewBindings,$authority,$admission,$accepted,$features,$clock);
 $atBoundary=false;$sends=0;
-$writer=new \Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter($binding,$features,$accepted,
-    new class($engine->gate,function()use($clock,$factsUntil,&$atBoundary){$atBoundary=true;$clock->instant=$factsUntil->modify('+1 second');})
-        implements \Paymenter\Extensions\Servers\Domains\Contracts\WireGate{
-        public function __construct(private \Paymenter\Extensions\Servers\Domains\Contracts\WireGate $gate,private Closure $atBoundary){}
-        public function consume(\Paymenter\Extensions\Servers\Domains\Data\AdmittedOperation $op,\Paymenter\Extensions\Servers\Domains\Data\RequestContext $context,
-            \Paymenter\Extensions\Servers\Domains\Contracts\AdmittedRegistrarDriver $writer): string{($this->atBoundary)();return $this->gate->consume($op,$context,$writer);}
-    },
+$writer=new \Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter($binding,$features,$accepted,$engine->gate,
     static function()use(&$sends){$sends++;throw new RuntimeException('Synthetic exchange must remain unused');});
+// The facts expire once the seal and its grant commit, before the writer consumes the grant.
+\Paymenter\Extensions\Servers\Domains\Models\Operation::updated(function($op)use($virgin,$clock,$factsUntil,&$atBoundary){
+    if($op->id!==$virgin->id||$op->state!=='running'){return;}
+    DB::afterCommit(function()use($clock,$factsUntil,&$atBoundary){$atBoundary=true;$clock->instant=$factsUntil->modify('+1 second');});
+});
 $engine->run($virgin->id,$writer);
 same(true,$atBoundary,'Expiry regression reaches the final spending boundary after successful admission');
 same(0,$sends,'Expired independent renewal facts authorize zero physical sends');
+same('renewal_definitely_unsent',$virgin->fresh()->policy['renewal_execution']['reason']??null,'The final consume refuses the expired grant before the wire');
 $nativeSuccessful=true;
 echo "Offer frozen renewals: ok\n";

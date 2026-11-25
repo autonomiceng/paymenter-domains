@@ -7,16 +7,19 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AdmittedOperation, DateEvidence, ExpiryPrecision, Money, Query, RenewalCode, RenewalDecision as AdmissionDecision, RenewalRequest, RequestBudget, RequestContext, RequestOrigin, SendFailure, SendState};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\{DispatchGate, RenewalWriter};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, ComplimentaryCosts, EnomLateRenewal, EnomTestCallLimit, EnomTestCalls, EnomTestRenewal, EnomTestWriteReservation, EntryDeadline, FreshTransaction, FundsWaits, HoldingLocks, InvoiceMoney, LateRenewalQuote, MoneyDecisions, MoneyRequest, ObligationAlerts, OperationClaims, ReadDeferred, RenewalAcceptance, RenewalAuthority, RenewalBusy, RenewalCycles, RenewalFunding, RenewalFundingLedger, RenewalHold, RenewalRefused, Runtime, WriteFeatures, WriteHeld, WriteMoney};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, ComplimentaryCosts, EnomLateRenewal, EnomTestCallLimit, EnomTestCalls, EnomTestRenewal, EnomTestWriteReservation, EntryDeadline, FreshTransaction, FundsWaits, HoldingLocks, LateRenewalQuote, MoneyDecisions, MoneyRequest, ObligationAlerts, OperationClaims, ReadDeferred, RenewalAcceptance, RenewalAuthority, RenewalBusy, RenewalCycles, RenewalFunding, RenewalFundingLedger, RenewalHold, RenewalRefused, Runtime, WriteFeatures, WriteHeld, WriteMoney};
 /** One sealed attempt. A durable row, request or admission decision is never a live grant. */
 final class RenewalExecution
 {
     /** Renewal steps deferred by database contention. The runtime turn hands them back to the operation queue. */
     public const KIND = 'renewal';
+    /** The only issuer of this engine's live grants; the paired writer consumes them. */
+    public readonly DispatchGate $gate;
+    private readonly RenewalStanding $standing;
     public function __construct(private readonly AccountBindings $bindings, private readonly RenewalAuthority $authority,
         private readonly RenewalAdmission $admission, private readonly RenewalAcceptance $accepted,
-        private readonly WriteFeatures $features, private readonly Clock $clock,
-        public readonly DispatchGate $gate = new DispatchGate) {}
+        private readonly WriteFeatures $features, private readonly Clock $clock)
+    { $this->standing = new RenewalStanding($bindings, $accepted, $features, $clock); $this->gate = new DispatchGate($bindings, $accepted, $features, $clock); }
     public function run(int $id, RenewalWriter $writer): Operation
     {
         $work=fn()=>EntryDeadline::run($this->clock, fn ($finishCap) => $this->runEntered($id, $writer, $finishCap));
@@ -70,7 +73,7 @@ final class RenewalExecution
         if ($next !== 'admit' || !RenewalCycles::registrarVirgin($op)) { return null; }
         if (FundsWaits::elapsed($op,$this->clock->now())) { return null; }
         if ($op->funding_basis === 'paid_invoice' && $l['invoices']->firstWhere('id', $op->invoice_id)?->status === 'pending') { return null; }
-        try { $this->current($op, $l); }
+        try { $this->standing->current($op, $l); }
         catch (RenewalHold $held) { $this->hold($op, $l, $held->reason, $held->reason === EnomLateRenewal::PAUSED); return null; }
         catch (RenewalRefused $refused) { $this->hold($op, $l, $refused->reason->value, $refused->reason === RenewalCode::Acceptance); return null; }
         catch (\PDOException|RenewalBusy $e) { throw $e; }
@@ -94,7 +97,7 @@ final class RenewalExecution
         $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
         if ($l['stamp'] !== $stamp || !$op || $op->transition_revision !== $admissionClaim
             || $op->renewal_admission_until <= $this->clock->now() || !RenewalDecision::awaitsAdmission($op->state) || !RenewalCycles::registrarVirgin($op)) { throw new \DomainException('Renewal changed.'); }
-        $funding = $this->current($op, $l); $writer->requirePolicy($binding, $this->features, $this->accepted);
+        $funding = $this->standing->current($op, $l); $writer->requirePolicy($binding, $this->features, $this->accepted);
         // Both admissions proved sufficient registrar funds; a later hold has its own cause.
         if(\Illuminate\Support\Facades\Schema::hasTable('domains_obligation_alerts')){
             DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','renewal_funds')->whereNull('resolved_at')
@@ -130,10 +133,7 @@ final class RenewalExecution
             'request_fingerprint' => $digest]);
         $descriptor = new AdmittedOperation($binding, new Query($name, Action::Renew, (int) $op->term), $op->operation_key, $claim,
             $d->authority_generation, $claim, $digest, $ready->cost, new DateEvidence($op->base_expires_at->format('Y-m-d'), ExpiryPrecision::Date, 'renewal_base'));
-        $fresh = HoldingLocks::take($d); $grant = ['stamp' => $fresh['stamp'], 'id' => $id, 'revision' => $op->transition_revision,
-            'mode' => $ready->status->value];
-        $this->gate->issue($descriptor, $reservedContext, $writer,
-            fn (AdmittedOperation $op, RequestContext $context, RenewalWriter $writer): string => $this->recheck($grant, $op, $context, $writer));
+        $this->gate->issue($descriptor, $reservedContext, $writer);
         return $descriptor;
     }
     /** Records the hold for a claim that never reached the seal. */
@@ -185,50 +185,6 @@ final class RenewalExecution
         $decision = MoneyDecisions::run(new MoneyRequest($seed, self::KIND, $id), $step);
         if ($decision->error) { throw $decision->error; }
         return $decision->value;
-    }
-    /** The grant's check at the last local boundary, after final reads and before the single wire call. Returns the send mode. */
-    private function recheck(array $grant, AdmittedOperation $op, RequestContext $context, RenewalWriter $writer): string
-    {
-        return FreshTransaction::run(function () use ($op, $context, $grant, $writer) {
-            $row = Operation::findOrFail($grant['id']); $l = HoldingLocks::take($row->domain()->firstOrFail()); $row = $l['operations']->firstWhere('id', $row->id);
-            $funding = $this->current($row, $l); $writer->requirePolicy($op->binding, $this->features, $this->accepted);
-            $matchesFunding = $row->funding_basis === 'paid_invoice'
-                ? RenewalFundingLedger::entries($row) === $funding['entries']
-                : $row->funding['seal'] === $funding;
-            $attempt = $row->attempt;
-            $reservationMatches = $l['stamp'] === $grant['stamp'] && ($attempt['seal'] ?? null) === 'sealed'
-                && ($attempt['claim_key'] ?? null) === $op->claimKey && $row->request_fingerprint === $op->desiredStateDigest;
-            if (!RenewalDecision::canSend($grant['revision'], $row->transition_revision, $row->state,
-                $reservationMatches, $matchesFunding, $row->lease_expires_at, $context->deadline, $this->clock->now())) {
-                throw new \DomainException('Sealed renewal authority changed.');
-            }
-            return $grant['mode'];
-        });
-    }
-    private function current(Operation $op, array $l): array
-    {
-        $this->configured($l);
-        if (($deadline=LateRenewalQuote::deadline($op)) !== null) {
-            if ($deadline <= $this->clock->now()->modify('+25 seconds')) { throw new RenewalRefused(RenewalCode::Grace); }
-            if (!EnomLateRenewal::accepted(AccountBindings::binding($l['account']))) { throw new RenewalHold(EnomLateRenewal::PAUSED, 'Late renewal Off for this account.'); }
-        }
-        if ($l['domain']->renewal_policy['automatic_spend_paused'] ?? false) { throw new RenewalHold('renewal_spend_paused', 'Renewal spending paused.'); }
-        if ($op->expected_expires_at > $this->clock->now()->modify('+10 years')) { throw new \DomainException('Renewal term too long.'); }
-        $funding = RenewalFunding::requireCurrent($op, $l);
-        if ($op->funding_basis === 'paid_invoice') {
-            // A gateway refund can reduce available money without changing any reserved native posting.
-            $peers = Operation::where('invoice_id', $op->invoice_id)->orderBy('id')->lockForUpdate()->get();
-            $money = InvoiceMoney::lockedRecord($l, $op->invoice_id, $peers);
-            RenewalDecision::requireFunding($funding['invoice_total_minor'], InvoiceMoney::held($money));
-        }
-        return $funding;
-    }
-    private function configured(array $l): void
-    {
-        try {
-            $this->features->requireEnabled(Action::Renew); $this->bindings->requireProcessingLocked($l['server'], $l['account']);
-            $this->accepted->requireCurrent(AccountBindings::binding($l['account']));
-        } catch (\PDOException $e) { throw $e; } catch (\Throwable $error) { throw new RenewalRefused(RenewalCode::Acceptance); }
     }
     private function hasPayment(Operation $op, array $l): bool
     {
