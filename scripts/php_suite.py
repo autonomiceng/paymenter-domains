@@ -16,14 +16,13 @@ CGROUP = Path('/sys/fs/cgroup')
 # Every suite process sees the same locale, zone and Git configuration, whatever the caller's.
 FIXED_INPUTS = {'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8', 'TZ': 'UTC', 'GIT_CONFIG_NOSYSTEM': '1',
                 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_OPTIONAL_LOCKS': '0', 'PYTHONDONTWRITEBYTECODE': '1'}
-HOST_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 
 
 def host_environment():
-    """The caller's environment for Git, Docker and tar on the host: system tools, the fixed inputs, and no Git or
-    tar overrides, so checkout inspection and image export see the same inputs whatever the caller set."""
+    """The caller's environment for Git, Docker and tar on the host, with the fixed inputs and no Git or tar
+    overrides, so checkout inspection and image export see the same inputs whatever the caller set."""
     kept = {key: value for key, value in os.environ.items() if not key.startswith('GIT_') and key != 'TAR_OPTIONS'}
-    return dict(kept, **FIXED_INPUTS, PATH=HOST_PATH, GIT_NO_REPLACE_OBJECTS='1')
+    return dict(kept, **FIXED_INPUTS, GIT_NO_REPLACE_OBJECTS='1')
 
 
 def runtime(*, native):
