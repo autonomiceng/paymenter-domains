@@ -1,6 +1,7 @@
 # Dormant offer work
 
 `Catalogue/Feed/OfferWork` owns the new path's account scheduling in `domains_observation_queues`.
+Its `FeedTurn` runs one claimed account turn and `FeedQueue` owns the locked queue row edits and saves.
 It is not registered, scheduled or called by current staff/public/holding flows. B6 supplies the
 checked activation and routes triggers here; legacy fill/sync work remains untouched until then.
 B6 must not run this seam beside the legacy `ObservationWork` consumer on shared queue rows.
