@@ -155,10 +155,7 @@ def main(scenario, *, private_copy=False):
             phase(name)
         if scenario == 'held':
             phase('held')
-            with closing(sqlite3.connect(database)) as source, closing(sqlite3.connect(root/'installed-seed.sqlite')) as target:
-                source.backup(target)
-            for group in ('balance', 'rotation', 'runtime'):
-                isolated_phase('identity-group-'+group)
+            # Staff identity, balance and rotation run from source in tests/enom-identity-*-test.php.
             phase('catalogue')
             phase('upload', 'current')
             phase('catalogue-retained')

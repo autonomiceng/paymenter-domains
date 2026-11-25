@@ -63,10 +63,9 @@ if($transferGroup){
         $app->instance(Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck::class,new Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck($rdap));
     });
 }
-if(str_starts_with($packagePhase,'identity-group-')||in_array($packagePhase,['identity','catalogue','catalogue-retained'],true)){
+if(in_array($packagePhase,['catalogue','catalogue-retained'],true)){
     $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\LoadConfiguration::class,
-        static fn()=>config(['domains.enom_identity.environment'=>'test',
-            'domains.enom_catalogue.enabled'=>!str_starts_with($packagePhase,'identity-group-')&&$packagePhase!=='identity']));
+        static fn()=>config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true]));
 }
 if(getenv('PACKAGE_PHASE')==='enom-live'){
     $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\LoadConfiguration::class,static fn()=>config(['domains.enom_identity.environment'=>'live','app.url'=>'https://billing.example.com']));

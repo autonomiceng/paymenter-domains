@@ -175,11 +175,6 @@ if($phase==='server-delete'){
     $enrollmentInstalledSmoke=true;
     require __DIR__.'/Support/namesilo-enrollment-staff.php';
     expect(str_starts_with((new ReflectionClass(Paymenter\Extensions\Servers\Domains\Services\NameSiloSandbox::class))->getFileName(),base_path('extensions/Servers/Domains/')),'Enrollment uses installed ZIP');
-}elseif(str_starts_with($phase,'identity-group-')){
-    $identityStaffGroup=substr($phase,strlen('identity-group-'));
-    expect(in_array($identityStaffGroup,['balance','rotation','runtime'],true),'Known identity guard group');
-    require __DIR__.'/Support/enom-identity.php';$GLOBALS['identityCalls']=[];
-    require __DIR__.'/Support/enom-identity-staff.php';
 }elseif($phase==='catalogue'){
     require __DIR__.'/Support/enom-catalogue-wire.php';
     require __DIR__.'/Support/enom-catalogue.php';
