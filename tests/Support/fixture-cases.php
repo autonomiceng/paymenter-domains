@@ -128,8 +128,8 @@ function nativeSchema(): array
 }
 
 /**
- * Capture committed rows, sequences, schema, container, events, config, auth, session, request, clocks, locale,
- * timezone, statics, globals, fake ports, queue fakes and storage files; the closure restores them all.
+ * Capture committed rows, sequences, schema, container, events, config (with the objects it holds), auth, session,
+ * request, clocks, locale, timezone, statics, globals, fake ports, queue fakes and storage files; the closure restores them all.
  */
 function nativeCaseCheckpoint(array $state = []): Closure
 {
@@ -157,6 +157,8 @@ function nativeCaseCheckpoint(array $state = []): Closure
         if ($value instanceof Illuminate\Support\Collection) { $value->each($walk); }
     };
     $walk($state);
+    // Paymenter keeps its settings in config as an object, and issuing an invoice advances its invoice number in place.
+    $walk(app('config')->all());
     $statics = nativeStatics();
     $globals = $GLOBALS;
     $clock = [date_default_timezone_get(), setlocale(LC_ALL, 0), app()->getLocale(), Carbon\Carbon::getLocale(),
@@ -234,7 +236,10 @@ function nativeRestoreStorage(array $files): void
     }
 }
 
-/** Committed rows by table and rowid, decrypted, with password hashes and real-clock times masked. */
+/** Integer columns stamped from the real clock with time(); every other integer stays in the digest. */
+const NATIVE_CASE_WALL_CLOCK_INTEGERS = ['domains_retention_marks' => ['recorded_at']];
+
+/** Committed rows by table and rowid, decrypted, with password hashes, real-clock times and real-clock stamps masked. */
 function nativeCaseRows(): array
 {
     $pdo = DB::connection()->getPdo();
@@ -250,6 +255,9 @@ function nativeCaseRows(): array
         $rowid = $table === 'sqlite_sequence' ? 'name' : 'rowid';
         foreach ($pdo->query('SELECT '.$rowid.' AS fixture_rowid, * FROM main.'.$quoted.' ORDER BY 1')->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $key = $row['fixture_rowid']; unset($row['fixture_rowid']);
+            foreach (NATIVE_CASE_WALL_CLOCK_INTEGERS[$table] ?? [] as $column) {
+                if (is_int($row[$column] ?? null) && abs($row[$column] - time()) < 86400) { $row[$column] = 'wall-clock'; }
+            }
             $rows[$table][$key] = serialize(array_map($normal, $row));
         }
     }

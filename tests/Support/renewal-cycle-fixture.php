@@ -6,14 +6,16 @@ $fixtureRegistrars=['enom'];
 require_once __DIR__.'/operation-fixture.php';
 // Every scenario retains real checkout, funded registration, reconciliation and its own renewal invoice.
 // Batch only acquisition to avoid rebuilding Livewire for each otherwise independent holding.
-$registrationNames=match($cycleFixtureGroup){
+// One checkout buys every case's holdings; each case consumes only its own group.
+$cycleGroups=[
     'unpaid'=>['renew-replacement',...array_map(static fn($case)=>'expiry-cancel-'.$case,['manual-on','manual-off','scheduled-on','scheduled-off','transaction','sent','collecting','pending','uncertain'])],
-    'complimentary'=>array_map(static fn($case)=>'complimentary-'.$case,['complete','revoked','unknown','over','exact','term','unauthorized']),
     'credit'=>array_map(static fn($case)=>'renew-credit'.($case===''?'':'-'.$case),['global-off','','default','scheduled','insufficient','exact','partial','settled','overpaid']),
     'early'=>array_map(static fn($case)=>'renew-'.$case,['early','dropped','early-window','early-processing','early-succeeded','early-failed','early-edge']),
     'late'=>array_map(static fn($case)=>'renew-late-'.$case,['partial','twice','frozen','declined','good','open']),
-};
-$registrationNames=array_map(static fn($name)=>placeholderComFixtureName($name.'-placeholder.com'),$registrationNames);
+    'complimentary'=>array_map(static fn($case)=>'complimentary-'.$case,['complete','revoked','unknown','over','exact','term','unauthorized']),
+];
+$cycleGroups=array_map(static fn(array $names)=>array_map(static fn($name)=>placeholderComFixtureName($name.'-placeholder.com'),$names),$cycleGroups);
+$registrationNames=array_merge(...array_values($cycleGroups));
 same(count($registrationNames),count(array_unique($registrationNames)),'Every cycle scenario has an independent acquisition');
 $runtime=app()->bound(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)?app(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class):null;
 app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);
@@ -31,10 +33,12 @@ try {
     $invoice=App\Models\Invoice::findOrFail($registration->invoice_id);
     same(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($invoice->total),\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$invoice->transactions()->sum('amount')),'Batch acquisition is exactly funded');
 } finally {if($runtime!==null){app()->instance(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class,$runtime);}}
-$new=static function(string $name,bool $paid=true,bool $setup=true,string $action='register',int $term=1)use(&$registrations){
+// The prepared lookup stays immutable; consumption is a plain global the case reset restores by value.
+$cycleConsumed=[];
+$new=static function(string $name,bool $paid=true,bool $setup=true,string $action='register',int $term=1)use($registrations){
     same([true,true,'register',1],[$paid,$setup,$action,$term],'Cycle acquisition keeps the original paid annual registration contract');
-    expect(isset($registrations[$name]),'Each acquisition is consumed exactly once: '.$name);
-    $op=$registrations[$name];unset($registrations[$name]);return $op->fresh();
+    expect(isset($registrations[$name])&&!isset($GLOBALS['cycleConsumed'][$name]),'Each acquisition is consumed exactly once: '.$name);
+    $GLOBALS['cycleConsumed'][$name]=true;return $registrations[$name]->fresh();
 };
 require __DIR__.'/renewal-execution.php';
 $at=static fn(string $when)=>new DateTimeImmutable($when);

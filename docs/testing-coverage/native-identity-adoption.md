@@ -213,22 +213,23 @@ and makes no provider calls. Shared-database concurrency and activation remain o
 
 ### Adopted renewal authority
 
-- `adopted-renewal-test.php`: a live-bound native holding with no acquisition
-  operation issues/funds a renewal invoice, executes through an intercepted fake
-  sender, completes two cycles, advances the verified anchor and retains original
-  snapshot/evidence bytes and pointer.
-- `adopted-renewal-refusals-test.php`: independent link, fingerprint, generation,
-  stale/unconfirmed revision, expiry, provider ID, owner/order relation, ciphertext
-  and missing-holding cases; explicit staff-review projection and adversarial
-  purchase-guard separation. Refusals create no obligation or provider work.
+- `adopted-renewal-test.php` runs three cases on one live-bound adoption:
+  - `renewal`: a native holding with no acquisition operation issues/funds a
+    renewal invoice, executes through an intercepted fake sender, completes two
+    cycles, advances the verified anchor and retains original snapshot/evidence
+    bytes and pointer.
+  - `refusals`: independent link, fingerprint, generation, stale/unconfirmed
+    revision, expiry, provider ID, owner/order relation, ciphertext and
+    missing-holding cases; explicit staff-review projection and adversarial
+    purchase-guard separation. Refusals create no obligation or provider work.
+  - `complimentary`: first adopted complimentary renewal uses the shared union; an
+    unverified current revision cannot reuse complimentary authority.
 - `adopted-test-environment-test.php`: internally consistent TEST account, adoption
   and holding evidence still cannot anchor renewal.
 - Existing checkout, funding, acquisition, management and observation suites remain
   the regression coverage for the genuine checkout branch.
 - `adopted-renewal-history-test.php`: frozen, proved-unsent history from the prior
   generation permits both renewal cycles; changed history is refused.
-- `adopted-complimentary-test.php`: first adopted complimentary renewal uses the
-  shared union; an unverified current revision cannot reuse complimentary authority.
 - The existing Eloquent Model upgrade hash also covers the Domain save boundary;
   its contract names attachment savepoints and checks after public model callbacks.
 
