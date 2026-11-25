@@ -14,7 +14,7 @@ LIMIT = 40
 OVERSIZED = {
     'Domains/Admin/Support': 74,
     'Domains/Data': 61,
-    'Domains/Services': 317,
+    'Domains/Services': 314,
     'Domains/resources/views/partials': 49,
 }
 
