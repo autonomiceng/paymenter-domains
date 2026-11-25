@@ -6,6 +6,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver, Reg
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AdmittedOperation, DispatchReadiness, DriverResult, RequestContext};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\RegistrationPreflight;
+use Paymenter\Extensions\Servers\Domains\Transfer\Input\TransferPreflight;
 /** Named bridge only; raw mappings and descriptors cannot bypass the live engine + durable checks. */
 abstract class RegistrationBridge implements AdmittedRegistrarDriver, WriteGate
 {

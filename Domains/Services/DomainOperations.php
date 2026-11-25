@@ -7,6 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver, Clo
 use Paymenter\Extensions\Servers\Domains\Data\{BalanceRetry, AccountBinding, AdmittedOperation, Disposition, DriverResult, Money, RejectionBasis, ResultReason, SendState, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Transfer\Input\TransferPreflight;
 
 /** Dormant internal facade; no installed queue registration, completion or refund policy. */
 final class DomainOperations
