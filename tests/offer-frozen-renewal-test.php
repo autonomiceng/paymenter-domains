@@ -61,7 +61,12 @@ $admission=new \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAd
 $engine=new \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalExecution($renewBindings,$authority,$admission,$accepted,$features,$clock);
 $atBoundary=false;$sends=0;
 $writer=new \Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter($binding,$features,$accepted,
-    function()use($clock,$factsUntil,$engine,&$atBoundary){$atBoundary=true;$clock->instant=$factsUntil->modify('+1 second');return $engine;},
+    new class($engine->gate,function()use($clock,$factsUntil,&$atBoundary){$atBoundary=true;$clock->instant=$factsUntil->modify('+1 second');})
+        implements \Paymenter\Extensions\Servers\Domains\Contracts\WireGate{
+        public function __construct(private \Paymenter\Extensions\Servers\Domains\Contracts\WireGate $gate,private Closure $atBoundary){}
+        public function consume(\Paymenter\Extensions\Servers\Domains\Data\AdmittedOperation $op,\Paymenter\Extensions\Servers\Domains\Data\RequestContext $context,
+            \Paymenter\Extensions\Servers\Domains\Contracts\AdmittedRegistrarDriver $writer): string{($this->atBoundary)();return $this->gate->consume($op,$context,$writer);}
+    },
     static function()use(&$sends){$sends++;throw new RuntimeException('Synthetic exchange must remain unused');});
 $engine->run($virgin->id,$writer);
 same(true,$atBoundary,'Expiry regression reaches the final spending boundary after successful admission');

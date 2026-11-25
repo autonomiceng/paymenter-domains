@@ -85,7 +85,7 @@ $compose = static function ($binding, bool $enabled = true, bool $grace = true) 
     $accepted = new RenewalAcceptance($binding, true, true, 25, $grace); $features = new WriteFeatures(renewal: $enabled);
     $service = new RenewalAdmission($authority, $renewBindings, $accepted, $clock);
     $engine = new RenewalExecution($renewBindings, $authority, $service, $accepted, $features, $clock);
-    $writer = new RenewalWriter($binding, $features, $accepted, fn () => $engine, static function ($origin, $command, $params, $timeout) use ($state) {
+    $writer = new RenewalWriter($binding, $features, $accepted, $engine->gate, static function ($origin, $command, $params, $timeout) use ($state) {
         same(0, DB::transactionLevel(), 'Renewal wire outside locks'); expect($timeout > 0 && $timeout <= 25000, 'Bounded write timeout');
         same('https://resellertest.enom.com/interface.asp', $origin, 'Fixed test origin');
         same('no', $params['UseCreditCard'], 'Account balance only'); $state->writes++; $state->lastWrite = [$command,$params];

@@ -130,7 +130,7 @@ $features = new \Paymenter\Extensions\Servers\Domains\Services\WriteFeatures(ren
 $authorityPort = new RenewalAuthority($bindings, $clock,offers: $GLOBALS['caps']??null);
 $admission = new \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAdmission($authorityPort, $bindings, $accepted, $clock);
 $engine = new \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalExecution($bindings, $authorityPort, $admission, $accepted, $features, $clock);
-$writes = 0; $writer = new \Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter($binding, $features, $accepted, fn () => $engine, static function () use (&$writes): never { $writes++; throw new LogicException('Forbidden renewal send'); });
+$writes = 0; $writer = new \Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter($binding, $features, $accepted, $engine->gate, static function () use (&$writes): never { $writes++; throw new LogicException('Forbidden renewal send'); });
 $calls = count($wire->calls);
 same('held', $engine->run($op->id, $writer)->state, 'Direct installed executor holds funded DNR before admission');
 same('renewal_funding_or_authority', $op->fresh()->safe_code, 'Executor reaches current funding/authority refusal');
@@ -142,11 +142,11 @@ $descriptor = new \Paymenter\Extensions\Servers\Domains\Data\AdmittedOperation($
     new \Paymenter\Extensions\Servers\Domains\Data\DateEvidence($d->provider_expires_at->format('Y-m-d'), \Paymenter\Extensions\Servers\Domains\Data\ExpiryPrecision::Date, 'renewal_base'));
 $ctx = new \Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding, \Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background,
     $clock->now()->modify('+60 seconds'), new \Paymenter\Extensions\Servers\Domains\Data\RequestBudget(1), $clock);
-$grantMap = (new ReflectionProperty($engine, 'grants'))->getValue($engine);
-$grantMap[$descriptor] = ['context' => $ctx, 'stamp' => $l['stamp'], 'id' => $op->id,
-    'revision' => $op->fresh()->transition_revision, 'mode' => 'ordinary', 'writer' => $writer];
+$recheck = (new ReflectionMethod($engine, 'recheck'))->getClosure($engine);
+$grant = ['stamp' => $l['stamp'], 'id' => $op->id, 'revision' => $op->fresh()->transition_revision, 'mode' => 'ordinary'];
+$engine->gate->issue($descriptor, $ctx, $writer, fn ($op, $context, $writer) => $recheck($grant, $op, $context, $writer));
 try {
-    $engine->consume($descriptor, $ctx, $writer);
+    $engine->gate->consume($descriptor, $ctx, $writer);
     throw new LogicException('Last local consume boundary admitted a stopped renewal');
 } catch (\Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalUnsent $refusal) {
     expect($refusal->getPrevious()?->getMessage() === $stopReason, 'Final consume preserves the funding authority refusal');

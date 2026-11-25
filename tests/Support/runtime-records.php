@@ -39,7 +39,7 @@ $registerRecords=static function()use($runtimePorts,$b,$bindings,$clock,$engine,
     $features=new WriteFeatures(true,true,true,true);$authority=new RenewalAuthority($bindings,$clock,offers: $GLOBALS['caps']??null);$accept=new RenewalAcceptance($b,true,true,25);
     $renewal=new RenewalExecution($bindings,$authority,new RenewalAdmission($authority,$bindings,$accept,$clock),$accept,$features,$clock);
     $composition=['acquisition'=>offlineAcquisition($b,$bindings,$clock,$features,static fn()=>throw new LogicException('No acquisition exchange')),'reconciliation'=>$reconcile,'renewal'=>$renewal,
-        'renewal_writer'=>new RenewalWriter($b,$features,$accept,fn()=>$renewal,static fn()=>throw new LogicException('No renewal transport')),
+        'renewal_writer'=>new RenewalWriter($b,$features,$accept,$renewal->gate,static fn()=>throw new LogicException('No renewal transport')),
         'renewal_completion'=>new RenewalCompletion($bindings,$clock),'management'=>$management,'management_protocol'=>$driver];
     $runtimePorts->register($b->fingerprint,static function()use($composition,&$compositionReady){return $compositionReady?$composition:[];});
 };

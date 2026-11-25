@@ -88,7 +88,7 @@ $wired=static function($binding)use($renewBindings,$authority,$bindings,$clock):
         static fn()=>['uid'=>'account-enom','token'=>'synthetic-offline-token']);
     $wire=(new ReflectionFunction($factory))->getStaticVariables()['wire'];$exchange=(new ReflectionMethod($wire,'exchange'))->invoke($wire,'renewal');
     $engine=new RenewalExecution($renewBindings,$authority,new RenewalAdmission($authority,$renewBindings,$accepted,$clock),$accepted,$features,$clock);
-    return [$engine,new RenewalWriter($binding,$features,$accepted,fn()=>$engine,$exchange)];
+    return [$engine,new RenewalWriter($binding,$features,$accepted,$engine->gate,$exchange)];
 };
 // Checkout runs under the default policy; the TEST policy applies only to the runs.
 $make=static function(string $name)use($makeRenewal,$checkoutPolicy):array {$test=array_map(static fn($k)=>config($k),array_combine(array_keys($checkoutPolicy),array_keys($checkoutPolicy)));config($checkoutPolicy);try{return $makeRenewal(placeholderComFixtureName($name));}finally{config($test);}};

@@ -18,7 +18,7 @@ $billing=new DomainBilling($bindings,$guard,$clock,catalogue: $GLOBALS['caps']??
 $accepted=new RenewalAcceptance($binding,true,true,25);$features=new WriteFeatures(renewal:true);
 $engine=new RenewalExecution($renewBindings,$authority,new RenewalAdmission($authority,$renewBindings,$accepted,$clock),$accepted,$features,$clock);
 $accountGuard=(object)['email'=>'expected@example.com','id'=>'900','default'=>'1','mode'=>'singleton','reads'=>0];$writes=0;
-$writer=new RenewalWriter($binding,$features,$accepted,fn()=>$engine,static function($origin,$command,$params,$ms)use(&$writes,$accountGuard){
+$writer=new RenewalWriter($binding,$features,$accepted,$engine->gate,static function($origin,$command,$params,$ms)use(&$writes,$accountGuard){
     if($command==='contactList'&&$params===[]){return nameSiloGuardWire($accountGuard);}
     same('renewDomain',$command,'Only the original renewal dispatch');$writes++;
     return json_encode(['request'=>['operation'=>'renewDomain'],'reply'=>['code'=>300,'detail'=>'synthetic','domain'=>'native-history-placeholder.com','order_amount'=>'8.95']]);
