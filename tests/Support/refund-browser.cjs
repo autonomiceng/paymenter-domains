@@ -69,6 +69,8 @@ async function answer(route) {
   if (file) return route.fulfill({ path: file });
   try {
     const reply = await call(request.method(), request.url(), await request.allHeaders(), request.postDataBuffer() ?? Buffer.alloc(0));
+    // Chromium sends the target of a fulfilled redirect to the network, outside this driver.
+    if (reply.status >= 300 && reply.status < 400) throw new Error(`Redirect from ${url.pathname} to ${reply.headers.Location ?? reply.headers.location}`);
     const headers = reply.cookies.length ? { ...reply.headers, 'set-cookie': reply.cookies.join('\n') } : reply.headers;
     return await route.fulfill({ status: reply.status, headers, body: reply.body });
   } catch (error) {

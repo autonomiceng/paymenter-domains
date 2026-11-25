@@ -24,12 +24,13 @@ $app->booted(static function()use($app):void{
         public function __construct(private DateTimeImmutable $instant) {}
         public function now(): DateTimeImmutable { return $this->instant; }
     });
-    // Test-only sign-in: the theme's login page needs compiled assets this fixture does not have.
+    // Test-only sign-in: the theme's login page needs compiled assets this fixture does not have. It answers directly,
+    // since Chromium sends the target of an intercepted redirect to the network.
     Illuminate\Support\Facades\Route::middleware('web')->get('/refund-browser-login',static function(){
         $user=App\Models\User::where('email',(string)getenv('REFUND_BROWSER_EMAIL'))->sole();
         Illuminate\Support\Facades\Auth::login($user);session()->regenerate();
         session()->put('user_session',App\Models\UserSession::create(['user_id'=>$user->id,'last_activity'=>now()])->ulid);
-        return redirect('/admin');
+        return response()->noContent();
     });
     // Test-only readout of the saved money, decrypted the same way the app reads it.
     Illuminate\Support\Facades\Route::get('/refund-browser-facts',static function(){
