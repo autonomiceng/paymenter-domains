@@ -27,9 +27,8 @@ python3 scripts/test.py --jobs 2 --only \
   tests/adopted-renewal-deadline-test.php tests/adopted-renewal-history-test.php \
   tests/adopted-renewal-refusals-test.php tests/adopted-renewal-test.php \
   tests/adopted-test-environment-test.php tests/adoption-commit-test.php \
-  tests/adoption-consequences-test.php tests/adoption-customer-test.php \
-  tests/adoption-enom-test.php tests/adoption-enrollment-test.php \
-  tests/adoption-intent-test.php tests/adoption-preview-guards-test.php \
+  tests/adoption-confirm-test.php tests/adoption-customer-test.php \
+  tests/adoption-enom-test.php \
   tests/adoption-preview-test.php tests/adoption-renewal-intent-test.php \
   tests/adoption-storage-test.php tests/api-test.php \
   tests/balance-recording-rule-test.php tests/binding-test.php \

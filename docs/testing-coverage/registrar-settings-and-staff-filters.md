@@ -51,7 +51,7 @@ confirmation makes zero provider calls. This is not concurrent database acceptan
 A3 core also renders the native holding review warning for retained billing-window
 and price alerts, checks cutoff wording and excludes arbitrary provider alert text.
 
-A3 history `adoption-consequences-test.php` covers exact paid/cancelled invoice links,
+A3 history (`adoption-confirm-test.php` consequences case) covers exact paid/cancelled invoice links,
 fresh invoice-view permission, pending-debt refusal, cancellation/history exceptions
 and first/second save veto rollback. Real DNR confirmation retains active/null native
 expiry, original history/cancellation on replay and byte-identical money. Scheduled,
@@ -59,7 +59,7 @@ manual, complimentary, reminder, funded-admission/funding, installed dispatch an
 direct executor paths refuse renewal; sent outcomes remain reconcilable. A fully
 funded counterfactual proves the funding refusal is the DNR boundary. Expired display
 is read-only and keeps the reservation. Original cancellation deletion refuses; a
-privileged missing-row fixture fails authority closed. `adoption-intent-test.php`
+privileged missing-row fixture fails authority closed. Its intent case
 checks immediate conflict, existing stop reuse and cross-object grant isolation;
 `adoption-renewal-intent-test.php` checks a later ordinary end-of-period owner stop.
 These use serialized SQLite and closed fake transport, without concurrency acceptance.

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/adoption-confirm.php';
 require __DIR__.'/storefront.php';
+require_once __DIR__.'/fixture-cases.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\StaffContext;
 use Paymenter\Extensions\Servers\Domains\Models\Adoption;
@@ -23,10 +24,10 @@ function adoptionSettingRow(string $html, string $label): ?array
     }
     return null;
 }
-/** The original customer matrix, partitioned without replacing native finance. */
-function adoptionCustomerScenario(string $part): void
+/** The original customer matrix, partitioned without replacing native finance; several parts share one prepared fixture. */
+function adoptionCustomerScenario(string ...$parts): void
 {
-if(!in_array($part,['display','renewal','replacements'],true)){throw new InvalidArgumentException('Unknown adoption customer partition');}
+if($parts===[]||array_diff($parts,['display','renewal','replacements'])!==[]){throw new InvalidArgumentException('Unknown adoption customer partition');}
 extract(adoptionCommitFixture(registrars:['enom'])); require dirname(__DIR__,2).'/Domains/routes/owned.php'; storefrontViews();
 $old=App\Models\Invoice::create(['user_id'=>$owner->id,'currency_code'=>'USD','status'=>'paid','number'=>'H-100']);
 $old->items()->create(['reference_type'=>$service->getMorphClass(),'reference_id'=>$service->id,'description'=>'Historical registration','quantity'=>1,'price'=>'13.00']);
@@ -35,6 +36,8 @@ $collision=App\Models\Invoice::create(['user_id'=>$owner->id,'currency_code'=>'U
 $r=$reader->preview($target,new StaffContext($staff->id,'Verified original customer',true));$a=Adoption::findOrFail($r->previewId);$d=$commit->confirm($a->request_key,$a->request_digest,$staff);
 config(['settings.company_name'=>' <Synthetic & Company> ']);
 $billing=new DomainBilling($bindings,$guard,$clock,catalogue: $GLOBALS['caps']??null);$owners=new OwnedDomains($clock,new OwnerPorts(),billing:$billing);$dto=$owners->present($d,false);
+$prepared=get_defined_vars();
+$run=static function(string $part)use($prepared):void {extract($prepared);
 if($part==='display'){
 same('Off',$dto->renewal,'DNR badge');same(['label'=>'Imported','state'=>'Completed'],$dto->progress[0],'Adoption activity');same($old->fresh()->number,$dto->history[0]['number'],'Batch native invoice number');same('Paid',$dto->history[0]['status'],'Historical invoice label');same(null,$dto->plannedRenewalDue,'No future due CTA for DNR');
 same(route('invoices.show',$old->fresh()),$dto->history[0]['url'],'Historical URL uses native number route key despite numeric ID collision');
@@ -158,4 +161,7 @@ foreach(['unpaid','refund'] as $replacementCase){
     $reviewedId=$replacement->id;$reviewed=$replacement->fresh()->getRawOriginal();
 }
 same($reviewed,Operation::findOrFail($reviewedId)->getRawOriginal(),'Adopted replacement retains reviewed refund evidence');
+};
+if(count($parts)===1){$run($parts[0]);return;}
+nativeFixtureCases(array_combine($parts,array_map(static fn(string $part)=>static fn()=>$run($part),$parts)),$prepared);
 }
