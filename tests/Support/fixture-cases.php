@@ -246,8 +246,9 @@ function nativeRestoreStorage(array $files): void
     }
 }
 
-/** Integer columns stamped from the real clock with time(); every other integer stays in the digest. */
-const NATIVE_CASE_WALL_CLOCK_INTEGERS = ['domains_retention_marks' => ['recorded_at']];
+/** Integer columns stamped from the real clock with time(); every other integer stays in the digest. Staff review
+ * keys expire 15 minutes after the real issue time of their signed ticket. */
+const NATIVE_CASE_WALL_CLOCK_INTEGERS = ['domains_retention_marks' => ['recorded_at'], 'domains_staff_review_keys' => ['expires_at']];
 
 /** Committed rows by table and rowid, decrypted, with password hashes, real-clock times and real-clock stamps masked. */
 function nativeCaseRows(): array
