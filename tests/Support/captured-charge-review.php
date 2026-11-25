@@ -84,6 +84,7 @@ try{foreach(array_intersect_key($chargeCases,[$capturedCase=>true])as$case=>[$li
  Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('approve_charge')->assertDontSee('16.01')->assertDontSee('16.02');$role->update(['permissions'=>$rights]);
  // Approval needs its own permission, even with a current ticket and the same proof.
  $role->update(['permissions'=>array_values(array_diff($rights,['admin.domains.operations.approve_charge']))]);
+ Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('approve_charge');
  $key=\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ticket($staff->id,$d->id,$op->id,'approve_charge',\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($op->fresh(),$d->fresh()),$clock);$before=[$op->fresh()->getRawOriginal(),$d->fresh()->getRawOriginal()];
  try{(new \Paymenter\Extensions\Servers\Domains\Services\StaffOperations($clock))->run($staff,$d->id,$op->id,'approve_charge',$key,'Approve without the approval permission');expect(false,'Missing approval permission must refuse');}catch(DomainException $refused){same("You don't have permission to do this.",$refused->getMessage(),'Refused for the missing approval permission');}
  same($before,[$op->fresh()->getRawOriginal(),$d->fresh()->getRawOriginal()],'Missing approval permission changes nothing');$role->update(['permissions'=>$rights]);
