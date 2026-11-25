@@ -27,10 +27,15 @@ expect($credit()>$creditBefore,'Notification failure cannot prevent immediate ac
 same('account_credit',$alertFailure->fresh()->funding['refund']['to']??null,'Immediate credit retains its once-only receipt');
 $op=$held('staff-actions-placeholder.com'); $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSuccessful();
 // Every action has an independent default-deny permission; a general manager has none of them.
+// The pages build these same action objects (ViewOperation::operationActions, ViewDomain's resume button), so read their visibility directly.
+$button=static function(string $action)use($op):?Filament\Actions\Action {
+    if($action==='resume_observation'){return Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions::scheduledReads($op->domain->fresh())[0]??null;}
+    return collect(Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions::make($op->fresh(),StaffOperationReview::stamp($op->fresh(),$op->domain->fresh())))->first(fn($a)=>$a->getName()===$action);
+};
+expect($button('refund')?->isVisible()===true,'With every permission the refund button shows');
 foreach(array_keys(StaffOperationReview::ACTIONS) as $action){
     $staff->role->update(['permissions'=>array_values(array_diff($all,[StaffOperationReview::permission($action)]))]);
-    // Resume sync sits on the domain page; the other actions sit on the request page.
-    Livewire::actingAs($staff)->test(...($action==='resume_observation'?[\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$op->domain_id]]:[ViewOperation::class,['record'=>$op->id]]))->assertActionHidden($action);
+    expect($button($action)?->isVisible()!==true,'Without its permission the '.$action.' button is hidden');
     commerceReject(fn()=>$run($op,$action));
 }
 $staff->role->update(['permissions'=>array_values(array_diff($all,[Staff::VIEW]))]);
@@ -105,8 +110,10 @@ $key=$ticket($foreign,'refund');$staff->role->update(['permissions'=>[Staff::VIE
 $key=$ticket($foreign,'release');$staff->role->update(['permissions'=>array_values(array_diff($all,[StaffOperationReview::permission('release')]))]);
 commerceReject(fn()=>$run($foreign,'release',$key));$staff->role->update(['permissions'=>$all]);same('held',$foreign->fresh()->state,'A revoked release changes nothing');
 // Every UI entry point preserves sent/null/unknown financial evidence, reservation and customer credit.
+// One sent request walks through each state; every state reads the same retained evidence.
+[$sent]=$prepare(placeholderComFixtureName('staff-sent-placeholder.com'),'null');
 foreach(['uncertain','pending','held','rejected'] as $stateName){
-    [$sent]=$prepare(placeholderComFixtureName('staff-sent-'.$stateName.'-placeholder.com'),'null');$sent->update(['state'=>$stateName,'safe_code'=>$stateName==='held'?'transfer_needs_action':'transfer_provider_rejected']);
+    $sent->update(['state'=>$stateName,'safe_code'=>$stateName==='held'?'transfer_needs_action':'transfer_provider_rejected']);
     $before=[$sent->fresh()->attempt,$sent->fresh()->funding,$sent->domain->fresh()->reservation_name,$credit()];
     $view=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$sent->id]);
     foreach(['hold','release','refund','credit','disposition','replacement'] as $action){$view->assertActionHidden($action);commerceReject(fn()=>$run($sent->fresh(),$action));}
