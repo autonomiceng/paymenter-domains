@@ -9,8 +9,15 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 import native
 import installed_fixture
+import php_suite
+
+# Writable per-user locations, each inside the command's own root.
+PRIVATE_PATHS = {'HOME': 'home', 'XDG_CONFIG_HOME': 'home/.config', 'XDG_DATA_HOME': 'home/.local/share',
+                 'XDG_STATE_HOME': 'home/.local/state', 'XDG_CACHE_HOME': 'cache', 'XDG_RUNTIME_DIR': 'run',
+                 'TMPDIR': 'tmp', 'TMP': 'tmp', 'TEMP': 'tmp'}
 
 
 def runtime_hashes(root):
@@ -123,29 +130,53 @@ def pristine_fixture_check(env, original):
                    force_vendor=True)
 
 
+def case_environment(env: dict[str, str], root: Path, *, keep: frozenset[str] = frozenset()) -> dict[str, str]:
+    """Point home, cache, runtime and temporary paths into ROOT; KEEP names caller values that stay."""
+    child = dict(env, **php_suite.FIXED_INPUTS)
+    for name, relative in PRIVATE_PATHS.items():
+        if name in keep and name in env:
+            continue
+        path = root/relative
+        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        child[name] = str(path)
+    return child
+
+
 @contextmanager
-def command_environment(env):
-    """Dispose of each case's app. The suite verifies the shared inputs."""
-    if not env or not env.get('PAYMENTER_TEST_FIXTURE'):
+def case_root(env: dict[str, str], *, keep: frozenset[str] = frozenset()):
+    """A private root for one command that does not need its own app copy."""
+    with tempfile.TemporaryDirectory(prefix='domains-case-', dir=env.get('TMPDIR')) as name:
+        yield case_environment(env, Path(name), keep=keep)
+
+
+@contextmanager
+def command_environment(env, *, keep: frozenset[str] = frozenset()):
+    """Give each command private home, cache and temporary paths, and its own disposable app.
+
+    The suite verifies the shared inputs."""
+    if not env:
         yield env
+        return
+    if not env.get('PAYMENTER_TEST_FIXTURE'):
+        with case_root(env, keep=keep) as child:
+            yield child
         return
     fixture = Path(env['PAYMENTER_TEST_FIXTURE'])
     with installed_fixture.application(fixture, 'case', verify_vendor=False) as (root, app):
-        temporary = root/'tmp'
-        temporary.mkdir()
-        yield dict(env, PAYMENTER_TEST_FIXTURE=str(app), TMPDIR=str(temporary),
-                   TMP=str(temporary), TEMP=str(temporary))
+        yield case_environment(dict(env, PAYMENTER_TEST_FIXTURE=str(app)), root, keep=keep)
 
 
 def prepare_database(env, output, root):
     snapshot = output/'core-database.sql'
-    subprocess.run([str(root/'scripts/php-test'), 'tests/native-database.php'], cwd=root,
-                   env=dict(env, PAYMENTER_TEST_DATABASE_EXPORT=str(snapshot)), check=True, timeout=10)
+    with case_root(env) as child:
+        subprocess.run([str(root/'scripts/php-test'), 'tests/native-database.php'], cwd=root,
+                       env=dict(child, PAYMENTER_TEST_DATABASE_EXPORT=str(snapshot)), check=True, timeout=10)
     env.update(PAYMENTER_TEST_DATABASE=str(snapshot),
                PAYMENTER_TEST_DATABASE_SHA256=hashlib.sha256(snapshot.read_bytes()).hexdigest())
     installed = output/'commerce-database.sql'
-    subprocess.run([str(root/'scripts/php-test'), 'tests/commerce-database.php'], cwd=root,
-                   env=dict(env, PAYMENTER_TEST_COMMERCE_EXPORT=str(installed)), check=True, timeout=10)
+    with case_root(env) as child:
+        subprocess.run([str(root/'scripts/php-test'), 'tests/commerce-database.php'], cwd=root,
+                       env=dict(child, PAYMENTER_TEST_COMMERCE_EXPORT=str(installed)), check=True, timeout=10)
     env.update(PAYMENTER_TEST_COMMERCE_DATABASE=str(installed),
                PAYMENTER_TEST_COMMERCE_SHA256=hashlib.sha256(installed.read_bytes()).hexdigest())
 

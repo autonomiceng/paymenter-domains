@@ -13,6 +13,9 @@ SCRIPTS = Path(__file__).resolve().parent
 RECIPE = SCRIPTS / 'php-suite.Dockerfile'
 RUNTIME = Path('/opt/php-suite/runtime')
 CGROUP = Path('/sys/fs/cgroup')
+# Every suite process sees the same locale, zone and Git configuration, whatever the caller's.
+FIXED_INPUTS = {'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8', 'TZ': 'UTC', 'GIT_CONFIG_NOSYSTEM': '1',
+                'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_OPTIONAL_LOCKS': '0', 'PYTHONDONTWRITEBYTECODE': '1'}
 
 
 def runtime(*, native):
@@ -209,9 +212,11 @@ def domains(root, arguments, *, history=None):
         receipts = Path(os.environ.get('DOMAINS_TEST_RECEIPTS', output/'resources')).resolve()
         receipts.mkdir(exist_ok=True)
         budget = root/'scripts/case_budget.py'
-        env = dict(PATH='/usr/local/bin:/usr/bin:/bin', LANG='C.UTF-8', HOME='/tmp', TMPDIR=str(output),
-                   GIT_OPTIONAL_LOCKS='0', GIT_NO_REPLACE_OBJECTS='1', PYTHONDONTWRITEBYTECODE='1',
-                   DOMAINS_TEST_CGROUP=str(group),
+        # The runner's own home; each command gets a private one inside its case root.
+        home = output/'home'
+        home.mkdir(mode=0o700)
+        env = dict(FIXED_INPUTS, PATH='/usr/local/bin:/usr/bin:/bin', HOME=str(home), TMPDIR=str(output),
+                   GIT_NO_REPLACE_OBJECTS='1', DOMAINS_TEST_CGROUP=str(group),
                    DOMAINS_TEST_BUDGET=str(budget), DOMAINS_TEST_RECEIPTS=str(receipts))
         # A delegated wide run supplies its own per-category limits. The repository
         # controller enforces both profiles and writes the same per-command receipts.
@@ -236,15 +241,15 @@ def domains(root, arguments, *, history=None):
             mounts[history] = history
             arguments = [*arguments, '--timings-from', str(history)]
         env.update(NODE_PATH='/opt/php-suite/node_modules', PLAYWRIGHT_BROWSERS_PATH='/opt/php-suite/browsers')
-        (root/'.cache').mkdir(exist_ok=True)
         phase = 'container'
         with tempfile.TemporaryDirectory(prefix='php-bundle-') as name:
             bundle = Path(name)
             with image_root(bundle) as (rootfs, image):
                 env['PHP_SUITE_IMAGE'] = image
                 env['PHP_SUITE_OUTPUT'] = str(output)
+                # The checkout stays read-only: commands write only inside their case roots under the output.
                 code = run_bundle(bundle, rootfs, ['python3', str(root/'scripts/test.py'), *arguments],
-                                  root, env, mounts, writable=(output, group, receipts), temporary=('/tmp', root/'.cache'))
+                                  root, env, mounts, writable=(output, group, receipts), temporary=('/tmp',))
         receipt = output/'receipt.json'
         if not code and (not receipt.is_file() or json.loads(receipt.read_text()).get('complete') is not True):
             raise RuntimeError('Container exited successfully without a complete suite receipt: '+str(receipt))
@@ -297,8 +302,7 @@ def enter(descriptor, argv):
                 '/usr/bin/setpriv', '--no-new-privs', '--bounding-set=-all',
                 '--inh-caps=-all', '--ambient-caps=-all', '--', *argv]
         env = {key: os.environ[key] for key in record['pass_env'] if key in os.environ}
-        env.update(PATH='/usr/local/bin:/usr/bin:/bin', HOME='/tmp', LANG='C.UTF-8',
-                   PYTHONDONTWRITEBYTECODE='1', GIT_OPTIONAL_LOCKS='0')
+        env.update(FIXED_INPUTS, PATH='/usr/local/bin:/usr/bin:/bin', HOME='/tmp')
         return subprocess.run(args, env=env).returncode
     finally:
         os.close(proc)

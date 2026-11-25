@@ -2,7 +2,7 @@
 """Run registered offline suites with pinned PHP and optional pristine native fixture."""
 # Adapted from Paymenter Enom scripts/test.py; MIT, Copyright (c) 2026 Autonomic Engineering.
 import argparse
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import fnmatch
 import json
@@ -31,6 +31,12 @@ ORDER = ['lint', 'provider', 'contracts', 'runner', 'package', 'ui', 'native', '
 FIXTURE_SUITES = {'native', 'ui'}
 # The ui suite drives an existing Playwright and Chromium, which the clean environment would hide.
 BROWSER_ENV = ['NODE_PATH', 'CHROME_BIN', 'PLAYWRIGHT_BROWSERS_PATH']
+# Runner controls and named test options that reach commands; other DOMAINS_TEST_ values stay with the caller.
+RUNNER_ENV = ['DOMAINS_TEST_CGROUP', 'DOMAINS_TEST_BUDGET', 'DOMAINS_TEST_RECEIPTS', 'DOMAINS_TEST_LIMITS',
+              'DOMAINS_TEST_JOBS', 'DOMAINS_TEST_FIXTURE_COSTS', 'DOMAINS_TEST_MONEY_SCALE_FULL_MATRIX']
+# The MariaDB launcher reaches the caller's Docker client, and keeps its short socket scratch path, through
+# these until it gets its own isolated home.
+MARIADB_HOST_PATHS = frozenset({'HOME', 'XDG_RUNTIME_DIR', 'TMPDIR'})
 # Tests named for a category must be listed there, so they never fall back to native.
 NAMED = [('mariadb', 'tests/test_*_mariadb.py'), ('runner', 'tests/test_runner*.py'), ('package', 'tests/test_package*.py')]
 WORKER_MEMORY_MIB = 1024
@@ -397,9 +403,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
             pure = kind in ('lint', 'provider', 'contracts', 'package', 'runner')
             if pure and source_env:
                 source_env = {key: value for key, value in source_env.items() if key != 'PAYMENTER_TEST_FIXTURE'}
-            context = (nullcontext(source_env) if pure else
-                       test_workers.command_environment(source_env))
-            with context as child:
+            keep = MARIADB_HOST_PATHS if kind == 'mariadb' else frozenset()
+            with test_workers.command_environment(source_env, keep=keep) as child:
                 launched = ([sys.executable, env['DOMAINS_TEST_BUDGET'], '--name', argv[-1],
                              '--test-scope', '--wall', str(test_limits['wall_seconds']),
                              '--memory', str(test_limits['memory_bytes']),
@@ -729,7 +734,7 @@ def main(*, launch=False):
                 runtime, binary, extension = prepare(native=needs_fixture)
         env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
                'PHPRC': '', 'PHP_INI_SCAN_DIR': '', 'TMPDIR': str(output), 'PYTHONDONTWRITEBYTECODE': '1'}
-        env.update({key: value for key, value in os.environ.items() if key.startswith('DOMAINS_TEST_')})
+        env.update({name: os.environ[name] for name in RUNNER_ENV if name in os.environ})
         if 'ui' in selected:
             env.update({name: os.environ[name] for name in BROWSER_ENV if name in os.environ})
         if binary:
