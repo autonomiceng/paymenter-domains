@@ -582,7 +582,7 @@ sudo() {
 
     def test_commands_write_only_inside_their_case_root_and_ignore_host_settings(self):
         """Two commands at once: the one that writes outside its case root fails, its neighbour passes, and neither
-        reads the caller's Git, zone or home. An ordinary command cannot set file capabilities."""
+        reads the caller's Git, zone or home. Neither can set file capabilities."""
         # The neighbour finishes after the writer has tried its writes, and the writer exits only after the runner
         # has recorded the neighbour; the alarm fails a command whose partner never arrives.
         probe = ("import json, os, signal, subprocess, sys, tempfile, time; from pathlib import Path; signal.alarm(20); "
@@ -599,7 +599,8 @@ sudo() {
                 "for path in paths:\n"
                 "    try: open(path, 'w').write('state'); outcome[path] = 'written'\n"
                 "    except OSError as error: outcome[path] = errno.errorcode[error.errno]\n"
-                "print(json.dumps(outcome), flush=True); open(gate, 'w').close()\n"
+                "setfcap = [line.split(':')[0] for line in open('/proc/self/status') if line.startswith('Cap') and int(line.split()[1], 16) >> 31 & 1]\n"
+                "print(json.dumps({'writes': outcome, 'setfcap': setfcap}), flush=True); open(gate, 'w').close()\n"
                 "while not os.path.exists(recorded): os.read(watch, 4096)\n"
                 "sys.exit(set(outcome.values()) != {'written'})")
         with tempfile.TemporaryDirectory() as temp:
@@ -620,7 +621,8 @@ sudo() {
                 status = runner.run(commands, caller, output, ['lint', 'runner'], {}, jobs=2, workers=workers)
             receipt = json.loads((output/'receipt.json').read_text())
             self.assertEqual((status, receipt['failures']), (1, [1]), 'Only the command that wrote outside its root fails')
-            self.assertEqual(json.loads((output/'001.stdout.txt').read_text()), dict.fromkeys(targets, 'EROFS'))
+            self.assertEqual(json.loads((output/'001.stdout.txt').read_text()), {'writes': dict.fromkeys(targets, 'EROFS'), 'setfcap': []},
+                             'A runner command that is not a runner self-test cannot set file capabilities')
             self.assertEqual([path for path in targets if Path(path).exists()], [])
             report = json.loads((output/'000.stdout.txt').read_text())
             cases = {Path(path).relative_to(output/'cases').parts[0] for path in report['paths']}

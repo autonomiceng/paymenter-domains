@@ -173,6 +173,10 @@ def command_environment(env: dict[str, str], cases: Path, *, keep: frozenset[str
         yield root, case_environment(dict(env, PAYMENTER_TEST_FIXTURE=str(app)), root, keep=keep)
 
 
+# Runner self-tests that run the real runner, which confines its own commands; every other command loses CAP_SETFCAP.
+NESTED = frozenset({'tests/test_lint.py', 'tests/test_runner.py', 'tests/test_runner_receipts.py', 'tests/test_runner_speed.py'})
+
+
 def confined(argv: list[str], root: Path, *, nested: bool = False) -> list[str]:
     """ARGV run so that its case ROOT is the only place it can write; only a NESTED command may confine another."""
     return [sys.executable, '-I', '-S', str(CONFINE), *(['--nested'] if nested else []), str(root), '--', *argv]

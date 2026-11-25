@@ -400,7 +400,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                 source_env = {key: value for key, value in source_env.items() if key != 'PAYMENTER_TEST_FIXTURE'}
             keep = test_workers.MARIADB_HOST_PATHS if kind == 'mariadb' else frozenset()
             with test_workers.command_environment(source_env or {}, cases, keep=keep) as (case, child):
-                test = argv if kind == 'mariadb' else test_workers.confined(argv, case, nested=kind == 'runner')
+                test = argv if kind == 'mariadb' else test_workers.confined(argv, case, nested=argv[-1] in test_workers.NESTED)
                 launched = ([sys.executable, env['DOMAINS_TEST_BUDGET'], '--name', argv[-1],
                              '--test-scope', '--wall', str(test_limits['wall_seconds']),
                              '--memory', str(test_limits['memory_bytes']),
