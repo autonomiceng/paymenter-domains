@@ -6,14 +6,16 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence,Environment};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
-/** Review of an incurred charge. No new send, charge, refund or replacement of the original proof. */
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
+/** Review of an incurred charge. No new send, charge, refund or replacement of the original proof. The proof is read through
+ * the renewal attempt reader; the review identity still hashes the retained record, as its writer does. */
 final class CapturedChargeReview
 {
     private static ?int $writing=null;
     private static ?int $completing=null;
     private const KEYS=['captured_charge_reads','captured_charge_observations','captured_charge_approval'];
     public static function hasProof(Operation $op):bool
-    {try{return $op->action==='renew'&&$op->registrar_key==='enom'&&$op->term>1&&in_array($op->safe_code,['actual_charge_changed','actual_cost_overrun'],true)&&is_array($op->attempt['reconciliation']??null);}catch(\Throwable){return false;}}
+    {try{return $op->action==='renew'&&$op->registrar_key==='enom'&&$op->term>1&&in_array($op->safe_code,['actual_charge_changed','actual_cost_overrun'],true)&&RenewalAttempt::of($op)->readProof()!==null;}catch(\Throwable){return false;}}
     public static function guard(Operation $op):void
     {
         $old=$op->getOriginal('policy')??[];$new=$op->policy??[];
@@ -64,7 +66,7 @@ final class CapturedChargeReview
         if(!is_array($reads)||!array_is_list($reads)||!$reads||!is_array($observations)||!array_is_list($observations)||!$observations){return false;}$read=end($reads);$seen=end($observations);
         $attempt=ReconciliationEvidence::attempt($op,$op->domain()->firstOrFail(),AccountBindings::binding(Account::where('server_id',$op->server_id)->sole()));
         return $read['resume']===count($p['renewal_resumptions']??[])&&$seen['key']===$read['key']&&$seen['attempt_hash']===self::identity($op)
-            &&self::sameProof($seen['proof'],$op->attempt['reconciliation']??null)&&self::supported($op,$attempt,app(Clock::class)->now())&&!isset($p['captured_charge_approval']);}
+            &&self::sameProof($seen['proof'],RenewalAttempt::of($op)->readProof())&&self::supported($op,$attempt,app(Clock::class)->now())&&!isset($p['captured_charge_approval']);}
         catch(\PDOException $e){throw $e;} // A database error is an error for staff, never "read again".
         catch(\Throwable){return false;}
     }
@@ -79,7 +81,7 @@ final class CapturedChargeReview
      * still accepts and that still covers the attempt now. */
     private static function supported(Operation $op,AttemptEvidence $attempt,\DateTimeImmutable $now):bool
     {
-        $source=$op->attempt['reconciliation']['source']??null;
+        $source=RenewalAttempt::of($op)->readProof()['source']??null;
         if($attempt->binding->environment!==Environment::Test){return false;}
         return $attempt->executionFacts&&$attempt->providerReference!==null?$source==='captured_order'
             :$source==='accepted_history'&&($attempt->historyAcceptance?->covers($attempt,$now)??false);
@@ -88,7 +90,7 @@ final class CapturedChargeReview
     {
         StaffOperationReview::requirePermission($l['staff']??null,'approve_charge',$op);
         if(!self::approvable($op)){throw new StaffReviewRefused('Read the original charge again. A different or unavailable result cannot approve the captured expense.');}
-        $d=$l['domain'];$binding=AccountBindings::binding($l['account']);$proof=$op->attempt['reconciliation'];$charge=$proof['charge']??null;
+        $d=$l['domain'];$binding=AccountBindings::binding($l['account']);$proof=RenewalAttempt::of($op)->readProof();$charge=$proof['charge']??null;
         $bindings->requireReadableLocked($l['server'],$l['account']);RenewalFunding::requireCurrent($op,$l,true);
         if(!self::supported($op,ReconciliationEvidence::attempt($op,$d,$binding),$clock->now())
             ||$proof['operation_key']!==$op->operation_key||$proof['generation']!==$op->authority_generation||$proof['fingerprint']!==$op->account_fingerprint
