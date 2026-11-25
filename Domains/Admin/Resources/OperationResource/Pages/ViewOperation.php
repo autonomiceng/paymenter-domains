@@ -38,7 +38,7 @@ class ViewOperation extends RecordDetailPage
     public string $reviewStamp='';
     #[\Livewire\Attributes\Locked]
     public string $answerStamp='';
-    /** The page reads its request's account and release facts once per request (RequestReads). */
+    /** The page reads its request's account and release facts once per render (RequestReads). */
     public function getRecord(): Operation { $op=parent::getRecord(); RequestReads::page($op); return $op; }
     public function mount(int|string $record): void
     { parent::mount($record); $this->stamp($this->getRecord()); }
@@ -67,7 +67,7 @@ class ViewOperation extends RecordDetailPage
     private function changed(string $name): bool
     {
         if (!isset(StaffOperationReview::ACTIONS[$name])) { return false; }
-        $op=$this->getRecord()->refresh();
+        RequestReads::renew(); $op=$this->getRecord()->refresh();
         return !hash_equals($this->reviewStamp,StaffOperationReview::stamp($op,$op->domain))||!OperationActions::relevant($name,$op);
     }
     protected function afterActionCalled(Action $action): void
@@ -78,7 +78,7 @@ class ViewOperation extends RecordDetailPage
     private function reloadRequest(): void
     {
         // Writers load their own locked models. Rebuild every snapshot, including after a caught partial failure.
-        $this->stamp($this->getRecord()->refresh());
+        RequestReads::renew(); $this->stamp($this->getRecord()->refresh());
         unset($this->cachedSchemas['content']);
         $this->cachedActions=[]; $this->cachedHeaderActions=[];
         $this->cacheInteractsWithHeaderActions();

@@ -7,8 +7,8 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
 /** One staff request page's reads, made once: the request's registrar account, and its release facts and offer.
  * The container holds one instance per HTTP request and per queued job (a scoped binding), and the request page names the
  * record it shows. Only reads for that record object are kept, so jobs, lists, fresh copies and direct calls read now. An entry
- * is keyed by the signed-in staff member and by the request and domain rows as loaded: a staff action refreshes the record, so
- * the page reads again after it. */
+ * is keyed by the signed-in staff member and by the request and domain rows as loaded. Reads last one render: an action's
+ * preflight and the render after any action, including a refused one, start again (renew), because time and other rows move. */
 final class RequestReads
 {
     /** @var ?\WeakReference<Operation> */
@@ -21,6 +21,8 @@ final class RequestReads
         $reads=app(self::class);
         if ($reads->page?->get()!==$op) { $reads->page=\WeakReference::create($op); $reads->reads=[]; }
     }
+    /** Drop every kept read, so the next caller reads now. */
+    public static function renew(): void { app(self::class)->reads=[]; }
     /** Account name, registrar and mode for the Registrar account fact, and the account row the notice reads its switches from.
      * @return array{value:?string,sub:?string,account:?Account} */
     public static function account(Operation $op): array
