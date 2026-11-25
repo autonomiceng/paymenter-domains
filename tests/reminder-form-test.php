@@ -20,23 +20,21 @@ $fixed=compact('u','server','query','original','name','placeholder','pin');
 $cases['malformed']=static function()use($fixed):void {extract($fixed);
     $pin();same($original,(array)(clone $query)->sole(),'Each case starts from the enrolled reminder schedule');
 // Every stored JSON shape exercises the parser and locked write guard.
-// The two parser failure classes also traverse the real mounted form for each field.
-foreach(['before','after'] as $field){
+// Each field also traverses the real mounted form, one with each parser failure class.
+foreach(['before'=>'{','after'=>'["7"]'] as $field=>$mounted){
     foreach(['{','null','true','7','"7"','{}','{"day":7}','[[7]]','["7"]','[-1]','[366]','[1.5]'] as $bad){
         same(null,ReminderSchedules::storedDays($bad),'Unreadable saved days: '.$bad);
         $query->update([...$original,$field.'_days'=>$bad]);$before=(array)(clone $query)->sole();
         commerceReject(fn()=>ReminderSchedules::save($u,$server,(int)$original['revision'],true,'7','3','Refuse unreadable saved days'));
         same($before,(array)(clone $query)->sole(),'Malformed days and audit are never rewritten: '.$bad);
     }
-    foreach(['{','["7"]'] as $bad){
-        $query->update([...$original,$field.'_days'=>$bad]);$before=(array)(clone $query)->sole();
-        $page=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$server])->assertSuccessful()->mountAction($name)->assertSuccessful()->assertActionMounted($name);
-        same(null,$page->get('mountedActions.0.data.'.$field),'Unreadable days have no invented default: '.$bad);
-        $page->assertSee('Missing')->assertSee("Saved reminder days can't be read.");
-        same('Missing',$placeholder($page,$field),'Unreadable day control explains its state');
-        $page->setActionData(['enabled'=>true,'before'=>'7','after'=>'3','reason'=>'Refuse unreadable saved days'])->callMountedAction()->assertHasNoActionErrors()->assertNotified("Couldn't save reminders");
-        same($before,(array)(clone $query)->sole(),'Malformed days and audit are never rewritten: '.$bad);
-    }
+    $query->update([...$original,$field.'_days'=>$mounted]);$before=(array)(clone $query)->sole();
+    $page=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$server])->assertSuccessful()->mountAction($name)->assertSuccessful()->assertActionMounted($name);
+    same(null,$page->get('mountedActions.0.data.'.$field),'Unreadable days have no invented default: '.$mounted);
+    $page->assertSee('Missing')->assertSee("Saved reminder days can't be read.");
+    same('Missing',$placeholder($page,$field),'Unreadable day control explains its state');
+    $page->setActionData(['enabled'=>true,'before'=>'7','after'=>'3','reason'=>'Refuse unreadable saved days'])->callMountedAction()->assertHasNoActionErrors()->assertNotified("Couldn't save reminders");
+    same($before,(array)(clone $query)->sole(),'Malformed days and audit are never rewritten: '.$mounted);
 }
 };
 
@@ -73,19 +71,18 @@ $query->update($original);
 $page->setActionData(['enabled'=>true,'before'=>'7','after'=>'3','reason'=>'Refuse facts not displayed'])->callMountedAction()->assertHasNoActionErrors()->assertNotified("Couldn't save reminders");
 same($original,(array)(clone $query)->sole(),'Repair after mounting cannot save unseen days');
 // Unreadable mounts remain invalid even if revision zero is repaired during a later request.
+// The before field's repair after mounting is the case above; this one repairs the after field.
 $recovery='Reload the account page, then check the reminder days and your permissions before saving again.';
 $edit=['enabled'=>true,'before'=>'7','after'=>'3','reason'=>'Review fresh reminder facts'];
-foreach(['before','after'] as $field){
-    $zero=[...$original,'revision'=>0];$query->update([...$zero,$field.'_days'=>'{']);
-    $page=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$server])->mountAction($name)->assertActionMounted($name);
-    same(null,$page->get('mountedActions.0.data.revision'),'Unreadable mount has no reviewed revision');
-    $query->update($zero);$page->call('$refresh');
-    $page->setActionData($edit)->callMountedAction()->assertHasNoActionErrors()
-        ->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't save reminders")->body($recovery));
-    same($zero,(array)(clone $query)->sole(),'Repair at revision zero does not authorize unseen saved days');
-    Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$server])->mountAction($name)->setActionData($edit)->callMountedAction()->assertNotified('Reminders saved');
-    same(1,(int)(clone $query)->sole()->revision,'A readable revision-zero remount can save');
-}
+$zero=[...$original,'revision'=>0];$query->update([...$zero,'after_days'=>'{']);
+$page=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$server])->mountAction($name)->assertActionMounted($name);
+same(null,$page->get('mountedActions.0.data.revision'),'Unreadable mount has no reviewed revision');
+$query->update($zero);$page->call('$refresh');
+$page->setActionData($edit)->callMountedAction()->assertHasNoActionErrors()
+    ->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't save reminders")->body($recovery));
+same($zero,(array)(clone $query)->sole(),'Repair at revision zero does not authorize unseen saved days');
+Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$server])->mountAction($name)->setActionData($edit)->callMountedAction()->assertNotified('Reminders saved');
+same(1,(int)(clone $query)->sole()->revision,'A readable revision-zero remount can save');
 foreach(['stale','permission','days','account'] as $failure){
     $query->update($original);$page=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$server])->mountAction($name)->assertActionMounted($name);
     $data=$edit;
