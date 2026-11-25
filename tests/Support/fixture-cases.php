@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/fixture-checkpoint.php';
-use Illuminate\Support\Facades\{Crypt, DB, Facade};
+use Illuminate\Support\Facades\{Cache, Crypt, DB, Facade};
 
 /** Case order of every multi-case command: listed, reverse, second-first or shuffle:<seed>. Order proofs change only this line. */
 const NATIVE_CASE_ORDER = 'listed';
@@ -134,6 +134,7 @@ function nativeSchema(): array
 function nativeCaseCheckpoint(array $state = []): Closure
 {
     $restoreRows = nativeFixtureCheckpoint();
+    $locks = nativeArrayStore()?->locks;
     $schema = nativeSchema();
     $app = app();
     $container = [];
@@ -169,7 +170,7 @@ function nativeCaseCheckpoint(array $state = []): Closure
         date_default_timezone_get(), setlocale(LC_ALL, 0), app()->getLocale(), array_keys($GLOBALS),
         array_map(sha1(...), nativeStorageFiles())], JSON_PARTIAL_OUTPUT_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
     $prepared = $witness();
-    return static function () use ($restoreRows, $schema, $app, $container, $objects, $statics, $globals, $clock, $files, $witness, $prepared): void {
+    return static function () use ($restoreRows, $locks, $schema, $app, $container, $objects, $statics, $globals, $clock, $files, $witness, $prepared): void {
         while (DB::transactionLevel() > 0) { DB::rollBack(); }
         $pdo = DB::connection()->getPdo();
         $kept = array_map(serialize(...), $schema);
@@ -179,6 +180,8 @@ function nativeCaseCheckpoint(array $state = []): Closure
         foreach ($added as $object) { $pdo->exec('DROP '.strtoupper($object['type']).' IF EXISTS "'.str_replace('"', '""', $object['name']).'"'); }
         same($schema, nativeSchema(), 'Case reset restores the prepared schema; a case never alters or drops a fixture table');
         $restoreRows();
+        // Cache::flush() keeps lock owners, such as a unique job's lock; operation ids repeat after the row restore.
+        if (($store = nativeArrayStore()) !== null) { $store->locks = $locks ?? []; }
         foreach ($container as $name => $value) { (new ReflectionProperty(Illuminate\Container\Container::class, $name))->setValue($app, $value); }
         Facade::clearResolvedInstances();
         array_map(nativeRestoreObjectState(...), $objects);
@@ -203,6 +206,13 @@ function nativeCaseCheckpoint(array $state = []): Closure
         Illuminate\View\Component::flushCache();
         same($prepared, $witness(), 'Case reset restores schema, bindings, listeners, config, timezone, locale, globals and files');
     };
+}
+
+/** The fixture's array cache store, which keeps locks apart from the values Cache::flush() clears. */
+function nativeArrayStore(): ?Illuminate\Cache\ArrayStore
+{
+    $store = Cache::store()->getStore();
+    return $store instanceof Illuminate\Cache\ArrayStore ? $store : null;
 }
 
 /** Classes whose statics the reset owns: fixture, Domains and Paymenter application code. */
