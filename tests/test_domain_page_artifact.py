@@ -18,8 +18,10 @@ class Actions(HTMLParser):
         self.heading = None
 
     def handle_starttag(self, tag, attrs):
+        # Every h1 start counts, closed or not, as the browser builds one heading for each.
         if tag == 'h1':
             self.heading = []
+            self.headings.append(self.heading)
         if tag in ('a', 'button'):
             self.current = {'tag': tag, 'href': dict(attrs).get('href'), 'text': []}
 
@@ -30,8 +32,7 @@ class Actions(HTMLParser):
             self.current['text'].append(data)
 
     def handle_endtag(self, tag):
-        if tag == 'h1' and self.heading is not None:
-            self.headings.append(' '.join(''.join(self.heading).split()))
+        if tag == 'h1':
             self.heading = None
         if self.current is not None and tag == self.current['tag']:
             self.actions.append((' '.join(''.join(self.current['text']).split()), self.current['href']))
@@ -51,7 +52,8 @@ def main():
             parser.feed(artifact.read_text())
             assert ('Pay invoice', '/invoices/1043') in parser.actions, f'{mode}: current invoice is payable'
             assert all(label != 'Renew now' for label, _ in parser.actions), f'{mode}: no competing renewal request'
-            assert len(parser.headings) == 1 and 'invoice-due.example' in parser.headings[0], f'{mode}: one heading names the domain'
+            headings = [' '.join(''.join(heading).split()) for heading in parser.headings]
+            assert len(headings) == 1 and 'invoice-due.example' in headings[0], f'{mode}: one heading names the domain: {headings}'
         print('Invoice-due dark/light artifacts name the domain and show Pay invoice without Renew now.')
 
 
