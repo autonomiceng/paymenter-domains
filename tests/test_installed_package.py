@@ -41,7 +41,7 @@ def refuse_unsafe_archives(root, current):
             raise AssertionError('Unsafe archive reached native upload boundary')
 
 
-def main(scenario):
+def main(scenario, *, private_copy=False):
     if scenario not in ('held', 'fresh', 'enom-live', 'acquisition', 'enom-exchange', 'enom-test-registration', 'enom-test-renewal', 'enom-test-management', 'enom-test-transfer', 'namesilo-registration', 'namesilo-renewal', 'namesilo-enrollment'):
         raise ValueError('Unknown installed package scenario')
     began = time.monotonic()
@@ -60,7 +60,7 @@ def main(scenario):
     # A real native ZIP install and fresh PHP boots are essential here; a stub
     # cannot prove upload discovery, migrations, retained data or installed paths.
     # Composer inputs/builds are shared; each scenario still owns its DB and app.
-    with installed_fixture.application(fixture, scenario) as (root, app):
+    with installed_fixture.lifecycle(fixture, scenario, private_copy=private_copy) as (root, app):
         setup_started = time.monotonic()
         installed = app / "extensions/Servers/Domains"
         if installed.is_symlink():

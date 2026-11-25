@@ -181,7 +181,7 @@ def command_environment(env: dict[str, str], cases: Path, *, keep: frozenset[str
         return
     fixture = Path(env['PAYMENTER_TEST_FIXTURE'])
     cases.mkdir(mode=0o700, exist_ok=True)
-    with installed_fixture.application(fixture, 'case', verify_vendor=False, parent=cases) as (root, app):
+    with installed_fixture.application(fixture, 'case', verify_vendor=False, parent=cases, disposable=True) as (root, app):
         yield root, case_environment(dict(env, PAYMENTER_TEST_FIXTURE=str(app)), root, keep=keep)
 
 

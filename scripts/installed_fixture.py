@@ -13,10 +13,14 @@ import tempfile
 import build
 import native
 
+# Marks an app the runner copied for one command and removes with that command.
+DISPOSABLE = ".domains-disposable-app"
+
 
 @contextmanager
-def application(fixture, scenario, *, verify_vendor=True, parent=None):
-    """A private copy of FIXTURE in PARENT, by default beside the fixture."""
+def application(fixture, scenario, *, verify_vendor=True, parent=None, disposable=False):
+    """A private copy of FIXTURE in PARENT, by default beside the fixture. A DISPOSABLE copy may hold one
+    installed lifecycle directly, see lifecycle()."""
     vendor = (fixture / "vendor").resolve(strict=True)
     before = native.admitted_vendor_hashes(vendor) if verify_vendor else None
     with tempfile.TemporaryDirectory(
@@ -40,6 +44,8 @@ def application(fixture, scenario, *, verify_vendor=True, parent=None):
         if extension.is_symlink():
             extension.unlink()
         (app / "vendor").symlink_to(vendor, target_is_directory=True)
+        if disposable:
+            (root / DISPOSABLE).write_text(str(app))
         try:
             yield root, app
         finally:
@@ -48,6 +54,30 @@ def application(fixture, scenario, *, verify_vendor=True, parent=None):
                     "Installed scenario changed shared vendor dependencies."
                 )
 
+
+@contextmanager
+def lifecycle(fixture, scenario, *, private_copy=False):
+    """The app and private state directory for one installed lifecycle.
+
+    The runner's disposable command app holds the first lifecycle directly: the runner copied it from the worker
+    fixture, confines writes to the command root, removes it afterwards and checks the shared vendor at its final
+    guard. A second lifecycle in the same command, or PRIVATE_COPY, gets its own copy of the still unused app.
+    Any other fixture gets a private copy with this process's own vendor check.
+    """
+    marker = fixture.parent / DISPOSABLE
+    claimed = marker.with_name(DISPOSABLE + ".claimed")
+    runner_owned = marker.is_file() or claimed.is_file()
+    if runner_owned and claimed.is_file():
+        raise RuntimeError("The runner app already holds an installed lifecycle; copy it before that one starts.")
+    if runner_owned and marker.read_text() != str(fixture):
+        raise RuntimeError("The disposable marker names another app.")
+    if private_copy or not runner_owned:
+        with application(fixture, scenario, verify_vendor=not runner_owned) as pair:
+            yield pair
+        return
+    marker.rename(claimed)
+    with tempfile.TemporaryDirectory(prefix=f"domains-installed-{scenario}-", dir=fixture.parent) as state:
+        yield Path(state), fixture
 
 
 def package(source, output, *, builder=None):
