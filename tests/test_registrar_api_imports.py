@@ -7,8 +7,9 @@ remove an entry when its last reference goes, and move code instead of adding on
 
 Outside the provider trees and Registrars/Dispatch, every reference to a provider class is listed in
 tests/registrar-reverse-imports.json: Registrars/Enom and Registrars/NameSilo classes, the Enom* and NameSilo*
-classes still in Services, and provider class names or source paths written in strings. The list must match
-the code exactly. Delete an entry when its reference goes, and call a Dispatch entry point instead of adding one.
+classes still in Services, the Enom-only Services/ApiCallLimits, and provider class names or source paths written
+in strings. The list must match the code exactly. Delete an entry when its reference goes, and call a Dispatch
+entry point instead of adding one.
 Adding an entry to make this test pass is a review block. See docs/design/layout.md.
 """
 import json
@@ -96,11 +97,17 @@ def current(root=API):
     return {str(p.relative_to(root)): found for p in sorted(root.glob('*/Api/**/*.php')) if (found := outside(p, root))}
 
 
-PROVIDER = re.compile(r'Registrars\\(?:Enom|NameSilo)\\\w|Services\\(?:Enom|NameSilo)\w*$')
+# Legacy Services classes and files that belong to Enom without carrying its name.
+ENOM_SERVICES = ('Services\\ApiCallLimits', 'path:Services/ApiCallLimits.php')
+PROVIDER = re.compile(r'Registrars\\(?:Enom|NameSilo)\\\w|Services\\(?:(?:Enom|NameSilo)\w*|ApiCallLimits)$')
 # A name in code: not a variable, member or class constant, and not the tail of a longer name.
 TOKEN = re.compile(r'(?<!::)(?<!->)(?<![\w$\\])\\?[A-Za-z_]\w*(?:\\[A-Za-z_]\w*)*')
-STRING_NAME = re.compile(r'Registrars\\{1,2}(?:Enom|NameSilo)\\{1,2}\w+(?:\\{1,2}\w+)*|Services\\{1,2}(?:Enom|NameSilo)\w*')
-STRING_PATH = re.compile(r'(?:Registrars/)?(?:Enom|NameSilo)/[\w/]*\w\.php|Services/(?:Enom|NameSilo)\w*\.php')
+STRING_NAME = re.compile(r'Registrars\\{1,2}(?:Enom|NameSilo)\\{1,2}\w+(?:\\{1,2}\w+)*'
+                         r'|Services\\{1,2}(?:(?:Enom|NameSilo)\w*|ApiCallLimits\b)')
+STRING_PATH = re.compile(r'(?:Registrars/)?(?:Enom|NameSilo)/[\w/]*\w\.php'
+                         r'|Services/(?:(?:Enom|NameSilo)\w*|ApiCallLimits)\.php')
+# PHP in Blade: `@php ... @endphp` blocks and `@php(...)` expressions, compiled into the global namespace.
+BLADE_PHP = re.compile(r'@php\b(?!\s*\()(.*?)@endphp|@php\s*(\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\))', re.DOTALL)
 
 
 def provider(name):
@@ -113,8 +120,9 @@ def provider_names(source, blade=False, own=None):
     """Provider classes one runtime file reaches, resolved the way PHP resolves them.
 
     Imports (grouped and aliased) count, and so does each use of an imported namespace prefix (`Enom\\Driver` after
-    `use ...\\Registrars\\{Enom}`), a relative name, `namespace\\` and a fully qualified name. Strings count when they
-    hold a provider class name or source path. Blade has no imports, so only its fully qualified names count."""
+    `use ...\\Registrars\\{Enom}`), a relative name, `namespace\\` and a fully qualified name. Aliases match in any
+    case, as PHP matches them. Strings count when they hold a provider class name or source path. Blade counts fully
+    qualified names anywhere and reads the PHP inside `@php` as a file in the global namespace."""
     found = set()
     for match in NOISE.finditer(source):
         text = match.group(0)
@@ -122,7 +130,10 @@ def provider_names(source, blade=False, own=None):
             found.update(re.sub(r'\\+', r'\\', name) for name in STRING_NAME.findall(text))
             found.update('path:'+path for path in STRING_PATH.findall(text))
     if blade:
-        return found | {name for name in map(provider, QUALIFIED.findall(source)) if name}
+        found.update(name for name in map(provider, QUALIFIED.findall(source)) if name)
+        for block in BLADE_PHP.finditer(source):
+            found |= provider_names('<?php\n'+(block[1] if block[1] is not None else block[2])+';\n')
+        return found
     code = NOISE.sub("''", source)
     namespace, level, depth, aliases, spans = '', 0, 0, {}, []
     for match in SCOPE.finditer(code):
@@ -143,7 +154,7 @@ def provider_names(source, blade=False, own=None):
                     continue
                 name, *alias = re.split(r'\s+as\s+', item.strip())
                 full = prefix+name.lstrip('\\')
-                aliases[alias[0] if alias else full.rsplit('\\', 1)[-1]] = full
+                aliases[(alias[0] if alias else full.rsplit('\\', 1)[-1]).lower()] = full
                 found.add(provider(full))
         else:
             found.update(provider(item.lstrip('\\') if item.startswith('\\') else namespace+'\\'+item)
@@ -157,11 +168,11 @@ def provider_names(source, blade=False, own=None):
         if name.startswith('\\'):
             full = name[1:]
         elif head.lower() == 'namespace' and rest:
-            full = namespace+'\\'+rest
-        elif head in aliases:
-            full = aliases[head]+('\\'+rest if rest else '')
+            full = namespace+'\\'+rest if namespace else rest
+        elif head.lower() in aliases:
+            full = aliases[head.lower()]+('\\'+rest if rest else '')
         else:
-            full = namespace+'\\'+name
+            full = namespace+'\\'+name if namespace else name
         found.add(provider(full))
     found.discard(None)
     if own:
@@ -251,7 +262,8 @@ class RegistrarApiImports(unittest.TestCase):
             for path in sorted((API/own).rglob('*.php')):
                 crossing += [f'{path.relative_to(API)}: {name}' for name in sorted(provider_names(path.read_text()))
                              if name.startswith((f'Registrars\\{other}\\', f'Services\\{other}', f'path:{other}/',
-                                                 f'path:Registrars/{other}/', f'path:Services/{other}'))]
+                                                 f'path:Registrars/{other}/', f'path:Services/{other}'))
+                             or other == 'Enom' and name in ENOM_SERVICES]
         self.assertEqual(CROSSING, crossing, 'A provider names the other provider; move the shared part out instead')
 
     def test_reverse_reader_resolves_prefixes_aliases_strings_and_blade(self):
@@ -269,6 +281,22 @@ class RegistrarApiImports(unittest.TestCase):
         self.assertEqual({'Services\\EnomTestCalls'}, provider_names(own, own='EnomLive'))
         blade = f'@foreach (\\{BASE}Registrars\\NameSilo\\DnsForm::notes($x) as $note) Don\'t @endforeach'
         self.assertEqual({'Registrars\\NameSilo\\DnsForm'}, provider_names(blade, blade=True))
+
+    def test_reverse_reader_matches_aliases_in_any_case(self):
+        source = (f'<?php\nnamespace {BASE}Catalogue;\nuse {BASE}Registrars as R;\n'
+                  'final class P { const C = r\\NameSilo\\Client::class; }\n')
+        self.assertEqual({'Registrars\\NameSilo\\Client'}, provider_names(source))
+
+    def test_reverse_reader_reads_php_inside_blade(self):
+        blade = (f'@php\n    use {BASE}Registrars\\NameSilo\\Client;\n@endphp\n'
+                 f'@php($driver = {BASE}Registrars\\Enom\\Driver::make())\n{{{{ Client::name() }}}}\n')
+        self.assertEqual({'Registrars\\NameSilo\\Client', 'Registrars\\Enom\\Driver'},
+                         provider_names(blade, blade=True))
+
+    def test_reverse_reader_counts_the_enom_call_limit_service(self):
+        source = (f'<?php\nnamespace {BASE}Catalogue;\nuse {BASE}Services\\ApiCallLimits;\n'
+                  'final class P { function f() { ApiCallLimits::save(); } }\n')
+        self.assertEqual({'Services\\ApiCallLimits'}, provider_names(source))
 
 
 if __name__ == '__main__':

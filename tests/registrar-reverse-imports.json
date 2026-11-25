@@ -16,6 +16,9 @@
   "Services\\EnomTestTransfer",
   "Services\\NameSiloSandbox"
  ],
+ "Admin/Support/ApiCallLimitAction.php": [
+  "Services\\ApiCallLimits"
+ ],
  "Admin/Support/BalanceCheck.php": [
   "Services\\EnomTestSendLimit"
  ],
@@ -29,6 +32,7 @@
   "Services\\EnomTestRegistration"
  ],
  "Admin/Support/RegistrarFacts.php": [
+  "Services\\ApiCallLimits",
   "Services\\EnomLive",
   "Services\\EnomTestSendLimit",
   "Services\\NameSiloSandbox"
@@ -51,6 +55,9 @@
  ],
  "Catalogue/Feed/FeedTurn.php": [
   "Services\\EnomTestCallLimit"
+ ],
+ "Catalogue/StaffCommands.php": [
+  "Services\\ApiCallLimits"
  ],
  "Contracts/ManagementProtocol.php": [
   "Services\\EnomTestCallLimit",
@@ -168,6 +175,7 @@
   "Services\\EnomTestRenewal"
  ],
  "Services/EnomLive.php": [
+  "Services\\ApiCallLimits",
   "Services\\EnomLiveCalls"
  ],
  "Services/EnomLiveActivation.php": [
@@ -217,6 +225,7 @@
   "Services\\NameSiloFeatureSettings"
  ],
  "Services/EnomTestSendLimit.php": [
+  "Services\\ApiCallLimits",
   "Services\\EnomTestCallLimit",
   "Services\\EnomTestCalls",
   "Services\\EnomTestSendLimitSchema"
@@ -383,6 +392,7 @@
   "Services\\EnomTestRegistration"
  ],
  "Services/StaffSettingsReview.php": [
+  "Services\\ApiCallLimits",
   "Services\\EnomLateRenewal",
   "Services\\EnomLiveActivation",
   "Services\\EnomTestManagement",
@@ -390,6 +400,7 @@
   "Services\\EnomTestTransfer"
  ],
  "Services/StaffSettingsWrites.php": [
+  "Services\\ApiCallLimits",
   "Services\\EnomAnswers",
   "Services\\EnomLateRenewal",
   "Services\\EnomLiveActivation",
