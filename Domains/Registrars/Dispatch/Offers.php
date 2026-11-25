@@ -28,7 +28,7 @@ final class Offers
                 expansion: $binding->environment === Environment::Test ? TermSupport::REVIEWED_EVIDENCE['enom'] : []);
         }
         // #386 is an explicit dependency; never silently fall back to the unadmitted cURL transport.
-        if ($binding->registrarKey !== 'namesilo' || !is_file(dirname(__DIR__).'/NameSilo/AdmittedTransport.php')
+        if ($binding->registrarKey !== 'namesilo' || !is_file(dirname(__DIR__, 2).'/Registrars/NameSilo/AdmittedTransport.php')
             || !class_exists(NameSilo\AdmittedTransport::class)) {
             throw new \DomainException('Admitted NameSilo offer transport unavailable.');
         }
