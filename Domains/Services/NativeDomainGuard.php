@@ -8,6 +8,7 @@ use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 
 /** Dormant native adapters; boot once in 39, before checkout/binding. No financial/provider execution. */
 final class NativeDomainGuard

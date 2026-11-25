@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Carbon\CarbonImmutable;
 use Paymenter\Extensions\Servers\Domains\Holding\Adoption\AdoptionRenewalEligibility;
+use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 /** Produces only scalar customer data from current locked holding/obligation evidence. */
 final class RenewalReminders
 {

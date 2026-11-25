@@ -8,6 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\PrivacyMode;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility;
+use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 /** Local, explicit, immutable acquisition setup. Never sends or changes contacts/funding/outcomes. */
 final class OwnerSetup
 {

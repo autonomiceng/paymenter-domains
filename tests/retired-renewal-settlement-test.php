@@ -6,7 +6,8 @@ require __DIR__.'/Support/money-receipt.php';
 
 use App\Models\{Credit, Gateway, Invoice, InvoiceTransaction};
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks, InvoiceMoney, PricingRule, RefundPayment, Refunds, RenewalCycles};
+use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks, InvoiceMoney, PricingRule, Refunds, RenewalCycles};
+use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 
 $refunds = new Refunds($clock); $failures = [];
 $check = static function(bool $ok, string $message) use (&$failures): void {

@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 /** Dormant owner POST boundary. Installed CSRF/form keys/rate limits and trim exclusion belong to33/39. */
 final class TransferInputs
 {

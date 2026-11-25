@@ -1,13 +1,13 @@
 <?php
 // Enom 444f31c Refunds::refundablePayment; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Money\Returns;
 use App\Enums\InvoiceTransactionStatus;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Services\{FundsWaits, InvoiceBinding, InvoiceMoney, InvoiceScope, OperationFailure, OperationRefused, PricingRule, PrivacyRetirement, RefundProof, RenewalCycles};
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementPrivacy;
-use Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns;
 /** Exact issued line and complete signed native funding, under HoldingLocks. No lifecycle/price inference. */
 final class RefundPayment
 {

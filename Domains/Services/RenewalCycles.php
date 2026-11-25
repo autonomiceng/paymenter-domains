@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\Money;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
-use Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns;
+use Paymenter\Extensions\Servers\Domains\Money\Returns\{ReceiptReturns, RefundPayment};
 /** Explicit internal financial transitions. Native UI/scheduling are separate consumers. */
 final readonly class RenewalCycles
 {

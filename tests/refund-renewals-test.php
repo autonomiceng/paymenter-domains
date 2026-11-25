@@ -7,7 +7,8 @@ require __DIR__.'/Support/renewal-execution.php';
 use App\Models\{Credit, InvoiceTransaction, Role};
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{PricingRule, Refunds, RefundPayment, RenewalCycles, RenewalFunding, HoldingLocks, FinancialAdjustments};
+use Paymenter\Extensions\Servers\Domains\Services\{PricingRule, Refunds, RenewalCycles, RenewalFunding, HoldingLocks, FinancialAdjustments};
+use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 \Paymenter\Extensions\Servers\Domains\Services\ReminderSchema::install();
 
 $refunds=new Refunds($clock); $staff=commerceUser();
@@ -191,11 +192,11 @@ foreach(['plan amount'=>[[...$late,'amount'=>'not-an-amount']],'payment coverage
 // Coverage is checked before already credited payments are summed, so an unreadable entry is a review refusal, not an error.
 DB::table('domains_operations')->where('id',$card->id)->update(['funding'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode([...$readable,
     'late_credits'=>[[...$late,'payments'=>[['id'=>$late['payments'][0]['id'],'amount_minor'=>[100]]]]]]))]);
-commerceReject(fn()=>DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\RefundPayment::lateUncredited($card->fresh(),\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d->fresh()))));
+commerceReject(fn()=>DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment::lateUncredited($card->fresh(),\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d->fresh()))));
 // The credit writer checks plans before outstanding allocations, so a non-numeric allocation is a review refusal.
 DB::table('domains_operations')->where('id',$card->id)->update(['funding'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode([...$readable,
     'late_credits'=>[[...$late,'allocations'=>[[...$late['allocations'][0],'amount_minor'=>'not-an-amount']]]]]))]);
-commerceReject(fn()=>DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\RefundPayment::lateUncredited($card->fresh(),\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d->fresh()))));
+commerceReject(fn()=>DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment::lateUncredited($card->fresh(),\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d->fresh()))));
 DB::table('domains_operations')->where('id',$card->id)->update(['funding'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode($unbalanced))]);
 $sends=MoneyReceiptGateway::$sends;same(null,$refunds->creditRejected($card->id),'An unbalanced return plan is not credited');
 same([$before,$sends],[$credit(),MoneyReceiptGateway::$sends],'An unbalanced return plan moves no money and calls no gateway');
@@ -203,9 +204,9 @@ expect(DB::table('domains_obligation_alerts')->where('operation_id',$card->id)->
 // The return writer refuses a plan whose bridge amount is missing instead of reading it as zero.
 unset($unbalanced['late_credits'][0]['bridge_minor']);
 DB::table('domains_operations')->where('id',$card->id)->update(['funding'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode($unbalanced))]);
-commerceReject(fn()=>DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\RefundPayment::lateUncredited($card->fresh(),\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d->fresh()))));
+commerceReject(fn()=>DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment::lateUncredited($card->fresh(),\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d->fresh()))));
 DB::table('domains_operations')->where('id',$card->id)->update(['funding'=>$valid]);
-same([],DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\RefundPayment::lateUncredited($card->fresh(),\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d->fresh()))),'The valid plan has nothing left to credit');
+same([],DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment::lateUncredited($card->fresh(),\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d->fresh()))),'The valid plan has nothing left to credit');
 // Completion can precede Domains observing the positive receipt and its matching negative native row.
 InvoiceTransaction::create(['invoice_id'=>$bill->id,'amount'=>'0.50','fee'=>'0.00','status'=>'succeeded','gateway_id'=>$gateway->id,'transaction_id'=>'receipt_later']);
 MoneyReceiptGateway::automatic($bill,'receipt_later',50);

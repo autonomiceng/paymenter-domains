@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 /** Explicit replacement authority for an exactly refunded unsent renewal. No new invoice or send here. */
 final class RenewalReplacements
 {

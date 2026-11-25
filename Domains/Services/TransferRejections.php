@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 /** One finally failed transfer, with an audited account-specific answer. Never a no-send proof or retry authority. */
 final class TransferRejections
 {

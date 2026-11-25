@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 /** Explicit local writers. Never clears attempt evidence, sends a request or releases paid uncertainty. */
 final class StaffOperationWrites
 {

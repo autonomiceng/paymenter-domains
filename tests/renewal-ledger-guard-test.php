@@ -6,7 +6,8 @@ use App\Helpers\ExtensionHelper;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use App\Models\{Gateway,Invoice,InvoiceTransaction};
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks,PricingRule,RefundPayment};
+use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks,PricingRule};
+use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 class RetiredLossGateway extends \App\Classes\Extension\Gateway
 {
     public static array $ledger=[];
