@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence,DateEvidence,ExpiryPrecision,RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalCompletion, RenewalDecision, RenewalProof};
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAttempt, RenewalCompletion, RenewalDecision, RenewalProof};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 /** An account-specific support answer is evidence, never permission to resend a purchase. */
 class RegistrarAnswers
@@ -36,12 +36,14 @@ class RegistrarAnswers
     {
         if(!self::readable($op)){return false;}
         if($op->action==='transfer'){return TransferRejections::eligible($op);}
-        try{$at=new \DateTimeImmutable($op->attempt['dispatch_attempted_at']??'invalid');}catch(\Throwable){return false;}
+        // A renewal's seal, acceptance and read proof come from its attempt reader.
+        $renewal=$op->action==='renew'?RenewalAttempt::of($op):null;
+        try{$at=$renewal?$renewal->sentAt()??throw new \DomainException('Never sealed.'):new \DateTimeImmutable($op->attempt['dispatch_attempted_at']??'invalid');}catch(\Throwable){return false;}
         return in_array($op->registrar_key,['enom','namesilo'],true)&&in_array($op->action,['register','renew'],true)
             &&in_array($op->state,['running','pending','uncertain'],true)&&!($op->state==='running'&&$op->lease_expires_at!==null&&$op->lease_expires_at>$now)
-            &&($op->attempt['seal']??null)==='sealed'&&$at<=$now->modify('-24 hours')
-            &&(($op->provider_order_id===null||$op->provider_order_id===self::capturedReference($op))&&($op->registrar_key==='namesilo'||!isset($op->attempt['registration'])&&!isset($op->attempt['renewal']))||self::stoppedOrder($op))
-            &&!isset($op->policy['enom_answer'])&&!isset($op->attempt['reconciliation']);
+            &&($renewal?$renewal->sealed():($op->attempt['seal']??null)==='sealed')&&$at<=$now->modify('-24 hours')
+            &&(($op->provider_order_id===null||$op->provider_order_id===self::capturedReference($op))&&($op->registrar_key==='namesilo'||($renewal?$renewal->acceptance()===null:!isset($op->attempt['registration'])&&!isset($op->attempt['renewal'])))||self::stoppedOrder($op))
+            &&!isset($op->policy['enom_answer'])&&($renewal?$renewal->readProof()===null:!isset($op->attempt['reconciliation']));
     }
     /** Staff ask the registrar only after the system has read this exact attempt, unless there is nothing to read. */
     public static function readFirst(Operation $op,AttemptEvidence $attempt,\DateTimeImmutable $now): bool
@@ -58,11 +60,11 @@ class RegistrarAnswers
     public static function stoppedOrder(Operation $op): bool
     {
         if(!self::readable($op)){return false;}
-        $a=$op->attempt??[];$id=$op->provider_order_id;
+        $a=RenewalAttempt::of($op);$reply=$a->reply();$id=$op->provider_order_id;
         return $op->registrar_key==='enom'&&$op->action==='renew'&&is_string($id)&&preg_match('/^[1-9][0-9]{0,19}$/D',$id)
-            &&($a['renewal']['order_reference']??null)===$id&&($a['execution']['send_state']??null)==='sent'
-            &&in_array($a['execution']['disposition']??null,['accepted','accepted_with_discrepancy'],true)
-            &&!isset($a['reconciliation'])&&!isset($op->cost['actual'])&&$op->confirmed_expires_at===null&&!RenewalCompletion::capturedChargeHeld($op)
+            &&$a->orderReference()===$id&&($reply['send_state']??null)==='sent'
+            &&in_array($reply['disposition']??null,['accepted','accepted_with_discrepancy'],true)
+            &&$a->readProof()===null&&!isset($op->cost['actual'])&&$op->confirmed_expires_at===null&&!RenewalCompletion::capturedChargeHeld($op)
             &&(int)($op->policy['renewal_polls']??0)>=OperationReconciliation::POLL_LIMIT;
     }
     /** A check of this renewal attempt saw a matching charge or a later expiry, or the domain already shows one. Not processed is then refused. */
@@ -70,9 +72,17 @@ class RegistrarAnswers
     {
         // The attempt's before-expiry for a renewal is its base expiry (ReconciliationEvidence::attempt).
         $before=$op->base_expires_at?->format('Y-m-d');
-        return $before===null||isset($op->cost['actual'])||isset($op->attempt['reconciliation'])||$op->confirmed_expires_at!==null||RenewalCompletion::capturedChargeHeld($op)
-            ||RenewalProof::held($op)
+        $attempt=RenewalAttempt::of($op);
+        return $before===null||isset($op->cost['actual'])||$attempt->readProof()!==null||$op->confirmed_expires_at!==null||RenewalCompletion::capturedChargeHeld($op)
+            ||$attempt->observed()
             ||($d->provider_expires_at!==null&&$d->provider_expires_at->format('Y-m-d')>$before);
+    }
+    /** The original reply recorded an acceptance or a sent reply. A renewal reads both through its attempt reader. */
+    private static function replied(Operation $op): bool
+    {
+        if($op->action!=='renew'){return isset($op->attempt['registration'])||isset($op->attempt['renewal'])||($op->attempt['execution']['send_state']??null)==='sent';}
+        $attempt=RenewalAttempt::of($op);
+        return $attempt->acceptance()!==null||($attempt->reply()['send_state']??null)==='sent';
     }
     /** The fresh domain and expiry replies must agree on the account and complete in time. */
     private static function requireUnrenewed(AttemptEvidence $attempt, Clock $clock, \DateTimeImmutable $deadline, RenewalProof $proof): void
@@ -160,8 +170,7 @@ class RegistrarAnswers
         if(($input['confirmed']??false)!==true||!in_array($outcome,$transfer?['transfer_rejected']:['accepted','not_processed'],true)
             ||($outcome!=='not_processed'?!preg_match('/^[1-9][0-9]{0,19}$/D',$reference):$reference!=='')){
             throw new \DomainException('Record the registrar’s final answer for this account and attempt.');}
-        if(!$unproven&&$outcome==='not_processed'&&($op->provider_order_id!==null||(isset($op->attempt['registration'])||isset($op->attempt['renewal']))
-            ||isset($op->cost['actual'])||($op->attempt['execution']['send_state']??null)==='sent')){throw new \DomainException('This answer conflicts with the saved registrar result. Ask the registrar to check it.');}
+        if(!$unproven&&$outcome==='not_processed'&&($op->provider_order_id!==null||self::replied($op)||isset($op->cost['actual']))){throw new \DomainException('This answer conflicts with the saved registrar result. Ask the registrar to check it.');}
         if($op->provider_order_id!==null&&!$credit&&$reference!==$op->provider_order_id){throw new \DomainException('Registrar order number differs from the saved result.');}
         $answer=['identity'=>self::identity($op),'operation_key'=>$op->operation_key,'fingerprint'=>$op->account_fingerprint,
             'generation'=>$op->authority_generation,'actor_id'=>$review->actorId,'at'=>$now->format(DATE_ATOM),
