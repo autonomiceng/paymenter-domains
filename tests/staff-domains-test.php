@@ -311,6 +311,7 @@ $excluded=[
     'TransferInputs.php'=>['transfer_code'], // Request field name.
     'OwnerFormValidation.php'=>['mx_pref','priority','weight'], // Owner form field names in grouped match arms.
     'RefundProof.php'=>['unsent'], // Driver execution disposition.
+    'RenewalAttempt.php'=>['unknown'], // Reader reply outcome, not request safe_code.
     'NativeCatalogue.php'=>['registration','transfer'], // Product slug suffixes.
     'RenewalDecision.php'=>['admit','quarantine','advanced','unconfirmed'], // Internal admission and registrar-read decisions.
     'RenewalStop.php'=>['cancellation','staff','adopted','unreadable'], // Renewal intent/read state; the domain policy notice presents unreadable data.
