@@ -44,5 +44,5 @@ foreach(['timezone-los-angeles'=>[0=>'America/Los_Angeles'],'offset-kolkata'=>[1
         require __DIR__.'/Support/transfer-input-timezones.php';
     };
 }
-nativeFixtureCases($cases,compact('clock','user','other','baseline','unrelated','inputs','refunds','server'));
+nativeFixtureCases($cases,compact('clock','reads','user','other','baseline','unrelated','inputs','refunds','server'));
 echo "Transfer payment evidence case passed.\n";$nativeSuccessful=true;

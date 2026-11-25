@@ -6,6 +6,8 @@ use Illuminate\Support\Facades\{Crypt, DB, Facade};
 
 /** Case order of every multi-case command: listed, reverse or shuffle:<seed>. Order proofs change only this line. */
 const NATIVE_CASE_ORDER = 'listed';
+/** Receipt instrumentation that accumulates across cases; the reset never rewinds it. */
+const NATIVE_CASE_KEPT_STATICS = ['FixtureSetup'];
 
 /**
  * Run named cases against one prepared fixture, restoring everything a case can change before the next one.
@@ -55,12 +57,22 @@ function nativeObjectState(object $object): array
             $state[$class->name][$property->name] = $property->getValue($object);
         }
     }
+    // Dynamic properties, such as a fake port's counters on stdClass, belong to no declaring class.
+    $state[''] = [];
+    foreach ((new ReflectionObject($object))->getProperties() as $property) {
+        if (!$property->isDefault()) { $state[''][$property->name] = $property->getValue($object); }
+    }
     return [$object, $state];
 }
 
 function nativeRestoreObjectState(array $saved): void
 {
     [$object, $state] = $saved;
+    $dynamic = $state['']; unset($state['']);
+    foreach ((new ReflectionObject($object))->getProperties() as $property) {
+        if (!$property->isDefault() && !array_key_exists($property->name, $dynamic)) { unset($object->{$property->name}); }
+    }
+    foreach ($dynamic as $name => $value) { $object->$name = $value; }
     foreach ($state as $class => $properties) {
         foreach ($properties as $name => $value) {
             $property = new ReflectionProperty($class, $name);
@@ -78,6 +90,7 @@ function nativeStatics(): array
     foreach (get_declared_classes() as $name) {
         $class = new ReflectionClass($name);
         $file = (string) $class->getFileName();
+        if (in_array($name, NATIVE_CASE_KEPT_STATICS, true)) { continue; }
         if ($name !== Illuminate\Database\Eloquent\Model::class && !array_filter($roots, static fn ($root) => str_starts_with($file, $root))) { continue; }
         foreach ($class->getProperties(ReflectionProperty::IS_STATIC) as $property) {
             if ($property->getDeclaringClass()->name !== $name || !$property->isInitialized()) { continue; }
@@ -165,7 +178,7 @@ function nativeCaseCheckpoint(array $state = []): Closure
         foreach ($container as $name => $value) { (new ReflectionProperty(Illuminate\Container\Container::class, $name))->setValue($app, $value); }
         Facade::clearResolvedInstances();
         array_map(nativeRestoreObjectState(...), $objects);
-        foreach (get_declared_classes() as $name) {
+        foreach (array_diff(get_declared_classes(), NATIVE_CASE_KEPT_STATICS) as $name) {
             $class = new ReflectionClass($name);
             foreach ($class->getProperties(ReflectionProperty::IS_STATIC) as $property) {
                 if ($property->getDeclaringClass()->name !== $name) { continue; }
