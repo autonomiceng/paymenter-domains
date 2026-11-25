@@ -18,7 +18,7 @@ Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domai
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new Paymenter\Extensions\Servers\Domains\Data\SystemClock);
 // One click on the domain page closes what a retry cannot: an open failed notice and an uncertain email, with no resend. Nothing open, no button.
 $checked=$active->fresh();
-Paymenter\Extensions\Servers\Domains\Services\SalesPolicySchema::install();Paymenter\Extensions\Servers\Domains\Services\StaffAuditSchema::install();
+\Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferSchema::install();Paymenter\Extensions\Servers\Domains\Services\StaffAuditSchema::install();
 $rights=array_map([\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::class,'permission'],['alert_review','delivery_review']);$review=staffUser([Staff::VIEW,Staff::POLICY,...$rights]);
 Livewire::actingAs($review)->test(ViewDomain::class,['record'=>$checked->id])->assertActionHidden('notice_review');
 ObligationAlerts::record($checked->fresh(),'template_failed',time());

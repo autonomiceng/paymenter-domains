@@ -34,7 +34,7 @@ final readonly class TransferPrecheck
         $open = self::openEndings($s, $settings->get('domains_transfer_endings')?->value);
         // Worker selections carry no cart receipt; both paths use the same current provider facts.
         $facts = \Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::facts($tld->catalogue_facts);
-        if (!$tld->catalogue_converted || $tld->registrar_key !== $s->registrar
+        if ($tld->registrar_key !== $s->registrar
             || $tld->account_fingerprint !== $s->fingerprint || !$facts
             || !$facts->fresh(app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now())) {
             throw new \DomainException('Current transfer facts unavailable.');

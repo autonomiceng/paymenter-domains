@@ -25,7 +25,7 @@ final class OfferReadiness
         }
         $b=AccountBindings::binding($a);$costs=$failures=[];$counts=['registration'=>0,'transfer'=>0];
         $defaults=OfferState::decode($a->catalogue_defaults);
-        Tld::where('server_id',$b->serverId)->where('account_fingerprint',$b->fingerprint)->where('catalogue_converted',true)
+        Tld::where('server_id',$b->serverId)->where('account_fingerprint',$b->fingerprint)
             ->orderBy('id')->chunkById(25,function($tlds)use($b,$features,$lock,$defaults,&$costs,&$failures,&$counts):void {
                 $names=$tlds->pluck('tld')->all();$queries=[];
                 foreach(['register','renew','transfer'] as $action){foreach($action==='register'?range(1,10):[1] as $term){$queries[]=new Query($b,$names,$action,$term);}}

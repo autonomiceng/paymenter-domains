@@ -99,7 +99,6 @@ final class OfferReader
                     $decision = new Decision($name, $query->action, $query->term, false, null,
                         new Revision(0, $d['_revision'] ?? 0, (int) ($policy?->revision ?? 0)), 'unavailable');
                 } else {
-                    if (!$tld->catalogue_converted) { throw new \DomainException('Offer conversion changed.'); }
                     $snapshot = OfferState::snapshot($binding, $tld, $d, $policy, $rows, $readiness[$i], freshness: $freshness[$binding->serverId]);
                     $decision = $evaluator->evaluate($snapshot, $query, $context, $now);
                 }
@@ -120,7 +119,7 @@ final class OfferReader
                 $batch[$name] = [];
                 try {
                     $tld = $tlds[$id.':'.$name] ?? null; $rows = $prices[$id.':'.$name] ?? collect();
-                    if (!$tld || !$tld->catalogue_converted || !isset($freshness[$id])) { continue; }
+                    if (!$tld || !isset($freshness[$id])) { continue; }
                     foreach ([$tld, ...$rows] as $row) {
                         if ($row->account_fingerprint !== $b->fingerprint || $row->registrar_key !== $b->registrarKey) { throw new \DomainException('Offer binding changed.'); }
                     }

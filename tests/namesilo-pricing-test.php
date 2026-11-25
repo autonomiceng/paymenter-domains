@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Price, Tld};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client, Driver, Prices};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport, Environment as WireEnvironment, RegistrarRequest, RequestContext as WireContext, TransportResponse};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, FoundationSchema, PriceCatalogue, PricingRules, RegistrarRegistry};
-FoundationSchema::install();
+FoundationSchema::install();\Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferSchema::install();\Paymenter\Extensions\Servers\Domains\Catalogue\Pricing\PriceSchema::install();
 $clock = new class implements Clock { public function now(): DateTimeImmutable { return new DateTimeImmutable('2026-10-18T12:00:00Z'); } };
 $wire = new class implements DeadlineTransport {
     public string $price = '12.34';

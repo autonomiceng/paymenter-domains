@@ -73,7 +73,7 @@ final readonly class CatalogueFreshness
             $row->value = (string) $hours; $row->type = 'integer'; $row->encrypted = false; $row->save();
             if (!$changed) { return; }
             \Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id', $review->serverId)
-                ->where('catalogue_converted', true)->increment('catalogue_revision');
+                ->increment('catalogue_revision');
             StorefrontCatalogueCache::invalidateAfterCommit();
         });
         return $changed;

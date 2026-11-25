@@ -56,7 +56,7 @@ final class Writer implements Catalogue
     public function republishRetailRule(): void
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Retail upgrade requires unlocked reads.'); }
-        Tld::where('catalogue_converted', true)->orderBy('id')->chunkById(100, function ($rows): void {
+        Tld::orderBy('id')->chunkById(100, function ($rows): void {
             foreach ($rows as $tld) {
                 // An unpublished own rule remains closed for its ordinary guarded recovery.
                 if ($tld->catalogue_published_revision === null) { continue; }
@@ -96,7 +96,7 @@ final class Writer implements Catalogue
             \Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::saveLocked(PricingRules::KEY,$rule);
             \Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::saveLocked(\Paymenter\Extensions\Servers\Domains\Services\CardFee::KEY,$fee);
             $targets=[];$accounts=Account::orderBy('server_id')->lockForUpdate()->get()->keyBy('server_id');
-            foreach(Tld::where('catalogue_converted',true)->orderBy('id')->lockForUpdate()->get() as $t){
+            foreach(Tld::orderBy('id')->lockForUpdate()->get() as $t){
                 $a=$accounts[$t->server_id]??null;
                 if($a===null||$t->account_fingerprint!==$a->account_fingerprint||$t->registrar_key!==$a->registrar_key){continue;}
                 // Read the saved rule independently of the new fee; unreadable rules keep their TLD warning.
@@ -366,9 +366,8 @@ final class Writer implements Catalogue
         foreach ($offers as $offer) {
             $account = $accounts[$offer->server_id] ?? null;
             $server = $servers[$offer->server_id] ?? null;
-            if (!$account || $server?->extension !== 'Domains' || !$offer->catalogue_converted
-                || $offer->account_fingerprint !== $account->account_fingerprint || $offer->registrar_key !== $account->registrar_key) {
-                throw new \DomainException('Offer binding or conversion changed.');
+            if (!$account || $server?->extension !== 'Domains' || $offer->account_fingerprint !== $account->account_fingerprint || $offer->registrar_key !== $account->registrar_key) {
+                throw new \DomainException('Offer binding changed.');
             }
         }
         foreach ($prices as $price) {
@@ -403,7 +402,7 @@ final class Writer implements Catalogue
                 $created = true;
                 DB::table('domains_tlds')->insert(['server_id' => $binding->serverId, 'registrar_key' => $binding->registrarKey,
                     'account_fingerprint' => $binding->fingerprint, 'tld' => $name, 'catalogue_created' => true,
-                    'catalogue_converted' => true, 'catalogue_intent' => OfferState::json(new Intent)]);
+                    'catalogue_intent' => OfferState::json(new Intent)]);
             }
             $offers = Tld::where('tld', $name)->whereIn('server_id', $ids)->select('*')->selectRaw('CAST(catalogue_retained_annual_retail AS CHAR) AS catalogue_retained_annual_retail')->orderBy('id')->lockForUpdate()->get();
             $rows = OfferState::query('domains_prices')->whereIn('server_id', $ids)->where('tld', $name)->orderBy('id')->lockForUpdate()->get();

@@ -148,7 +148,7 @@ $server->settings()->where('key',LiveActivation::KEY)->delete();
 expect(!$engine->current($binding),'Setup review starts without an activation receipt');
 $now=app(Clock::class)->now();
 $key=['server_id'=>$server->id,'registrar_key'=>'namesilo','account_fingerprint'=>$binding->fingerprint,'tld'=>'com'];
-DB::table('domains_tlds')->insert([...$key,'catalogue_converted'=>true,'catalogue_revision'=>1,
+DB::table('domains_tlds')->insert([...$key,'catalogue_revision'=>1,
     'catalogue_intent'=>OfferState::json(['sell'=>true,'longest'=>1,'transfers'=>true]),
     'catalogue_published_revision'=>OfferState::json(['offer'=>1,'defaults'=>0,'selection'=>1,'retailRule'=>\Paymenter\Extensions\Servers\Domains\Catalogue\Retail::VERSION]),
     'catalogue_retained_annual_retail'=>'13.00',

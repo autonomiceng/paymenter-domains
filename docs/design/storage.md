@@ -278,7 +278,7 @@ prove stale evidence refused. Also test reversed multi-account cart order and sw
 Slice 15 price publication must lock native products/plans BEFORE Domains rows, never afterward;
 otherwise it can cycle with checkout. Native lock-prefix integration remains 16/17 acceptance.
 
-Slices 39/42 must call FoundationSchema::verify AND SalesPolicySchema::verify after Migrator,
+Slices 39/42 must call FoundationSchema::verify AND the catalogue OfferSchema::verify after Migrator,
 even on skip; both migrations retain data on down. No native/foundation columns change.
 19/20 dispatch frozen old holdings without requiring current default seller, while rechecking
 processing, funded authority, ownership and unresolved outcomes. No financial runtime ships here.

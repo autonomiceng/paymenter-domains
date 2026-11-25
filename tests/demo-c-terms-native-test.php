@@ -29,7 +29,7 @@ foreach (['enom', 'namesilo'] as $registrar) {
         ? TermSupport::evidence($binding, 'com') : $evidence;
     $facts = TermSupport::attach('com', $baseFacts, $caseEvidence);
     $row = ['server_id' => $server->id, 'registrar_key' => $registrar, 'account_fingerprint' => $binding->fingerprint];
-    DB::table('domains_tlds')->insert($row + ['tld' => 'com', 'catalogue_converted' => true, 'catalogue_revision' => 1,
+    DB::table('domains_tlds')->insert($row + ['tld' => 'com', 'catalogue_revision' => 1,
         'catalogue_intent' => OfferState::json(['sell' => false]), 'catalogue_facts' => OfferState::encodeFacts($facts), 'created_at' => $now, 'updated_at' => $now]);
     foreach ([['renew', 1, '14.0000'], ['renew', 2, '24.0000'], ['register', 2, '21.0000']] as [$action, $term, $total]) {
         DB::table('domains_prices')->insert($row + ['tld' => 'com', 'action' => $action, 'term' => $term, 'currency' => 'USD', 'unit' => 'term_total',

@@ -90,14 +90,14 @@ final class TldRegistrar
 
     public static function canRecheck(int $id,?array $status=null): bool
     {
-        // The account action also needs a converted TLD to enter the existing import writer.
+        // The account action also needs a bound TLD to enter the existing import writer.
         if(!SettingsActions::syncAll($id)->isVisible()){return false;}
         try{
             $status??=StaffCatalogue::routed()?->progress($id)??[];
             if(isset($status['failure'])||in_array($status['state']??null,['running','retrying'],true)
                 ||($status['state']??null)==='queued'&&(isset($status['due_at'])||!empty($status['remaining']))){return false;}
             $binding=AccountBindings::binding(Account::where('server_id',$id)->sole());
-            $first=Tld::where('server_id',$id)->where('catalogue_converted',true)->orderBy('id')->first();
+            $first=Tld::where('server_id',$id)->orderBy('id')->first();
             if($first===null||$first->account_fingerprint!==$binding->fingerprint||$first->registrar_key!==$binding->registrarKey){return false;}
             if($binding->registrarKey==='enom'){return TestCatalogue::enabled($binding);}
             if($binding->registrarKey!=='namesilo'||!class_exists(AdmittedTransport::class)){return false;}
@@ -127,7 +127,7 @@ final class TldRegistrar
 
     private static function facts(Account $account,?Tld $row,Clock $clock): ?Facts
     {
-        if($row===null||!$row->catalogue_converted||$row->account_fingerprint!==$account->account_fingerprint||$row->registrar_key!==$account->registrar_key){return null;}
+        if($row===null||$row->account_fingerprint!==$account->account_fingerprint||$row->registrar_key!==$account->registrar_key){return null;}
         try{return OfferState::acquisitionFacts(AccountBindings::binding($account),$row,$clock);}catch(\Throwable){return null;}
     }
     /** Known terms must fit the proposed sale. The writer can record intent while independent terms are pending. */
@@ -172,7 +172,7 @@ final class TldRegistrar
             'Seller account missing.'=>'This registrar account was removed. Choose another registrar.',
             'Seller account off.'=>'This registrar account is off. Turn it on in Servers.',
             'Explicit verified widening required.'=>$terms===null?null:$terms.' Nothing was saved.',
-            'Offer binding or conversion changed.','Price binding changed.','Seller offer group changed; retry.','Offer disappeared.'=>'Saved registrar prices changed. Reopen Change registrar and try again.',
+            'Offer binding changed.','Price binding changed.','Seller offer group changed; retry.','Offer disappeared.'=>'Saved registrar prices changed. Reopen Change registrar and try again.',
             default=>null,
         };
     }

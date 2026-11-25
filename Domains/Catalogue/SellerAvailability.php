@@ -15,7 +15,7 @@ final class SellerAvailability
     public static function hasPrices(Account $account,?Tld $t): bool {return self::state($account,$t)===self::READY;}
     public static function state(Account $account,?Tld $t): string
     {
-        if(!$t||!$t->catalogue_converted||$t->account_fingerprint!==$account->account_fingerprint||$t->registrar_key!==$account->registrar_key){return self::MISSING;}
+        if(!$t||$t->account_fingerprint!==$account->account_fingerprint||$t->registrar_key!==$account->registrar_key){return self::MISSING;}
         $costs=[];$unreadable=false;
         foreach(OfferState::query('domains_prices')->where('server_id',$account->server_id)->where('tld',$t->tld)
             ->where('registrar_key',$account->registrar_key)->where('account_fingerprint',$account->account_fingerprint)->where('term',1)->where('currency','USD')->get() as $price){

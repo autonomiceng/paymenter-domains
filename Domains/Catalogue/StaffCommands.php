@@ -62,7 +62,7 @@ final class StaffCommands
         $policies=DB::table('domains_sales_policies')->where('server_id',$server)->where('account_fingerprint',$b->fingerprint)->where('registrar_key',$b->registrarKey)
             ->where(fn($q)=>$q->where('register_enabled',true)->orWhere('transfer_enabled',true))->get()->keyBy('tld');
         $rows=Tld::where('server_id',$server)->where('account_fingerprint',$b->fingerprint)->where('registrar_key',$b->registrarKey)
-            ->where('catalogue_converted',true)->whereIn('tld',$policies->keys())->orderBy('id')->get();
+            ->whereIn('tld',$policies->keys())->orderBy('id')->get();
         foreach($rows as $t){
             try{
                 $d=OfferState::decode(Account::where('server_id',$server)->sole()->catalogue_defaults);
@@ -90,7 +90,7 @@ final class StaffCommands
             $review->input($data);return $this->writer->defaultPricing($review,self::rule($data,$fee),$fee);
         }
         $account=Account::where('server_id',$review->serverId)->sole();$binding=AccountBindings::binding($account);
-        $query=Tld::where('server_id',$review->serverId)->where('catalogue_converted',true);
+        $query=Tld::where('server_id',$review->serverId);
         if($review->tldId!==null){$query->whereKey($review->tldId);}
         $sell=$data['sell']??[];$names=array_unique(array_keys(($sell['choices']??[])+($sell['terms']??[])));
         if(count($names)>25){throw new \DomainException('Review at most 25 TLDs at once.');}

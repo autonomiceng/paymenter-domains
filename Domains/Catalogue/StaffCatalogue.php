@@ -14,7 +14,7 @@ use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,OfferRow,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{CardFee,PriceList,PricingRule,PricingRules};
 
-/** Bounded Staff snapshots over converted identities; recovery only hints the existing read queue. */
+/** Bounded Staff snapshots over bound identities; recovery only hints the existing read queue. */
 final class StaffCatalogue
 {
     public static function routed(): ?self { return CallerRouting::resolve(self::class); }
@@ -201,7 +201,7 @@ final class StaffCatalogue
     public function rows(array $bindings,?string $focus): \Illuminate\Database\Eloquent\Builder
     {
         $costs=Staff::requireView()->costs;
-        $q=TldFacts::bound(DB::table('domains_tlds'))->where('catalogue_converted',true)->where(function($q)use($bindings):void {
+        $q=TldFacts::bound(DB::table('domains_tlds'))->where(function($q)use($bindings):void {
             foreach($bindings as $b){$q->orWhere(fn($q)=>$q->where('domains_tlds.server_id',$b->serverId)->where('domains_tlds.account_fingerprint',$b->fingerprint));}
             if(!$bindings){$q->whereRaw('1=0');}
         });
@@ -468,7 +468,7 @@ final class StaffCatalogue
         $out=[];
         foreach($tlds->groupBy('server_id') as $id=>$rows){
             $a=Account::where('server_id',$id)->sole();
-            $bound=$rows->filter(fn($t)=>$t->catalogue_converted&&$t->account_fingerprint===$a->account_fingerprint&&$t->registrar_key===$a->registrar_key)->keyBy('tld');
+            $bound=$rows->filter(fn($t)=>$t->account_fingerprint===$a->account_fingerprint&&$t->registrar_key===$a->registrar_key)->keyBy('tld');
             if($bound->isEmpty()){continue;}
             $saved=[];
             foreach(OfferState::query('domains_prices')->where('server_id',$id)->whereIn('tld',$bound->keys()->all())->whereIn('term',array_unique([1,$years]))->where('currency','USD')

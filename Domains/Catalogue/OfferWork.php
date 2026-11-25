@@ -402,8 +402,8 @@ final class OfferWork
     }
     private function offerBinding(AccountBinding $b, Tld $t): void
     {
-        if ($t->account_fingerprint !== $b->fingerprint || $t->registrar_key !== $b->registrarKey || !$t->catalogue_converted) {
-            throw new \DomainException('Offer binding or conversion changed.');
+        if ($t->account_fingerprint !== $b->fingerprint || $t->registrar_key !== $b->registrarKey) {
+            throw new \DomainException('Offer binding changed.');
         }
     }
     private function editQueue(AccountBinding $b, \Closure $edit): void

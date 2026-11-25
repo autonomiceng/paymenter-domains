@@ -355,7 +355,7 @@ final class AcquisitionOffers
     public function contactTld(Tld $tld): Tld
     {
         $facts = OfferState::facts($tld->catalogue_facts);
-        if (!$tld->catalogue_converted || !$facts || !RegistryInputs::supported($tld->registrar_key, $tld->tld, $facts->registryFields)) {
+        if (!$facts || !RegistryInputs::supported($tld->registrar_key, $tld->tld, $facts->registryFields)) {
             throw new \DomainException('Current registry details unavailable.');
         }
         $copy = clone $tld; $copy->registry_fields = $facts->registryFields;

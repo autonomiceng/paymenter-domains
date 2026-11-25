@@ -19,7 +19,7 @@ class PriceList
         self::authorize();
         if($years<1||$years>10||!array_key_exists($filter,self::FILTERS)){throw new \InvalidArgumentException('Choose 1 to 10 years and a price filter.');}
         if(($catalogue=$this->catalogue())!==null){
-            $tlds=TldFacts::bound(Tld::query())->where('catalogue_converted',true)->when($serverId!==null,fn($q)=>$q->where('server_id',$serverId))->orderBy('tld')->orderBy('server_id')->get();
+            $tlds=TldFacts::bound(Tld::query())->when($serverId!==null,fn($q)=>$q->where('server_id',$serverId))->orderBy('tld')->orderBy('server_id')->get();
             return $catalogue->matrix($tlds,$years,$filter);
         }
         throw new \DomainException(FreshInstallation::MESSAGE);

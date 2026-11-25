@@ -133,7 +133,6 @@ class SetUpSales extends RecordDetailPage
     private function records(): array
     {
         return TldResource::getEloquentQuery()->whereKey($this->origin['ids'])
-            ->when(isset($this->origin['until']), fn($query) => $query->where('catalogue_converted', true))
             ->get()->keyBy('id')->all();
     }
 
