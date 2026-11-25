@@ -33,7 +33,7 @@ completion is still being checked. This read does not advance that check.
 
 ## Reversed receipts and outside-gateway credit (P05)
 
-`Services\ReceiptReversals::forInvoice(Invoice $invoice): array` combines the configured
+`Money\Returns\ReceiptReversals::forInvoice(Invoice $invoice): array` combines the configured
 gateways' optional local `receiptReversals` observations with Domains' retained
 `refund` and `late_credits` records. It does not fetch Stripe, allocate a return,
 credit/debit an account, or change a service. No observation is not proof of no

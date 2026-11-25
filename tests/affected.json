@@ -57,7 +57,7 @@
     "Domains/Renewal/Execution/RenewalCompletion.php": ["tests/renewal-worker-contention-test.php", "tests/renewal-check-claim-test.php", "tests/renewal-proof-observed-test.php", "tests/renewal-proof-unresolved-test.php"],
     "Domains/Services/MoneyDecisions.php": ["tests/renewal-proof-observed-test.php"],
     "Domains/Services/HoldingDeparture.php": ["tests/complimentary-departed-receipt-test.php", "tests/complimentary-departed-owner-credit-test.php"],
-    "Domains/Services/DisputeRecoveries.php": ["tests/walk3-invoice-state-test.php"],
+    "Domains/Money/Returns/DisputeRecoveries.php": ["tests/walk3-invoice-state-test.php"],
     "tests/Support/operation-fixture.php": ["tests/walk3-invoice-state-test.php"],
     "tests/Support/ready-registration.php": [
       "tests/operation-claim-lifecycle-test.php",

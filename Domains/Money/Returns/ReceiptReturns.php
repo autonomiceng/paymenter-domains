@@ -1,12 +1,13 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Money\Returns;
 use App\Enums\InvoiceTransactionStatus;
 use App\Helpers\ExtensionHelper;
 use App\Models\{Credit,Gateway,Invoice,InvoiceTransaction};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks, InvoiceMoney, InvoiceScope, MoneyDecisions, MoneyOutcome, MoneyRequest, MoneyResult, MoneyScope, NativeDomainGuard, OperationClaims, PricingRule, RefundPayment};
 /** Optional gateway receipt-allocation port, dispatched by native Paymenter. Gateway owns all remote I/O. */
 final class ReceiptReturns
 {

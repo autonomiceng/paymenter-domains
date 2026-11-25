@@ -5,7 +5,7 @@ require __DIR__.'/Support/reminders.php';
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\DisputeRecoveries;
+use Paymenter\Extensions\Servers\Domains\Money\Returns\DisputeRecoveries;
 
 $peer=$new('credit-notice-peer-placeholder.com');$sharedPeer=$new('credit-notice-shared-peer-placeholder.com');
 [$domain]=$make(placeholderComFixtureName('credit-notice-overdue-placeholder.com'),false);

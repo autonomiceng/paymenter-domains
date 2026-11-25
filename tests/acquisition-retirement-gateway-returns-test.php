@@ -36,7 +36,7 @@ same($money[0],$rows('credits'),'A malformed closed-order plan adds no credit');
 same($money[1],$rows('invoice_transactions'),'A malformed closed-order plan writes no payment row');
 same($calls,[MoneyReceiptGateway::$statusCalls,MoneyReceiptGateway::$sends],'A malformed closed-order plan calls no gateway');
 // An account-credit return with unreadable coverage is checked before the sweep reads what it credited: staff repair, no error.
-Paymenter\Extensions\Servers\Domains\Services\RefundRepairs::resolved((int)$automatic->id,$clock->now()->getTimestamp());$creditOnly=$automatic->fresh()->funding;
+Paymenter\Extensions\Servers\Domains\Money\Returns\RefundRepairs::resolved((int)$automatic->id,$clock->now()->getTimestamp());$creditOnly=$automatic->fresh()->funding;
 $creditOnly['late_credits']=[['payments'=>[['id'=>(int)App\Models\InvoiceTransaction::where('transaction_id','receipt_closed_auto')->value('id'),'amount_minor'=>[100]]],
     'amount'=>'1.00','currency'=>'USD','to'=>'account_credit','credit_id'=>null,'at'=>$clock->now()->format(DATE_ATOM)]];
 DB::table('domains_operations')->where('id',$automatic->id)->update(['funding'=>Illuminate\Support\Facades\Crypt::encryptString(json_encode($creditOnly))]);

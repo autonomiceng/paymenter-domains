@@ -12,7 +12,8 @@ use Illuminate\Support\Facades\{Crypt,DB,Mail};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Mail\DomainNotice;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{DepartureProof,EnomAnswers,FundsWaits,HoldingDeparture,HoldingLocks,InvoiceMoney,MoneyDecisions,MoneyOutcome,MoneyRequest,PricingRule,ReceiptReturns,Refunds,RefundPayment,RenewalCycles,RenewalRetries,StaffHoldingReview};
+use Paymenter\Extensions\Servers\Domains\Services\{DepartureProof,EnomAnswers,FundsWaits,HoldingDeparture,HoldingLocks,InvoiceMoney,MoneyDecisions,MoneyOutcome,MoneyRequest,PricingRule,Refunds,RefundPayment,RenewalCycles,RenewalRetries,StaffHoldingReview};
+use Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns;
 // Every case starts from the same issued renewal followed by the registrar's definite absence. Each case adds its own
 // payment history, then runs the real staff departure decision or refund sweep against it.
 $nativeSuccessful=false;

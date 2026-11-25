@@ -7,7 +7,8 @@ use App\Models\User;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, DomainAudit};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
-use Paymenter\Extensions\Servers\Domains\Services\{HoldingDeparture,ReceiptReturns,StaffOperationReview};
+use Paymenter\Extensions\Servers\Domains\Services\{HoldingDeparture,StaffOperationReview};
+use Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns;
 /** One domain's history: registrar requests, staff holds, releases and renewal changes, customer auto-renew changes and departure reads, newest first. Read by the History tab and the Activity rail. */
 final class DomainHistory
 {

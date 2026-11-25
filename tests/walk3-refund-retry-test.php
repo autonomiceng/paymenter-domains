@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/Support/staff-operation-fixture.php';
 require __DIR__.'/Support/money-receipt.php';
 use Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions;
-use Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns;
+use Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns;
 $op=$held('walk3-refund-placeholder.com');
 $gateway=App\Models\Gateway::create(['extension'=>'MoneyReceipt','name'=>'Receipt fixture','type'=>'gateway','enabled'=>true]);
 App\Models\InvoiceTransaction::where('invoice_id',$op->invoice_id)->update(['gateway_id'=>$gateway->id,'transaction_id'=>'synthetic-receipt']);

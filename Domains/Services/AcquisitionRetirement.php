@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\{Crypt,DB,Log,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
+use Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns;
 /** Owned acquisition closure. Every decision takes the native W/A0 prefix before domain/operations. */
 final readonly class AcquisitionRetirement
 {

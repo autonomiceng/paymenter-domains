@@ -1,21 +1,24 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Money\Returns;
 use App\Helpers\ExtensionHelper;
 use App\Models\{Gateway,Setting};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Services\{HookDiagnostics, InvoiceMoney, InvoiceScope, MoneyDecisions, MoneyOutcome, MoneyRequest, MoneyScope, OperationClaims, PricingRule, Reminders};
 /** Lost bank disputes remove only unused returned credit. Fixed alerts retain the rest for staff. */
 final readonly class DisputeRecoveries
 {
     public function __construct(private Clock $clock) {}
+    /** Settings owner of the scan cursor, kept from this class's first namespace so stored cursors still match. */
+    private const CURSOR_OWNER='Paymenter\Extensions\Servers\Domains\Services\DisputeRecoveries';
     public static function key(string $code,string $dispute): string { return hash('sha256',$code.':'.$dispute); }
     private static function cursor(string $key='domains_dispute_scan')
-    { return Setting::where('settingable_type',self::class)->where('settingable_id',0)->where('key',$key); }
+    { return Setting::where('settingable_type',self::CURSOR_OWNER)->where('settingable_id',0)->where('key',$key); }
     private static function advance(array $cursor,string $key='domains_dispute_scan'): void
-    { Setting::updateOrCreate(['settingable_type'=>self::class,'settingable_id'=>0,'key'=>$key],['value'=>json_encode($cursor,JSON_THROW_ON_ERROR),'type'=>'string','encrypted'=>false]); }
+    { Setting::updateOrCreate(['settingable_type'=>self::CURSOR_OWNER,'settingable_id'=>0,'key'=>$key],['value'=>json_encode($cursor,JSON_THROW_ON_ERROR),'type'=>'string','encrypted'=>false]); }
     /** Up to 25 open retry records after the last one tried, oldest first, then from the start again. */
     private static function retries(): \Illuminate\Support\Collection
     {

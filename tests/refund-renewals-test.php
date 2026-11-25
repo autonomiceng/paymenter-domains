@@ -186,7 +186,7 @@ foreach(['plan amount'=>[[...$late,'amount'=>'not-an-amount']],'payment coverage
     'late credit amount'=>[$late,['amount'=>'not-an-amount','currency'=>'USD','payments'=>[],'to'=>'account_credit','credit_id'=>null,'at'=>$late['at']]]] as $kind=>$credits){
     DB::table('domains_operations')->where('id',$card->id)->update(['funding'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode([...$readable,'late_credits'=>$credits]))]);
     $outcome=$presenter->invoiceOutcome($user,(int)$bill->id);same(['pending',null],[$outcome->money,$outcome->amount],'Unreadable '.$kind.' leaves the invoice outcome pending with no total');
-    commerceReject(fn()=>\Paymenter\Extensions\Servers\Domains\Services\ReceiptReversals::forInvoice($bill));
+    commerceReject(fn()=>\Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReversals::forInvoice($bill));
 }
 // Coverage is checked before already credited payments are summed, so an unreadable entry is a review refusal, not an error.
 DB::table('domains_operations')->where('id',$card->id)->update(['funding'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode([...$readable,
@@ -248,7 +248,7 @@ for($number=0;$number<=3;$number++){
     expect($next->id!==$retry->id,'Fresh attempt created only from proved no send');same($root->invoice_id,$next->invoice_id,'Retry retains original paid debt');
     same($next->id,\Paymenter\Extensions\Servers\Domains\Services\RenewalRetries::recover($retry->id,$clock)->id,'Duplicate recovery converges on same attempt');
     $beforeRefundSweep=nativeFinancialSnapshot($retry);
-    \Paymenter\Extensions\Servers\Domains\Services\RefundRepairs::failed($retry->id,$clock->now()->getTimestamp());
+    \Paymenter\Extensions\Servers\Domains\Money\Returns\RefundRepairs::failed($retry->id,$clock->now()->getTimestamp());
     same(null,$refunds->creditRejected($retry->id),'Proved retry predecessor has no refund obligation');
     same($beforeRefundSweep,nativeFinancialSnapshot($retry->fresh()),'Refund sweep leaves the retry payment untouched');
     same(0,DB::table('domains_obligation_alerts')->where('operation_id',$retry->id)->where('code','refund_repair')->whereNull('resolved_at')->count(),'Retry predecessor creates no false refund repair alert');
@@ -288,7 +288,7 @@ DomainsReversalGateway::$observations['pi_domains_reversed']=[['kind'=>'dispute'
     'amount_minor'=>100,'credited_minor'=>0,'credit_balance_minor'=>0,'next_step'=>'Review the invoice and credit history.']];
 DomainsReversalGateway::$observations['pi_domains_reversed'][]=DomainsReversalGateway::$observations['pi_domains_reversed'][0];
 $before=$nativeMoney();$services=\App\Models\Service::orderBy('id')->get()->map(fn($r)=>$r->getRawOriginal())->all();$operations=Operation::orderBy('id')->get()->map(fn($r)=>$r->getRawOriginal())->all();
-$reversals=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReversals::forInvoice($reversedInvoice);
+$reversals=\Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReversals::forInvoice($reversedInvoice);
 same(1,count($reversals),'Repeated receipt observations appear once in staff context');
 same([100,0,0],[$reversals[0]['domains_credited_minor'],$reversals[0]['domains_unattributed_minor'],$reversals[0]['credit_balance_minor']],'Only the reversed receipt gets its exact Domains credit, including a spent zero balance');
 $role->update(['permissions'=>['admin.domains.view','admin.domains.costs']]);\Illuminate\Support\Facades\Auth::setUser($staff);

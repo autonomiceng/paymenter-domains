@@ -7,6 +7,7 @@ use App\Enums\InvoiceTransactionStatus;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns;
 /** Staff corrections append signed native evidence; never rewrite/delete an original payment. */
 final readonly class FinancialAdjustments
 {

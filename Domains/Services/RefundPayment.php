@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementPrivacy;
+use Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns;
 /** Exact issued line and complete signed native funding, under HoldingLocks. No lifecycle/price inference. */
 final class RefundPayment
 {
