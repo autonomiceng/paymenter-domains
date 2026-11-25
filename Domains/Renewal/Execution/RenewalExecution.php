@@ -6,20 +6,20 @@ use Illuminate\Support\Facades\{DB, Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AdmittedOperation, DateEvidence, ExpiryPrecision, Money, Query, RenewalCode, RenewalDecision as AdmissionDecision, RenewalRequest, RequestBudget, RequestContext, RequestOrigin, SendFailure, SendState};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\{DispatchGate, RenewalWriter};
+use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\{RenewalUnsent, RenewalWriter};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, ComplimentaryCosts, EnomLateRenewal, EnomTestCallLimit, EnomTestCalls, EnomTestRenewal, EnomTestWriteReservation, EntryDeadline, FreshTransaction, FundsWaits, HoldingLocks, LateRenewalQuote, MoneyDecisions, MoneyRequest, ObligationAlerts, OperationClaims, ReadDeferred, RenewalAcceptance, RenewalAuthority, RenewalBusy, RenewalCycles, RenewalFunding, RenewalFundingLedger, RenewalHold, RenewalRefused, Runtime, WriteFeatures, WriteHeld, WriteMoney};
 /** One sealed attempt. A durable row, request or admission decision is never a live grant. */
 final class RenewalExecution
 {
     /** Renewal steps deferred by database contention. The runtime turn hands them back to the operation queue. */
     public const KIND = 'renewal';
-    /** The only issuer of this engine's live grants; the paired writer consumes them. */
-    public readonly DispatchGate $gate;
+    /** Live grants, one per sealed request object, minted only by the seal transition. */
+    private \WeakMap $grants;
     private readonly RenewalStanding $standing;
     public function __construct(private readonly AccountBindings $bindings, private readonly RenewalAuthority $authority,
         private readonly RenewalAdmission $admission, private readonly RenewalAcceptance $accepted,
         private readonly WriteFeatures $features, private readonly Clock $clock)
-    { $this->standing = new RenewalStanding($bindings, $accepted, $features, $clock); $this->gate = new DispatchGate($bindings, $accepted, $features, $clock); }
+    { $this->standing = new RenewalStanding($bindings, $accepted, $features, $clock); $this->grants = new \WeakMap; }
     public function run(int $id, RenewalWriter $writer): Operation
     {
         $work=fn()=>EntryDeadline::run($this->clock, fn ($finishCap) => $this->runEntered($id, $writer, $finishCap));
@@ -133,7 +133,11 @@ final class RenewalExecution
             'request_fingerprint' => $digest]);
         $descriptor = new AdmittedOperation($binding, new Query($name, Action::Renew, (int) $op->term), $op->operation_key, $claim,
             $d->authority_generation, $claim, $digest, $ready->cost, new DateEvidence($op->base_expires_at->format('Y-m-d'), ExpiryPrecision::Date, 'renewal_base'));
-        $this->gate->issue($descriptor, $reservedContext, $writer);
+        $fresh = HoldingLocks::take($d); $this->grants[$descriptor] = [
+            'context' => $reservedContext, 'stamp' => $fresh['stamp'], 'id' => $id, 'revision' => $op->transition_revision,
+            'mode' => $ready->status->value, 'writer' => $writer, 'binding' => $binding, 'query' => $descriptor->query,
+            'claim' => $claim, 'digest' => $digest,
+        ];
         return $descriptor;
     }
     /** Records the hold for a claim that never reached the seal. */
@@ -162,7 +166,7 @@ final class RenewalExecution
             $failure = $error instanceof SendFailure ? $error : null;
             Log::warning('Domains renewal reply not recorded.', ['operation_id' => $id, 'exception_class' => $error::class] + ($failure?->facts() ?? []));
         }
-        finally { $this->gate->revoke($descriptor); }
+        finally { unset($this->grants[$descriptor]); }
         // A deferred reply record leaves the claim running; its lease ends and completion reads the registrar.
         return $this->decide($seed, $id, function (array $l) use ($id, $descriptor, $result, $failure, $context) {
             $op = $l['operations']->firstWhere('id', $id);
@@ -185,6 +189,29 @@ final class RenewalExecution
         $decision = MoneyDecisions::run(new MoneyRequest($seed, self::KIND, $id), $step);
         if ($decision->error) { throw $decision->error; }
         return $decision->value;
+    }
+    /** Exact-object consume at the last local boundary, after final reads and before the single wire call.
+     * The grant is gone before its check runs. Returns the sealed command: send mode, query and account binding.
+     * @return array{string, Query, AccountBinding} */
+    public function consume(AdmittedOperation $op, RequestContext $context, RenewalWriter $writer): array
+    {
+        OperationClaims::outside(); $grant = $this->grants[$op] ?? null; unset($this->grants[$op]);
+        if (!$grant || $grant['context'] !== $context || $grant['writer'] !== $writer) { throw new \DomainException('No live renewal grant.'); }
+        try { FreshTransaction::run(function () use ($context, $grant, $writer) {
+            $row = Operation::findOrFail($grant['id']); $l = HoldingLocks::take($row->domain()->firstOrFail()); $row = $l['operations']->firstWhere('id', $row->id);
+            $funding = $this->standing->current($row, $l); $writer->requirePolicy($grant['binding'], $this->features, $this->accepted);
+            $matchesFunding = $row->funding_basis === 'paid_invoice'
+                ? RenewalFundingLedger::entries($row) === $funding['entries']
+                : $row->funding['seal'] === $funding;
+            $attempt = $row->attempt;
+            $reservationMatches = $l['stamp'] === $grant['stamp'] && ($attempt['seal'] ?? null) === 'sealed'
+                && ($attempt['claim_key'] ?? null) === $grant['claim'] && $row->request_fingerprint === $grant['digest'];
+            if (!RenewalDecision::canSend($grant['revision'], $row->transition_revision, $row->state,
+                $reservationMatches, $matchesFunding, $row->lease_expires_at, $context->deadline, $this->clock->now())) {
+                throw new \DomainException('Sealed renewal authority changed.');
+            }
+        }); } catch (\Throwable $error) { throw new RenewalUnsent('Live renewal refused before the wire.', previous: $error); }
+        return [$grant['mode'], $grant['query'], $grant['binding']];
     }
     private function hasPayment(Operation $op, array $l): bool
     {

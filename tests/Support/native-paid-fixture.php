@@ -34,7 +34,7 @@ $features=new WriteFeatures(true,true,true,true);$authority=new RenewalAuthority
 $renewal=new RenewalExecution($bindings,$authority,new RenewalAdmission($authority,$bindings,$accept,$clock),$accept,$features,$clock);
 require __DIR__.'/native-paid-acquisition.php';
 $composition=['acquisition'=>offlineAcquisition($b,$paidBindings,$clock,$features,$paidExchange,$paidPrecheck),'reconciliation'=>new OperationReconciliation($claims,$bindings,$clock),
-    'renewal'=>$renewal,'renewal_writer'=>new RenewalWriter($b,$features,$accept,$renewal->gate,static fn()=>throw new LogicException('No renewal wire in payment matrix')),
+    'renewal'=>$renewal,'renewal_writer'=>new RenewalWriter($b,$features,$accept,fn()=>$renewal,static fn()=>throw new LogicException('No renewal wire in payment matrix')),
     'renewal_completion'=>new RenewalCompletion($bindings,$clock),'management'=>new DomainManagement($bindings,$clock,$features,true),
     'management_protocol'=>new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Management($b,static fn()=>throw new LogicException('No management wire in payment matrix'))];
 $runtimeCompositionWitness??=static fn()=>null;

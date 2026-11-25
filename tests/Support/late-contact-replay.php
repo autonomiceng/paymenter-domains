@@ -22,7 +22,7 @@ $renewal=new RenewalExecution($bindings,$authority,new RenewalAdmission($authori
 $ports=new RuntimePorts;
 $ports->register($binding->fingerprint,fn()=>[
     'acquisition'=>offlineAcquisition($binding,$bindings,$clock,$features,$unusedExchange),'reconciliation'=>new OperationReconciliation($claims,$bindings,$clock),
-    'renewal'=>$renewal,'renewal_writer'=>new RenewalWriter($binding,$features,$acceptance,$renewal->gate,$unusedExchange),
+    'renewal'=>$renewal,'renewal_writer'=>new RenewalWriter($binding,$features,$acceptance,fn()=>$renewal,$unusedExchange),
     'renewal_completion'=>new RenewalCompletion($bindings,$clock),'management'=>new DomainManagement($bindings,$clock,$features,true),
     'management_protocol'=>new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Management($binding,$unusedExchange),
 ]);

@@ -130,25 +130,31 @@ $features = new \Paymenter\Extensions\Servers\Domains\Services\WriteFeatures(ren
 $authorityPort = new RenewalAuthority($bindings, $clock,offers: $GLOBALS['caps']??null);
 $admission = new \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAdmission($authorityPort, $bindings, $accepted, $clock);
 $engine = new \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalExecution($bindings, $authorityPort, $admission, $accepted, $features, $clock);
-$writes = 0; $writer = new \Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter($binding, $features, $accepted, $engine->gate, static function () use (&$writes): never { $writes++; throw new LogicException('Forbidden renewal send'); });
+$writes = 0; $writer = new \Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter($binding, $features, $accepted, fn () => $engine, static function () use (&$writes): never { $writes++; throw new LogicException('Forbidden renewal send'); });
 $calls = count($wire->calls);
 same('held', $engine->run($op->id, $writer)->state, 'Direct installed executor holds funded DNR before admission');
 same('renewal_funding_or_authority', $op->fresh()->safe_code, 'Executor reaches current funding/authority refusal');
 same([$calls, 0], [count($wire->calls), $writes], 'No read or monetary command from DNR executor');
-// The gate reads the attempt itself before it issues a grant, independently of executor admission.
+// Inject an exact live grant to exercise consume independently of executor admission.
 $descriptor = new \Paymenter\Extensions\Servers\Domains\Data\AdmittedOperation($binding,
     new \Paymenter\Extensions\Servers\Domains\Data\Query($d->domain, \Paymenter\Extensions\Servers\Domains\Data\Action::Renew, 1),
     $op->operation_key, 'synthetic-claim', $d->authority_generation, 'synthetic-funding', str_repeat('a', 64), new Money('8.00', 'USD'),
     new \Paymenter\Extensions\Servers\Domains\Data\DateEvidence($d->provider_expires_at->format('Y-m-d'), \Paymenter\Extensions\Servers\Domains\Data\ExpiryPrecision::Date, 'renewal_base'));
 $ctx = new \Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding, \Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background,
     $clock->now()->modify('+60 seconds'), new \Paymenter\Extensions\Servers\Domains\Data\RequestBudget(1), $clock);
+$grantMap = (new ReflectionProperty($engine, 'grants'))->getValue($engine);
+$grantMap[$descriptor] = ['context' => $ctx, 'stamp' => $l['stamp'], 'id' => $op->id,
+    'revision' => $op->fresh()->transition_revision, 'mode' => 'ordinary', 'writer' => $writer,
+    'binding' => $binding, 'query' => $descriptor->query, 'claim' => 'synthetic-claim', 'digest' => str_repeat('a', 64)];
 try {
-    $engine->gate->issue($descriptor, $ctx, $writer);
-    throw new LogicException('Dispatch gate granted a stopped renewal');
-} catch (DomainException $refusal) {
-    same($stopReason, $refusal->getMessage(), 'Grant issue preserves the funding authority refusal');
+    $engine->consume($descriptor, $ctx, $writer);
+    throw new LogicException('Last local consume boundary admitted a stopped renewal');
+} catch (\Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalUnsent $refusal) {
+    expect($refusal->getPrevious()?->getMessage() === $stopReason, 'Final consume preserves the funding authority refusal');
 }
-try { $writer->renew($descriptor, $ctx); throw new LogicException('Writer passed its gate without a grant'); } catch (DomainException) {}
+// The refused grant is spent: the writer now has no grant and refuses before the wire.
+try { $writer->renew($descriptor, $ctx); throw new LogicException('Writer sent without a live grant'); }
+catch (DomainException $missing) { same('No live renewal grant.', $missing->getMessage(), 'Writer refuses a descriptor without a live grant'); }
 same(0, $writes, 'Final consume never reaches writer');
 // Sent original attempts still need outcome reconciliation; no second execution is authorized.
 foreach (['pending', 'uncertain', 'running'] as $sentState) {

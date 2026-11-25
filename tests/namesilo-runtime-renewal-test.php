@@ -22,7 +22,7 @@ $billing=new DomainBilling($bindings,$guard,$clock,catalogue: $GLOBALS['caps']??
 $accepted=new RenewalAcceptance($binding,true,true,25);$features=new WriteFeatures(renewal:true);
 $engine=new RenewalExecution($rb,$authority,new RenewalAdmission($authority,$rb,$accepted,$clock),$accepted,$features,$clock);
 $transport=nsWriteTransport($binding,$clock);
-$writer=new RenewalWriter($binding,$features,$accepted,$engine->gate,$transport->exchange());$writer->useReservation($transport->reservation);
+$writer=new RenewalWriter($binding,$features,$accepted,fn()=>$engine,$transport->exchange());$writer->useReservation($transport->reservation);
 commerceReject(fn()=>$writer->useReservation($transport->reservation));
 $holding->service->product->server->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>true,'type'=>'boolean']);
 $observeAnnual=static function()use($clock,$binding,$ports):void {

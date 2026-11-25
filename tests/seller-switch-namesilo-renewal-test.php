@@ -20,7 +20,7 @@ $accepted = new RenewalAcceptance($binding, true, true, 25); $features = new Wri
 $engine = new RenewalExecution($renewBindings, $authority, new RenewalAdmission($authority, $renewBindings, $accepted, $clock), $accepted, $features, $clock);
 $accountGuard=(object)['email'=>'expected@example.com','id'=>'900','default'=>'1','mode'=>'singleton','reads'=>0];
 $writes = 0; $loseResponse = false; $duringSend = null; $sendSwitches = 0;
-$writer = new RenewalWriter($binding, $features, $accepted, $engine->gate, static function ($origin, $command, $params, $timeout) use (&$writes, &$loseResponse, &$duringSend, $accountGuard) {
+$writer = new RenewalWriter($binding, $features, $accepted, fn () => $engine, static function ($origin, $command, $params, $timeout) use (&$writes, &$loseResponse, &$duringSend, $accountGuard) {
     same(0, DB::transactionLevel(), 'Renewal send outside locks'); expect($timeout > 0 && $timeout <= 25000, 'Bounded send');
     if($command==='contactList'&&$params===[]){return nameSiloGuardWire($accountGuard);}
     same('https://ote.namesilo.com/apibatch', $origin, 'Original NameSilo route'); same('renewDomain', $command, 'Only holder renewal');

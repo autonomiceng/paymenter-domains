@@ -23,7 +23,7 @@ final class RuntimeComposition
         $authority=new RenewalAuthority($bindings,$clock);
         $renewal=new RenewalExecution($bindings,$authority,new RenewalAdmission($authority,$bindings,$renewalAccepted,$clock),$renewalAccepted,$features,$clock);
         return ['acquisition'=>$acquisition,'reconciliation'=>new OperationReconciliation(new OperationClaims($bindings,$clock),$bindings,$clock),
-            'renewal'=>$renewal,'renewal_writer'=>new RenewalWriter($binding,$features,$renewalAccepted,$renewal->gate,$renewalExchange),
+            'renewal'=>$renewal,'renewal_writer'=>new RenewalWriter($binding,$features,$renewalAccepted,static fn()=>$renewal,$renewalExchange),
             'renewal_completion'=>new RenewalCompletion($bindings,$clock),
             'management'=>new DomainManagement($bindings,$clock,$features,$managementAccepted,testManagement:$testManagement,localCheck:$managementAcceptanceCheck),'management_protocol'=>$management,
             ...($observationReader === null ? [] : ['observation_reader'=>$observationReader])];
