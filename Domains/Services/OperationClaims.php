@@ -358,12 +358,14 @@ final class OperationClaims
             return $op;
         });
     }
+    /** Enom preflight holds that keep their unsent claim for a later release. */
+    public const TEST_CALL_HOLDS=['enom_test_call_cap','enom_test_transfer_call_cap','pre_send_interrupted','seal_authority_invalid','claim_authority_invalid',
+        'nameservers_required','write_acceptance_required','write_rate_limited','registry_details_unsupported','processing','write_disabled',
+        'usd_balance_required','enom_test_transfer_usd_balance_required','enom_test_setup_required','enom_test_transfer_setup_required',...WriteHeld::UNSENT_REFUSALS];
     /** Staff may release only this retained, proven-unsent TEST preflight hold. */
     public static function testCallRefusalRetryable(Operation $op): bool
     {
-        return $op->state==='held'&&in_array($op->safe_code,['enom_test_call_cap','enom_test_transfer_call_cap','pre_send_interrupted','seal_authority_invalid','claim_authority_invalid',
-                'nameservers_required','write_acceptance_required','write_rate_limited','registry_details_unsupported','processing','write_disabled',
-                'usd_balance_required','enom_test_transfer_usd_balance_required','enom_test_setup_required','enom_test_transfer_setup_required',...WriteHeld::UNSENT_REFUSALS],true)
+        return $op->state==='held'&&in_array($op->safe_code,self::TEST_CALL_HOLDS,true)
             &&in_array($op->action,['register','transfer'],true)&&$op->registrar_key==='enom'
             &&$op->lease_expires_at===null&&$op->completed_at===null
             &&$op->provider_order_id===null&&$op->confirmed_expires_at===null
@@ -395,8 +397,7 @@ final class OperationClaims
         $a=$op->attempt??[];$f=FinancialAdjustments::registrarFunding($op);$history=array_key_exists('test_call_refusals',$a)?$a['test_call_refusals']:[];
         $priceHold=$op->state==='held'&&$op->safe_code==='registrar_price_increased';
         $priceRelease=$op->state==='queued'&&ExecutionWindow::priceReleased($op);
-        $holdCodes=[...BalanceRetries::REVIEW_CODES,'enom_test_call_cap','enom_test_transfer_call_cap','pre_send_interrupted','seal_authority_invalid','claim_authority_invalid','nameservers_required',
-            'write_acceptance_required','write_rate_limited','registry_details_unsupported','processing','write_disabled','usd_balance_required','enom_test_transfer_usd_balance_required','enom_test_setup_required','enom_test_transfer_setup_required',...WriteHeld::UNSENT_REFUSALS];
+        $holdCodes=[...BalanceRetries::REVIEW_CODES,...self::TEST_CALL_HOLDS];
         if(!in_array($op->action,['register','transfer'],true)||$op->registrar_key!=='enom'||!self::testCallHistory($history)||(!$history&&!$priceHold&&!$priceRelease)||!self::unsealed($op)
             ||$op->lease_expires_at!==null||$op->provider_order_id!==null||$op->confirmed_expires_at!==null||$op->completed_at!==null
             ||array_key_exists('actual',$op->cost??[])||array_key_exists('execution',$op->cost??[])||array_key_exists('dispatch_attempted_at',$op->policy??[])

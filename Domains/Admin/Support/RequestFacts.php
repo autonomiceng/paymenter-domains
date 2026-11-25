@@ -2,6 +2,7 @@
 // Adapted from Enom 444f31c staff activity; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use Paymenter\Extensions\Servers\Domains\Staff\Release\{HeldRelease,ReleaseDecision};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, TransferPolling};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
@@ -45,7 +46,7 @@ final class RequestFacts
         try {
             if($op->state==='held'&&$op->safe_code==='contact_details_required'){
                 try{
-                    $l=StaffOperationWrites::releaseFacts($op);
+                    $l=HeldRelease::readFacts($op);
                     \Paymenter\Extensions\Servers\Domains\Services\ContactRecovery::requireReplacement($op,$l,
                         \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::collect($l['user']),app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now());
                     $out['contact_ready']=self::contactReady($op);
@@ -76,7 +77,7 @@ final class RequestFacts
                     $out['cutoff']='Auth code deadline passed.';
                 } catch (\DomainException) { /* Sent or unknown outcomes keep the unconfirmed notice. */ }
             }
-            $admissionHold=$op->state==='held'&&RenewalCycles::registrarVirgin($op)&&StaffOperationWrites::renewalAdmissionHold($op);
+            $admissionHold=$op->state==='held'&&RenewalCycles::registrarVirgin($op)&&ReleaseDecision::renewalAdmission((string)$op->action,$op->safe_code);
             if ($admissionHold&&OperationActions::relevant('release',$op)) { $out['admission']='Fix the cause, then release the hold.'; }
             if ($op->registrar_key==='namesilo' && $op->action==='renew' && ($admissionHold || $a!==[])
                 && (($p['renewal_execution']['reason']??null)==='provider_auto_renew_unconfirmed'
@@ -336,7 +337,7 @@ final class RequestFacts
             $on=self::ordersOn($op,$held,$accounts);
             if (ContactStepRetries::candidate($op)) {
                 $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now();
-                try { StaffOperationWrites::requireRelease($op,StaffOperationWrites::releaseFacts($op),$now); }
+                try { HeldRelease::require($op,HeldRelease::readFacts($op),$now); }
                 catch (\Throwable) {
                     if($op->action==='transfer'&&(!($deadline=\Paymenter\Extensions\Servers\Domains\Services\TransferInputs::deadline($op,$now))||$now>=$deadline)){
                         return 'Not sent. This hold can’t be released. Cancel and refund it.';
@@ -371,7 +372,7 @@ final class RequestFacts
         $review=clone $op;
         if ($review->state==='queued') { $review->state='held';$review->safe_code=OperationClaims::balanceRefusalRetryable($op)?'registrar_balance_insufficient':'staff_review_required'; }
         try {
-            StaffOperationWrites::requireRelease($review,StaffOperationWrites::releaseFacts($op),app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now());
+            HeldRelease::require($review,HeldRelease::readFacts($op),app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now());
             if (($op->registrar_key==='enom'&&EnomTestRegistration::localHoldReason(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account),$op)!==null)
                 || !\Paymenter\Extensions\Servers\Domains\Services\AcquisitionSetup::ready($op)) { return $stopped; }
         } catch (\Throwable) { return $stopped; }
@@ -482,25 +483,27 @@ final class RequestFacts
         }
         if ($op->state==='held') {
             $reason=$facts['reason']??null;
+            // One release check serves every sentence and the button below.
+            $releasable=OperationActions::relevant('release',$op);
             $recovery=RequestHoldReasons::for($op);$fix=$recovery['link_label'];
             $body=$facts['contact_missing']??$facts['contact_recovery']??$facts['contact_ready']??$facts['auto_renew']??$facts['admission']??null;
             $owes=OperationActions::customerOwes($op); $account=self::account($op)['account'];
             // A contact hold has its own recovery, and only the customer can clear what they owe.
             $open=$owes===null&&$op->safe_code!=='contact_details_required';
-            $sends=$open&&EnomTestRegistration::releaseSends($op,$account)&&OperationActions::relevant('release',$op);
+            $sends=$open&&EnomTestRegistration::releaseSends($op,$account)&&$releasable;
             if ($owes!==null) { $body??=$owes==='payment' ? 'Customer has not paid the invoice. You can release it once it is paid.' : 'Customer has not added the auth code. You can release it once they add it.'; }
             if (($ready=self::readyMessage($op))!==null) {
                 $reason=$ready;$fix=$account->processing_enabled?($op->safe_code==='registrar_balance_insufficient'?'Go to balance':null):self::ORDERS_SWITCH;
                 if(!$account->processing_enabled){$recovery['link']='registrars';}
             }
-            if(in_array($op->safe_code,BalanceRetries::READ_CODES,true)&&!BalanceRetries::pending($op)&&OperationActions::relevant('release',$op)){$body??=BalanceRetries::READ_STOPPED;}
-            if(BalanceRetries::legacyHold($op)){$fix=null;$recovery['link']=null;if(OperationActions::relevant('release',$op)){$body??='Release to check this order again.';}}
+            if(in_array($op->safe_code,BalanceRetries::READ_CODES,true)&&!BalanceRetries::pending($op)&&$releasable){$body??=BalanceRetries::READ_STOPPED;}
+            if(BalanceRetries::legacyHold($op)){$fix=null;$recovery['link']=null;if($releasable){$body??='Release to check this order again.';}}
             // Release hold puts paid work back in the queue, so the button says what it starts before staff press it.
-            $queues=!$sends&&$open&&$account?->processing_enabled&&in_array($op->action,['register','transfer','renew'],true)&&OperationActions::relevant('release',$op);
+            $queues=!$sends&&$open&&$account?->processing_enabled&&in_array($op->action,['register','transfer','renew'],true)&&$releasable;
             $next=$sends ? 'Release hold sends the '.self::sendWords($op,$account).' to Enom.' : ($queues ? 'Release hold queues the '.self::queueWords($op,$account).' to send to '.PaidUncertainty::registrar($op).'.' : null);
             // Release does not approve a higher complimentary cost, so it is only a retry and approval is the way forward.
             $approval=$open&&ComplimentaryCosts::awaitingApproval($op);
-            if ($approval) { $next=(OperationActions::relevant('release',$op)?'Release hold only retries the price check. ':'').'The '.($account?self::queueWords($op,$account):'request').' holds again while the registrar cost is above the usual. It goes ahead at this cost once the registrar cost is approved on the domain page.'; }
+            if ($approval) { $next=($releasable?'Release hold only retries the price check. ':'').'The '.($account?self::queueWords($op,$account):'request').' holds again while the registrar cost is above the usual. It goes ahead at this cost once the registrar cost is approved on the domain page.'; }
             if($recovery['blocked']!==null&&!BalanceRetries::pending($op)){$body=$recovery['blocked'];}
             elseif ($next!==null) {
                 // The title already says it retries by itself (readyMessage), so no staff step follows the optional release.
@@ -508,7 +511,7 @@ final class RequestFacts
                 $body=$body===null?$next.($automatic?'':' '.$recovery['body']):$next.' '.$body;
             }
             elseif(!BalanceRetries::pending($op)){$body??=$recovery['body'];}
-            return ['title'=>rtrim($reason??Labels::reason(null),'.').'.','body'=>$body,'tone'=>'warning','action'=>in_array($op->safe_code,WriteHeld::FINAL_REFUSALS,true)&&OperationActions::relevant('refund',$op)?'refund':(OperationActions::relevant('release',$op)?'release':null),
+            return ['title'=>rtrim($reason??Labels::reason(null),'.').'.','body'=>$body,'tone'=>'warning','action'=>in_array($op->safe_code,WriteHeld::FINAL_REFUSALS,true)&&OperationActions::relevant('refund',$op)?'refund':($releasable?'release':null),
                 'link'=>$approval?'domain':$recovery['link'],'link_label'=>$fix,'next_try'=>self::nextTry($op)];
         }
         return null;

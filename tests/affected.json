@@ -91,6 +91,7 @@
     ],
     "tests/Support/enom-renewal-*-cases.php": ["tests/test_installed_package_enom_renewal.py"],
     "tests/Support/enom-registration-contracts-cases.php": ["tests/test_installed_package_enom_test.py"],
+    "tests/Support/enom-registration-cap-cases.php": ["tests/test_installed_package.py"],
     "tests/Support/enom-transfer-cases-fixture.php": ["tests/test_installed_package_enom_transfer.py"],
     "tests/Support/runtime-enom-*.php": ["tests/test_installed_package_enom_exchange.py"],
     "Domains/database/migrations/*": [

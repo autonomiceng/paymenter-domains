@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Native transfer staff boundaries.
 declare(strict_types=1);
+use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
 require __DIR__.'/Support/staff-transfer.php';
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
@@ -28,9 +29,9 @@ $op=$newTransfer(placeholderComFixtureName('staff-saved-transfer-placeholder.com
 foreach([['queued','register'],['rejected','transfer'],['succeeded','renew'],['held','contacts']] as [$savedState,$savedAction]){
     $candidate=$op->fresh();$candidate->state=$savedState;$candidate->action=$savedAction;
     Illuminate\Support\Facades\DB::enableQueryLog();Illuminate\Support\Facades\DB::flushQueryLog();
-    $allowed=StaffOperationWrites::canRelease($candidate,$clock->now());$reads=Illuminate\Support\Facades\DB::getQueryLog();Illuminate\Support\Facades\DB::disableQueryLog();
+    $allowed=HeldRelease::offered($candidate,$clock->now());$reads=Illuminate\Support\Facades\DB::getQueryLog();Illuminate\Support\Facades\DB::disableQueryLog();
     same(false,$allowed,'Non-held or unsupported request cannot be released');same([],$reads,'State/action prefilter avoids holding-fact reads');
-    commerceReject(fn()=>StaffOperationWrites::requireRelease($candidate,[],$clock->now()));
+    commerceReject(fn()=>HeldRelease::require($candidate,[],$clock->now()));
 }
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('release')->assertNotified('Hold released');
 same('queued',$op->fresh()->state,'Saved-code held transfer may queue only before cutoff');

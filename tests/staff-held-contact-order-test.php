@@ -3,6 +3,7 @@
 // cancels the order and its service, then refunds once. Both are refused once anything went to NameSilo.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
 require __DIR__.'/Support/namesilo-registration-fixture.php';
 require_once __DIR__.'/Support/staff-panel.php';
 require __DIR__.'/Support/money-receipt.php';
@@ -82,7 +83,7 @@ $viaGateway=static function(Operation $op,string $receipt)use($gateway):void {
 
 // Release sends the order once.
 $op=$heldOrder('held-contact-release-placeholder.com');
-expect(StaffOperationWrites::canRelease($op,$clock->now()),'Release is offered for an unsent contact step hold');
+expect(HeldRelease::offered($op,$clock->now()),'Release is offered for an unsent contact step hold');
 expect(OperationActions::relevant('refund',$op),'Cancel and refund is offered for an unsent contact step hold');
 $account=Account::where('server_id',$op->server_id)->sole();
 $costStaff=staffUser([...$all,Staff::COSTS]);Auth::login($costStaff);
@@ -96,7 +97,7 @@ $blocked='Contact creation is off on this site; the site administrator must enab
 foreach(['contact_profile_proof_required','write_rate_limited','processing'] as $reason){
     DB::table('domains_operations')->where('id',$op->id)->update(['safe_code'=>$reason]);$op->refresh();
     $before=[$nativeMoney(),$op->getRawOriginal(),$sent->contactAdd,$sent->registerDomain];
-    expect(!StaffOperationWrites::canRelease($op,$clock->now()),'Contact creation off prevents release for '.$reason);
+    expect(!HeldRelease::offered($op,$clock->now()),'Contact creation off prevents release for '.$reason);
     Livewire::actingAs($costStaff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('release');
     Auth::login($staff);$refused(fn()=>$run($op,'release'),'The writer refuses disabled contact creation',$blocked);
     $retryClock=clone $clock;$retryClock->instant=$clock->now()->modify('+1 day');
@@ -210,7 +211,7 @@ expect(in_array($done->state,['pending','uncertain'],true),'The released order i
 same([1,1],[$sent->contactAdd,$sent->registerDomain],'Release sends the contact and the purchase once');
 $clock->instant=$clock->now()->modify('+60 seconds');$execute($op->fresh());
 same([1,1],[$sent->contactAdd,$sent->registerDomain],'Running the worker again sends nothing more');
-expect(!StaffOperationWrites::canRelease($op->fresh(),$clock->now())&&!OperationActions::relevant('refund',$op->fresh()),'Both actions are gone once the order was sent');
+expect(!HeldRelease::offered($op->fresh(),$clock->now())&&!OperationActions::relevant('refund',$op->fresh()),'Both actions are gone once the order was sent');
 $refused(fn()=>$run($op->fresh(),'refund'),'Cancel and refund is refused after a send','Only held unpaid-to-provider requests may be closed.');
 same(null,$op->fresh()->funding['refund_authorization']??null,'No refund after a send');
 echo "Release sends a held contact step order once.\n";
@@ -292,7 +293,7 @@ $sent->readFails=true;$before=$sent->contactAdd;$held=$execute($op);$sent->readF
 same(['held','contact_profile_proof_required'],[$held->state,$held->safe_code],'A contact step that sent holds the order');
 same([$before+1,'created'],[$sent->contactAdd,ProfileContactOperation::where('operation_id',$op->id)->sole()->state],'The contact reached NameSilo');
 $held=$held->fresh();$money=[$nativeMoney(),$serviceStatus($held),MoneyReceiptGateway::$sends];
-expect(!StaffOperationWrites::canRelease($held,$clock->now())&&!OperationActions::relevant('refund',$held),'Neither action is offered after a contact send');
+expect(!HeldRelease::offered($held,$clock->now())&&!OperationActions::relevant('refund',$held),'Neither action is offered after a contact send');
 try{$run($held,'refund');throw new LogicException('Cancel and refund must be refused after a contact send');}
 catch(Paymenter\Extensions\Servers\Domains\Services\OperationRefused $error){same('The registrar may have received this request.',$error->getMessage(),'Refusal says why');}
 $refused(fn()=>$run($held->fresh(),'release'),'Release is refused after a contact send',$original);
@@ -306,7 +307,7 @@ $op=$resetHeld();
 $payload=$op->payload;$payload['contacts']['registrant']['first_name']='Changed';
 \Paymenter\Extensions\Servers\Domains\Services\ContactSetup::recoveryWrite(fn()=>$op->update(['payload'=>$payload]));$op=$op->fresh();
 $before=[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$op->attempt];
-expect(!StaffOperationWrites::canRelease($op,$clock->now()),'Changed order details cannot release the saved contact step');
+expect(!HeldRelease::offered($op,$clock->now()),'Changed order details cannot release the saved contact step');
 expect(OperationActions::relevant('refund',$op),'A changed unsent order can still be cancelled and refunded');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('release')
     ->assertActionVisible('refund')->assertSee('The contact step cannot be retried with these order details. Cancel and refund this order.');
@@ -392,7 +393,7 @@ expect(!ContactStepRetries::readmit($op->id,$clock),'After the last try the hold
 same(['held','contact_profile_proof_required'],[$op->fresh()->state,$op->fresh()->safe_code],'The hold is kept');
 same($money,[$nativeMoney(),$serviceStatus($op),MoneyReceiptGateway::$sends],'No automatic cancel or refund');
 same(null,$op->fresh()->funding['refund_authorization']??null,'No refund was authorized');
-expect(OperationActions::relevant('refund',$op->fresh())&&StaffOperationWrites::canRelease($op->fresh(),$clock->now()),'Staff keep Release hold and Cancel and refund');
+expect(OperationActions::relevant('refund',$op->fresh())&&HeldRelease::offered($op->fresh(),$clock->now()),'Staff keep Release hold and Cancel and refund');
 Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$op->domain_id])
     ->assertActionVisible(Filament\Actions\Testing\TestAction::make('release')->schemaComponent(true,'content'))
     ->assertActionVisible(Filament\Actions\Testing\TestAction::make('refund')->schemaComponent(true,'content'));

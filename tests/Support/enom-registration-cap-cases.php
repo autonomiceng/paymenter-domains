@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
 use App\Models\{Currency,Server};
 use Illuminate\Support\Facades\{Auth,Cache,DB,Queue};
 use Livewire\Livewire;
@@ -43,7 +44,7 @@ expect(Paymenter\Extensions\Servers\Domains\Services\OperationClaims::testCallRe
 $exhausted=clone $capOp->fresh();$attempt=$exhausted->attempt;$attempt['capacity_deferrals']=array_fill(0,6,$clock->now()->format(DATE_ATOM));$exhausted->setAttribute('attempt',$attempt);
 expect(!Paymenter\Extensions\Servers\Domains\Services\OperationClaims::testCallRefusalRetryable($exhausted),'Six capacity deferrals exhaust the TEST retry budget');
 Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireUnsent($exhausted,$capDomain);
-try{Paymenter\Extensions\Servers\Domains\Services\StaffOperationWrites::release($exhausted,['account'=>$a,'domain'=>$capDomain],$clock->now());throw new LogicException('Exhausted TEST retries cannot be released.');}catch(DomainException $e){same('This hold requires its original recovery or evidence path.',$e->getMessage(),'Exhausted TEST retries refuse readmission with complete domain facts');}
+try{HeldRelease::release($exhausted,['account'=>$a,'domain'=>$capDomain],$clock->now());throw new LogicException('Exhausted TEST retries cannot be released.');}catch(DomainException $e){same('This hold requires its original recovery or evidence path.',$e->getMessage(),'Exhausted TEST retries refuse readmission with complete domain facts');}
 same('held',$capOp->fresh()->state,'Exhausted TEST capacity proof remains held and refundable');
 $clock->at=$clock->at->modify('+300 seconds');
 $releaseTicket=Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ticket((int)$staff->id,(int)$capDomain->id,(int)$capOp->id,'release',

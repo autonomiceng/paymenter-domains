@@ -2,6 +2,7 @@
 // Enom444f31c operation action layout; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
 use Paymenter\Extensions\Servers\Domains\Services\StaffReason;
 use Filament\Actions\Action;
 use Filament\Forms\Components\{Hidden,Textarea};
@@ -133,7 +134,7 @@ final class OperationActions
         return match($action){
             // Release needs what the customer still owes, so a hold here would have no way back.
             'hold'=>StaffOperationWrites::canHold($op)&&self::customerOwes($op)===null,
-            'release'=>StaffOperationWrites::canRelease($op,app(Clock::class)->now()),
+            'release'=>HeldRelease::offered($op,app(Clock::class)->now()),
             // A contact step hold offers it only while nothing went to NameSilo; the writer repeats that proof under locks.
             'refund'=>$op->state==='held'&&$op->funding_basis==='paid_invoice'
                 &&($op->safe_code!==\Paymenter\Extensions\Servers\Domains\Services\ContactProfileHold::CODE||\Paymenter\Extensions\Servers\Domains\Services\ContactProfileHold::unsent($op)),

@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
@@ -71,7 +72,7 @@ final class ContactStepRetries
             if(!$op||!self::candidate($op)||!$l['account']?->processing_enabled){return false;}
             $policy=self::released($op,(string)$op->safe_code,$now);
             if($policy===null||!self::due($op,$now)){return false;}
-            try{$op->setRelation('domain',$l['domain']);StaffOperationWrites::requireRelease($op,$l,$now);}catch(\Throwable){return false;}
+            try{$op->setRelation('domain',$l['domain']);HeldRelease::require($op,$l,$now);}catch(\Throwable){return false;}
             $op->update(['state'=>'queued','safe_code'=>null,'lease_expires_at'=>null,'policy'=>$policy]);
             return true;
         });

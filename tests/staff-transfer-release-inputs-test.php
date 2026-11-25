@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Native transfer staff boundaries.
 declare(strict_types=1);
+use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
 require __DIR__.'/Support/staff-transfer.php';
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
@@ -28,7 +29,7 @@ foreach(['missing_code','invalid_code','missing_paid_at','invalid_paid_at','expi
     Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$row->id])->assertActionHidden('release')->assertDontSee('Release hold');
     expect((RequestFacts::notice($row)['action']??null)!=='release','Invalid transfer notice has no release: '.$fault);
     same(false,OperationActions::relevant('release',$row),'Invalid transfer page has no release: '.$fault);
-    same(false,StaffOperationWrites::canRelease($row,$clock->now()),'Transfer release eligibility requires saved inputs: '.$fault);
+    same(false,HeldRelease::offered($row,$clock->now()),'Transfer release eligibility requires saved inputs: '.$fault);
     $clock->instant=$now;
 }
 same([], $state->calls,'Staff never sends transfer or registrar refund');same(0,$state->reads,'Pages and local actions never read registrar');

@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
 require_once __DIR__.'/reserved-fixtures.php';
 
 Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
@@ -45,7 +46,7 @@ try {
     $writer->disabled = false;
     DB::transaction(function () use ($op, $clock): void {
         $locks = Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($op->domain);
-        Paymenter\Extensions\Servers\Domains\Services\StaffOperationWrites::release($locks['operations']->firstWhere('id', $op->id), $locks, $clock->now());
+        HeldRelease::release($locks['operations']->firstWhere('id', $op->id), $locks, $clock->now());
     });
     same('queued', $op->fresh()->state, 'Staff release restores an ordinary disabled-write hold');
     same(null, $op->fresh()->safe_code, 'Staff release clears the disabled-write hold reason');
