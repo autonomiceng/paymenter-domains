@@ -36,6 +36,8 @@ BROWSER_ENV = ['NODE_PATH', 'CHROME_BIN', 'PLAYWRIGHT_BROWSERS_PATH']
 NAMED = [('mariadb', 'tests/test_*_mariadb.py'), ('runner', 'tests/test_runner*.py'), ('package', 'tests/test_package*.py')]
 WORKER_MEMORY_MIB = 1024
 # About 85 s alone; parallel load pushed it past the 120 s native limit.
+# Test options a command reads, and the one registered test each applies to.
+TEST_OPTIONS = {'DOMAINS_TEST_MONEY_SCALE_FULL_MATRIX': 'tests/money-lock-scale-test.php'}
 SLOW_NATIVE = {'management-privacy-retirement-test.php', 'native-paid-baseline-test.php', 'transfer-completion-test.php'}
 
 def kill_tree(pid):
@@ -224,7 +226,8 @@ def order_commands(commands, previous=None):
 def git_tree():
     """Return (tree, reason): the HEAD tree only for a clean checkout rooted here."""
     def git(*args):
-        output = subprocess.run(['git', *args], cwd=ROOT, capture_output=True, check=True, timeout=30).stdout
+        output = subprocess.run(['git', *args], cwd=ROOT, capture_output=True, check=True, timeout=30,
+                                env=php_suite.host_environment()).stdout
         return os.fsdecode(output).strip()
     try:
         if Path(git('rev-parse', '--show-toplevel')).resolve() != ROOT.resolve():
@@ -340,7 +343,7 @@ def cancel_on_error(processes):
         raise
 
 def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, workers=None, worker_check=None, timings=None, only=None,
-        fail_fast=False, requested_jobs=None, memory_mib=None, jobs_explicit=False, lint_base=None, checkout=None):
+        fail_fast=False, requested_jobs=None, memory_mib=None, jobs_explicit=False, lint_base=None, checkout=None, coverage=None):
     started_run = time.monotonic()
     image = os.environ.get('PHP_SUITE_IMAGE') if selected != ['mariadb'] else None
     php_version, php_packages = php_suite.installed_versions() if image else (None, {})
@@ -555,7 +558,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         receipt = {'php_suite_image': image, 'php_version': php_version, 'php_packages': php_packages,
                    'runner_error': runner_error, 'runner_error_detail': runner_error_detail, 'final_guard_complete': final_guard_complete,
                    'final_guard_error': final_guard_error, 'timings': timings, 'only_tests': sorted(set(only or [])),
-                   'lint_base': lint_base,
+                   'lint_base': lint_base, 'coverage': coverage,
+                   'test_options': {name: os.environ[name] for name in TEST_OPTIONS if name in os.environ},
                    'git_tree': tree, 'git_tree_error': tree_error,
                    'fail_fast': fail_fast, 'first_failure': first_failure, 'failures': failed_indexes,
                    'cancelled': cancelled, 'commands_planned': len(commands),
@@ -636,11 +640,11 @@ def lint_files(base=None):
                 for p in sorted((ROOT/area).rglob('*.php'))]
     # Resolve the ref first so a leading dash cannot become a diff option.
     revision = subprocess.check_output(['git', 'rev-parse', '--verify', '--end-of-options', base+'^{commit}'],
-                                       cwd=ROOT).decode().strip()
+                                       cwd=ROOT, env=php_suite.host_environment()).decode().strip()
     changed = subprocess.check_output(['git', 'diff', '--name-only', '-z', '--diff-filter=ACMRTUXB',
-                                      revision, '--', 'Domains', 'tests'], cwd=ROOT)
+                                      revision, '--', 'Domains', 'tests'], cwd=ROOT, env=php_suite.host_environment())
     untracked = subprocess.check_output(['git', 'ls-files', '--others', '--exclude-standard', '-z',
-                                        '--', 'Domains', 'tests'], cwd=ROOT)
+                                        '--', 'Domains', 'tests'], cwd=ROOT, env=php_suite.host_environment())
     return sorted({os.fsdecode(p) for p in (changed+untracked).split(b'\0') if p
                    and os.fsdecode(p).endswith('.php') and (ROOT/os.fsdecode(p)).is_file()})
 
@@ -690,6 +694,12 @@ def main(*, launch=False):
                     else list(dict.fromkeys(args.suite or default_suites())))
         if 'mariadb' in selected and len(selected) > 1:
             raise ValueError('Run MariaDB separately from the pinned PHP suites.')
+        for name, path in TEST_OPTIONS.items():
+            if name in os.environ and args.only != [path]:
+                raise ValueError(f'{name} applies only to --only {path}.')
+        # A default run without the native fixture is a smaller plan; its receipt says so.
+        coverage = ('only' if args.only else 'suites' if args.suite
+                    else 'full' if FIXTURE_SUITES <= set(selected) else 'fixture-free')
     except BaseException as error:
         setup_failure(setup_output(), error)
         raise
@@ -784,7 +794,7 @@ def main(*, launch=False):
                 test_workers.prepare_funded_registration(env, output)
         return run(commands, env, output, selected, suites, dependency, jobs=jobs, workers=workers, worker_check=worker_check,
                    timings=timings, only=args.only, fail_fast=args.fail_fast, requested_jobs=args.jobs, memory_mib=args.memory_mib,
-                   jobs_explicit=jobs_explicit, lint_base=args.lint_base, checkout=checkout)
+                   jobs_explicit=jobs_explicit, lint_base=args.lint_base, checkout=checkout, coverage=coverage)
     except BaseException as error:
         setup_failure(output, error)
         raise

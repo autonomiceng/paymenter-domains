@@ -428,6 +428,59 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue(receipt['results'][0]['skipped'])
             self.assertEqual(receipt['jobs'], 1)
 
+    def test_default_run_without_the_native_fixture_records_a_smaller_coverage_contract(self):
+        suites = {kind: [] for kind in runner.CATEGORIES if kind != 'lint'}
+        suites['provider'] = ['tests/probe.php']
+        for source, arguments, expected in [('', [], 'fixture-free'), ('', ['--only', 'tests/probe.php'], 'only')]:
+            with self.subTest(arguments=arguments), tempfile.TemporaryDirectory() as temp, \
+                 mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': source, 'PHP_SUITE_OUTPUT': temp}), \
+                 mock.patch.object(runner.sys, 'argv', ['test.py', '--jobs', '1', *arguments]), \
+                 mock.patch.object(runner, 'manifest', return_value=suites), \
+                 mock.patch.object(runner, 'lint_files', return_value=[]), \
+                 mock.patch.object(runner, 'prepare', return_value=(None, None, None)), \
+                 mock.patch.object(runner, 'run', return_value=0) as run, contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(runner.main(), 0)
+            self.assertEqual(run.call_args.kwargs['coverage'], expected)
+
+    def test_full_money_matrix_reaches_its_test_and_only_that_test(self):
+        """The launcher forwards the research matrix option; any other selection refuses it."""
+        option = {'DOMAINS_TEST_MONEY_SCALE_FULL_MATRIX': '1'}
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp)
+            with mock.patch.dict(os.environ, {**option, 'PHP_SUITE_OUTPUT': temp}), \
+                 mock.patch.object(runner.sys, 'argv', ['test.py', '--suite', 'provider']), \
+                 mock.patch.object(runner, 'prepare', return_value=(None, None, None)), \
+                 mock.patch.object(runner, 'run', return_value=0), \
+                 contextlib.redirect_stderr(io.StringIO()), self.assertRaises(ValueError):
+                runner.main()
+            self.assertFalse(json.loads((output/'receipt.json').read_text())['complete'])
+            group = output/'cgroup'; group.mkdir(); (group/'cgroup.subtree_control').write_text('memory')
+            seen = {}
+            def launched(bundle, rootfs, argv, cwd, env, mounts, **options):
+                seen.update(env)
+                return 1
+            suite = runner.php_suite
+            with mock.patch.dict(os.environ, {**option, 'DOMAINS_TEST_CGROUP': str(group), 'DOMAINS_TEST_BUDGET': 'x'}), \
+                 mock.patch.object(suite, 'CGROUP', output), mock.patch.object(suite, 'membership', return_value=Path('/cgroup')), \
+                 mock.patch.object(tempfile, 'tempdir', temp), \
+                 mock.patch.object(suite, 'image_root', return_value=contextlib.nullcontext((output, 'image'))), \
+                 mock.patch.object(suite, 'run_bundle', side_effect=launched), contextlib.redirect_stderr(io.StringIO()):
+                suite.domains(ROOT, ['--only', 'tests/money-lock-scale-test.php'])
+        self.assertEqual(seen.get('DOMAINS_TEST_MONEY_SCALE_FULL_MATRIX'), '1')
+
+    def test_checkout_tree_ignores_the_callers_git_overrides(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)/'repo'; root.mkdir(); (root/'file').write_text('tracked')
+            git = dict(os.environ, **runner.php_suite.FIXED_INPUTS, GIT_AUTHOR_NAME='a', GIT_AUTHOR_EMAIL='a@a',
+                       GIT_COMMITTER_NAME='a', GIT_COMMITTER_EMAIL='a@a')
+            for args in (['init', '-q'], ['add', 'file'], ['commit', '-qm', 'one']):
+                subprocess.run(['git', *args], cwd=root, env=git, check=True)
+            tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], cwd=root, env=git, text=True).strip()
+            (Path(temp)/'other-index').write_bytes(b'')
+            with mock.patch.object(runner, 'ROOT', root), \
+                 mock.patch.dict(os.environ, {'GIT_INDEX_FILE': str(Path(temp)/'other-index'), 'GIT_WORK_TREE': temp}):
+                self.assertEqual(runner.git_tree(), (tree, None))
+
     def test_mariadb_is_always_explicit_opt_in(self):
         for source in ['', '/synthetic/dependency']:
             with mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': source}):

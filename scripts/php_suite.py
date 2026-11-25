@@ -16,6 +16,14 @@ CGROUP = Path('/sys/fs/cgroup')
 # Every suite process sees the same locale, zone and Git configuration, whatever the caller's.
 FIXED_INPUTS = {'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8', 'TZ': 'UTC', 'GIT_CONFIG_NOSYSTEM': '1',
                 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_OPTIONAL_LOCKS': '0', 'PYTHONDONTWRITEBYTECODE': '1'}
+HOST_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+
+
+def host_environment():
+    """The caller's environment for Git, Docker and tar on the host: system tools, the fixed inputs, and no Git or
+    tar overrides, so checkout inspection and image export see the same inputs whatever the caller set."""
+    kept = {key: value for key, value in os.environ.items() if not key.startswith('GIT_') and key != 'TAR_OPTIONS'}
+    return dict(kept, **FIXED_INPUTS, PATH=HOST_PATH, GIT_NO_REPLACE_OBJECTS='1')
 
 
 def runtime(*, native):
@@ -40,23 +48,24 @@ def image_tag():
 
 
 def image_id():
-    return subprocess.check_output(['docker', 'image', 'inspect', '--format', '{{.Id}}', image_tag()], text=True).strip()
+    return subprocess.check_output(['docker', 'image', 'inspect', '--format', '{{.Id}}', image_tag()], text=True,
+                                   env=host_environment()).strip()
 
 
 def build():
     # Refresh apt on explicit builds while reusing the large browser layer.
     with RECIPE.open('rb') as recipe:
         subprocess.run(['docker', 'build', '--platform', 'linux/amd64', '--no-cache-filter', 'php-runtime',
-                        '-t', image_tag(), '-'], stdin=recipe, check=True)
+                        '-t', image_tag(), '-'], stdin=recipe, check=True, env=host_environment())
 
 
 @contextmanager
 def image_container(image):
-    cid = subprocess.check_output(['docker', 'create', '--pull=never', image, 'true'], text=True).strip()
+    cid = subprocess.check_output(['docker', 'create', '--pull=never', image, 'true'], text=True, env=host_environment()).strip()
     try:
         yield cid
     finally:
-        subprocess.run(['docker', 'rm', '-v', cid], check=True, stdout=subprocess.DEVNULL)
+        subprocess.run(['docker', 'rm', '-v', cid], check=True, stdout=subprocess.DEVNULL, env=host_environment())
 
 
 @contextmanager
@@ -65,10 +74,10 @@ def image_root(bundle):
     root = bundle/'rootfs'
     with image_container(image) as cid:
         root.mkdir()
-        with subprocess.Popen(['docker', 'export', cid], stdout=subprocess.PIPE) as export:
+        with subprocess.Popen(['docker', 'export', cid], stdout=subprocess.PIPE, env=host_environment()) as export:
             try:
                 subprocess.run(['tar', '--no-same-owner', '--exclude=dev/*', '-xf', '-', '-C', str(root)],
-                               stdin=export.stdout, check=True)
+                               stdin=export.stdout, check=True, env=host_environment())
             finally:
                 export.stdout.close()
             if export.wait():
@@ -79,7 +88,7 @@ def image_root(bundle):
 def git_inputs(root):
     """A linked checkout requires both its private index and its common object store."""
     paths = [Path(subprocess.check_output(['git', '-C', str(root), 'rev-parse', '--path-format=absolute', flag],
-                                          text=True).strip()) for flag in ('--git-dir', '--git-common-dir')]
+                                          text=True, env=host_environment()).strip()) for flag in ('--git-dir', '--git-common-dir')]
     pending = [paths[-1]/'objects']
     seen = set()
     while pending:
@@ -234,7 +243,7 @@ def domains(root, arguments, *, history=None):
                 raise ValueError('Use a canonical pristine development dependency.')
             mounts.update({p: p for p in [app, *git_inputs(app)]})
             env['PAYMENTER_TEST_APP'] = source
-        for key in ('DOMAINS_TEST_JOBS', 'DOMAINS_TEST_FIXTURE_COSTS'):
+        for key in ('DOMAINS_TEST_JOBS', 'DOMAINS_TEST_FIXTURE_COSTS', 'DOMAINS_TEST_MONEY_SCALE_FULL_MATRIX'):
             if key in os.environ:
                 env[key] = os.environ[key]
         if history:
