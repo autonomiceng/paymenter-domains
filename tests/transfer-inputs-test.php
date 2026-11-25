@@ -11,7 +11,12 @@ use Paymenter\Extensions\Servers\Domains\Services\TransferInputs;
 // prepared transfer-input fixture. The reset restores rows, triggers, listeners, ini settings and the clocks.
 // Pin each case to the prepared read and Carbon clocks explicitly, whatever a reset restores.
 $pinned = [$clock->now(), Carbon\Carbon::getTestNow(), Carbon\CarbonImmutable::getTestNow()];
-$pin = static function () use ($clock, $pinned): void { [$clock->instant, $native, $immutable] = $pinned; Carbon\Carbon::setTestNow($native); Carbon\CarbonImmutable::setTestNow($immutable); };
+// Carts take their ULID from the real clock and randomness: give each case the same fixed sequence.
+$ulids = static function (): void {
+    $next = 0;
+    Illuminate\Support\Str::createUlidsUsing(static function () use (&$next): Symfony\Component\Uid\Ulid { return new Symfony\Component\Uid\Ulid(sprintf('01K0000000000000000000%04d', ++$next)); });
+};
+$pin = static function () use ($clock, $pinned, $ulids): void { [$clock->instant, $native, $immutable] = $pinned; Carbon\Carbon::setTestNow($native); Carbon\CarbonImmutable::setTestNow($immutable); $ulids(); };
 nativeFixtureCases([
     'input' => static function () use ($pin, $new, $inputs, $post, $user, $other, $now, $clock, $product, $refunds): void {
         $pin();

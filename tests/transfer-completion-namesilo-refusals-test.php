@@ -5,7 +5,7 @@ declare(strict_types=1);
 require __DIR__.'/Support/transfer-completion-namesilo-fixture.php';
 require_once __DIR__.'/Support/fixture-cases.php';
 // Missing or contradictory proof and the revoked account, each on its own sealed transfer of the one NameSilo
-// preparation. The reset restores rows, the fake transport and the clocks.
+// preparation. The reset restores rows, the fake transport, the RDAP client and the clocks.
 // Pin each case to the prepared read and Carbon clocks explicitly, whatever a reset restores.
 $pinned = [$clock->now(), Carbon\Carbon::getTestNow(), Carbon\CarbonImmutable::getTestNow()];
 $pin = static function () use ($clock, $pinned): void { [$clock->instant, $native, $immutable] = $pinned; Carbon\Carbon::setTestNow($native); Carbon\CarbonImmutable::setTestNow($immutable); };
@@ -29,6 +29,7 @@ nativeFixtureCases([
         same('succeeded',$r->state,'A sent NameSilo transfer reconciles after account revocation');
         $calls=$observe->calls;$reconcile->run($op->id);same($calls,$observe->calls,'Revoked completed transfer never replays');
     },
-], compact('clock', 'state', 'observe', 'claims', 'reconcile', 'readBindings', 'registry'));
+// The transfer RDAP client keeps the bootstrap it read; the reset returns it to the prepared value.
+], compact('clock', 'state', 'observe', 'claims', 'reconcile', 'readBindings', 'registry', 'rdap'));
 echo "NameSilo transfer refusal and revoked reconciliation evidence passed\n";
 $nativeSuccessful = true;
