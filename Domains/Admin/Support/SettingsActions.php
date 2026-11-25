@@ -4,7 +4,8 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\User;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,SalesSetup,StaffCatalogue};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,SalesSetup};
+use Paymenter\Extensions\Servers\Domains\Catalogue\Staff\SettingsCatalogue;
 use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferTerms;
 use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Reader,State};
 use Paymenter\Extensions\Servers\Domains\Services\StaffReason;
@@ -215,8 +216,8 @@ final class SettingsActions
                     $kind='default';
                     try{
                         $t=$tld&&$name==='override'?Tld::findOrFail($tld):null;
-                        if($t){$kind='pricing';$intent=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($t->catalogue_intent);$kind=!\Paymenter\Extensions\Servers\Domains\Catalogue\Pricing::hasOwn($t)?'default':match($intent['pricing_rule']['mode']??$t->pricing_mode){'fixed'=>'fixed','markup_percent','markup_amount','markup_fee_percent'=>'markup',default=>'pricing'};}
-                        $rule=$t?(StaffCatalogue::routed()?->pricing($server,$t)??(new PricingRules)->rule($t)):(new PricingRules)->defaultRule(fee:CardFee::NONE);
+                        if($t){$kind='pricing';$kind=SettingsCatalogue::ruleKind($t);}
+                        $rule=SettingsCatalogue::savedRule($server,$t);
                         return ['rule'=>$rule,'error'=>null];
                     }catch(\Throwable){return ['rule'=>null,'error'=>match($kind){'fixed'=>'Invalid fixed price rule','markup'=>'Invalid markup rule','default'=>'Invalid default pricing rule',default=>'Invalid pricing rule'}];}
                 });
@@ -231,7 +232,7 @@ final class SettingsActions
                     $fields[]=Radio::make('pricing')->hiddenLabel()->live()->required()
                         ->options(fn()=>array_filter(['default'=>'Use Default pricing ('.($default()===null?'not readable':PricingRule::describe($default())).')','custom'=>'Set prices for this TLD only'],
                             fn($key)=>self::canSee(Review::permission($key==='default'?'remove_override':'override')),ARRAY_FILTER_USE_KEY))
-                        ->default(fn()=>((StaffCatalogue::routed()!==null?!StaffCatalogue::routed()->own(Tld::findOrFail($tld)):(Tld::find($tld)?->use_default_rule??true))&&self::canSee(Review::permission('remove_override')))||!self::canSee(Review::permission('override'))?'default':'custom');
+                        ->default(fn()=>(SettingsCatalogue::usesDefault($tld)&&self::canSee(Review::permission('remove_override')))||!self::canSee(Review::permission('override'))?'default':'custom');
                 }
                 array_push($fields,...self::pricingRuleFields($rule,$own,allowFixed:$name!=='default_pricing'));
                 $saved=self::cached(static function():?array{try{return CardFee::read();}catch(\Throwable){return null;}});
@@ -266,7 +267,7 @@ final class SettingsActions
                 $years=static function(string $bound)use($allowed):int{$a=$allowed();return $a===null?($bound==='min'?1:10):$a[$bound];};
                 $fields[]=\Filament\Schemas\Components\Text::make(fn()=>($a=$allowed())===null?'':($a['register']===[]?'This account is not set up to sell new .'.$a['ending'].' registrations. Change sales under What you sell.':'This account is set up to sell .'.$a['ending'].' for '.self::years($a['register']).'. Change years under What you sell.'))->key('allowed')->visible(fn()=>$allowed()!==null);
                 foreach(['min_years'=>'Minimum registration years','max_years'=>'Maximum registration years'] as $key=>$label){
-                    $field=TextInput::make($key)->label($label)->integer()->minValue(fn()=>$years('min'))->maxValue(fn()=>$years('max'))->required()->default(fn()=>StaffCatalogue::routed()?->setting(Tld::findOrFail($tld),$key)??Tld::findOrFail($tld)->$key)
+                    $field=TextInput::make($key)->label($label)->integer()->minValue(fn()=>$years('min'))->maxValue(fn()=>$years('max'))->required()->default(fn()=>SettingsCatalogue::setting($tld,$key,$key))
                         ->validationMessages(['min'=>fn()=>'Pick from '.$years('min').' to '.$years('max').'.','max'=>fn()=>'Pick from '.$years('min').' to '.$years('max').'.']);
                     // A failed rule keeps the dialog and its input open.
                     if($key==='max_years'){$field->rules([fn(\Filament\Schemas\Components\Utilities\Get $get)=>static function(string $attribute,mixed $value,\Closure $fail)use($get,$years):void{
@@ -276,7 +277,7 @@ final class SettingsActions
                 }
                 foreach(['enabled'=>'For sale','register'=>'Allow registrations','transfer'=>'Allow transfers','renew'=>'Allow renewals'] as $key=>$label){
                     $column=match($key){'enabled'=>'enabled',default=>$key.'_enabled'};
-                    $field=Checkbox::make($key)->label($label)->default(fn()=>StaffCatalogue::routed()?->setting(Tld::findOrFail($tld),$key)??Tld::findOrFail($tld)->$column);
+                    $field=Checkbox::make($key)->label($label)->default(fn()=>SettingsCatalogue::setting($tld,$key,$column));
                     if(in_array($key,['register','transfer'],true)){
                         $refused=static fn()=>($a=$allowed())!==null&&!$a[$key.'_allowed']&&!Tld::findOrFail($tld)->$column;
                         $field->disabled($refused)->helperText(fn()=>$refused()?($key==='register'?'Registrations':'Transfers').' are not set up for .'.$allowed()['ending'].' on this account. Change sales under What you sell.':null);
@@ -407,10 +408,7 @@ final class SettingsActions
     }
     /** Sync needs an account whose price list we can read. */
     public static function syncOffered(?Account $account): bool
-    {
-        try{if(($catalogue=StaffCatalogue::routed())!==null){return $account!==null&&$catalogue->readable(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account));}return $account!==null&&\Paymenter\Extensions\Servers\Domains\Services\TestCatalogue::enabled(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account));}
-        catch(\Throwable){return false;}
-    }
+    { return SettingsCatalogue::syncReadable($account); }
     /** Sync reads every TLD on the account, so a TLD page's button says so: it never looks like a one-row sync. The result
      * lands on the page staff are on, so the toast points there instead of promising a notice the worker doesn't send. */
     public static function syncAll(int $server,bool $named=false,?string $tld=null): Action
@@ -424,7 +422,7 @@ final class SettingsActions
             ->schema([Hidden::make('review_key')])
             ->action(function(#[\SensitiveParameter] array $data,$livewire)use($server,$tld){
                 try{
-                    if(StaffCatalogue::routed()!==null){app(StaffSettingsWrites::class)->run(new Review((int)Auth::id(),$server,null,'import',(string)($data['review_key']??''),''),[]);}else{\Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices::enqueue((int)Auth::id(),$server,(string)($data['review_key']??''));}
+                    SettingsCatalogue::queueSync((int)Auth::id(),$server,(string)($data['review_key']??''));
                     Notification::make()->success()->title('Price sync queued')->body(self::syncQueued($tld))->send();
                 }catch(\Throwable $error){
                     if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains price sync failed.',['exception_class'=>$error::class]);}
@@ -440,7 +438,7 @@ final class SettingsActions
     {
         $t=$tld?Tld::find($tld):null;
         if($t===null||$rule===null){return new \Illuminate\Support\HtmlString('');}
-        try{$rows=(StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\FreshInstallation::MESSAGE))->preview($t,$rule);}catch(\Throwable){$rows=[];}
+        try{$rows=SettingsCatalogue::preview($t,$rule);}catch(\Throwable){$rows=[];}
         if($rows===[]){return new \Illuminate\Support\HtmlString('<p>Exact registrar costs missing. '.e(TldFacts::refreshText(TldFacts::snapshot($t)['refresh']??[])).'</p>');}
         $registrarRequirement=self::cached(fn()=>self::previewRegistrarRequirement($t));
         $canEditTerms=self::canSee(Staff::POLICY)&&self::canSee(Review::permission('acceptance'));
@@ -631,17 +629,7 @@ final class SettingsActions
         return $list.' '.($last===1?'year':'years');
     }
     /** What the saved account terms allow for one TLD, with its current bounds; null when unreadable. */
-    private static function allowedTerms(int $server,?int $tld): ?array
-    {
-        try{
-            $account=Account::where('server_id',$server)->sole();$t=Tld::findOrFail($tld);
-            $catalogue=StaffCatalogue::routed();
-            if($catalogue!==null){$facts=$catalogue->page(collect([$t]))[$t->id]['facts'];$safe=$catalogue->restorable($t);$register=$safe['register']?$facts->terms['register']:[];
-                $bounds=[...$register,$catalogue->setting($t,'min_years'),$catalogue->setting($t,'max_years')];
-                return ['ending'=>$t->tld,'register'=>$register,'min'=>min($bounds),'max'=>max($bounds),'register_allowed'=>$safe['register'],'transfer_allowed'=>$safe['transfer']];}
-            return null;
-        }catch(\Throwable){return null;}
-    }
+    private static function allowedTerms(int $server,?int $tld): ?array { return SettingsCatalogue::allowedTerms($server,$tld); }
     /** The real reason a change to a TLD's terms was refused, in plain words; null leaves the shared guidance. */
     private static function termsRefusal(string $message,array $data,int $server,?int $tld): ?string
     {
