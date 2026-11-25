@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,DomainBilling,HolderPricing,Installation,NativeDomainGuard,RefundProof,RenewalAcceptance,RenewalAdmission,RenewalAuthority,RenewalCompletion,RenewalExecution,RenewalRetries,RenewalWriter,WriteFeatures};
 expect(method_exists(RenewalWriter::class,'useReservation'),'Renewal writer needs an exact pre-seal reservation seam');
 (new Installation)->install();$installedFixture=true;$fixtureEnvironment=Environment::Live;config(['app.url'=>'https://billing.example.com']);
-require __DIR__.'/reconciliation-namesilo-test.php';$nativeSuccessful=false;
+require __DIR__.'/Support/namesilo-no-id-registered.php';
 require __DIR__.'/Support/namesilo-write-wire.php';require_once __DIR__.'/Support/namesilo-account-guard.php';
 nameSiloGuardExpected($binding,'expected@example.com');
 $rb=new AccountBindings($registry);$authority=new RenewalAuthority($rb,$clock,offers: $GLOBALS['caps']??null);

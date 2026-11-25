@@ -3,7 +3,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
-require __DIR__.'/namesilo-test-activation-test.php';
+require __DIR__.'/Support/namesilo-test-activation.php';
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment,RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,LiveReservationLimit,LiveReservations,RuntimePorts,StaffSettingsWrites};

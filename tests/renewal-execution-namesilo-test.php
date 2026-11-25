@@ -1,7 +1,7 @@
 <?php
 // NameSilo ordinary no-ID renewals and repeated final margin; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/reconciliation-namesilo-test.php'; $nativeSuccessful = false;
+require __DIR__.'/Support/namesilo-no-id-registered.php';
 // The installed catalogue scheduler is shared by billing and staff release in this explicit fixture composition.
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock,48));

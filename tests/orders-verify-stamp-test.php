@@ -1,8 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/namesilo-test-activation-test.php';
-$nativeSuccessful=false;
+require __DIR__.'/Support/namesilo-test-activation.php';
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Services\Installation;
 $key='domains_schema_verified';
