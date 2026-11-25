@@ -14,7 +14,8 @@ final class RefundProof
         if(TransferRejections::proved($op,$d)||RegistrationRefusals::proved($op,$d)){return;}
         self::requireUnsent($op,$d);
     }
-    public static function requireUnsent(Operation $op, Domain $d, ?RenewalFundingLedger $ledger = null): void
+    /** $renewal: this renewal's attempt facts when the caller already read them in a batch. */
+    public static function requireUnsent(Operation $op, Domain $d, ?RenewalFundingLedger $ledger = null, ?RenewalAttempt $renewal = null): void
     {
         $a = $op->attempt ?? []; $f = FinancialAdjustments::registrarFunding($op); $c = $op->cost ?? []; $closed = $op->safe_code === UnpaidAcquisitionProof::CODE;
         $lateCredits = $op->funding_basis !== 'complimentary' && ($op->action === 'renew' || $closed);
@@ -37,12 +38,12 @@ final class RefundProof
             if (!self::transferTimeout($op, $d)) { throw new \DomainException('Transfer is not a definitely-unsent timeout.'); }
             return;
         }
-        if ($a === []) {
+        // A renewal's send facts come from its attempt reader; the key checks below still bind the retained record's shape.
+        $renewal = $op->action === 'renew' ? $renewal ?? RenewalAttempt::of($op) : null;
+        if ($renewal ? $renewal->untouched() : $a === []) {
             if ($op->started_at !== null || $op->request_fingerprint !== null || array_key_exists('claim', $f) || array_key_exists('seal', $f)) { throw new \DomainException('Unknown attempt identity.'); }
             return;
         }
-        // A renewal's send facts come from its attempt reader; the key checks below still bind the retained record's shape.
-        $renewal = $op->action === 'renew' ? RenewalAttempt::of($op) : null;
         $sealed = $renewal ? $renewal->sealed() : ($a['seal'] ?? null) === 'sealed';
         $acquisition=$sealed&&$op->registrar_key==='namesilo'&&in_array($op->action,['register','transfer'],true);
         $allowed = $sealed ? ['claim_key', 'seal', 'dispatch_attempted_at', 'send_state', 'authorized_cost', ...($acquisition?[$op->action==='transfer'?'transfer_admission':'registration_admission']:['renewal_mode']), 'execution', 'capacity_deferrals']
@@ -65,7 +66,7 @@ final class RefundProof
             if (!in_array($op->safe_code, [$acquisition?'acquisition_definitely_unsent':'renewal_definitely_unsent', 'refund_approved'], true) || (!$acquisition&&$op->action !== 'renew') || ($a['send_state'] ?? null) !== 'possibly_sent'
                 || ($renewal ? !$renewal->locallyRefused() || $renewal->reply() !== $refusal : ($a['execution'] ?? null) !== $refusal)
                 || !is_string($claimKey) || !preg_match('/^[a-f0-9]{32}$/D', $claimKey)
-                || !$op->started_at || !$op->request_fingerprint
+                || ($renewal ? $renewal->claimedAt() === null || $renewal->requestDigest() === null : !$op->started_at || !$op->request_fingerprint)
                 || ($renewal ? $renewal->sentAt() === null || $renewal->authorizedCost() === null : !isset($a['dispatch_attempted_at'], $a['authorized_cost']))
                 || ($acquisition?!isset($a[$op->action==='transfer'?'transfer_admission':'registration_admission']):!in_array($renewal?->mode(), ['ordinary', 'grace'], true)) || !$funded) {
                 throw new \DomainException('Sealed attempt is not proven prewire refusal.');
