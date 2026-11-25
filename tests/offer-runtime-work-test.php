@@ -5,7 +5,8 @@ require __DIR__.'/offer-work-test.php';
 $nativeSuccessful = false;
 
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferWork, Projection, CatalogueActivation, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Projection, CatalogueActivation, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\Feed\OfferWork;
 use Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 

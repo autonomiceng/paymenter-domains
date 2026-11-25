@@ -1,7 +1,8 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Catalogue;
+namespace Paymenter\Extensions\Servers\Domains\Catalogue\Feed;
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, CatalogueActivation, Edit, FeedObserved, OfferState, Pricing, Query, Revision, TermSupport, Writer};
 use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 
 use App\Models\Server;

@@ -14,7 +14,7 @@ expect(is_file(dirname(__DIR__).'/Domains/Catalogue/StaffCommands.php'),'Reverse
 require __DIR__.'/Support/offer-commerce.php';extract(offerCommerceFixture());tldPanel();pinStaffClock($now);
 $actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);$id=$tlds[0]->id;$wake=$sync=0;
 $writer=new Writer(new Projection($native),$clock,static fn()=>null,static fn()=>true);
-$work=new \Paymenter\Extensions\Servers\Domains\Catalogue\OfferWork($writer,$clock,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock),static fn()=>throw new RuntimeException('Staff save must not resolve feed'),static fn()=>0);
+$work=new \Paymenter\Extensions\Servers\Domains\Catalogue\Feed\OfferWork($writer,$clock,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock),static fn()=>throw new RuntimeException('Staff save must not resolve feed'),static fn()=>0);
 $commands=new StaffCommands($writer,$bindings,static function($b)use(&$wake,$work){same(0,DB::transactionLevel(),'Wake outside locks');$wake++;$work->wake($b);},static function($b)use(&$sync,$work){same(0,DB::transactionLevel(),'Sync only schedules outside locks');$sync++;$work->sync($b);});
 $source=new StaffCatalogue($ports,$clock,$work,static fn()=>true);
 $review=static fn(string $action,?int $tld=null)=>new Review($actor->id,$binding->serverId,$tld,$action,Review::ticket($actor->id,$binding->serverId,$tld,$action,StaffCommands::stamp($binding->serverId,$tld)),'Synthetic reverse review');

@@ -3,7 +3,8 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/commerce.php';
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,OfferWork,Projection,CatalogueActivation,Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,Projection,CatalogueActivation,Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\Feed\OfferWork;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,NativeCatalogue};
 extract(commerceFixture());$server=(int)$tlds[0]->server_id;$budget=new AccountReadBudget($clock,48);
 require __DIR__.'/Support/runtime-health-publication.php';

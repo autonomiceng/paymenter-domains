@@ -2,7 +2,8 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
-use Paymenter\Extensions\Servers\Domains\Catalogue\{FeedRun, PricedFeed};
+use Paymenter\Extensions\Servers\Domains\Catalogue\PricedFeed;
+use Paymenter\Extensions\Servers\Domains\Catalogue\Feed\FeedRun;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CatalogueFreshness, Environment, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Driver as EnomDriver, OfferFeed as EnomFeed};

@@ -85,7 +85,7 @@ $allowanceBindings=new \Paymenter\Extensions\Servers\Domains\Services\AccountBin
 $allowanceBindings->configure(1,'enom',Environment::Test,['uid'=>$uid,'token'=>'synthetic-allowance-token']);
 // Feed allowance needs the TEST catalogue on; without it every allowance reads 0.
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true]);
-$offerPorts=new \Paymenter\Extensions\Servers\Domains\Catalogue\OfferPorts($allowanceBindings,$clock);
+$offerPorts=new \Paymenter\Extensions\Servers\Domains\Catalogue\Feed\OfferPorts($allowanceBindings,$clock);
 $allowance=fn()=>$offerPorts->allowance($binding,\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background);
 $stale=$review();$changed=$review();$write($changed,2,2);
 same(['used'=>$before['used'],'limit'=>2],\Paymenter\Extensions\Servers\Domains\Services\ApiCallLimits::usage($binding),'Sync capacity sees the saved cap immediately');

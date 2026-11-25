@@ -5,14 +5,15 @@ require __DIR__.'/native-app.php';
 
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CredentialFeed, OfferPorts, Projection, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Projection, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\Feed\{CredentialFeed, OfferPorts};
 use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier, Clock};
 use Paymenter\Extensions\Servers\Domains\Data\{Environment, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, EnomTestCallLimit, EnomTestSendLimit, EnomTestSendLimitSchema, Installation, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\OfferTransport;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport};
 
-expect(is_file(dirname(__DIR__).'/Domains/Catalogue/OfferPorts.php'), 'Production offer ports compose verified credentials and our admitted read allowance');
+expect(is_file(dirname(__DIR__).'/Domains/Catalogue/Feed/OfferPorts.php'), 'Production offer ports compose verified credentials and our admitted read allowance');
 (new Installation)->install();
 $registry = new RegistrarRegistry;
 $registry->register('enom', ['uid', 'token'], new class implements AccountVerifier {

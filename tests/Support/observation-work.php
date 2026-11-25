@@ -1,7 +1,8 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Synthetic shared scheduler composition.
 declare(strict_types=1);
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting,OfferScheduler,OfferWork,CatalogueActivation};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting,OfferScheduler,CatalogueActivation};
+use Paymenter\Extensions\Servers\Domains\Catalogue\Feed\OfferWork;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,HoldingObservationWork};
 
 /** Holding tests use the real shared rotation with their reader and clock. The offer side

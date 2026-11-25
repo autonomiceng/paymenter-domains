@@ -8,7 +8,8 @@ require __DIR__.'/Support/native-commerce.php';
 require __DIR__.'/Support/accounts.php';
 
 use Illuminate\Support\Facades\{DB, Schema};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Edit, FeedObserved, Intent, OfferWork, Projection, Query, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Edit, FeedObserved, Intent, Projection, Query, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\Feed\OfferWork;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{Environment, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
@@ -20,7 +21,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, Installati
 
 // Real SQLite queue/writer/projection is needed for durable claims, restart and scoped publication.
 // Only the wire and clock are fake; no provider runtime or active scheduler is registered.
-expect(is_file(dirname(__DIR__).'/Domains/Catalogue/OfferWork.php'), 'One dormant offer worker coalesces feed and lazy facts in the existing queue');
+expect(is_file(dirname(__DIR__).'/Domains/Catalogue/Feed/OfferWork.php'), 'One dormant offer worker coalesces feed and lazy facts in the existing queue');
 (new Installation)->install();
 extract(commerceFixture(active:true));
 $b = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $tlds[0]->server_id)->sole());

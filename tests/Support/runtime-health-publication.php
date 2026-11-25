@@ -1,7 +1,8 @@
 <?php
 // Real retained offer worker and unpublished synthetic offers. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Facts,FactsObserved,OfferState,OfferWork,PricedFeed,Projection,Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Facts,FactsObserved,OfferState,PricedFeed,Projection,Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\Feed\OfferWork;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Price,SalesPolicy,Tld};
 use Paymenter\Extensions\Servers\Domains\Data\RequestContext;
 use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;

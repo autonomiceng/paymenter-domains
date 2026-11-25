@@ -19,7 +19,7 @@ foreach(Account::all()as$a){
  foreach(AccountChecklist::setup($a,['label'=>'Active','reason'=>null])as$row){$check(trim((string)($row['help']??''))!=='','Independent help for '.$a->registrar_key.' '.$row['label']);}
 }
 // Routed progress must retain its own safe cause and time even without missing prices.
-$worker=new \Paymenter\Extensions\Servers\Domains\Catalogue\OfferWork($ports->writer(),$clock,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock),static fn()=>throw new LogicException('No reads'),static fn()=>100);
+$worker=new \Paymenter\Extensions\Servers\Domains\Catalogue\Feed\OfferWork($ports->writer(),$clock,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock),static fn()=>throw new LogicException('No reads'),static fn()=>100);
 $catalogue=new StaffCatalogue($ports,$clock,$worker,static fn()=>true);
 $probe=new ReflectionProperty(CallerRouting::class,'probe');$probe->setValue(null,[StaffCatalogue::class=>$catalogue,\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::class=>$caps]);
 $a=Account::firstOrFail();$failedAt=$now->getTimestamp()-60;
