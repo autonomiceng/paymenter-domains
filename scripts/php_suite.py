@@ -112,7 +112,8 @@ def configure(bundle, rootfs, argv, cwd, env, mounts, writable, temporary):
     config['process'].update(terminal=False, cwd=str(cwd), args=argv,
                              env=[key+'='+str(value) for key, value in env.items()])
     # scripts/confine.py maps this container's root into each command's user namespace, which the kernel allows
-    # only to a creator holding CAP_SETFCAP. It acts only inside this rootless container's namespace.
+    # only to a creator holding CAP_SETFCAP. It acts only inside this rootless container's namespace, and confine.py
+    # drops it before any command other than the runner's own tests starts.
     for kind in ('bounding', 'effective', 'permitted'):
         config['process']['capabilities'][kind].append('CAP_SETFCAP')
     # An implicit runc cgroup may be a sibling of the caller, outside its memory and swap limits.

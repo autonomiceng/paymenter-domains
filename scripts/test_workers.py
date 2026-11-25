@@ -173,9 +173,9 @@ def command_environment(env: dict[str, str], cases: Path, *, keep: frozenset[str
         yield root, case_environment(dict(env, PAYMENTER_TEST_FIXTURE=str(app)), root, keep=keep)
 
 
-def confined(argv: list[str], root: Path) -> list[str]:
-    """ARGV run so that its case ROOT is the only place it can write."""
-    return [sys.executable, '-I', '-S', str(CONFINE), str(root), '--', *argv]
+def confined(argv: list[str], root: Path, *, nested: bool = False) -> list[str]:
+    """ARGV run so that its case ROOT is the only place it can write; only a NESTED command may confine another."""
+    return [sys.executable, '-I', '-S', str(CONFINE), *(['--nested'] if nested else []), str(root), '--', *argv]
 
 
 def prepare_database(env, output, root):

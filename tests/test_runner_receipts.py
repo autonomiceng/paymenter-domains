@@ -582,16 +582,17 @@ sudo() {
 
     def test_commands_write_only_inside_their_case_root_and_ignore_host_settings(self):
         """Two commands at once: the one that writes outside its case root fails, its neighbour passes, and neither
-        reads the caller's Git, zone or home."""
+        reads the caller's Git, zone or home. An ordinary command cannot set file capabilities."""
         # The neighbour finishes after the writer has tried its writes, and the writer exits only after the runner
         # has recorded the neighbour; the alarm fails a command whose partner never arrives.
         probe = ("import json, os, signal, subprocess, sys, tempfile, time; from pathlib import Path; signal.alarm(20); "
                  "(Path.home()/'mark').write_text('home'); handle, scratch = tempfile.mkstemp(); "
                  "names = ['HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME', 'XDG_RUNTIME_DIR', 'TMPDIR']; "
                  "git = subprocess.run(['git', 'config', '--get', 'user.name'], capture_output=True, text=True); "
+                 "setfcap = [line.split(':')[0] for line in open('/proc/self/status') if line.startswith('Cap') and int(line.split()[1], 16) >> 31 & 1]; "
                  "open(sys.argv[1]).read(); "
                  "print(json.dumps({'paths': [os.environ[n] for n in names] + [scratch], 'git': git.stdout, "
-                 "'zone': time.strftime('%Z'), 'locale': os.environ['LC_ALL']}), flush=True)")
+                 "'zone': time.strftime('%Z'), 'locale': os.environ['LC_ALL'], 'setfcap': setfcap}), flush=True)")
         # Fixed names where a later command could find them.
         leak = ("import ctypes, errno, json, os, signal, sys; signal.alarm(20); gate, recorded, *paths = sys.argv[1:]; outcome = {}\n"
                 "libc = ctypes.CDLL(None); watch = libc.inotify_init(); libc.inotify_add_watch(watch, os.path.dirname(recorded).encode(), 0x100)\n"
@@ -612,11 +613,11 @@ sudo() {
             workers, _, _ = runner.test_workers.environments(caller, output, 2)
             # The shared output, the receipts directory every command used to get, and a worker's directory.
             targets = [str(output/'left-above'), str(output/'resources/left'), str(output/'workers/0/left')]
-            commands = [('runner', [sys.executable, '-c', probe, str(gate)]),
+            commands = [('lint', [sys.executable, '-c', probe, str(gate)]),
                         ('runner', [sys.executable, '-c', leak, str(gate), str(output/'000.stdout.txt'), *targets])]
             with mock.patch.object(runner, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()), \
                  contextlib.redirect_stderr(io.StringIO()):
-                status = runner.run(commands, caller, output, ['runner'], {}, jobs=2, workers=workers)
+                status = runner.run(commands, caller, output, ['lint', 'runner'], {}, jobs=2, workers=workers)
             receipt = json.loads((output/'receipt.json').read_text())
             self.assertEqual((status, receipt['failures']), (1, [1]), 'Only the command that wrote outside its root fails')
             self.assertEqual(json.loads((output/'001.stdout.txt').read_text()), dict.fromkeys(targets, 'EROFS'))
@@ -625,7 +626,7 @@ sudo() {
             cases = {Path(path).relative_to(output/'cases').parts[0] for path in report['paths']}
             self.assertEqual(len(cases), 1, report)
             self.assertTrue(next(iter(cases)).startswith('domains-case-'), report)
-            self.assertEqual((report['git'], report['zone'], report['locale']), ('', 'UTC', 'C.UTF-8'))
+            self.assertEqual((report['git'], report['zone'], report['locale'], report['setfcap']), ('', 'UTC', 'C.UTF-8', []))
             self.assertEqual(list((output/'cases').iterdir()), [], 'Each case root is removed with its command')
             self.assertEqual(sorted(str(path.relative_to(host)) for path in host.rglob('*')), ['.gitconfig', 'git', 'git/config'])
 
