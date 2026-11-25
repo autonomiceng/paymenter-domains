@@ -91,8 +91,8 @@ python3 scripts/test.py --jobs 2 --only \
   tests/refund-evidence-test.php tests/refund-renewals-test.php \
   tests/refunds-test.php tests/registrar-balances-test.php \
   tests/registrars-page-test.php tests/registration-enom-test.php \
-  tests/registration-nameservers-test.php tests/registration-namesilo-profile-test.php \
-  tests/registration-namesilo-test.php tests/reminder-form-test.php \
+  tests/registration-nameservers-test.php tests/registration-namesilo-test.php \
+  tests/reminder-form-test.php \
   tests/reminder-review-test.php tests/reminder-safety-test.php \
   tests/reminder-transfer-test.php tests/reminders-test.php \
   tests/renewal-admission-test.php tests/renewal-autopay-admission-test.php \
