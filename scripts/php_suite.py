@@ -247,9 +247,10 @@ def domains(root, arguments, *, history=None):
             with image_root(bundle) as (rootfs, image):
                 env['PHP_SUITE_IMAGE'] = image
                 env['PHP_SUITE_OUTPUT'] = str(output)
-                # The checkout stays read-only: commands write only inside their case roots under the output.
+                # The checkout and /tmp stay read-only: commands write only inside their case roots under the output,
+                # and the runner fails a command that leaves anything else there.
                 code = run_bundle(bundle, rootfs, ['python3', str(root/'scripts/test.py'), *arguments],
-                                  root, env, mounts, writable=(output, group, receipts), temporary=('/tmp',))
+                                  root, env, mounts, writable=(output, group, receipts))
         receipt = output/'receipt.json'
         if not code and (not receipt.is_file() or json.loads(receipt.read_text()).get('complete') is not True):
             raise RuntimeError('Container exited successfully without a complete suite receipt: '+str(receipt))

@@ -7,9 +7,9 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
-import tempfile
 import uuid
 import native
 import installed_fixture
@@ -25,6 +25,10 @@ MARIADB_HOST_PATHS = frozenset({'HOME', 'XDG_RUNTIME_DIR', 'TMPDIR'})
 PRIVATE_PATHS = {'HOME': 'home', 'XDG_CONFIG_HOME': 'home/.config', 'XDG_DATA_HOME': 'home/.local/share',
                  'XDG_STATE_HOME': 'home/.local/state', 'XDG_CACHE_HOME': 'cache', 'XDG_RUNTIME_DIR': 'run',
                  'TMPDIR': 'tmp', 'TMP': 'tmp', 'TEMP': 'tmp'}
+# Every command's root lives in the output's cases directory under one of these prefixes.
+CASE_PREFIXES = ('domains-case-', 'domains-installed-case-')
+# Per-command logs and receipts the runner writes beside the cases directory while commands run.
+RUNNER_RECORD = re.compile(r'\d{3,4}\.(?:stdout\.txt|stderr\.txt|rss\.txt|resources\.json)')
 
 
 def runtime_hashes(root):
@@ -150,9 +154,10 @@ def case_environment(env: dict[str, str], root: Path, *, keep: frozenset[str] = 
 
 
 @contextmanager
-def case_root(env: dict[str, str], *, keep: frozenset[str] = frozenset()):
-    """A private, exclusively created root for one command that does not need its own app copy."""
-    root = Path(env.get('TMPDIR') or tempfile.gettempdir())/('domains-case-'+uuid.uuid4().hex)
+def case_root(env: dict[str, str], cases: Path, *, keep: frozenset[str] = frozenset()):
+    """A private, exclusively created root in CASES for one command that does not need its own app copy."""
+    cases.mkdir(mode=0o700, exist_ok=True)
+    root = cases/(CASE_PREFIXES[0]+uuid.uuid4().hex)
     root.mkdir(mode=0o700)
     try:
         yield case_environment(env, root, keep=keep)
@@ -161,31 +166,63 @@ def case_root(env: dict[str, str], *, keep: frozenset[str] = frozenset()):
 
 
 @contextmanager
-def command_environment(env, *, keep: frozenset[str] = frozenset()):
-    """Private home, cache and scratch paths for each command, plus its own disposable app when a fixture is set.
+def command_environment(env, cases: Path, *, keep: frozenset[str] = frozenset()):
+    """Private home, cache and scratch paths in CASES for each command, plus its own disposable app when a fixture is set.
 
     The suite verifies the shared inputs."""
     if not env:
         yield env
         return
     if not env.get('PAYMENTER_TEST_FIXTURE'):
-        with case_root(env, keep=keep) as child:
+        with case_root(env, cases, keep=keep) as child:
             yield child
         return
     fixture = Path(env['PAYMENTER_TEST_FIXTURE'])
-    with installed_fixture.application(fixture, 'case', verify_vendor=False) as (root, app):
+    cases.mkdir(mode=0o700, exist_ok=True)
+    with installed_fixture.application(fixture, 'case', verify_vendor=False, parent=cases) as (root, app):
         yield case_environment(dict(env, PAYMENTER_TEST_FIXTURE=str(app)), root, keep=keep)
+
+
+class Scratch:
+    """OUTPUT is the one writable place commands share; each command's root lives in its cases directory."""
+
+    def __init__(self, output: Path):
+        self.output = output
+        self.cases = output/'cases'
+        self.cases.mkdir(mode=0o700, exist_ok=True)
+        self.setup = frozenset(path.name for path in output.iterdir())
+
+    def strays(self) -> list[str]:
+        """Remove and name what commands left outside their case roots, so that no later command reads it."""
+        found = [path for path in self.output.iterdir() if path.name not in self.setup and not RUNNER_RECORD.fullmatch(path.name)]
+        found += [path for path in self.cases.iterdir() if not path.name.startswith(CASE_PREFIXES)]
+        for path in found:
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                path.unlink(missing_ok=True)
+        return sorted(str(path.relative_to(self.output)) for path in found)
+
+    def audit(self, result: dict) -> int | None:
+        """Fail the finished command in RESULT when the scratch holds leftovers, and return its exit code.
+
+        With parallel workers, the command that finishes first reports a neighbour's leftovers; the run fails either way.
+        The MariaDB launcher keeps the caller's scratch until it gets its own home."""
+        if result['kind'] != 'mariadb' and (strays := self.strays()):
+            result['exit'] = result['exit'] or 1
+            result['scratch_error'] = 'Left outside the case roots, now removed: '+', '.join(strays)
+        return result['exit']
 
 
 def prepare_database(env, output, root):
     snapshot = output/'core-database.sql'
-    with case_root(env) as child:
+    with case_root(env, output/'cases') as child:
         subprocess.run([str(root/'scripts/php-test'), 'tests/native-database.php'], cwd=root,
                        env=dict(child, PAYMENTER_TEST_DATABASE_EXPORT=str(snapshot)), check=True, timeout=10)
     env.update(PAYMENTER_TEST_DATABASE=str(snapshot),
                PAYMENTER_TEST_DATABASE_SHA256=hashlib.sha256(snapshot.read_bytes()).hexdigest())
     installed = output/'commerce-database.sql'
-    with case_root(env) as child:
+    with case_root(env, output/'cases') as child:
         subprocess.run([str(root/'scripts/php-test'), 'tests/commerce-database.php'], cwd=root,
                        env=dict(child, PAYMENTER_TEST_COMMERCE_EXPORT=str(installed)), check=True, timeout=10)
     env.update(PAYMENTER_TEST_COMMERCE_DATABASE=str(installed),
@@ -197,7 +234,7 @@ def prepare_funded_registration(env, output):
     root = Path(__file__).resolve().parents[1]
     operation = output/'operation-catalogue.sql'
     funded = output/'funded-registration.sql'
-    with command_environment(env) as child:
+    with command_environment(env, output/'cases') as child:
         subprocess.run([str(root/'scripts/php-test'), 'tests/Support/export-funded-registration.php'], cwd=root,
                        env=dict(child, PAYMENTER_TEST_OPERATION_EXPORT=str(operation), PAYMENTER_TEST_FUNDED_EXPORT=str(funded)), check=True, timeout=10)
     env.update(PAYMENTER_TEST_OPERATION_DATABASE=str(operation),
