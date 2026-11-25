@@ -7,6 +7,7 @@ instead of adding one. Adding an entry to make this test pass is a review block.
 """
 from pathlib import Path
 import re
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,12 +35,24 @@ ALLOWED = {
 
 USE = re.compile(r'^\s*use\s+(?:function\s+|const\s+)?([^;]+);', re.MULTILINE)
 QUALIFIED = re.compile(r'(?<![\w\\])\\([A-Z]\w*(?:\\[A-Z]\w*)+)')
+NAMESPACE = re.compile(r'^\s*namespace\s+([\w\\]+)\s*[;{]', re.MULTILINE)
+DECLARATION = re.compile(r'^\s*(?:(?:final|abstract|readonly)\s+)*(?:class|trait|interface|enum)\s', re.MULTILINE)
 
 
 def names(source):
-    """Every class a PHP file imports or names fully qualified, without the leading backslash."""
+    """Every class a PHP file imports, uses as a trait or names fully qualified, without the leading backslash.
+
+    `use` before the first class-like declaration imports an absolute name. Inside a class body `use` names a trait,
+    resolved against the file's namespace unless it starts with a backslash."""
     found = set(QUALIFIED.findall(source))
-    for statement in USE.findall(source):
+    body = DECLARATION.search(source)
+    header, classes = (source[:body.start()], source[body.start():]) if body else (source, '')
+    namespace = (NAMESPACE.search(source) or [None, ''])[1]
+    for statement in USE.findall(classes):
+        found.update(item if item.startswith('\\') else namespace+'\\'+item
+                     for item in (part.strip() for part in statement.split(',')) if item)
+    found = {name.lstrip('\\') for name in found}
+    for statement in USE.findall(header):
         group = re.fullmatch(r'\s*\\?([\w\\]+)\\\{([^}]*)\}\s*', statement)
         items = [item.strip() for item in (group[2] if group else statement).split(',')]
         found.update((group[1]+'\\' if group else '')+re.split(r'\s+as\s+', item)[0].lstrip('\\')
@@ -47,18 +60,18 @@ def names(source):
     return found
 
 
-def outside(path):
+def outside(path, root=API):
     """Names in one API file outside its own namespace, relative to the Domains root namespace."""
     source = path.read_text()
     # The provider's whole Api subtree is one namespace, so nested protocol files may use each other.
-    own = BASE+'Registrars\\'+path.relative_to(API).parts[0]+'\\Api\\'
+    own = BASE+'Registrars\\'+path.relative_to(root).parts[0]+'\\Api\\'
     # A name with one segment is global PHP (\InvalidArgumentException), never a Domains type.
     return sorted(n[len(BASE):] if n.startswith(BASE) else n
                   for n in names(source) if '\\' in n and not n.startswith(own))
 
 
-def current():
-    return {str(p.relative_to(API)): found for p in sorted(API.glob('*/Api/**/*.php')) if (found := outside(p))}
+def current(root=API):
+    return {str(p.relative_to(root)): found for p in sorted(root.glob('*/Api/**/*.php')) if (found := outside(p, root))}
 
 
 class RegistrarApiImports(unittest.TestCase):
@@ -81,10 +94,20 @@ class RegistrarApiImports(unittest.TestCase):
         bracketed = '<?php\nnamespace A\\B {\n    use \\C\\{D};\n    use E\\F;\n}\n'
         self.assertEqual({'C\\D', 'E\\F'}, names(bracketed))
 
-    def test_nested_api_files_are_scanned(self):
-        self.assertTrue(all('/Api/' in str(p) for p in API.glob('*/Api/**/*.php')))
-        self.assertIn('Enom/Api/Client.php', {str(p.relative_to(API)) for p in API.glob('*/Api/**/*.php')})
-
+    def test_nested_api_files_are_scanned_and_relative_traits_stay_inside(self):
+        api = BASE+'Registrars\\Enom\\Api'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'Enom/Api/Protocol').mkdir(parents=True)
+            (root/'Enom/Api/Client.php').write_text(
+                f'<?php\nnamespace {api};\nuse {BASE}Data\\Environment;\n'
+                'final class Client\n{\n    use Protocol\\EncodesParameters;\n}\n')
+            (root/'Enom/Api/Protocol/Request.php').write_text(
+                f'<?php\nnamespace {api}\\Protocol;\nuse {api}\\Client;\nuse {BASE}Services\\OperationClaims;\n'
+                'trait EncodesParameters\n{\n    use \\Other\\Shared;\n}\n')
+            self.assertEqual({'Enom/Api/Client.php': ['Data\\Environment'],
+                              'Enom/Api/Protocol/Request.php': ['Other\\Shared', 'Services\\OperationClaims']},
+                             current(root))
 
 if __name__ == '__main__':
     unittest.main()
