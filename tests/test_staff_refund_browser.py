@@ -74,6 +74,9 @@ def browse(app, root, facts):
         for log in logs(app, root):
             print(log.read_text()[-6000:])
     assert report['errors'] == [], 'The browser steps did not finish'
+    # The app's own route serves the Livewire script once; later pages reuse that answer.
+    [script] = report['livewire']
+    assert script['status'] == 200 and script['uses'] > 1, report['livewire']
     assert list(report['scenarios']) == list(SCENARIOS), report['scenarios']
     for name, scenario in report['scenarios'].items():
         # Chromium picks the cookies for the next hop: every cookie the sign-in set reaches /admin, which would otherwise

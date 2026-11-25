@@ -9,15 +9,15 @@ const { chromium } = require('playwright');
 // base is a synthetic origin: every request to it is answered here, and nothing listens on a port.
 const [base, root, out] = process.argv.slice(2);
 const seed = JSON.parse(fs.readFileSync(path.join(root, 'seed.json'), 'utf8'));
-const receipt = { steps: [], requests: [], console: [], errors: [], scenarios: {} };
+const receipt = { steps: [], requests: [], console: [], errors: [], scenarios: {}, livewire: [] };
 const app = process.env.PAYMENTER_TEST_FIXTURE;
 const publicRoot = path.join(app, 'public');
 const KERNEL = path.join(__dirname, 'refund-browser-kernel.php');
 // The kernel points the theme's missing compiled assets here.
 const ASSETS = '/refund-browser-assets/';
-// Livewire's script route returns this package file unchanged; a web server may serve its published copy instead.
+// The first request for the script URL the page emits goes through the kernel; later requests reuse that reply.
 const LIVEWIRE_SCRIPT = /^\/livewire-[0-9a-f]+\/livewire\.min\.js$/;
-const livewireScript = path.join(app, 'vendor/livewire/livewire/dist/livewire.min.js');
+const scripts = new Map();
 // Paymenter core links staff avatars to Gravatar images, which get an empty answer. Any other request there, or to
 // any other origin, fails the run.
 const isAvatar = (request, url) => url.origin === 'https://www.gravatar.com' && url.pathname.startsWith('/avatar/')
@@ -140,11 +140,24 @@ async function answer(scenario, route) {
   if (url.pathname.startsWith(ASSETS)) {
     return route.fulfill({ status: 200, contentType: url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript', body: '' });
   }
-  if (LIVEWIRE_SCRIPT.test(url.pathname)) return route.fulfill({ path: livewireScript, contentType: 'text/javascript' });
   const file = publicFile(url.pathname);
   if (file) return route.fulfill({ path: file });
+  const script = LIVEWIRE_SCRIPT.test(url.pathname) ? url.pathname + url.search : null;
   try {
-    const reply = await follow(scenario, request);
+    let reply;
+    if (script) {
+      if (!scripts.has(script)) {
+        const served = { url: script, status: null, uses: 0 };
+        receipt.livewire.push(served);
+        scripts.set(script, { served, reply: follow(scenario, request).then((first) => { served.status = first.status; return first; }) });
+      }
+      const { served, reply: first } = scripts.get(script);
+      // Only the first answer sets its cookies.
+      const reused = (served.uses += 1) > 1;
+      reply = reused ? { ...(await first), cookies: [] } : await first;
+    } else {
+      reply = await follow(scenario, request);
+    }
     const headers = reply.cookies.length ? { ...reply.headers, 'set-cookie': reply.cookies.join('\n') } : reply.headers;
     return await route.fulfill({ status: reply.status, headers, body: reply.body });
   } catch (error) {
@@ -193,6 +206,9 @@ async function state(page, label) {
 
 async function open(page, id) {
   await page.goto(`${base}/admin/registrar-requests/${id}`);
+  // The page has loaded its scripts; without Livewire's, waiting for it would only time out.
+  const missing = receipt.livewire.find((script) => script.status !== 200);
+  if (missing) throw new Error(`Livewire script ${missing.url} answered ${missing.status}`);
   await page.waitForFunction(() => !!window.Livewire && !!document.querySelector('[wire\\:id]'));
 }
 
@@ -279,5 +295,5 @@ async function refusals(first) {
   const scenarios = Object.fromEntries(Object.entries(receipt.scenarios).map(([name, { redirects, facts }]) => [name, { redirects, facts: facts ?? null }]));
   fs.writeFileSync(path.join(out, 'receipt.json'), JSON.stringify({ ...receipt, scenarios }, null, 1));
   console.log(JSON.stringify({ steps: receipt.steps.map(({ shot, text, ...s }) => ({ ...s, text })), errors: receipt.errors, requests: receipt.requests,
-    scenarios }));
+    scenarios, livewire: receipt.livewire }));
 })();
