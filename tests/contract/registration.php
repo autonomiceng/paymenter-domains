@@ -7,7 +7,8 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEv
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client, Driver, Registration, Writer};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\RegistrarRequest;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, DomainOperations, OperationClaims, RegistrarRegistry, RegistrationPreflight, RegistrationProfiles, WriteAcceptance, WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, DomainOperations, OperationClaims, RegistrarRegistry, RegistrationProfiles, WriteAcceptance, WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\RegistrationPreflight;
 
 // Native funding/account identity/catalogue policy are synthetic and disposable. No real account
 // identity or installed-runtime acceptance is inferred. Actual protocol reads use the REAL driver.
