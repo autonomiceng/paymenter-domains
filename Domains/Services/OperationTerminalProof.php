@@ -60,9 +60,9 @@ final class OperationTerminalProof
             && !array_intersect(array_keys($op->cost ?? []), ['actual', 'execution']) && !array_key_exists('dispatch_attempted_at', $op->policy ?? []);
     }
     /** An unpaid or funds-deadline renewal closure of this generation and invoice, recorded before any seal. */
-    private static function renewalClosed(Operation $op): bool
+    public static function renewalClosed(Operation $op, ?RenewalAttempt $renewal = null): bool
     {
-        $r = RenewalAttempt::of($op); $t = $r->terminal()['evidence'] ?? [];
+        $r = $renewal ?? RenewalAttempt::of($op); $t = $r->terminal()['evidence'] ?? [];
         return $r->closedUnsent() && in_array($op->safe_code, ['renewal_cancelled_unpaid', FundsWaits::RENEWAL_CLOSED], true)
             && ($t['operation_key'] ?? null) === $op->operation_key && ($t['generation'] ?? null) === $op->authority_generation
             && ($t['invoice_id'] ?? null) === $op->invoice_id;

@@ -7,6 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain,NativeIntent,Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{InvoiceOutcome,OwnedDomain};
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 use Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 /** Read-only ownership-scoped adapter for themes. No provider I/O, locks or cached actor state. */
 final readonly class NativePresenter
 {
@@ -52,11 +53,12 @@ final readonly class NativePresenter
         $ops=Operation::where('invoice_id',$invoiceId)->where('currency',$invoice->currency_code)->where(fn($q)=>$q->whereIn('safe_code',
             ['renewal_cancelled_unpaid',FundsWaits::RENEWAL_CLOSED,UnpaidAcquisitionProof::CODE])->orWhereIn('action',['register','transfer']))->with(['domain.service.order','domain.service.cancellation'])->orderBy('id')->limit(251)->get();
         if($ops->count()>250){throw new \DomainException('Invoice domain history needs review.');}
+        $renewals=RenewalAttempt::loaded($ops->where('action','renew'));
         foreach($ops as $op){
             $d=$op->domain;$item=$items[$op->invoice_item_id]??null;
             if(!$d||(int)$d->user_id!==(int)$owner->id||(int)$d->service?->user_id!==(int)$owner->id
                 ||(int)$d->service?->order?->user_id!==(int)$owner->id||!$item||!$this->line($item,$op)){continue;}
-            $terminal=$this->closedLine($op,$d);$native=!$terminal&&$this->nativeAcquisitionClosed($op,$d);
+            $terminal=$this->closedLine($op,$d,$renewals[$op->id]??null);$native=!$terminal&&$this->nativeAcquisitionClosed($op,$d);
             if(!$terminal&&!$native){continue;}
             $pending=$pending||$native;$closed[]=$op;$lines[]=['kind'=>$native?UnpaidAcquisitionProof::CODE:$op->safe_code,'domain'=>$d->domain];
         }
@@ -81,18 +83,19 @@ final readonly class NativePresenter
         return $intent==='cancellation'||($intent!==null&&isset($op->policy['native_acquisition_closure']));
     }
     /** Historical display follows the issued operation, even after the domain moves to another authority. No refund authority is granted. */
-    private function closedLine(Operation $op,Domain $d): bool
+    private function closedLine(Operation $op,Domain $d,?RenewalAttempt $renewal=null): bool
     {
-        $a=$op->attempt??[];$t=$a['terminal']??[];
         if($op->state!=='rejected'||!$op->completed_at||$op->funding_basis!=='paid_invoice'||$op->domain_id!==$d->id||$op->service_id!==$d->service_id
             ||$op->authority_generation<1||$op->provider_order_id!==null||$op->confirmed_expires_at!==null||$op->lease_expires_at!==null
-            ||($a['seal']??null)!=='absent'||($a['send_state']??null)!=='definitely_unsent'||($a['disposition']??null)!=='rejected'
+            ||array_intersect(array_keys($op->cost??[]),['actual','execution'])||array_key_exists('dispatch_attempted_at',$op->policy??[])){return false;}
+        // A renewal closure is read through the renewal attempt facts: closed unsent before any seal, for this generation and invoice.
+        if($op->action==='renew'){return OperationTerminalProof::renewalClosed($op,$renewal);}
+        $a=$op->attempt??[];$t=$a['terminal']??[];
+        if(($a['seal']??null)!=='absent'||($a['send_state']??null)!=='definitely_unsent'||($a['disposition']??null)!=='rejected'
             ||($a['rejection_basis']??null)!=='definitely_unsent'||($t['operation_key']??null)!==$op->operation_key
             ||($t['generation']??null)!==$op->authority_generation||($t['invoice_id']??null)!==$op->invoice_id
-            ||array_intersect(array_keys($a),['execution','dispatch_attempted_at'])||array_intersect(array_keys($op->cost??[]),['actual','execution'])
-            ||array_key_exists('dispatch_attempted_at',$op->policy??[])){return false;}
-        return ($op->action==='renew'&&in_array($op->safe_code,['renewal_cancelled_unpaid',FundsWaits::RENEWAL_CLOSED],true))
-            ||(in_array($op->action,['register','transfer'],true)&&$op->safe_code===UnpaidAcquisitionProof::CODE&&$a===UnpaidAcquisitionProof::attempt($op));
+            ||array_intersect(array_keys($a),['execution','dispatch_attempted_at'])){return false;}
+        return in_array($op->action,['register','transfer'],true)&&$op->safe_code===UnpaidAcquisitionProof::CODE&&$a===UnpaidAcquisitionProof::attempt($op);
     }
     /** Read only retained local results. A capable gateway's unobserved return stays pending, never assumed credit. */
     private function outcomeMoney(array $ops,Invoice $invoice): array

@@ -39,6 +39,20 @@ final readonly class RenewalAttempt
         return $facts;
     }
 
+    /**
+     * Attempt facts of these already loaded operations for one page, keyed by operation id. This read adds no query while
+     * the facts live on the operation row. An unreadable record is left out, so its caller reads it alone and fails as before.
+     */
+    public static function loaded(iterable $ops): array
+    {
+        $facts = [];
+        foreach ($ops as $op) {
+            if (!$op instanceof Operation) { continue; }
+            try { $facts[(int) $op->id] = self::of($op); } catch (\Throwable) {}
+        }
+        return $facts;
+    }
+
     /** True while nothing is recorded for this renewal's attempt: never claimed, sealed or closed. */
     public function untouched(): bool { return $this->attempt === []; }
 
@@ -60,6 +74,22 @@ final readonly class RenewalAttempt
     {
         return $this->attempt === ['seal' => 'absent', 'send_state' => SendState::DefinitelyUnsent->value, 'disposition' => 'rejected',
             'rejection_basis' => 'definitely_unsent', 'terminal' => $evidence];
+    }
+
+    /**
+     * True while no seal and no reply are recorded: the seal is missing or absent and no reply is set. Any other seal
+     * value, a malformed one included, counts as recorded.
+     */
+    public function unsealed(): bool
+    { return ($this->attempt['seal'] ?? 'absent') === 'absent' && !isset($this->attempt['execution']); }
+
+    /**
+     * Proof the renewal never went out: recorded definitely unsent before any seal, or the sealed send locally refused.
+     * For display only; a refund or credit needs the gate's own proof.
+     */
+    public function provedUnsent(): bool
+    {
+        return $this->sealed() ? $this->locallyRefused() : ($this->attempt['send_state'] ?? null) === SendState::DefinitelyUnsent->value;
     }
 
     /** True once the renewal was sealed for dispatch. From then on it is possibly sent until proved otherwise. */

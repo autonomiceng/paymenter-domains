@@ -79,11 +79,16 @@ same([false, null, false], [$f->sealed(), $f->sendState(), $f->locallyRefused()]
 same(['outcome' => 'renewal_cancelled_unpaid', 'evidence' => $terminal, 'recorded_at' => '2026-11-25 12:05:00'], $f->terminal(), 'Operation-level terminal proof');
 same([true, true, false], [$f->closedUnsent(), $f->closedOnlyWith($terminal), $f->closedOnlyWith([...$terminal, 'transactions' => [1]])], 'A local closure before any seal, with its exact terminal evidence');
 same([true, false, false, false], [$facts[$never]->untouched(), $f->untouched(), $facts[$open]->untouched(), $facts[$open]->closedUnsent()], 'Only a renewal with nothing recorded is untouched; a sealed one is no closure');
+same([false, true, true, false, false], [$facts[$never]->provedUnsent(), $f->provedUnsent(), $facts[$refused]->provedUnsent(), $facts[$open]->provedUnsent(), $facts[$lost]->provedUnsent()],
+    'Proved unsent: a closure before any seal or a local refusal of the sealed send; a sealed or lost send is not');
 
 same([false, null, null], [$facts[$register]->sealed(), $facts[$register]->claimKey(), $facts[999]->sentAt()], 'Other actions and missing rows have no renewal attempt');
 
 DB::enableQueryLog(); DB::flushQueryLog();
 $one = RenewalAttempt::of(Operation::findOrFail($settled)); $count = count(DB::getQueryLog()); DB::disableQueryLog();
 same(1, $count, 'One loaded renewal reads its facts without another query');
+$rows = Operation::whereKey([$settled, $unpaid])->get(); DB::enableQueryLog(); DB::flushQueryLog();
+$page = RenewalAttempt::loaded($rows); $count = count(DB::getQueryLog()); DB::disableQueryLog();
+same([0, [$settled, $unpaid], true], [$count, array_keys($page), $page[$unpaid]->closedUnsent()], 'A page reads its loaded renewals once, with no further query');
 same([$facts[$settled]->settlement(), $facts[$settled]->sentAt()->format(DATE_ATOM), $facts[$settled]->claimKey()], [$one->settlement(), $one->sentAt()->format(DATE_ATOM), $one->claimKey()], 'One renewal reads the same facts');
 echo "Renewal attempt reader passed.\n"; $nativeSuccessful = true;

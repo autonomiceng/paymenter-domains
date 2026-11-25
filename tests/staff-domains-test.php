@@ -398,13 +398,15 @@ foreach(['renewal_cancelled_unpaid'=>'renew','acquisition_cancelled_unpaid'=>'re
     same(['Not charged',null],$cost($unpaid),'Closed unpaid request was not charged: '.$code);
     $unpaid->attempt=['seal'=>'sealed','send_state'=>'unknown']; same(null,$cost($unpaid)[0],'A send attempt keeps the cost Missing: '.$code);
 }
+// A finished renewal, so the sealed authorization is read without an unconfirmed send.
+$renewal->state='succeeded';
 foreach([['amount'=>'8.95'],['amount'=>'8.95','currency'=>'EUR'],['amount'=>8.95,'currency'=>'USD'],['amount'=>'private','currency'=>'USD']] as $authorized){
-    $renewal->attempt=$authorized===[]?[]:['authorized_cost'=>$authorized];
+    $renewal->attempt=$authorized===[]?[]:['seal'=>'sealed','authorized_cost'=>$authorized];
     same([null,'No cost recorded. Check at the registrar.'],$cost($renewal),'Missing or invalid authorization never falls back to estimate or cap');
 }
-$renewal->attempt=['authorized_cost'=>['amount'=>'0','currency'=>'USD']];
+$renewal->attempt=['seal'=>'sealed','authorized_cost'=>['amount'=>'0.00','currency'=>'USD']];
 same([null,'Authorized $0.00'],$cost($renewal),'Known zero authorization remains distinct from unknown');
-$renewal->attempt=['authorized_cost'=>['amount'=>'123456789012345678.12340000','currency'=>'USD']];
+$renewal->attempt=['seal'=>'sealed','authorized_cost'=>['amount'=>'123456789012345678.123400','currency'=>'USD']];
 same([null,'Authorized $123456789012345678.1234'],$cost($renewal),'Authorized cost preserves exact money');
 foreach(['register','transfer'] as $action){
     $renewal->action=$action;

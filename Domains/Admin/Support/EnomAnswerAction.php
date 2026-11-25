@@ -9,6 +9,7 @@ use Filament\Schemas\Components\Section;
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 use Paymenter\Extensions\Servers\Domains\Services\{RegistrarAnswers as Answers,StaffSettingsReview as Review,StaffSettingsWrites};
 final class EnomAnswerAction
 {
@@ -17,11 +18,13 @@ final class EnomAnswerAction
     /** The button names what it does; its dialog keeps the support heading. A transfer's rejection keeps its own label. */
     public static function button(Operation $op): string {return $op->action==='transfer'?self::label($op):'Record answer';}
     /** Unreadable saved attempt data never offers Not processed, nor does a renewal a check already saw charged or extended. */
-    private static function accepted(Operation $op): bool
-    {return !Answers::readable($op)||Answers::capturedReference($op)!==null||(isset($op->attempt['registration'])||isset($op->attempt['renewal']))&&!Answers::stoppedOrder($op)
+    private static function accepted(Operation $op,?RenewalAttempt $renewal): bool
+    {return !Answers::readable($op)||Answers::capturedReference($op)!==null
+        ||($op->action==='renew'?($renewal??RenewalAttempt::of($op))->acceptance()!==null:isset($op->attempt['registration'])||isset($op->attempt['renewal']))&&!Answers::stoppedOrder($op)
         ||$op->action==='renew'&&Answers::stoppedOrder($op)&&Answers::renewalProof($op,$op->domain()->firstOrFail());}
-    /** One request's answer. The stamp is the settings review the page opened on. Step 1 is what support said, step 2 the ticket. */
-    public static function make(Operation $op,string $stamp): Action
+    /** One request's answer. The stamp is the settings review the page opened on. Step 1 is what support said, step 2 the ticket.
+     * $renewal: the renewal's attempt facts the page already read. */
+    public static function make(Operation $op,string $stamp,?RenewalAttempt $renewal=null): Action
     {
         $server=(int)$op->server_id;$id=$op->id;$registrar=$op->registrar_key==='namesilo'?'NameSilo':'Enom';$transfer=$op->action==='transfer';
         $unproven=Answers::stoppedOrder($op);
@@ -36,7 +39,7 @@ final class EnomAnswerAction
                 Section::make('1. What '.$registrar.' support said')->contained(false)->schema([
                     Select::make('outcome')->label('Result')->required()->live()->options($transfer
                         ?['transfer_rejected'=>'Rejected: the transfer will not complete']
-                        :(self::accepted($op)
+                        :(self::accepted($op,$renewal)
                             ? ['accepted'=>'Processed: support confirmed the order number']
                             : ['accepted'=>'Processed: '.$registrar.' made the order','not_processed'=>'Not processed: no order and no charge'])),
                     TextInput::make('order_reference')->default(fn()=>$transfer?($op->attempt['evidence']['transferReference']??null):(Answers::capturedReference($op)??($unproven?$op->provider_order_id:null)))->label(fn($get)=>$get('outcome')==='transfer_rejected'&&$op->registrar_key==='enom'?'Enom transfer number':'Order number')

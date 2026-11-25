@@ -5,6 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{Credit, Invoice, InvoiceItem, InvoiceTransaction, Server, ServiceCancellation};
 use Illuminate\Support\Collection;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 /** What DomainStates::project reads for a set of owned domains, in a fixed number of queries for up to 250 domains.
  * The Domains list loads a batch; the domain page loads its one domain. Reads only: no locks, writes or provider calls. */
 final class DomainStateInputs
@@ -16,6 +17,8 @@ final class DomainStateInputs
     private array $unproven = [];
     /** @var list<int> OwnedDomains::paying over the transaction batch. */
     private array $paying = [];
+    /** @var array<int,RenewalAttempt> The current cycles' attempt facts by operation id, read once. */
+    private array $renewals = [];
     /** @param array<int,Domain> $domains id => domain; @param array<int,\App\Models\Service> $services id => service */
     private function __construct(private array $domains, private array $services) {}
     public static function one(Domain $d): self
@@ -50,6 +53,8 @@ final class DomainStateInputs
         // A renewal still being confirmed reads its account, domain and server for the registrar check.
         $waiting = $in->cycles->whereIn('state', ['running', 'pending', 'uncertain'])->each(fn ($op) => $op->setRelation('domain', $domains[$op->domain_id]));
         $in->servers = Server::with('settings')->whereIn('id', [...array_map(fn ($d) => $d->server_id, $domains), ...$waiting->pluck('server_id')->all()])->get()->keyBy('id');
+        // One read of the current cycles' attempt facts serves every registrar check line on the page.
+        $in->renewals = RenewalAttempt::loaded($in->cycles);
         $in->accounts = $waiting->isEmpty() ? collect() : Account::whereIn('server_id', $waiting->pluck('server_id')->unique()->all())->get()->groupBy('server_id');
         $in->prove();
         return $in;
@@ -99,7 +104,7 @@ final class DomainStateInputs
     public function settings(Domain $d): ?Collection { return $this->servers->get($d->server_id)?->settings; }
     /** The customer's registrar check line for this renewal request, from the batch. */
     public function check(Operation $cycle): array
-    { return RegistrarCheck::forCustomer($cycle, ['accounts' => $this->accounts->get($cycle->server_id, collect()), 'server' => $this->servers->get($cycle->server_id)]); }
+    { return RegistrarCheck::forCustomer($cycle, ['accounts' => $this->accounts->get($cycle->server_id, collect()), 'server' => $this->servers->get($cycle->server_id)], $this->renewals[$cycle->id] ?? null); }
     /** The billing ledger for these renewal requests, from the batch. */
     public function ledger(Domain $d, Collection $ops): array
     { return self::slice($d, $this->service($d), $ops, ['invoices' => $this->invoices, 'items' => $this->items, 'transactions' => $this->transactions]); }
