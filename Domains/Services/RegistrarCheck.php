@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence,Evidence,RequestContext};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAttempt, RenewalCompletion};
 /** One bounded read result, shared by background work, staff feedback and customer notices. */
 final class RegistrarCheck
 {
@@ -180,7 +180,7 @@ final class RegistrarCheck
         if ($op->action==='register'&&$op->registrar_key==='enom'&&in_array($op->state,['running','pending','uncertain'],true)
             &&RegistrarAnswers::eligible($op,app(Clock::class)->now())&&!self::attempted($op)) { return ['outcome'=>'not_checked']; }
         if ($op->action !== 'renew' || !in_array($op->state, ['running', 'pending', 'uncertain'], true)
-            || isset($op->policy['enom_answer']) || isset($op->attempt['reconciliation'])) { return $check; }
+            || isset($op->policy['enom_answer']) || ($renewal = RenewalAttempt::of($op))->readProof() !== null) { return $check; }
         try {
             $now = app(Clock::class)->now();
             if ($op->state === 'running' && $op->lease_expires_at !== null && $op->lease_expires_at > $now) { return $check; }
@@ -192,7 +192,7 @@ final class RegistrarCheck
             if (self::lostReply($op, $attempt, $now)) {
                 if ($op->registrar_key==='enom'&&!self::attempted($op)) { return ['outcome'=>'not_checked']; }
                 return [...($check??[]),'outcome'=>'awaiting_answer', 'registrar'=>$attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo',
-                    'answer_after'=>(new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp()];
+                    'answer_after'=>$renewal->sentAt()->modify('+24 hours')->getTimestamp()];
             }
         } catch (\Throwable) {}
         return $check;

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence, HistoryScan};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 /** A lost Enom reply whose reads ran out before an accepted history contract could finish its scan reads again, once per
  * contract revision. Reads only: it never sends, refunds or changes the sealed attempt. */
 final class HistoryResumption
@@ -16,7 +17,7 @@ final class HistoryResumption
         $polls = (int)($renew ? ($policy['renewal_polls'] ?? 0) : ($policy['reconciliation']['polls'] ?? 0));
         if (!in_array($op->action, ['register', 'renew'], true) || $attempt->binding->registrarKey !== 'enom'
             || $polls < OperationReconciliation::POLL_LIMIT || !$attempt->replyLost() || $attempt->executionFacts !== null
-            || isset($op->attempt['reconciliation']) || !($attempt->historyAcceptance?->covers($attempt, $now) ?? false)) { return false; }
+            || ($renew ? RenewalAttempt::of($op)->readProof() !== null : isset($op->attempt['reconciliation'])) || !($attempt->historyAcceptance?->covers($attempt, $now) ?? false)) { return false; }
         $revision = HistoryScan::revision($attempt->historyAcceptance);
         if (($policy['history_resumption']['revision'] ?? null) === $revision) { return false; }
         $policy['history_resumption'] = ['revision' => $revision, 'reason' => self::REASON, 'at' => $now->format(DATE_ATOM), 'prior_polls' => $polls];
