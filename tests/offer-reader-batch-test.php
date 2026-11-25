@@ -7,7 +7,8 @@ require __DIR__.'/Support/commerce.php';
 
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Edit, Facts, FactsObserved, Intent, OfferReader, OfferState, Projection, Query, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Edit, Facts, FactsObserved, Intent, OfferState, Projection, Query, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferReader;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 

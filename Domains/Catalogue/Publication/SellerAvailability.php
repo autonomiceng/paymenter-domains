@@ -1,7 +1,9 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Catalogue;
+namespace Paymenter\Extensions\Servers\Domains\Catalogue\Publication;
+use Paymenter\Extensions\Servers\Domains\Catalogue\OfferState;
+use Paymenter\Extensions\Servers\Domains\Catalogue\Pricing\CurrentCost;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
 /** Selection needs a real bound offer and an acquisition/annual-renewal price path.

@@ -5,7 +5,8 @@ namespace Paymenter\Extensions\Servers\Domains\Catalogue\Pricing;
 
 use App\Models\Server;
 use Illuminate\Support\Facades\{DB, Log};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CatalogueActivation, CurrentCost, Edit, OfferState, Pricing, StaffCommands, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CatalogueActivation, Edit, OfferState, Pricing, StaffCommands, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\Pricing\CurrentCost;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};

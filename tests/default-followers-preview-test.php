@@ -6,7 +6,8 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions;
 use Paymenter\Extensions\Servers\Domains\Models\{Price,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,PriceCatalogue,PricingRule};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,Edit,Intent,OfferState,Query,ReadOffer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,Edit,Intent,OfferState,Query};
+use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\ReadOffer;
 extract(commerceFixture(true));Carbon\Carbon::setTestNow($now);$t=$tlds[0];
 // Active own/default pricing lives in the typed intent, independently of retained legacy columns.
 $other=$tlds[1];$b=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$other->server_id)->sole());$raw=OfferState::decode($other->catalogue_intent);

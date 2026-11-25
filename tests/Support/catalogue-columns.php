@@ -16,7 +16,7 @@ function costEvidence(?object $row): ?string
 function costColumns(mixed $json): array
 {
     if($json===null){return ['cost_enabled'=>null];}
-    try{return \Paymenter\Extensions\Servers\Domains\Catalogue\CurrentCost::values(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($json)));}
+    try{return \Paymenter\Extensions\Servers\Domains\Catalogue\Pricing\CurrentCost::values(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($json)));}
     catch(\Throwable){return ['cost_enabled'=>true,'cost_source_unit'=>'invalid'];}
 }
 /** Arrange the same synthetic intent after removal of the old TLD flags. */

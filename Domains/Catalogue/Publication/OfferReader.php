@@ -1,7 +1,9 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Catalogue;
+namespace Paymenter\Extensions\Servers\Domains\Catalogue\Publication;
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Decision, Evaluator, OfferState, Query, Revision};
+use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\ReadOffer;
 use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 
 use App\Models\Server;

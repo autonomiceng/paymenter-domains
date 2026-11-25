@@ -4,7 +4,8 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue\Pricing;
 
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CurrentCost, FeedObserved, OfferState, Pricing, Retail};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{FeedObserved, OfferState, Pricing, Retail};
+use Paymenter\Extensions\Servers\Domains\Catalogue\Pricing\CurrentCost;
 use Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness;
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Services\{CardFee, PricingRules};

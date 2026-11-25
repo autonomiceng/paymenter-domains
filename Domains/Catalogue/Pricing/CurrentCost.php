@@ -1,7 +1,8 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Catalogue;
+namespace Paymenter\Extensions\Servers\Domains\Catalogue\Pricing;
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Cost, OfferState};
 use Paymenter\Extensions\Servers\Domains\Data\CostUnit;
 /** The current normalized cost is stored in price columns; retail is independently published. */
 final class CurrentCost
