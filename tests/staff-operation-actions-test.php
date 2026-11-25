@@ -101,6 +101,9 @@ $foreign=$held('staff-foreign-placeholder.com');$key=$ticket($stale->fresh(),'re
 commerceReject(fn()=>$service->run($staff,$foreign->domain_id,$foreign->id,'refund',$key,'Cross domain review refused'));
 $key=$ticket($foreign,'refund');$clock->instant=$clock->now()->modify('+901 seconds');commerceReject(fn()=>$run($foreign,'refund',$key));
 $key=$ticket($foreign,'refund');$staff->role->update(['permissions'=>[Staff::VIEW]]);commerceReject(fn()=>$run($foreign,'refund',$key));$staff->role->update(['permissions'=>$all]);
+// A release ticket issued before its permission was removed is refused, and the hold stays.
+$key=$ticket($foreign,'release');$staff->role->update(['permissions'=>array_values(array_diff($all,[StaffOperationReview::permission('release')]))]);
+commerceReject(fn()=>$run($foreign,'release',$key));$staff->role->update(['permissions'=>$all]);same('held',$foreign->fresh()->state,'A revoked release changes nothing');
 // Every UI entry point preserves sent/null/unknown financial evidence, reservation and customer credit.
 foreach(['uncertain','pending','held','rejected'] as $stateName){
     [$sent]=$prepare(placeholderComFixtureName('staff-sent-'.$stateName.'-placeholder.com'),'null');$sent->update(['state'=>$stateName,'safe_code'=>$stateName==='held'?'transfer_needs_action':'transfer_provider_rejected']);

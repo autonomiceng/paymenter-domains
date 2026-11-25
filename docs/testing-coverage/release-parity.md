@@ -1,7 +1,7 @@
 # Staff release parity guard map
 
-The register, transfer and renewal entrypoints share `Support/staff-release-states.php`
-and `Support/staff-release-reasons.php`. Each scenario restores committed SQLite rows,
+The register, transfer and renewal parity entrypoints share `Support/staff-release-states.php`.
+Each scenario restores committed SQLite rows,
 including audit and review tickets, without putting provider calls inside a transaction.
 Paid, unpaid and missing-contact variants are each seeded once per file through real
 native checkout and payment. Restores retain their original clock and actor; each fault
@@ -11,10 +11,14 @@ No reason rows or writer assertions were removed.
 | Entry suffix (after staff[-transfer/-renewal]-release) | Retained guards |
 | --- | --- |
 | parity | Paid/unpaid readiness, cancellation, suspended service, permissions, and applicable financial, contact and input faults |
-| reasons-enabled/disabled | Every mapped reason, every RenewalCode, null and future codes. Compares guidance, notice, button state and writer outcome, including byte-preserving refusals |
 
-Each reason entrypoint restores the same held request before each code. It checks the
-future-code page, writer refusal and zero registrar writes for its deployment setting.
+`ReleaseDecision` (Domains/Staff/Release) decides every release for the page offer and the
+writer. `staff-release-decision-test.php` decides every mapped reason, every RenewalCode, null
+and a future code for each request type, with Enom TEST purchases on and off, plus the paths a
+fresh request cannot reach. `staff-release-reasons-test.php` reads the same facts from a real
+held request for every code, then runs one code per path through guidance, notice, button
+state and writer outcome, including byte-preserving refusals, the future-code page and zero
+registrar writes. Permission, stale and revoked tickets stay in `staff-operation-actions-test.php`.
 
 The state entrypoints retain complimentary renewal funding and fund permission, mixed
 invoices, missing contacts and registry support, contact recovery, peer work, owner,
