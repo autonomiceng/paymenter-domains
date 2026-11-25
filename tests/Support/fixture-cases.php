@@ -236,11 +236,13 @@ function nativeRestoreStorage(array $files): void
     }
 }
 
-/** Committed rows by table and rowid, decrypted, with password hashes and real-clock times masked. */
+/** Committed rows by table and rowid, decrypted, with password hashes and real-clock times and epoch seconds masked. */
 function nativeCaseRows(): array
 {
     $pdo = DB::connection()->getPdo();
     $normal = static function (mixed $value): mixed {
+        // Epoch seconds from the real clock, such as the retention mark of an audit row.
+        if (is_int($value)) { return abs($value - time()) < 86400 ? 'wall-clock' : $value; }
         if (!is_string($value)) { return $value; }
         if (str_starts_with($value, '$2y$')) { return 'password-hash'; }
         if (str_starts_with($value, 'eyJpdiI6')) { try { $value = 'decrypted:'.Crypt::decryptString($value); } catch (Throwable) {} }
