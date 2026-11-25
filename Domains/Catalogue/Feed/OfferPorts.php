@@ -1,7 +1,8 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Catalogue;
+namespace Paymenter\Extensions\Servers\Domains\Catalogue\Feed;
+use Paymenter\Extensions\Servers\Domains\Catalogue\{PricedFeed, TermSupport, Writer};
 
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment, RequestOrigin};
@@ -44,7 +45,7 @@ final class OfferPorts
                 expansion: $binding->environment === Environment::Test ? TermSupport::REVIEWED_EVIDENCE['enom'] : []);
         } else {
             // #386 is an explicit dependency; never silently fall back to the unadmitted cURL transport.
-            if ($binding->registrarKey !== 'namesilo' || !is_file(dirname(__DIR__).'/Registrars/NameSilo/AdmittedTransport.php')
+            if ($binding->registrarKey !== 'namesilo' || !is_file(dirname(__DIR__, 2).'/Registrars/NameSilo/AdmittedTransport.php')
                 || !class_exists(NameSilo\AdmittedTransport::class)) {
                 throw new \DomainException('Admitted NameSilo offer transport unavailable.');
             }

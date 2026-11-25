@@ -6,7 +6,7 @@ require __DIR__.'/Support/FakeDnsReader.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Dns\{DnsContext,DnsQuery,QuotaDnsReader};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeDnsReader;
-use Paymenter\Extensions\Servers\Domains\Services\{RdapQuota,PublicDnsQuota};
+use Paymenter\Extensions\Servers\Domains\Storefront\Search\{RdapQuota,PublicDnsQuota};
 extract(dnsFixture());$now=1800000000;$url='https://rdap.example.com/domain/example.com';$q=new RdapQuota();
 expect($q->reserve($url,$now),'Host admitted');expect(!(new RdapQuota())->reserve($url,$now),'One in flight per host');$q->complete($url,['status'=>200],$now);
 for($i=1;$i<6;$i++){expect($q->reserve($url,$now),'Host minute slot');$q->complete($url,['status'=>200],$now);}expect(!$q->reserve($url,$now),'Host max six');expect($q->reserve($url,$now+60),'Minute resets');$q->complete($url,['status'=>200],$now+60);

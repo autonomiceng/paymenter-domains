@@ -5,7 +5,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\FeedReadBudget;
+use Paymenter\Extensions\Servers\Domains\Catalogue\Feed\FeedReadBudget;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Account;

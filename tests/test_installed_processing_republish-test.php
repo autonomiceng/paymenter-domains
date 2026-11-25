@@ -8,7 +8,8 @@ $nativeSuccessful = false;
 require __DIR__.'/Support/offer-commerce.php';
 
 use App\Models\{Invoice, Order};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts, Context, Edit, Facts, FactsObserved, Intent, OfferWork, Projection, Query};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts, Context, Edit, Facts, FactsObserved, Intent, Projection, Query};
+use Paymenter\Extensions\Servers\Domains\Catalogue\Feed\OfferWork;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, AcquisitionOffers, CartAdmission, CheckoutEligibility, InvoiceBinding};

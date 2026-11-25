@@ -61,7 +61,7 @@ app(StaffSettingsWrites::class)->run($enableReview,['sell'=>['choices'=>['com'=>
 same(null,$tlds[0]->fresh()->catalogue_facts,'Enable records intent without fabricating registry metadata');
 same(false,$ports->readOffers($q,Context::Public)[0]->available,'Pending staff intent remains closed');
 same('queued',$scheduler->status($binding,'com')['state'],'Actual staff enable queues selected-set facts');
-$bulkWork = new Paymenter\Extensions\Servers\Domains\Catalogue\OfferWork($ports->writer(),$bulkClock,
+$bulkWork = new Paymenter\Extensions\Servers\Domains\Catalogue\Feed\OfferWork($ports->writer(),$bulkClock,
     new Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($bulkClock,25),fn()=>$bulkFeed,fn()=>25);
 $bulkWork->sync($binding); $bulkWork->accountTurn($binding->serverId); $bulkWork->accountTurn($binding->serverId);
 // Newly queued hints survive the claim and are consumed on the following bounded turn.

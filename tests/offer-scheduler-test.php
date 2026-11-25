@@ -10,7 +10,8 @@ require __DIR__.'/Support/management.php';
 
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{FactsObserved, OfferScheduler, OfferWork, PricedFeed, Projection, CatalogueActivation, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{FactsObserved, OfferScheduler, PricedFeed, Projection, CatalogueActivation, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\Feed\OfferWork;
 use Paymenter\Extensions\Servers\Domains\Data\RequestContext;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, DomainObservation, HoldingObservationWork, ObservationWork};

@@ -112,7 +112,7 @@ return;
 $c=App\Models\ServiceCancellation::create(['service_id'=>$service->id,'type'=>'end_of_period','reason'=>'Stop the next renewal after issued debt']);
 DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);
 // The adopted page uses the current cycle for both retained debt and replacement requests.
-foreach(['DnsTemplatesSchema','DnsQuotaSchema','RdapQuotaSchema'] as $schema){('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$schema)::install();}
+foreach(['Services\\DnsTemplatesSchema','Storefront\\Search\\DnsQuotaSchema','Storefront\\Search\\RdapQuotaSchema'] as $schema){('Paymenter\\Extensions\\Servers\\Domains\\'.$schema)::install();}
 $c->delete();$session=app('request')->session();$controller=new OwnerRenewalController($owners,$billing);
 $request=static function(string $method,string $path,array $data=[])use($owner,$session):Request {
     $r=Request::create($path,$method,$data);$r->setUserResolver(fn()=>$owner);$r->setLaravelSession($session);return $r;

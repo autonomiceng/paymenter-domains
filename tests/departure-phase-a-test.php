@@ -91,7 +91,7 @@ same('queued',$dnsOp->state,'DNS request is admitted while suspected');
 $clock->instant=$clock->now()->modify('+61 seconds');
 DB::transaction(function()use($d,$clock):void{$fresh=$d->fresh();$p=$fresh->observation;$p['departure_check']['at']=$clock->now()->getTimestamp()-86400;$p['departure_check']['rechecked']=false;unset($p['departure_check']['registry']);$fresh->update(['observation'=>$p]);});
 HoldingObservationWork::current($d->fresh())->update(['safe_code'=>'departure_registry','due_at'=>$clock->now()->getTimestamp(),'lease_until'=>0]);
-$pool=new \Paymenter\Extensions\Servers\Domains\Services\PublicDnsQuota();$one=$pool->acquire($clock->now()->getTimestamp());$two=$pool->acquire($clock->now()->getTimestamp());
+$pool=new \Paymenter\Extensions\Servers\Domains\Storefront\Search\PublicDnsQuota();$one=$pool->acquire($clock->now()->getTimestamp());$two=$pool->acquire($clock->now()->getTimestamp());
 $before=count($observation->calls);
 same('departure_registry',$worker->turn($queue,$guard),'The registrar recheck runs at 24 hours despite public quota saturation');
 expect(count($observation->calls)>$before,'The saturated-quota turn reads the registrar');

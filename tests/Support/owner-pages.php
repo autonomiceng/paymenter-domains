@@ -15,4 +15,4 @@ require dirname(__DIR__,2).'/Domains/routes/web.php';
 require dirname(__DIR__,2).'/Domains/routes/owned.php';
 storefrontViews();
 
-foreach(['DomainAuditSchema','DnsTemplatesSchema','DnsQuotaSchema','RdapQuotaSchema','AdoptionSchema','NativeIntentSchema'] as $schema){$class='Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$schema;$class::install();}
+foreach(['Services\\DomainAuditSchema','Services\\DnsTemplatesSchema','Storefront\\Search\\DnsQuotaSchema','Storefront\\Search\\RdapQuotaSchema','Services\\AdoptionSchema','Services\\NativeIntentSchema'] as $schema){('Paymenter\\Extensions\\Servers\\Domains\\'.$schema)::install();}

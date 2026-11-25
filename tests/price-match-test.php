@@ -114,7 +114,7 @@ DB::table('prices')->where('id', $longPrice->id)->update(['price' => '0.01']);
 DB::statement('CREATE TRIGGER drift_native_price AFTER UPDATE ON prices WHEN NEW.id = '.$longPrice->id.
     " BEGIN UPDATE prices SET setup_fee = '1.00' WHERE id = NEW.id; END");
 $feedCalls = 0;
-$worker = new Paymenter\Extensions\Servers\Domains\Catalogue\OfferWork($ports->writer(), $clock,
+$worker = new Paymenter\Extensions\Servers\Domains\Catalogue\Feed\OfferWork($ports->writer(), $clock,
     new Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock, 25),
     static function () use (&$feedCalls) { ++$feedCalls; throw new LogicException('No additional provider reads allowed.'); }, static fn () => 0);
 same('worked', $worker->accountTurn($b->serverId), 'Existing account job finishes its buffered publication');

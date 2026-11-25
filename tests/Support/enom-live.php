@@ -124,7 +124,7 @@ foreach(['renewal','management'] as $action){
 }
 saveDefaultRule(['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
 config(['domains.enom_live.catalogue'=>false]);$before=count($GLOBALS['enomWire']['forms']);
-$offerPorts=new \Paymenter\Extensions\Servers\Domains\Catalogue\OfferPorts($bindings,$clock);
+$offerPorts=new \Paymenter\Extensions\Servers\Domains\Catalogue\Feed\OfferPorts($bindings,$clock);
 $deny(fn()=>$offerPorts->feed($binding));same($before,count($GLOBALS['enomWire']['forms']),'Catalogue off refuses feed construction before send');config(['domains.enom_live.catalogue'=>true]);
 $write('tld_settings',['enabled'=>true,'register'=>true,'transfer'=>false,'renew'=>true,'min_years'=>1,'max_years'=>1,'verified'=>true],$tld->id);
 $write('tld_settings',['retained_annual_retail'=>'13.00'],$tld->id);

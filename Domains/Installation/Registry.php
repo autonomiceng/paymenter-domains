@@ -7,10 +7,11 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Catalogue\Pricing\PriceSchema;
 use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferSchema;
 use Paymenter\Extensions\Servers\Domains\Services\{AdoptionSchema,BalanceAlertSchema,BalanceSchema,BusinessSettingsSchema,
-    ComplimentaryAccountSchema,ContactProfileSchema,DnsQuotaSchema,DnsTemplateClaimsSchema,DnsTemplatesSchema,DomainAuditSchema,
+    ComplimentaryAccountSchema,ContactProfileSchema,DnsTemplateClaimsSchema,DnsTemplatesSchema,DomainAuditSchema,
     EnomLiveCallSchema,EnomTestSendLimitSchema,FoundationSchema,HistoryLinkSchema,MoneyWorkSchema,NativeIntentSchema,ObservationSchema,
-    ProfileContactSchema,RdapQuotaSchema,ReminderSchema,RetentionSchema,RuntimeSchema,StaffAlertSchema,StaffAuditSchema,
+    ProfileContactSchema,ReminderSchema,RetentionSchema,RuntimeSchema,StaffAlertSchema,StaffAuditSchema,
     UserDeletionSchema};
+use Paymenter\Extensions\Servers\Domains\Storefront\Search\{DnsQuotaSchema,RdapQuotaSchema};
 
 /** The one ordered list of feature-owned table definitions and the identity of the code that defines them. */
 final class Registry
