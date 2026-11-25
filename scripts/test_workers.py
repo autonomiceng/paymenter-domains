@@ -10,6 +10,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import uuid
 import native
 import installed_fixture
 import php_suite
@@ -150,9 +151,13 @@ def case_environment(env: dict[str, str], root: Path, *, keep: frozenset[str] = 
 
 @contextmanager
 def case_root(env: dict[str, str], *, keep: frozenset[str] = frozenset()):
-    """A private root for one command that does not need its own app copy."""
-    with tempfile.TemporaryDirectory(prefix='domains-case-', dir=env.get('TMPDIR')) as name:
-        yield case_environment(env, Path(name), keep=keep)
+    """A private, exclusively created root for one command that does not need its own app copy."""
+    root = Path(env.get('TMPDIR') or tempfile.gettempdir())/('domains-case-'+uuid.uuid4().hex)
+    root.mkdir(mode=0o700)
+    try:
+        yield case_environment(env, root, keep=keep)
+    finally:
+        shutil.rmtree(root)
 
 
 @contextmanager
