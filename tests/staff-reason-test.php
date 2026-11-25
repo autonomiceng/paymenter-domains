@@ -17,15 +17,12 @@ foreach([str_repeat('é',4),str_repeat('é',501),"abcde\xff","line\nbreak","line
     $before=$op->fresh()->getRawOriginal();commerceReject(fn()=>$write($bad));same($before,$op->fresh()->getRawOriginal(),'Invalid Unicode reason changes nothing');
 }
 $beforeInvalidReason=$op->fresh()->getRawOriginal();
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('refund',['reason'=>"Reviewed\u{2028}refund"])->assertHasActionErrors(['reason'=>'regex']);
+$refund=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('refund',['reason'=>"Reviewed\u{2028}refund"])->assertHasActionErrors(['reason'=>'regex']);
 same($beforeInvalidReason,$op->fresh()->getRawOriginal(),'Refund reason field error changes no operation');
 $reason=str_repeat('🦦',500);
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('refund',['reason'=>$reason])->assertHasNoActionErrors()->assertNotified('Request cancelled');
+$refund->unmountAction()->callAction('refund',['reason'=>$reason])->assertHasNoActionErrors()->assertNotified('Request cancelled');
 same($reason,$op->fresh()->policy['staff_actions'][0]['reason'],'500 Unicode characters retained');
-// Release hold has no reason field and records its own name.
-$op=$held('staff-release-name-placeholder.com');
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('release')->assertHasNoActionErrors()->assertNotified('Hold released');
-same('Release hold',$op->fresh()->policy['staff_actions'][0]['reason'],'Release records its action name');
+// Release hold records its own name: staff-hold-release-audit-test.php reads it from the native page release.
 // Server refusal text is safe and meaningful, even when called without form validation.
 $op=$held('staff-unicode-server-placeholder.com');
 try{$write('éééé');throw new RuntimeException('Expected character-length refusal.');}
