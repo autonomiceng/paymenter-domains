@@ -89,4 +89,7 @@ same(0,storefrontDom($html)->query('//input[@name="transfer_code"]')->length,'Pr
 foreach(['show','setup','code','index']as$route){$r=Illuminate\Support\Facades\Route::getRoutes()->getByName('domains.domains.'.$route);expect(in_array('auth',$r->gatherMiddleware(),true)&&in_array('web',$r->gatherMiddleware(),true),'Dormant routes have native auth/session boundary');}
 $transferRoute=Illuminate\Support\Facades\Route::getRoutes()->getByName('domains.domains.transfer');
 expect(in_array('web',$transferRoute->gatherMiddleware(),true),'Public transfer landing keeps the native session boundary');
-$nativeSuccessful=true;echo "Owned DTO, native controllers, real Blade, held/correction/capability and ownership checks passed.\n";
+// The label/tone matrix and list ordering need the same booted owner pages, so they run here instead of booting their own.
+require __DIR__.'/Support/owned-tone-cases.php';
+require __DIR__.'/Support/owned-list-sorts.php';
+$nativeSuccessful=true;echo "Owned DTO, native controllers, real Blade, held/correction/capability, ownership, tone and sort checks passed.\n";
