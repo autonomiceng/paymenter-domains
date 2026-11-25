@@ -410,9 +410,12 @@ Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->serv
 Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])
     ->callAction(setupAction('processing',(int)$enom->server_id))->assertNotified('Orders paused');
 same(false,(bool)Account::findOrFail($enom->id)->processing_enabled,'The switch needs no Reason or tick box');
+// Without runtime acceptance the page refuses to resume and the account stays paused.
 Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Orders paused')
     ->mountAction(setupAction('processing',(int)$enom->server_id))
-    ->tap(fn($t)=>same(['Turn on orders?','New orders and renewals start going to the registrar.'],[$t->instance()->getMountedAction()->getModalHeading(),$t->instance()->getMountedAction()->getModalDescription()],'Resume orders dialog'));
+    ->tap(fn($t)=>same(['Turn on orders?','New orders and renewals start going to the registrar.'],[$t->instance()->getMountedAction()->getModalHeading(),$t->instance()->getMountedAction()->getModalDescription()],'Resume orders dialog'))
+    ->callMountedAction()->assertHasNoActionErrors()->assertNotified("Couldn't save");
+same(false,(bool)Account::findOrFail($enom->id)->processing_enabled,'A refused resume keeps orders paused');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>999999])->assertNotFound();
 Livewire::actingAs(staffUser([]))->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertForbidden();
 }
