@@ -14,6 +14,8 @@ const publicRoot = path.join(app, 'public');
 const KERNEL = path.join(__dirname, 'refund-browser-kernel.php');
 // The kernel points the theme's missing compiled assets here.
 const ASSETS = '/refund-browser-assets/';
+// Paymenter core links staff avatars to Gravatar. The page gets an empty answer; any other origin fails the run.
+const STAND_INS = new Set(['https://www.gravatar.com']);
 // Paymenter serves Livewire updates at /paymenter/update.
 const isUpdate = (url) => /\/update$/.test(new URL(url).pathname);
 const REASON = 'Customer asked to cancel this renewal';
@@ -58,6 +60,7 @@ function publicFile(pathname) {
 async function answer(route) {
   const request = route.request();
   const url = new URL(request.url());
+  if (STAND_INS.has(url.origin)) return route.fulfill({ status: 204 });
   if (url.origin !== base) {
     receipt.errors.push(`Request to another origin: ${url.origin}`);
     return route.abort('blockedbyclient');
