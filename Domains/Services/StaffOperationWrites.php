@@ -54,9 +54,9 @@ final class StaffOperationWrites
     /** The request was never attempted and nothing was sent. */
     public static function requireUnattempted(Operation $op,array $l): void
     {
-        if(($op->attempt??[])!==[]||$op->started_at!==null||$op->request_fingerprint!==null||$op->completed_at!==null
-            ||$op->lease_expires_at!==null||!FinancialAdjustments::registrarUnattemptedFunding($op)
-            ||($op->action==='renew'&&!RenewalCycles::registrarVirgin($op))) { throw new \DomainException('An original attempt cannot be readmitted.'); }
+        // A renewal reads its attempt through the renewal attempt reader in registrarVirgin.
+        if(($op->action==='renew'?!RenewalCycles::registrarVirgin($op):($op->attempt??[])!==[])||$op->started_at!==null||$op->request_fingerprint!==null||$op->completed_at!==null
+            ||$op->lease_expires_at!==null||!FinancialAdjustments::registrarUnattemptedFunding($op)) { throw new \DomainException('An original attempt cannot be readmitted.'); }
         RefundProof::requireUnsent($op,$l['domain']);
     }
 }
