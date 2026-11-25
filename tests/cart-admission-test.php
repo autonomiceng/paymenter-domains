@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, Rdap, RetailLine, TransferPrecheck};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 extract(commerceFixture(true)); $clock ??= new FakeClock($now);
+// Native carts, invoices and timestamps read Carbon and random ULIDs: pin both, so case effects compare across runs.
+Carbon\Carbon::setTestNow($now);Carbon\CarbonImmutable::setTestNow($now);nativeCaseUlids('PR');
 $diverge = false;$expireTransferAtOrder=false;
 Illuminate\Support\Facades\Event::listen(App\Events\Order\Creating::class, static function () use (&$diverge,&$expireTransferAtOrder,$clock): void {
     if($expireTransferAtOrder){$expireTransferAtOrder=false;$clock->instant=$clock->now()->modify('+6 minutes');}
@@ -24,7 +26,7 @@ $user = commerceUser(); $cart = commerceCart($user); $product = $native->product
 // restores rows, schema, listeners, container, auth, request and the fake reads before the next case.
 // Pin each case to the prepared read and Carbon clocks explicitly, whatever a reset restores.
 $pinned=[$clock->now(),Carbon\Carbon::getTestNow(),Carbon\CarbonImmutable::getTestNow()];
-$pin=static function()use($clock,$pinned):void{[$clock->instant,$mutable,$immutable]=$pinned;Carbon\Carbon::setTestNow($mutable);Carbon\CarbonImmutable::setTestNow($immutable);};
+$pin=static function()use($clock,$pinned):void{[$clock->instant,$mutable,$immutable]=$pinned;Carbon\Carbon::setTestNow($mutable);Carbon\CarbonImmutable::setTestNow($immutable);nativeCaseUlids('CS');};
 $fixed=compact('native','sellers','bindings','prices','now','tlds','reads','clock','ports','adapter','invoiceBinding','user','cart','product','pin');
 
 $cases['basics']=static function()use($fixed,&$diverge):void{extract($fixed);$pin();

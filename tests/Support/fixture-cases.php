@@ -42,6 +42,16 @@ function nativeFixtureCases(array $cases, array $state = []): void
     printf("Case reset CPU-s: checkpoint %.3f, restores %.3f, effects %.3f\n", ...$reset);
 }
 
+/** Number the ULIDs Laravel gives new rows, such as native carts, from a fresh series instead of the real clock and
+ * random bytes. Call it before the prepared fixture with one series and at the start of each case with another. */
+function nativeCaseUlids(string $series): void
+{
+    $next = 0;
+    Illuminate\Support\Str::createUlidsUsing(static function () use ($series, &$next): Symfony\Component\Uid\Ulid {
+        return new Symfony\Component\Uid\Ulid(sprintf('01%s%022d', $series, ++$next));
+    });
+}
+
 /** A fixed permutation from a seed, without consuming the process random generator. @param list<string> $names */
 function nativeCaseShuffle(array $names, string $seed): array
 {
