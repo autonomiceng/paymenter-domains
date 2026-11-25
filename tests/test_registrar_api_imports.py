@@ -34,8 +34,9 @@ ALLOWED = {
 }
 
 QUALIFIED = re.compile(r'(?<![\w\\])\\([A-Z]\w*(?:\\[A-Z]\w*)+)')
-# Comments and strings, blanked before reading scope so their braces and words do not count.
-NOISE = re.compile(r"""//[^\n]*|#(?!\[)[^\n]*|/\*.*?\*/|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*\"""", re.DOTALL)
+# Comments, strings, heredocs and nowdocs, blanked before reading scope so their braces and words do not count.
+NOISE = re.compile(r"""<<<[ \t]*(['"]?)(\w+)\1\r?\n.*?^[ \t]*\2\b|//[^\n]*|#(?!\[)[^\n]*|/\*.*?\*/"""
+                   r"""|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*\"""", re.DOTALL | re.MULTILINE)
 SCOPE = re.compile(r'(?<![\w$>\\])(?:namespace\s+(?P<space>[\w\\]*)\s*(?P<opener>[;{])'
                    r'|use\s+(?!\()(?:function\s+|const\s+)?(?P<text>[^;{]*)(?P<block>\{[^}]*\})?\s*;?)|(?P<brace>[{}])')
 
@@ -98,7 +99,8 @@ class RegistrarApiImports(unittest.TestCase):
         self.assertEqual({'A\\B\\Trait', 'C\\D', 'C\\E', 'G\\H', 'J\\K'}, names(source))
         bracketed = '<?php\nnamespace A\\B {\n    use \\C\\{D};\n    use E\\F;\n}\n'
         self.assertEqual({'C\\D', 'E\\F'}, names(bracketed))
-        late = ('<?php\nnamespace A;\nenum Encoding\n{\n    case Url; // use Not\\Code;\n}\n'
+        late = ('<?php\nnamespace A;\nconst PREFIX = <<<\'JSON\'\n{\n    JSON;\n'
+                'enum Encoding\n{\n    case Url; // use Not\\Code;\n}\n'
                 'use B\\C;\nfinal class Y\n{\n    use T;\n'
                 '    function f() { return function () use ($x) { return "{$x}"; }; }\n}\n')
         self.assertEqual({'A\\T', 'B\\C'}, names(late))
