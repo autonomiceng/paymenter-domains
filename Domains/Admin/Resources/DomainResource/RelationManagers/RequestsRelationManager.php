@@ -6,7 +6,8 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainHistory, HistoryTable, Staff, StaffDomainStatus};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{HistoryTable,Staff,StaffDomainStatus};
+use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 /** History: registrar requests, staff renewal changes and customer auto-renew changes, newest first. */
 class RequestsRelationManager extends RelationManager

@@ -2,9 +2,10 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainDecisions;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain};
-/** Keeps existing callers working while they move to DomainDecisions (rows, status, sync) and DomainNotices (notice and head). */
+/** The stable staff holding entry (BecoAdmin status reads it): forwards to the holding projection in Staff/Holdings (rows, status, sync) and to DomainNotices (notice and head). */
 final class DomainFacts
 {
     public const SECTIONS=DomainDecisions::SECTIONS;

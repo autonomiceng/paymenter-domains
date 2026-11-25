@@ -32,5 +32,13 @@ foreach(['missing_code','invalid_code','missing_paid_at','invalid_paid_at','expi
     same(false,HeldRelease::offered($row,$clock->now()),'Transfer release eligibility requires saved inputs: '.$fault);
     $clock->instant=$now;
 }
+// A page that offered Release hold must not keep offering it once the deadline passes during an action (RequestReads::renew).
+$row=$newTransfer(placeholderComFixtureName('staff-transfer-cutoff-placeholder.com'),0,true,true);$run($row,'hold');$row=$row->fresh();
+$page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$row->id])->assertActionVisible('release')->instance();
+same(true,HeldRelease::offered($page->getRecord(),$clock->now()),'Valid held transfer is offered release');
+$clock->instant=TransferInputs::deadline($row,$clock->now());
+(fn()=>$this->reloadRequest())->call($page);
+same(false,HeldRelease::offered($page->getRecord(),$clock->now()),'Render after an action rereads the release offer at the deadline');
+$clock->instant=$now;
 same([], $state->calls,'Staff never sends transfer or registrar refund');same(0,$state->reads,'Pages and local actions never read registrar');
 echo "Native malformed transfer input and deadline refusals passed.\n";$nativeSuccessful=true;

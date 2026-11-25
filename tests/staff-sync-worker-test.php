@@ -56,7 +56,7 @@ $dnsRow=(new DOMXPath($doc))->query('//div[@data-piece="row"][div[contains(@clas
 expect($dnsRow->length===1&&!str_contains($dnsRow->item(0)->textContent,'Not read'),'A completed read leaves the DNS records row read');
 expect(str_contains($queuedHtml,'wire:poll.2s.keep-alive="pollManagement"'),'An open staff page must poll while its sync is queued');
 expect(!str_contains($page->html(),'wire:poll.'),'Completed sync stops polling');
-$syncEvents=array_values(array_filter(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($d->fresh()),fn($entry)=>is_array($entry)&&in_array($entry['event']??null,['Sync requested','Domain synced'],true)));
+$syncEvents=array_values(array_filter(\Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory::entries($d->fresh()),fn($entry)=>is_array($entry)&&in_array($entry['event']??null,['Sync requested','Domain synced'],true)));
 same('Domain synced',$syncEvents[0]['event']??null,'Same-second completion is newer than its request in Activity');
 // The real queued sync retains its staff identity for both history surfaces, even after a name change.
 $saved=$d->fresh()->observation;
@@ -77,7 +77,7 @@ foreach ([$rail,$history] as $i=>$html) {
 // Existing saved syncs have only an ID, so they resolve the staff name without rewriting history.
 foreach ($saved['sync_history'] as &$entry) { unset($entry['actor_name']); } unset($entry);
 $d->update(['observation'=>$saved]);
-$legacy=array_values(array_filter(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($d->fresh()),fn($entry)=>is_array($entry)&&in_array($entry['event']??null,['Sync requested','Domain synced'],true)));
+$legacy=array_values(array_filter(\Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory::entries($d->fresh()),fn($entry)=>is_array($entry)&&in_array($entry['event']??null,['Sync requested','Domain synced'],true)));
 same(['Updated Operator','Updated Operator'],array_column($legacy,'by'),'Existing sync history identifies staff from its saved ID');
 // The same facts with a new read time are quiet; changed records deserve one staff notice.
 $sync=static function()use($actor,$d,$clock):void {

@@ -49,7 +49,7 @@ $clock->instant=$clock->now()->modify('+61 seconds');$observation->fault='transp
 same(true,HoldingReadRetry::absent($d->fresh()),'Unknown read cannot clear definite absence');
 $clock->instant=$clock->now()->modify('+61 seconds');$observation->fault='absent';$observer->run($d->id,readRecords:true);
 same(2,$bell($viewer),'Later reads while the review stays open send no further bell notice');
-$departureRows=array_values(array_filter(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($d->fresh()),fn($r)=>is_array($r)&&str_starts_with($r['__key'],'departure-')));
+$departureRows=array_values(array_filter(\Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory::entries($d->fresh()),fn($r)=>is_array($r)&&str_starts_with($r['__key'],'departure-')));
 same(3,count($departureRows),'Activity lists the two reads that opened reviews and the later absent read, not the unanswered read');
 same(['departure-2','departure-1','departure-0'],array_column($departureRows,'__key'),'Activity identifies each absence read newest first');
 same([$clock->now()->getTimestamp(),$at->getTimestamp(),$first],array_map(static fn($row)=>$row['time']->getTimestamp(),$departureRows),'Each Activity row carries its own read time');

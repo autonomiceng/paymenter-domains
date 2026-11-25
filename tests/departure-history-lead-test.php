@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering. Registrar and payment transports are synthetic.
 declare(strict_types=1);
 require __DIR__.'/departure-confirm.php';
-use Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory;
+use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory;
 
 $nativeSuccessful=false;
 // Staff confirmed the departure above, which cancelled the unpaid renewal and closed its request unsent.

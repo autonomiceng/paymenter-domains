@@ -4,7 +4,8 @@ declare(strict_types=1);
 require __DIR__.'/departure-credit.php';
 require_once __DIR__.'/Support/fixture-checkpoint.php';
 use Illuminate\Support\Facades\{Cache,Crypt,DB};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,DomainQueries};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts;
+use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainQueries;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts,ObservationRecords};
 

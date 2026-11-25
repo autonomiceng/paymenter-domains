@@ -42,6 +42,7 @@ final class Runtime
         }
         // Identity reads do not install accepted runtime ports or write senders.
         app(NativeServerGuard::class)->boot();
+        $app->scoped(\Paymenter\Extensions\Servers\Domains\Staff\Requests\RequestReads::class);
         $app->singleton(DomainManagement::class,fn($a)=>new DomainManagement($a->make(AccountBindings::class),$a->make(Clock::class)));
     }
     public static function initialManagedRecordObservations(): void { self::observations()->tick(1); }

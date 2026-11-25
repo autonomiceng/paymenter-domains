@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainQueries;
 use App\Admin\Pages\Settings;
 use Filament\Actions\Action;
 use Illuminate\Contracts\Support\Htmlable;

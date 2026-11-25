@@ -6,7 +6,8 @@ $invoice=$issueDepartureRenewal();
 require_once __DIR__.'/Support/staff-panel.php';
 require __DIR__.'/Support/reminder-mail.php';
 use Illuminate\Support\Facades\{DB,Mail};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DepartedHistory,DomainHistory,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DepartedHistory,Staff};
+use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory;
 use Paymenter\Extensions\Servers\Domains\Mail\DomainNotice;
 use Paymenter\Extensions\Servers\Domains\Services\{DepartureBlocked,HoldingDeparture,HoldingLocks,MoneyOutcome,StaffHoldingReview};
 

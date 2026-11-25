@@ -1,7 +1,8 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+namespace Paymenter\Extensions\Servers\Domains\Staff\Holdings;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,OperationQueries,RefundCandidates,StaffDomainInputs};
 use Illuminate\Database\Eloquent\Builder;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts;

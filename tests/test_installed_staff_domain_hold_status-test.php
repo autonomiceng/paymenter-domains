@@ -78,7 +78,7 @@ foreach($history as $i=>$action){
         $expected[]=$action['action'].'-'.$op->id.'-'.$i;
     }
 }
-$entries=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($op->domain->fresh());
+$entries=Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory::entries($op->domain->fresh());
 $keys=array_values(array_map(static fn($row)=>$row['__key'],array_filter($entries,static fn($row)=>is_array($row)&&str_starts_with($row['__key']??'','hold-')||is_array($row)&&str_starts_with($row['__key']??'','release-'))));
 same(array_reverse($expected),$keys,'Same-second actions remain newest first before the rail cutoff');
 [$head,$request,$entry,$text,$xpath]=$page($op);

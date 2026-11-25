@@ -180,7 +180,7 @@ same('Not charged yet',RequestFacts::for($paused->fresh())['cost'],'The unsent o
 // Held again at its contact step: the domain history shows each hold the request History shows, in order.
 $grants->cap=true;$execute($paused->fresh());$grants->cap=false;
 same(['held','contact_profile_proof_required'],[$paused->fresh()->state,$paused->fresh()->safe_code],'The retried order holds again at its contact step');
-$requestRows=array_values(array_filter(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($paused->domain->fresh()),fn($r)=>is_array($r)&&($r['__request']??null)===$paused->id));
+$requestRows=array_values(array_filter(Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory::entries($paused->domain->fresh()),fn($r)=>is_array($r)&&($r['__request']??null)===$paused->id));
 // The first hold's time comes from the app clock, not this fixture's clock, so only the entries and actors are compared here.
 $entries=array_map(fn($r)=>[preg_replace('/-\d+(-\d+)?$/','',(string)$r['__key']),$r['by']],$requestRows);sort($entries);
 same([['engine_hold','System'],['first-hold','System'],['release','System']],$entries,'Domain history has both system holds and the automatic release by the system: '.json_encode($entries));

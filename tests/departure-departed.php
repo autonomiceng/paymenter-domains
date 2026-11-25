@@ -42,7 +42,7 @@ same([false,[]],[DomainFacts::syncNow($d->fresh()),array_values(array_filter(Pay
     'A departed domain offers no sync and no renewal invoice action');
 // History keeps the departure's saved outcomes, with the exact saved credit, after the earlier registrar reads.
 $saved=$d->fresh()->renewal_policy['departure'];
-$departed=array_values(array_filter(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($d->fresh()),fn($r)=>is_array($r)&&str_starts_with((string)($r['__key']??''),'departed-')));
+$departed=array_values(array_filter(Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory::entries($d->fresh()),fn($r)=>is_array($r)&&str_starts_with((string)($r['__key']??''),'departed-')));
 $name=(fn(string $n)=>ctype_digit($n)?'Invoice #'.$n:$n)(Paymenter\Extensions\Servers\Domains\Admin\Support\Facts::invoiceName((int)$invoice->id));
 same(['Departure confirmed',$name.' cancelled','Credit added','Name released','Email sent'],array_column($departed,'event'),'History lists the confirmation, the closed invoice, the credit, the released name and the sent email');
 same(trim($staff->first_name.' '.$staff->last_name)?:'Staff',$departed[0]['by'],'The confirmation row names the staff member who confirmed');

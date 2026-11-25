@@ -222,12 +222,12 @@ $ordersEnabled=(bool)$unsentAccount->value('processing_enabled');
 foreach([0=>'Not sent. Orders are off for this account.',1=>'Not sent. It will retry automatically.'] as $enabled=>$reason){
     $unsentAccount->update(['processing_enabled'=>(bool)$enabled]);
     same($reason,RequestFacts::reason($unsent),'Recoverable requests name the current retry gate');
-    same($reason,Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($unsent,$unsent->domain,true)['status']['reason'],'The rail names the same current retry gate');
+    same($reason,Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory::row($unsent,$unsent->domain,true)['status']['reason'],'The rail names the same current retry gate');
 }
 $unsentAccount->update(['processing_enabled'=>$ordersEnabled]);
 $sealed=(clone $unsent)->forceFill(['attempt'=>['seal'=>'sealed','send_state'=>'possibly_sent']]);
 same('Registrar has not confirmed the result',$line($sealed),'Only a change that may have gone out is unknown');
-same('Under review',Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row((clone $sealed)->forceFill(['state'=>'succeeded','completed_at'=>now()]),$unsent->domain,true)['status']['label'],'A change the registrar has not read back reads Under review on the rail, as in customer History');
+same('Under review',Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory::row((clone $sealed)->forceFill(['state'=>'succeeded','completed_at'=>now()]),$unsent->domain,true)['status']['label'],'A change the registrar has not read back reads Under review on the rail, as in customer History');
 same('Under review',RequestFacts::status((clone $sealed)->forceFill(['state'=>'succeeded','completed_at'=>now()])->setRelation('domain',$unsent->domain))['label'],'The request list and page read it the same');
 $failedUnsent=(clone $unsent)->forceFill(['state'=>'rejected']);
 same($title,$line($failedUnsent),'A failed change that never went out says so');
@@ -244,7 +244,7 @@ foreach(['register','transfer','renew','nameservers','contacts','lock','privacy_
     foreach(array_keys(Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::STATES) as $state){
         if(!isset(Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::STATES[$state])){continue;}
         $op=$heldOp->fresh()->forceFill(['action'=>$kind,'state'=>$state]);
-        foreach(['page'=>RequestFacts::status($op,true,$heldOp->domain)['label'],'rail'=>Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($op,$heldOp->domain,true)['status']['label']] as $where=>$word){
+        foreach(['page'=>RequestFacts::status($op,true,$heldOp->domain)['label'],'rail'=>Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory::row($op,$heldOp->domain,true)['status']['label']] as $where=>$word){
             if($word!==($kind==='register'&&$state==='held'?'Under review':$domainWord($state))){$words[]="$kind $state ($where): request \"$word\", domain \"{$domainWord($state)}\"";}
         }
     }
@@ -253,7 +253,7 @@ foreach(['register','transfer','renew','nameservers','contacts','lock','privacy_
 }
 same([],$words,'A request reads the same word as its domain for the same state, for every kind');
 same(['Under review','warning','Not sent. Orders are off for this account.'],array_values(RequestFacts::status($queued)),'Queued with Orders off reads Under review, amber, with the hold');
-same('Under review',Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($queued,$heldOp->domain,true)['status']['label'],'The rail reads the same');
+same('Under review',Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory::row($queued,$heldOp->domain,true)['status']['label'],'The rail reads the same');
 same('In progress',RequestFacts::status($queued,false)['label'],'A list that knows Orders are on skips the check');
 // The Status filter reads the same map: a queued request on an account with Orders off is in Under review, not In progress.
 DB::table('domains_operations')->where('id',$queued->id)->update(['state'=>'queued','safe_code'=>null]);
@@ -326,7 +326,7 @@ foreach(['register','transfer','renew','nameservers','contacts','lock','privacy_
     foreach(['contact_details_required','nameservers_required'] as $code){
         $op=$heldOp->fresh()->forceFill(['action'=>$kind,'state'=>'held','safe_code'=>$code]);
         $page=RequestFacts::status($op,true,$heldOp->domain);
-        foreach(['page'=>$page['label'],'rail'=>Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($op,$heldOp->domain,true)['status']['label']] as $where=>$word){
+        foreach(['page'=>$page['label'],'rail'=>Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory::row($op,$heldOp->domain,true)['status']['label']] as $where=>$word){
             if($word!==$domainWord('setup_required')){$setup[]="$kind $code ($where): request \"$word\", domain \"{$domainWord('setup_required')}\"";}
         }
         if(!is_string($page['reason'])||$page['reason']===''||$page['reason']==='Status missing'){$next[]="$kind $code";}

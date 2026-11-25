@@ -77,7 +77,7 @@ same(0,(int)DB::table('domains_observation_work')->where('id',$soloWork)->value(
 $soloPage->callAction('resume_observation')->assertNotified('Sync resumed');
 same(1,(int)DB::table('domains_observation_work')->where('id',$soloWork)->value('resumes'),'No-request domain resumes');
 unset($soloPage);gc_collect_cycles();
-$soloEntries=\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($soloDomain->fresh());
+$soloEntries=\Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory::entries($soloDomain->fresh());
 same(1,count(array_filter($soloEntries,fn(array $row)=>$row['event']==='Sync resumed'&&$row['sub']===null)),'History names the resume once');
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$soloDomain->id])->assertActionHidden('resume_observation');
 echo "Native staff-operation-sync passed.\n";

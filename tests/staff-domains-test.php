@@ -10,7 +10,8 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, DomainQueries, Labels, OneLine, RefundCandidates, RequestFacts, Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Labels,OneLine,RefundCandidates,RequestFacts,Staff};
+use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainQueries;
 use Paymenter\Extensions\Servers\Domains\Policies\DomainPolicy;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 staffPanel(); [$held,$active,$long]=staffData();
@@ -152,7 +153,7 @@ foreach ([['status',['under_review'],[$held,$long],[$active]],['server_id','2',[
 }
 DB::table('domains_operations')->where('domain_id',$long->id)->update(['state'=>'uncertain']);
 staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['under_review'])->assertCanSeeTableRecords([$held,$long])->assertCanNotSeeTableRecords([$active]);
-same([$long->id],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::attention(Domain::query(),['uncertain'])->pluck('id')->all(),'Unconfirmed transfer query');
+same([$long->id],\Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainQueries::attention(Domain::query(),['uncertain'])->pluck('id')->all(),'Unconfirmed transfer query');
 same(['Under review','Old registrar needs approval. Check request #'.$long->operations()->sole()->id.'.'],[DomainFacts::status($long->fresh())['label'],DomainFacts::statusLine(DomainFacts::status($long->fresh()))],'Unconfirmed transfer reads as its request, with its saved reason');
 // Rejected paid obligations remain visible even when a credit retry failed.
 $review=$long->operations()->sole();
@@ -160,15 +161,15 @@ DB::table('domains_operations')->where('id',$review->id)->update(['state'=>'reje
 $review->refresh();
 expect(RefundCandidates::matches($review,$review->funding??[]),'Paid timeout is a review candidate, never eligibility proof');
 same(['No credit added','credit'],[RequestFacts::for($review)['refund'],RequestFacts::for($review)['refund_fix']],'Failed credit retry candidate is visible with its fix');
-same([$long->id],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::creditReview(Domain::query())->pluck('id')->all(),'Credit review query');
+same([$long->id],\Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainQueries::creditReview(Domain::query())->pluck('id')->all(),'Credit review query');
 // A failed request reads Failed for customer and staff. The step points at the failed request.
 staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['failed'])->assertCanSeeTableRecords([$long]);
 same('Request failed. Check request #'.$review->id.'.',DomainFacts::status($long->fresh())['step'],'Failed request step on a pending transfer');
 $review->funding=['refund'=>null]; expect(!RefundCandidates::matches($review,$review->funding),'Even null credit marker excludes uncredited interpretation');
 $review->funding=[]; $review->safe_code='transfer_provider_rejected'; expect(!RefundCandidates::matches($review,[]),'Sent rejection is not an unsent credit candidate');
 DB::table('domains_operations')->where('id',$review->id)->update(['safe_code'=>'transfer_provider_rejected']);
-same([$long->id],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::registrarRejected(Domain::query())->pluck('id')->all(),'Registrar rejected query');
-same([],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::creditReview(Domain::query())->pluck('id')->all(),'Sent rejection leaves credit review');
+same([$long->id],\Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainQueries::registrarRejected(Domain::query())->pluck('id')->all(),'Registrar rejected query');
+same([],\Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainQueries::creditReview(Domain::query())->pluck('id')->all(),'Sent rejection leaves credit review');
 $review->safe_code='transfer_code_timeout'; $review->funding_basis='complimentary';
 $neverPaid=RequestFacts::for($review); expect(array_key_exists('refund',$neverPaid)&&!isset($neverPaid['refund_fix']),'Never-paid rejections do not imply customer credit');
 same([null,'No paid invoice recorded. No action needed.'],[$neverPaid['refund'],$neverPaid['refund_sub']],'Never-paid refund is Missing with its cause');

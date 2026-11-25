@@ -140,7 +140,7 @@ foreach(['queued','held'] as $state){
     same(DomainFacts::UNREADABLE.' Check request #'.$bad->id.'.',$status['step'],'Unreadable request has a named recovery step');
     expect($status['act'],'Unreadable request requires staff');
     ObligationAlerts::record($domain,'operation_review',now()->getTimestamp(),(int)$bad->id);
-    same(1,Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::status(Domain::whereKey($domain->id),[$status['key']])->count(),
+    same(1,Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainQueries::status(Domain::whereKey($domain->id),[$status['key']])->count(),
         'Status filtering survives the unreadable request');
     expect(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::alerts($account)['value']!==null,
         'Account alert counting survives the unreadable request');
