@@ -5,7 +5,8 @@ namespace Paymenter\Extensions\Servers\Domains\Management\Changes;
 use App\Models\{Currency, Invoice};
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, ManagementProtocol};
 use Paymenter\Extensions\Servers\Domains\Data\PrivacyMode;
-use Paymenter\Extensions\Servers\Domains\Services\{InvoiceDescription, ManagementEvidence, PricingRule, PrivacyRetirement, RefundPayment, RetailLine};
+use Paymenter\Extensions\Servers\Domains\Services\{InvoiceDescription, ManagementEvidence, PricingRule, PrivacyRetirement, RetailLine};
+use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 final class ManagementPrivacy
 {
     /** Same-action debt admission is independent of whether an unsent request blocks renewal. */

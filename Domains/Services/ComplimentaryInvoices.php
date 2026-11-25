@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{Credit,Invoice,InvoiceItem,Service};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns;
 /** Informational receipts, never native payment events or registrar funding grants. */
 final class ComplimentaryInvoices
 {

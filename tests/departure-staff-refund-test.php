@@ -4,7 +4,8 @@ declare(strict_types=1);
 require __DIR__.'/departure-late-receipt.php';
 require __DIR__.'/Support/money-receipt.php';
 use App\Models\Gateway;
-use Paymenter\Extensions\Servers\Domains\Services\{InvoiceMoney,ReceiptReturns,RenewalCycles,StaffOperationReview,StaffOperations,StaffReviewRefused};
+use Paymenter\Extensions\Servers\Domains\Services\{InvoiceMoney,RenewalCycles,StaffOperationReview,StaffOperations,StaffReviewRefused};
+use Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns;
 
 $nativeSuccessful=false;
 Gateway::create(['extension'=>'MoneyReceipt','name'=>'Synthetic card receipt','type'=>'gateway','enabled'=>true]);

@@ -7,7 +7,8 @@ require __DIR__.'/Support/staff-operation-fixture.php';
 require __DIR__.'/Support/money-receipt.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions;
-use Paymenter\Extensions\Servers\Domains\Services\{ReceiptReturns,StaffOperationReview};
+use Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview;
+use Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns;
 
 // Account credit has finished even when an old action reaches the exception handler again.
 $op=$held('staff-completed-credit-placeholder.com');

@@ -3,7 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Management\Changes;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{ContactDetails, DomainManagement, ManagementEvidence, ManagementPayload, RefundPayment};
+use Paymenter\Extensions\Servers\Domains\Services\{ContactDetails, DomainManagement, ManagementEvidence, ManagementPayload};
+use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 /** Explicit nonfinancial correction authority; never acquisition completion, refund or replay. */
 final class ManagementCorrections
 {

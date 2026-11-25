@@ -2,6 +2,7 @@
 // Adapted from Enom 444f31c Services/TransferNotifications.php; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 /** Missing-code notices use retained paid time and current native funding, never callback time. */
 final class TransferNotifications
 {

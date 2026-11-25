@@ -5,7 +5,8 @@ require __DIR__.'/native-app.php';
 use App\Models\Gateway;
 use Illuminate\Support\Facades\{DB,Log};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist;
-use Paymenter\Extensions\Servers\Domains\Services\{DisputeRecoveries,Installation};
+use Paymenter\Extensions\Servers\Domains\Services\Installation;
+use Paymenter\Extensions\Servers\Domains\Money\Returns\DisputeRecoveries;
 
 /** $readable: the Stripe gateway class has lostDisputes. One file per case, since the class is fixed once loaded. */
 function disputeSweepCase(bool $readable): void

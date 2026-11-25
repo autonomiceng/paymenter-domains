@@ -232,7 +232,7 @@ catch(RuntimeException $e){same('Synthetic reply lost after acceptance',$e->getM
 expect($lost,'Lost refund reply must surface');
 $refunds->retryPending();$original->refresh();
 same('original_payment',$original->funding['refund']['to'],'Capable gateway returns the original receipt');
-same(0,\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::outstanding($original),'Lost refund reply recovers to a settled return');
+same(0,\Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns::outstanding($original),'Lost refund reply recovers to a settled return');
 same(1,MoneyReceiptGateway::$sends,'Recovery returns one customer payment for one finally failed transfer');
 // A rejection without complete charge history stays open: no candidates were looked for, so none were ruled out.
 $op=$prepare(placeholderComFixtureName('unreconciled-rejected-transfer-placeholder.com')); $observe->fault='reject';

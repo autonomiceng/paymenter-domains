@@ -7,6 +7,7 @@ use App\Models\Invoice;
 use App\Helpers\ExtensionHelper;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Money\Returns\{DisputeRecoveries, ReceiptReturns};
 
 /** Signed invoice amounts, derived from retained evidence. Locked loads recover newly observed lost credit; display reads use project().
  * settled is invoice-wide: a kept peer can retain money after an operation's return finishes.

@@ -7,7 +7,8 @@ require __DIR__.'/Support/money-receipt.php';
 use App\Models\{Credit, Gateway, Invoice, InvoiceTransaction, Role};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,NativeIntentSchema,PricingRule,RefundCandidates,RefundPayment,Refunds};
+use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,NativeIntentSchema,PricingRule,Refunds};
+use Paymenter\Extensions\Servers\Domains\Money\Returns\{RefundCandidates, RefundPayment};
 
 class HeldPlanGateway extends MoneyReceiptGateway
 {

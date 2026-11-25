@@ -1,9 +1,10 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Money\Returns;
 use Illuminate\Database\{Eloquent\Builder, Query\Builder as Query};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Services\RegistrationRefusals;
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 /** Shared queue selection only. Encrypted funding and refusal proof are checked under holding locks.
  * A candidate is never proof of credit eligibility; SQL intentionally includes credited rows.

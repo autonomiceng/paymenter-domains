@@ -152,7 +152,7 @@ $run = static function (int $seed, string $mode, array $actions) use (
                 unset($r);
                 if($kind==='lost'){
                     $e=InvariantReceiptGateway::$observations[$receipts[$label]['receipt']][0];
-                    (new \Paymenter\Extensions\Servers\Domains\Services\DisputeRecoveries($clock))->recover([...$e,'allocation_key'=>'stripe:dispute:'.$e['id'],'state'=>'lost']);
+                    (new \Paymenter\Extensions\Servers\Domains\Money\Returns\DisputeRecoveries($clock))->recover([...$e,'allocation_key'=>'stripe:dispute:'.$e['id'],'state'=>'lost']);
                     $promised=0;
                 }
             } elseif ($kind === 'close_renewal') {
@@ -475,7 +475,8 @@ expect($unexpected === [] && $missing === [], 'Caller violation baseline changed
 expect($projectionFailures === [], 'Projection checks failed: '.count($projectionFailures));
 
 // Recovery oracle: native Credit deltas and immutable peer shares, independently of the recovery calculation.
-use Paymenter\Extensions\Servers\Domains\Services\{AccountMoneyHolds,DisputeRecoveries,MoneyWorkSchema,ReminderSchema,ReminderSchedules,ReminderTemplates,Reminders,StaffOperationReview};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountMoneyHolds,MoneyWorkSchema,ReminderSchema,ReminderSchedules,ReminderTemplates,Reminders,StaffOperationReview};
+use Paymenter\Extensions\Servers\Domains\Money\Returns\DisputeRecoveries;
 require __DIR__.'/Support/reminder-mail.php';
 ReminderSchema::install();MoneyWorkSchema::install();ReminderTemplates::ensure();
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
@@ -659,8 +660,8 @@ $regression('G10 undisputed reservation residual',static function()use($new,$los
     $recovery->recover($entry);
     same(0,$balance(),'No credit while the account is held');
     AccountMoneyHolds::release($staff,(int)DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold','synthetic_residual'))->value('id'));
-    \Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::resume((int)$op->id,$clock->now(),'refund_rejected');
-    \Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::resume((int)$op->id,$clock->now(),'refund_rejected');
+    \Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns::resume((int)$op->id,$clock->now(),'refund_rejected');
+    \Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns::resume((int)$op->id,$clock->now(),'refund_rejected');
     same([200,$sends,[$a]],[$balance(),MoneyReceiptGateway::$sends,$op->fresh()->funding['refund']['allocations']],'Exactly the undisputed $2 is returned once, with no new allocation');
 });
 // A send decision that recovers a dispute increase keeps that recovery when it saves its own result.
@@ -685,7 +686,7 @@ $regression('Send keeps a recovered increase',static function()use($new,$loss,$r
     $invoice=Invoice::findOrFail($op->invoice_id);
     MoneyReceiptGateway::$returns[$a1['key']]=['state'=>'refunded','amount_minor'=>100,'refund_id'=>'synthetic-return','key'=>'fixture-return:'.$a1['key']];
     MoneyReceiptGateway::complete($invoice,$a1['key']);
-    \Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::resume((int)$op->id,$clock->now(),'refund_rejected');
+    \Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns::resume((int)$op->id,$clock->now(),'refund_rejected');
     $holds=$op->fresh()->funding['dispute_holds']??[];
     same([[100],[100],100],[array_column($holds,'owed_minor'),array_column($holds,'removed_minor'),$balance()],'The dispute removes the returned $1 of credit once');
 });

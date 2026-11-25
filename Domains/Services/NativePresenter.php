@@ -6,6 +6,7 @@ use App\Models\{CartItem,Invoice,Service,User};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,NativeIntent,Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{InvoiceOutcome,OwnedDomain};
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
+use Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns;
 /** Read-only ownership-scoped adapter for themes. No provider I/O, locks or cached actor state. */
 final readonly class NativePresenter
 {

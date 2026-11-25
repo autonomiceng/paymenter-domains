@@ -4,7 +4,7 @@ require __DIR__.'/Support/staff-request-invoice-cases.php';
 require __DIR__.'/Support/money-receipt.php';
 $nativeSuccessful=false;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts;
-use Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns;
+use Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns;
 $assertRefundedInvoice=static function($op):void {
     $facts=RequestFacts::for($op->fresh());$sub='Auto Pay off';
     $value=Paymenter\Extensions\Servers\Domains\Admin\Support\RequestRows::invoice($facts['invoice'],$facts['invoice_state'],$sub);

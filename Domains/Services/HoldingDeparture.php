@@ -7,6 +7,7 @@ use App\Models\{Invoice,InvoiceTransaction,User};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Money\Returns\{ReceiptReturns, RefundPayment};
 /** Staff confirm a suspected departure once. One full money decision closes unpaid renewals, returns paid unsent renewals
  * as account credit, cancels the service and freezes the departure record; any blocking line rolls all of it back. No
  * provider call runs inside; the customer email is reserved inside and handed off once after commit. */

@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Illuminate\Database\{Eloquent\Builder, Query\Builder as Query};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\RefundCandidates as Selection;
+use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundCandidates as Selection;
 /** Presentation adapter; eligibility remains in the engine's locked proof writers. */
 final class RefundCandidates
 {

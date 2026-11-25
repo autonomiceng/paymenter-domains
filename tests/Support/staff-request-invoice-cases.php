@@ -82,7 +82,7 @@ $ledgerGateway=\App\Models\Gateway::create(['extension'=>'StaffInvoiceLedger','n
 InvoiceTransaction::where('invoice_id',$op->invoice_id)->update(['gateway_id'=>$ledgerGateway->id]);
 $open=$op->only(['state','funding_basis']);$op->update(['state'=>'rejected','funding_basis'=>'paid_invoice']);
 // The dispute's account hold is open, as after any lost dispute, so the refund waits for it.
-$accountHold=DB::table('domains_obligation_alerts')->insertGetId(['alert_key'=>Paymenter\Extensions\Servers\Domains\Services\DisputeRecoveries::key('account_money_hold','dp_share'),
+$accountHold=DB::table('domains_obligation_alerts')->insertGetId(['alert_key'=>Paymenter\Extensions\Servers\Domains\Money\Returns\DisputeRecoveries::key('account_money_hold','dp_share'),
     'domain_id'=>$op->domain_id,'operation_id'=>$op->id,'generation'=>$op->authority_generation,'code'=>'account_money_hold','first_seen'=>1,'last_seen'=>1]);
 $lost=static function(int $minor)use($invoice):void {
     $who=['invoice_id'=>(int)$invoice->id,'user_id'=>(int)$invoice->user_id,'payment_intent_id'=>'pi_staff_invoice'];

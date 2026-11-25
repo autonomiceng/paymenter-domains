@@ -205,7 +205,7 @@ expect(!isset(RequestFacts::for($op)['registrar_refund']),'Registrar refund show
 $op->state='rejected'; $facts=RequestFacts::for($op);
 same('Ask NameSilo support for a refund',$facts['registrar_refund'],'NameSilo manual refund indicator');
 same('Refund needs a check',$facts['refund'],'An unreadable credit marker requires a payment check');
-expect($facts['refund_sub']!==Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::REVIEW[1],'Staff never see the customer support text on an unreadable credit marker');
+expect($facts['refund_sub']!==Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns::REVIEW[1],'Staff never see the customer support text on an unreadable credit marker');
 expect(!str_contains($facts['registrar_refund'],'credit'),'Registrar refund does not duplicate customer-credit wording');
 $op->state='rejected'; $op->safe_code='transfer_code_timeout';
 expect(!isset(RequestFacts::for($op)['registrar_refund']),'Local unsent rejection does not imply a registrar charge');
@@ -326,7 +326,7 @@ $excluded=[
 // Auto Pay uses its own explicit labels in this class.
 preg_match_all("/'([a-z][a-z0-9_]*)'\\s*=>/",explode('public static function statuses()', $labelsSource, 2)[0],$autoPay);
 $excluded['RenewalAutoPay.php']=$autoPay[1];
-foreach(['Services','Holding','Renewal','Registrars/Dispatch','Management'] as $folder){foreach(new RecursiveIteratorIterator(new RecursiveDirectoryIterator(dirname(__DIR__).'/Domains/'.$folder)) as $file){
+foreach(['Services','Holding','Renewal','Registrars/Dispatch','Management','Money'] as $folder){foreach(new RecursiveIteratorIterator(new RecursiveDirectoryIterator(dirname(__DIR__).'/Domains/'.$folder)) as $file){
     if($file->getExtension()!=='php'){continue;}
     foreach(array_diff($inventory(file_get_contents($file->getPathname())),$excluded[$file->getBasename()]??[]) as $code){$emitted[$code][]=$file->getBasename();}
 }}

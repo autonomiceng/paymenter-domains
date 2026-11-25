@@ -91,7 +91,7 @@ final class RequestFacts
             // The refund row appears once money is in question: a refund was recorded, one is possible, or a paid request ended.
             $closed=in_array($op->state,['rejected','disposed'],true); $neverPaid=self::neverPaid($op); $waits=false;
             if ($neverPaid) { /* No money moved, so no refund row. */ }
-            elseif ($returned=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::summary($op)) {
+            elseif ($returned=\Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns::summary($op)) {
                 // A return to the card is a refund, not credit, so the row is named for what happened.
                 $out['refund']=$returned[0]; $out['refund_label']=$returned[0]==='Credit added'?'Credit':'Refund';
                 $out['refund_sub']=match($returned[0]) {
@@ -104,8 +104,8 @@ final class RequestFacts
             }
             elseif (array_key_exists('refund',$f)||array_key_exists('late_credits',$f)) {
                 try{$money=\Paymenter\Extensions\Servers\Domains\Services\InvoiceMoney::project((int)$op->invoice_id);
-                    [$out['refund'],$out['refund_sub']]=!\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::malformed($op)
-                        &&\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::outstanding($op)===0
+                    [$out['refund'],$out['refund_sub']]=!\Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns::malformed($op)
+                        &&\Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns::outstanding($op)===0
                         &&!\Paymenter\Extensions\Servers\Domains\Services\InvoiceMoney::returnBlocked($money)
                         ?self::creditWords($f):self::CREDIT_CHECK;
                 }catch(\Throwable){[$out['refund'],$out['refund_sub']]=self::CREDIT_CHECK;}
@@ -121,7 +121,7 @@ final class RequestFacts
             $none=($out['refund']??null)==='No credit added';
             if(!$neverPaid&&(!$none||$waits)&&($limit=self::refundLimit($op,$none))!==null){$out['refund_sub']=trim(($out['refund_sub']??'').' '.$limit);}
             if($grants->costs&&(array_key_exists('refund',$f)||array_key_exists('late_credits',$f))){
-                try{if($reversals===null){throw new \DomainException('Invoice reversals unavailable.');}$context=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReversals::summary($op,$reversals);if($context!==null){$out['refund_sub']=trim(($out['refund_sub']??'').' '.$context);}}
+                try{if($reversals===null){throw new \DomainException('Invoice reversals unavailable.');}$context=\Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReversals::summary($op,$reversals);if($context!==null){$out['refund_sub']=trim(($out['refund_sub']??'').' '.$context);}}
                 catch(\Throwable){$out['refund_sub']=trim(($out['refund_sub']??'').' Missing. Check the invoice payment reversal and credit history.');}
             }
             // A closed request whose payment a lost dispute already took back: nothing was left to credit, and that is no staff step.
@@ -591,10 +591,10 @@ final class RequestFacts
     {
         if(self::invoiceStatus($op)==='paid'&&($invoice=\App\Models\Invoice::find($op->invoice_id))){
             try{
-                $refund=$op->funding['refund']??null;$original=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::originalRefund($op);
+                $refund=$op->funding['refund']??null;$original=\Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns::originalRefund($op);
                 // What actually went back: a share released after a lost dispute no longer counts as refunded.
-                $sent=($refund['to']??null)==='original_payment'?\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::amount(\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::effective($original)[0]??null):null;
-                if((\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::summary($original)[0]??null)==='Refunded'
+                $sent=($refund['to']??null)==='original_payment'?\Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns::amount(\Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns::effective($original)[0]??null):null;
+                if((\Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns::summary($original)[0]??null)==='Refunded'
                     &&$sent!==null&&$sent>0&&$sent>=self::ownLineMinor($op,$invoice)){return 'Refunded';}
                 $minor=0;foreach($reversals??[] as $row){
                 if(($row['kind']??null)==='refund'&&($row['status']??null)==='refunded'&&is_int($row['amount_minor']??null)&&$row['amount_minor']>0){$minor+=$row['amount_minor'];}
@@ -612,8 +612,8 @@ final class RequestFacts
                 // What actually went back: a share released after a lost dispute is not part of the return, and money
                 // returned later, such as account credit after a won dispute, is.
                 // A closed return can be kept only as a late credit, with no refund record, so every retained return counts.
-                $plans=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::effective($op);
-                $minor=$plans?array_sum(array_map(fn($p)=>(int)\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::amount($p),$plans)):null;
+                $plans=\Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns::effective($op);
+                $minor=$plans?array_sum(array_map(fn($p)=>(int)\Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns::amount($p),$plans)):null;
                 // The request's price, but never more than its own invoice line: a refund of all the request paid is not capped.
                 $invoice=\App\Models\Invoice::find($op->invoice_id);
                 $line=$invoice?min(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$op->amount),self::ownLineMinor($op,$invoice)):0;
@@ -648,7 +648,7 @@ final class RequestFacts
     private static function paymentReversed(Operation $op, ?array &$rows): ?array
     {
         $invoice=\App\Models\Invoice::find($op->invoice_id); if (!$invoice) { return null; }
-        try { $rows=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReversals::forInvoice($invoice); }
+        try { $rows=\Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReversals::forInvoice($invoice); }
         catch (\Throwable) { $rows=null;return ['words'=>null,'act'=>true]; }
         $lines=[];$act=false;$hold=null;
         foreach ($rows as $r) {
@@ -679,7 +679,7 @@ final class RequestFacts
     {
         if ($dispute==='') { return null; }
         $alert=\Illuminate\Support\Facades\DB::table('domains_obligation_alerts')->where('code','account_money_hold')
-            ->where('alert_key',\Paymenter\Extensions\Servers\Domains\Services\DisputeRecoveries::key('account_money_hold',$dispute))->first();
+            ->where('alert_key',\Paymenter\Extensions\Servers\Domains\Money\Returns\DisputeRecoveries::key('account_money_hold',$dispute))->first();
         if (!$alert) { return null; }
         if ($alert->resolved_at===null) { return ['state'=>'open','domain_id'=>(int)$alert->domain_id]; }
         $audit=\App\Models\Audit::where('event','account_money_hold_released')->where('new_values->alert_id',(int)$alert->id)->latest('id')->first();

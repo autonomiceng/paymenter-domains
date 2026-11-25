@@ -6,7 +6,8 @@ require __DIR__.'/Support/staff-panel.php';
 require __DIR__.'/Support/money-receipt.php';
 use App\Models\{Audit,Gateway,Invoice};
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountMoneyHolds,DisputeRecoveries,InvoiceMoney,ReminderSchema,StaffOperationReview};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountMoneyHolds,InvoiceMoney,ReminderSchema,StaffOperationReview};
+use Paymenter\Extensions\Servers\Domains\Money\Returns\DisputeRecoveries;
 class UnreadableHoldGateway extends MoneyReceiptGateway {
     public function receiptLedger(Invoice $invoice):array { throw new RuntimeException('Synthetic unreadable evidence'); }
 }

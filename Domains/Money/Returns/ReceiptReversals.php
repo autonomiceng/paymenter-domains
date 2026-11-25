@@ -1,11 +1,12 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Money\Returns;
 use App\Enums\InvoiceTransactionStatus;
 use App\Helpers\ExtensionHelper;
 use App\Models\{Credit,Invoice};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Services\{PricingRule, Storefront};
 /** Local gateway observations plus Domains' outside-gateway credit evidence. No money or service writes. */
 final class ReceiptReversals
 {

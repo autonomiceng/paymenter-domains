@@ -99,7 +99,7 @@ final class Labels
     /** An approved refund is named for where the money went: account credit reads Credit approved, a card return Refund approved. */
     private static function refundApproved(\Paymenter\Extensions\Servers\Domains\Models\Operation $op): string
     {
-        try { $returned=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::summary($op); $to=$op->funding['refund']['to']??null; }
+        try { $returned=\Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns::summary($op); $to=$op->funding['refund']['to']??null; }
         catch (\Illuminate\Contracts\Encryption\DecryptException) { return DomainFacts::UNREADABLE; }
         // A card return still processing or under review stays a refund; only a return that ended as credit reads as credit.
         $credit=$returned!==null?$returned[0]==='Credit added':$to==='account_credit';

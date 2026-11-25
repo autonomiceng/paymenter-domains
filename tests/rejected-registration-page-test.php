@@ -5,7 +5,7 @@ require __DIR__.'/native-app.php';require __DIR__.'/Support/storefront.php';requ
 use App\Enums\InvoiceTransactionStatus;
 use App\Models\{Gateway, InvoiceTransaction};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainPage, Missing, OwnedDomain};
-use Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns;
+use Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns;
 
 storefrontViews();
 // Tags become spaces: a heading, a label and a value piece sit next to each other with no whitespace between them.
