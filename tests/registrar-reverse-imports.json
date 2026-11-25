@@ -49,11 +49,6 @@
  "Admin/Support/TldFacts.php": [
   "Services\\EnomTestRegistration"
  ],
- "Admin/Support/TldRegistrar.php": [
-  "Registrars\\NameSilo\\AdmittedTransport",
-  "Registrars\\NameSilo\\NameSiloLiveReservationPolicy",
-  "Registrars\\NameSilo\\TestReservationPolicy"
- ],
  "Catalogue/Feed/FeedTurn.php": [
   "Services\\EnomTestCallLimit"
  ],

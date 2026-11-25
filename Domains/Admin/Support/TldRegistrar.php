@@ -8,10 +8,9 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\{Facts,OfferState,StaffCatalo
 use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\SellerAvailability;
 use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferTerms;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,SalesPolicy,Tld};
-use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{AdmittedTransport,NameSiloLiveReservationPolicy,TestReservationPolicy};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,TestCatalogue};
+use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\Offers;
+use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 /** Registrar-choice wording lives here so the TLD page and dialog use the same causes. */
 final class TldRegistrar
 {
@@ -101,11 +100,7 @@ final class TldRegistrar
             $binding=AccountBindings::binding(Account::where('server_id',$id)->sole());
             $first=Tld::where('server_id',$id)->orderBy('id')->first();
             if($first===null||$first->account_fingerprint!==$binding->fingerprint||$first->registrar_key!==$binding->registrarKey){return false;}
-            if($binding->registrarKey==='enom'){return TestCatalogue::enabled($binding);}
-            if($binding->registrarKey!=='namesilo'||!class_exists(AdmittedTransport::class)){return false;}
-            $policy=$binding->environment===Environment::Test?new TestReservationPolicy:new NameSiloLiveReservationPolicy;
-            $policy->requireFeature($binding,'catalogue');
-            return true;
+            return Offers::catalogueReadable($binding);
         }catch(\Throwable){return false;}
     }
 

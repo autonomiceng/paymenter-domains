@@ -63,7 +63,7 @@ final class Offers
             foreach (['day', 'day_limit', 'minute', 'minute_limit', 'catalogue', 'catalogue_limit'] as $key) { if (!is_int($usage[$key])) { return 0; } }
             return max(0, min(25, $usage['catalogue_limit'] - $usage['catalogue'], $usage['day_limit'] - $usage['day'], $usage['minute_limit'] - $usage['minute']));
         }
-        $policy = $binding->registrarKey === 'enom' ? new Enom\EnomLiveReservationPolicy : ($binding->environment === Environment::Test ? new NameSilo\TestReservationPolicy : new NameSilo\NameSiloLiveReservationPolicy);
+        $policy = self::reservations($binding);
         if ($binding->registrarKey === 'enom' && !EnomLive::enabled($binding, 'catalogue')) { return 0; }
         if ($binding->registrarKey === 'namesilo') { $policy->requireFeature($binding, 'catalogue'); }
         $reservations = new LiveReservations($policy, $binding->environment);
@@ -73,6 +73,22 @@ final class Offers
             return max(0, min(25, CatalogueShare::limit($cap) - $reservations->usage($binding)['used']));
         }
         return min(25, $reservations->catalogueAllowance($binding));
+    }
+
+    /** Whether this deployment reads the catalogue for the account at all; capacity is separate. A refused
+     * NameSilo feature throws. */
+    public static function catalogueReadable(AccountBinding $binding): bool
+    {
+        if ($binding->registrarKey === 'enom') { return TestCatalogue::enabled($binding); }
+        if ($binding->registrarKey !== 'namesilo' || !class_exists(NameSilo\AdmittedTransport::class)) { return false; }
+        self::reservations($binding)->requireFeature($binding, 'catalogue');
+        return true;
+    }
+
+    private static function reservations(AccountBinding $binding): Enom\EnomLiveReservationPolicy|NameSilo\TestReservationPolicy|NameSilo\NameSiloLiveReservationPolicy
+    {
+        return $binding->registrarKey === 'enom' ? new Enom\EnomLiveReservationPolicy
+            : ($binding->environment === Environment::Test ? new NameSilo\TestReservationPolicy : new NameSilo\NameSiloLiveReservationPolicy);
     }
 
     /** Local deployment and protocol gates for selling one action, or any action when null. Setup asks whether the
