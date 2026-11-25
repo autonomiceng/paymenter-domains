@@ -279,10 +279,11 @@ function nativeCaseRows(): array
  */
 function nativeDecrypted(string $value): string
 {
-    return preg_replace_callback('~(?:encrypted:v1:)?eyJpdiI6(?:[A-Za-z0-9+=]|\\\\?/)+~', static function (array $match): string {
+    // Possessive, so a long payload cannot exhaust the PCRE JIT stack.
+    return preg_replace_callback('~(?:encrypted:v1:)?eyJpdiI6(?:[A-Za-z0-9+=]|\\\\/|/)++~', static function (array $match): string {
         try { return 'decrypted:'.nativeDecrypted(Crypt::decryptString(str_replace(['encrypted:v1:', '\\/'], ['', '/'], $match[0]))); }
         catch (Throwable) { return $match[0]; }
-    }, $value);
+    }, $value) ?? throw new RuntimeException('Case digest decryption failed: '.preg_last_error_msg());
 }
 
 /** Times written by the real clock, which differ by run; the synthetic clocks are months away from it. */
