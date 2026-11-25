@@ -22,11 +22,12 @@ final class Verification
     }
 
     /** Check and repair every table without recording success; the baseline migration calls this before Laravel records it. */
-    public static function check(): void
+    public static function check(?string $version = null): void
     {
         // Invalidate first: a failed explicit check must not leave an older success usable.
         self::$checked = null; self::record()->delete();
-        $version = Registry::version(); // Before the check: files swapped mid-check record the old identity and fail current().
+        // Read before the check, or keep the identity a schema-only retry already checked: a later swap then fails current().
+        $version ??= Registry::version();
         if (Registry::tables() !== Registry::expectedTables()) {
             throw new \RuntimeException('Retained Domains table inventory differs from the installed schema.');
         }
@@ -34,10 +35,16 @@ final class Verification
         self::$checked = ['version'=>$version, 'schema'=>SchemaVerifier::fingerprint()];
     }
 
-    /** Record exactly what the full check saw; a changed or unchecked package or shape takes the full check first. */
+    /** Record exactly what the full check saw; an unchecked or changed shape takes the full check first. */
     public static function finish(): void
     {
-        if (self::$checked === null || self::$checked !== self::live()) { self::check(); }
+        $live = self::live();
+        if (self::$checked !== null && self::$checked['version'] !== $live['version']) {
+            // Schema classes loaded before a package swap cannot check the new package; leave no record so a fresh request does.
+            self::$checked = null;
+            throw new \RuntimeException('The Domains package changed during verification. Verify the installation again.');
+        }
+        if (self::$checked === null || self::$checked['schema'] !== $live['schema']) { self::check(self::$checked['version'] ?? null); }
         $checked = self::$checked; self::$checked = null; self::record()->delete();
         self::record()->create(['key'=>self::KEY,'settingable_type'=>null,'settingable_id'=>null,
             'type'=>'string','encrypted'=>false,'value'=>self::state($checked)]);
