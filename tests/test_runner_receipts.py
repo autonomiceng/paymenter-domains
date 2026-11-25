@@ -303,6 +303,9 @@ sudo() {
                 self.assertEqual(other, flags)
                 path = parsed.timings_from[-1]
                 self.assertEqual(cwd, repo)
+                # The checkout has no writable overlay; the runner's home lives in its own output.
+                self.assertEqual((options['temporary'], cwd in options['writable']), (('/tmp',), False))
+                self.assertTrue(Path(env['HOME']).is_relative_to(options['writable'][0]))
                 self.assertEqual(mounts[cwd/path], timing)
                 self.assertNotIn(cwd/path, options['writable'])
                 self.assertEqual(runner.history(cwd/path), {})
@@ -576,6 +579,30 @@ sudo() {
                     self.assertIn('resource_error', receipt['results'][0])
                     self.assertIn('later native failure', (output/'001.stdout.txt').read_text())
 
+
+    def test_commands_write_only_inside_their_case_root_and_ignore_host_settings(self):
+        """A command that reads the caller's Git, zone or home, or writes beside another case, fails here."""
+        probe = ("import json, os, subprocess, tempfile, time; from pathlib import Path; "
+                 "(Path.home()/'mark').write_text('home'); handle, scratch = tempfile.mkstemp(); "
+                 "names = ['HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME', 'XDG_RUNTIME_DIR', 'TMPDIR']; "
+                 "git = subprocess.run(['git', 'config', '--get', 'user.name'], capture_output=True, text=True); "
+                 "print(json.dumps({'paths': [os.environ[n] for n in names] + [scratch], 'git': git.stdout, "
+                 "'zone': time.strftime('%Z'), 'locale': os.environ['LC_ALL']}))")
+        with tempfile.TemporaryDirectory() as temp:
+            base, host = Path(temp)/'output', Path(temp)/'host'
+            base.mkdir(); (host/'git').mkdir(parents=True)
+            for config in (host/'.gitconfig', host/'git/config'):
+                config.write_text('[user]\n\tname = Host Person\n')
+            caller = {'PATH': os.environ['PATH'], 'TMPDIR': str(base), 'HOME': str(host), 'XDG_CONFIG_HOME': str(host),
+                      'TZ': 'America/Los_Angeles', 'LC_ALL': 'en_US.UTF-8'}
+            with runner.test_workers.command_environment(caller) as child:
+                case, = base.iterdir()
+                report = json.loads(subprocess.run([sys.executable, '-c', probe], env=child, cwd=temp,
+                                                   capture_output=True, text=True, check=True).stdout)
+            self.assertTrue(all(Path(path).is_relative_to(case) for path in report['paths']), report)
+            self.assertEqual((report['git'], report['zone'], report['locale']), ('', 'UTC', 'C.UTF-8'))
+            self.assertEqual(list(base.iterdir()), [], 'The case root is removed with its command')
+            self.assertEqual(sorted(str(path.relative_to(host)) for path in host.rglob('*')), ['.gitconfig', 'git', 'git/config'])
 
 if __name__ == '__main__':
     unittest.main()

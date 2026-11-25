@@ -14,6 +14,12 @@ import native
 import installed_fixture
 import php_suite
 
+# Runner controls and named test options that reach commands; other DOMAINS_TEST_ values stay with the caller.
+RUNNER_ENV = ['DOMAINS_TEST_CGROUP', 'DOMAINS_TEST_BUDGET', 'DOMAINS_TEST_RECEIPTS', 'DOMAINS_TEST_LIMITS',
+              'DOMAINS_TEST_JOBS', 'DOMAINS_TEST_FIXTURE_COSTS', 'DOMAINS_TEST_MONEY_SCALE_FULL_MATRIX']
+# The MariaDB launcher reaches the caller's Docker client, and keeps its short socket scratch path, through
+# these until it gets its own isolated home.
+MARIADB_HOST_PATHS = frozenset({'HOME', 'XDG_RUNTIME_DIR', 'TMPDIR'})
 # Writable per-user locations, each inside the command's own root.
 PRIVATE_PATHS = {'HOME': 'home', 'XDG_CONFIG_HOME': 'home/.config', 'XDG_DATA_HOME': 'home/.local/share',
                  'XDG_STATE_HOME': 'home/.local/state', 'XDG_CACHE_HOME': 'cache', 'XDG_RUNTIME_DIR': 'run',
