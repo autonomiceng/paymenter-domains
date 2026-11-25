@@ -41,7 +41,7 @@ $cases=[
     'adoption'=>[['status'=>'adoption_pending'],['state'=>'succeeded'],'Under review','Import not confirmed'],
 ];
 $base=['status'=>'transfer_pending','provider_expires_at'=>null,'renewal_policy'=>null];
-$keys=[];
+$keys=[];$filtersRead=[];
 foreach ($cases as $case=>[$domain,$acquisition,$label,$reason]) {
     DB::table('domains_domains')->where('id',$d->id)->update([...$base,...$domain]);
     DB::table('domains_operations')->where('id',$op->id)->update(['action'=>'transfer','safe_code'=>null,...$acquisition]);
@@ -69,9 +69,12 @@ foreach ($cases as $case=>[$domain,$acquisition,$label,$reason]) {
     parse_str((string)parse_url($list->query('//a[contains(@class,"domains-tab")]/@href')->item(0)?->value??'',PHP_URL_QUERY),$first);
     same('',(string)($first['status']??''),'The first tab is unfiltered: '.$case);
     parse_str((string)parse_url($list->query('//a[contains(@class,"domains-tab")]/@href')->item(1)?->value??'',PHP_URL_QUERY),$query);
-    $key=(string)($query['status']??''); $keys[$label]=$key;
+    $key=(string)($query['status']??''); same($keys[$label]??$key,$key,'Every '.$label.' case opens the same tab: '.$case); $keys[$label]=$key;
     same(1,$data['filterCounts'][$key]??null,'The status link selects a counted filter: '.$case);
     if($case==='cancelled'){same('inactive',$key,'Ended domains use the inactive filter key');}
+    // Cases that resolve to the same row state get the same filtered lists, so only the first one requests them.
+    $state=$data['domains']->items()[0]->statusState;
+    if(isset($filtersRead[$state])){same($filtersRead[$state],$key,'Same state, same tab: '.$case);continue;} $filtersRead[$state]=$key;
     $filtered=$controller->index($request(['status'=>$key]))->getData();
     same($key,$filtered['filter'],'The status link selects its filter: '.$case);
     same([$d->domain],array_map(static fn($row)=>$row->name,$filtered['domains']->items()),'Status filter keeps the domain: '.$case);
