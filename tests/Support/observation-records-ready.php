@@ -1,12 +1,13 @@
 <?php
 // Full native initial-inventory premise; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$useFundedRegistration = true;
 require __DIR__.'/observation-records.php';
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment,ManagementRequest,RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationProjection,ObservationRecords,ObservationSchema,ObservationWork,OwnerRecords,ReadDeferred};
-[$d,$driver,$original]=$holding(placeholderComFixtureName('discovery-placeholder.com'));storefrontViews();
+[$d,$driver,$original]=$holding(fundedRegistrationFixtureName());storefrontViews();
 $clearRecords=static function()use(&$d):void{$fresh=$d->fresh();$p=$fresh->observation??[];unset($p['record_hold']);$fresh->update(['observation'=>$p]);};
 App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 $before=$original->fresh()->getAttributes();$financial=[$d->provider_expires_at->format(DATE_ATOM),$d->confirmed_revision,$d->renewal_policy];

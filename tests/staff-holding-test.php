@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$useFundedRegistration = true;
 ini_set('memory_limit','256M');
 require_once __DIR__.'/Support/reserved-fixtures.php';
 $fixtureReadyRegistration = true;
@@ -20,7 +21,7 @@ $review=new StaffHoldingReview($clock);app()->instance(StaffHoldingReview::class
 $permissions=['admin.domains.view','admin.domains.manage','admin.domains.fund',...array_map(StaffHoldingReview::permission(...),array_keys(StaffHoldingReview::ACTIONS))];
 $staff=staffUser($permissions);Auth::login($staff);
 $ticket=static fn($d,$action,$actor=null)=>StaffHoldingReview::ticket((int)($actor??$staff)->id,(int)$d->id,$action,StaffHoldingReview::stamp(HoldingLocks::take($d->fresh(),advisory:true)),$clock);
-[$original]=$prepare(placeholderComFixtureName('holding-review-placeholder.com'));same('succeeded',$reconcile->run($original->id)->state,'Holding has original proof');$d=$original->domain->fresh();$s=$d->service;
+[$original]=$prepare(fundedRegistrationFixtureName());same('succeeded',$reconcile->run($original->id)->state,'Holding has original proof');$d=$original->domain->fresh();$s=$d->service;
 DB::table('services')->where('id',$s->id)->update(['price'=>'9.00']);$money=$nativeMoney();
 commerceReject(fn()=>DB::transaction(fn()=>$s->fresh()->update(['price'=>'1.23'])));
 // Stale modal, wrong action/actor, expired key and revoked role all fail before writes.

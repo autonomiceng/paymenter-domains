@@ -1,7 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Delivery history uses accepted evidence.
 declare(strict_types=1);
-require __DIR__.'/departure-email-test.php';
+require __DIR__.'/departure-email.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DepartedHistory,DomainHistory};
 

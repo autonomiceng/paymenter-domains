@@ -1,7 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Synthetic repeatable-read snapshot only.
 declare(strict_types=1);
-require __DIR__.'/departure-retry-receipt-test.php';
+require __DIR__.'/departure-retry-receipt.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\{DepartureProof,Refunds};

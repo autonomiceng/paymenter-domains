@@ -1,7 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Registrar and payment transports are synthetic.
 declare(strict_types=1);
-require __DIR__.'/departure-credit-test.php';
+require __DIR__.'/departure-credit.php';
 use App\Models\User;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts;

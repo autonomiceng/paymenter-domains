@@ -3,10 +3,13 @@
 declare(strict_types=1);
 
 /** Reuse installation work only while the native fixture is still completely untouched. */
-function restoreCommerceDatabase(): bool
+function restoreCommerceDatabase(?string $operationSnapshot = null, ?array &$catalogue = null): bool
 {
     if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
-    $path=(string)getenv('PAYMENTER_TEST_COMMERCE_DATABASE');
+    $prefix = 'PAYMENTER_TEST_'.$operationSnapshot;
+    $seeded = $operationSnapshot !== null && getenv($prefix.'_DATABASE');
+    if (!$seeded) { $prefix = 'PAYMENTER_TEST_COMMERCE'; }
+    $path = (string)getenv($prefix.'_DATABASE');
     $baseline=$GLOBALS['nativeFixtureDatabase']??null;
     $connection=Illuminate\Support\Facades\DB::connection();$pdo=$connection->getPdo();
     if($path===''||$baseline===null||$baseline['pdo']!==$pdo||$pdo->inTransaction()
@@ -17,7 +20,11 @@ function restoreCommerceDatabase(): bool
         return false;
     }
     $sql=file_get_contents($path);
-    same((string)getenv('PAYMENTER_TEST_COMMERCE_SHA256'),hash('sha256',$sql),'Installed fixture snapshot retains admitted bytes');
+    same((string)getenv($prefix.'_SHA256'),hash('sha256',$sql),'Installed fixture snapshot retains admitted bytes');
+    if ($seeded) {
+        expect(preg_match('/^-- operation-catalogue: (.+)$/m', $sql, $state) === 1, 'Snapshot records the operation catalogue');
+        $catalogue = json_decode($state[1], true, flags: JSON_THROW_ON_ERROR);
+    }
     $objects=$pdo->query("SELECT type,name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY type='view' DESC")->fetchAll(PDO::FETCH_ASSOC);
     $pdo->exec('PRAGMA foreign_keys=OFF');
     foreach($objects as $object){$pdo->exec('DROP '.strtoupper($object['type']).' "'.str_replace('"','""',$object['name']).'"');}
@@ -37,9 +44,9 @@ final class InstalledCommerceFixture
 {
     private bool $consumed = false;
 
-    private function __construct(private PDO $pdo, private ?int $schema) {}
+    private function __construct(private PDO $pdo, private ?int $schema, public readonly ?array $catalogue) {}
 
-    public static function prepare(): self
+    public static function prepare(?string $operationSnapshot = null): self
     {
         if (class_exists(FixtureSetup::class, false)) { $fixtureTimer = new FixtureSetup; }
         if (!app()->bound(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)) {
@@ -50,13 +57,14 @@ final class InstalledCommerceFixture
         if (!app()->bound(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class)) {
             Paymenter\Extensions\Servers\Domains\Services\Runtime::register();
         }
-        if (!restoreCommerceDatabase()) {
+        $catalogue = null;
+        if (!restoreCommerceDatabase($operationSnapshot, $catalogue)) {
             (new Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
             if (class_exists(FixtureSetup::class, false)) { FixtureSetup::$fallbacks++; }
         }
         $pdo = Illuminate\Support\Facades\DB::connection()->getPdo();
         $schema = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite' ? (int) $pdo->query('PRAGMA schema_version')->fetchColumn() : null;
-        return new self($pdo, $schema);
+        return new self($pdo, $schema, $catalogue);
     }
 
     public function consume(): void

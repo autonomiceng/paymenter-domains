@@ -49,6 +49,8 @@ def environment(index, *, env, output, runtime, fixture, fixture_snapshot, runti
                      'PAYMENTER_TEST_NATIVE_EXTENSIONS', 'LD_LIBRARY_PATH']:
             if name in child:
                 child[name] = str(copy/Path(child[name]).relative_to(runtime))
+    if fixture and child.get('PAYMENTER_TEST_COMMERCE_DATABASE'):
+        prepare_funded_registration(child, directory)
     return child
 
 
@@ -146,6 +148,20 @@ def prepare_database(env, output, root):
                    env=dict(env, PAYMENTER_TEST_COMMERCE_EXPORT=str(installed)), check=True, timeout=10)
     env.update(PAYMENTER_TEST_COMMERCE_DATABASE=str(installed),
                PAYMENTER_TEST_COMMERCE_SHA256=hashlib.sha256(installed.read_bytes()).hexdigest())
+
+
+def prepare_funded_registration(env, output):
+    """Each worker owns one genuine checkout and restores it into private case databases."""
+    root = Path(__file__).resolve().parents[1]
+    operation = output/'operation-catalogue.sql'
+    funded = output/'funded-registration.sql'
+    with command_environment(env) as child:
+        subprocess.run([str(root/'scripts/php-test'), 'tests/Support/export-funded-registration.php'], cwd=root,
+                       env=dict(child, PAYMENTER_TEST_OPERATION_EXPORT=str(operation), PAYMENTER_TEST_FUNDED_EXPORT=str(funded)), check=True, timeout=10)
+    env.update(PAYMENTER_TEST_OPERATION_DATABASE=str(operation),
+               PAYMENTER_TEST_OPERATION_SHA256=hashlib.sha256(operation.read_bytes()).hexdigest(),
+               PAYMENTER_TEST_FUNDED_DATABASE=str(funded),
+               PAYMENTER_TEST_FUNDED_SHA256=hashlib.sha256(funded.read_bytes()).hexdigest())
 
 
 def installed_phases(path):

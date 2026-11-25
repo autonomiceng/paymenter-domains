@@ -1,12 +1,13 @@
 <?php
 // Synthetic acquisition observation lifecycle; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$useFundedRegistration = true;
 require __DIR__.'/Support/management.php';
 require_once __DIR__.'/Support/observation-work.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationSchema,ObservationWork};
 ObservationSchema::install();$budget=new AccountReadBudget($clock);$observer=new DomainObservation($readBindings,$clock,$budget);
-[$d,$driver,$original]=$holding(placeholderComFixtureName('observation-acquisition-work-placeholder.com'));
+[$d,$driver,$original]=$holding(fundedRegistrationFixtureName());
 $work=observationFixtureScheduler($observer,$clock,$ports);$work->enroll($d->server_id);$work->tick(2);
 $job=DB::table('domains_observation_work')->where('domain_id',$d->id)->sole();
 // The existing holding already had its scheduled read; only the new acquisition is due.

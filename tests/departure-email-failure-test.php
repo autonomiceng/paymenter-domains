@@ -1,15 +1,26 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Registrar and payment transports are synthetic.
 declare(strict_types=1);
-$nativeSuccessful=false;
-// A bad time zone setting breaks the email data, never the departure: the decision commits once and staff get the alert.
-$emailAlert='template_failed';$emailDeliveries=[];
-$emailFault=static function():Closure{$zone=config('domains.time_zone');config(['domains.time_zone'=>'Not/AZone']);return static fn()=>config(['domains.time_zone'=>$zone]);};
 require __DIR__.'/Support/departure-email-failure.php';
-// The departed page reads the saved departure and still shows the open email alert, so staff can act on it.
-Illuminate\Support\Facades\Auth::setUser($staff);
-$html=html_entity_decode(strip_tags(Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id])->assertSuccessful()->html()),ENT_QUOTES);
-expect(Paymenter\Extensions\Servers\Domains\Admin\Support\DepartedPage::record($d->fresh())!==null,'The page reads the saved departure');
-expect(str_contains($html,Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::alertCause('template_failed',$d->fresh())),'The departed page keeps the open email alert');
-echo "Email data that fails to build leaves the staff alert and keeps the departure.\n";
-$nativeSuccessful=true;
+
+$checkFailure(static fn()=>App\Models\NotificationTemplate::where('key','domains_domain_departed')->update(['body'=>'{{ departure_email_missing_helper() }}']), 'template_failed', []);
+
+$checkFailure(static function():void {
+    // The first two subject renders succeed; rendering the body changes the template's dependency.
+    App\Models\NotificationTemplate::where('key','domains_domain_departed')->firstOrFail()->update([
+        'subject'=>'@if(!empty($GLOBALS["departureBodyRendered"])) @php throw new \RuntimeException("Subject dependency unavailable."); @endphp @endif {{ $domain }}',
+        'body'=>'@php $GLOBALS["departureBodyRendered"]=true; @endphp Departure notice.',
+    ]);
+}, 'template_failed', ['handoff']);
+unset($GLOBALS['departureBodyRendered']);
+
+$checkFailure(static function():Closure{
+    App\Models\NotificationTemplate::where('key','domains_domain_departed')->firstOrFail()->update(['mail_enabled'=>App\Enums\NotificationEnabledStatus::Force]);
+    $off=config('settings.mail_disable');config(['settings.mail_disable'=>true]);return static fn()=>config(['settings.mail_disable'=>$off]);
+}, 'template_failed', []);
+
+$checkFailure(static fn()=>App\Models\NotificationTemplate::where('key','domains_domain_departed')->delete(), 'template_failed', []);
+
+$checkFailure(static fn()=>App\Models\EmailLog::creating(static function():void{throw new RuntimeException('Mail handoff unavailable.');}), 'delivery_uncertain', ['uncertain']);
+
+$nativeSuccessful = true;

@@ -772,6 +772,9 @@ def main(*, launch=False):
             with timing('worker_environments', timings):
                 workers, fixture_snapshot, runtime_snapshot = test_workers.environments(env, output, jobs, runtime)
             worker_check = lambda: test_workers.verify(workers, fixture_snapshot, runtime_snapshot)
+        elif env.get('PAYMENTER_TEST_COMMERCE_DATABASE'):
+            with timing('funded_registration', timings):
+                test_workers.prepare_funded_registration(env, output)
         return run(commands, env, output, selected, suites, dependency, jobs=jobs, workers=workers, worker_check=worker_check,
                    timings=timings, only=args.only, fail_fast=args.fail_fast, requested_jobs=args.jobs, memory_mib=args.memory_mib,
                    jobs_explicit=jobs_explicit, lint_base=args.lint_base, checkout=checkout)

@@ -3,6 +3,7 @@
 // A send-limit refusal proves a write unsent only while its scope is armed and not consumed.
 // Management runs here through the production exchange; renewal is in enom-test-renewal-guards-test.php.
 declare(strict_types=1);
+$useFundedRegistration = true;
 require __DIR__.'/Support/management.php';
 require __DIR__.'/Support/enom-wire.php';
 require __DIR__.'/Support/WireLimit.php';
@@ -15,7 +16,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit,EnomTestMan
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 app()->instance(Clock::class,$clock);EnomTestSendLimitSchema::install();
 // The holding is made under the default policy; the TEST policy applies only to the runs.
-[$d,$original]=$holding(placeholderComFixtureName('send-limit-unsent-placeholder.com'));$binding=$original->capabilities()->binding;
+[$d,$original]=$holding(fundedRegistrationFixtureName());$binding=$original->capabilities()->binding;
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.management'=>true,
     'domains.enom_test_sends_per_day'=>1000,'domains.enom_test_sends_per_minute'=>100000]);
 $setting=$product->server->settings()->firstOrNew(['key'=>EnomTestManagement::KEY]);$setting->encrypted=true;$setting->type='string';

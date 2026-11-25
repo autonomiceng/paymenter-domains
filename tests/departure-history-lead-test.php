@@ -1,7 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Registrar and payment transports are synthetic.
 declare(strict_types=1);
-require __DIR__.'/departure-confirm-test.php';
+require __DIR__.'/departure-confirm.php';
 use Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory;
 
 $nativeSuccessful=false;

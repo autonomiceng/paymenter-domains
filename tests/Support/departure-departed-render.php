@@ -3,7 +3,7 @@
 declare(strict_types=1);
 $out=$argv[1]??'';
 // A confirmed departure with a paid renewal returned as account credit (the regression's own fixture).
-require dirname(__DIR__).'/departure-departed-test.php';
+require dirname(__DIR__).'/departure-departed.php';
 require_once __DIR__.'/panel-render.php';
 require_once __DIR__.'/render-artifacts.php';
 use Illuminate\Support\Facades\Auth;
