@@ -113,6 +113,8 @@ config(['domains.namesilo_test.management'=>$managementConfig]);
 
 // Prior holdings may keep held orders, but their controls do not belong on the current domain.
 $heldRow=new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,'heldOrderRow');
+// The controls the domain page's held order row shows: name and whether staff can press it.
+$heldControls=fn($d):?array=>($row=$heldRow->invoke(null,$d))===null?null:array_map(fn($x)=>[$x->getName(),$x->isDisabled()],(fn()=>$this->shownControls())->call($row));
 foreach(['authority_generation'=>$op->authority_generation+1,'account_fingerprint'=>str_repeat('e',64)] as $field=>$other){
     $domainRow=$op->domain->fresh();$originalValue=$domainRow->$field;
     DB::table('domains_domains')->where('id',$domainRow->id)->update([$field=>$other]);
@@ -163,8 +165,7 @@ DB::table('domains_accounts')->where('id',$account->id)->update(['processing_ena
 $before=[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$paused->attempt];
 $pausedActions=$actions($paused,$costStaff);
 same([true,true,true,false],[$pausedActions['release']->isVisible(),$pausedActions['release']->isDisabled(),$pausedActions['refund']->isVisible(),$pausedActions['refund']->isDisabled()],'The request page waits Release for Orders and keeps Cancel and refund');
-expect($heldRow->invoke(null,$paused->domain->fresh())!==null,'The domain page shows the same two actions on the held order row');
-Auth::login($costStaff);
+Auth::login($costStaff);same([['release',true],['refund',false]],$heldControls($paused->domain->fresh()),'The domain page waits Release for Orders and keeps Cancel and refund on the held order row');
 $panel=Filament\Facades\Filament::getCurrentPanel();$panel->pages([Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class]);
 Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::registerRoutes($panel));
 app('router')->getRoutes()->refreshNameLookups();
@@ -395,6 +396,6 @@ same(['held','contact_profile_proof_required'],[$op->fresh()->state,$op->fresh()
 same($money,[$nativeMoney(),$serviceStatus($op),MoneyReceiptGateway::$sends],'No automatic cancel or refund');
 same(null,$op->fresh()->funding['refund_authorization']??null,'No refund was authorized');
 expect(OperationActions::relevant('refund',$op->fresh())&&HeldRelease::offered($op->fresh(),$clock->now()),'Staff keep Release hold and Cancel and refund');
-same([true,true,true],[$heldRow->invoke(null,$op->domain->fresh())!==null,$actions($op,$staff)['release']->isVisible(),$actions($op,$staff)['refund']->isVisible()],'The domain page keeps both actions on the held order row');
+same([['release',false],['refund',false]],$heldControls($op->domain->fresh()),'The domain page keeps both actions on the held order row');
 echo "Automatic contact retries stop at the limit and never refund.\n";
 $nativeSuccessful=true;
