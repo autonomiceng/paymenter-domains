@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Dns;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\DnsReader;
-use Paymenter\Extensions\Servers\Domains\Services\PublicDnsQuota;
+use Paymenter\Extensions\Servers\Domains\Storefront\Search\PublicDnsQuota;
 /** Per-wire reservation, shared by both target families; denial is local saturation. */
 final class QuotaDnsReader implements DnsReader
 {

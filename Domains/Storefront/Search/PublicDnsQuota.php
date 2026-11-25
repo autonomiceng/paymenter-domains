@@ -1,7 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Storefront\Search;
 use Illuminate\Support\Facades\DB;
 /** Shared public pool only. Admission is durable and never waits or borrows from our registrar call budgets. */
 final class PublicDnsQuota

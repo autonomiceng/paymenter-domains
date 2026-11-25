@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,DnsReader};
 use Paymenter\Extensions\Servers\Domains\Dns\{QuotaDnsReader,RegistryContext};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
+use Paymenter\Extensions\Servers\Domains\Storefront\Search\{PublicDnsQuota,RdapQuota};
 /** Read-only departure evidence. The existing holding queue owns the one automatic recheck. */
 final class DepartureChecks
 {
