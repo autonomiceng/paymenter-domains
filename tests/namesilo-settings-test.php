@@ -51,13 +51,10 @@ foreach(['transfer','renewal','management'] as $feature){
         same('Off',$rows[$label]['value'],$label.' can be turned off');
         $class='Paymenter\\Extensions\\Servers\\Domains\\Services\\EnomTest'.ucfirst($feature);
         expect(!$class::accepted(Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account->fresh())),$label.' Off closes the sending gate');
-        // Turning On through the same action is shown once; namesilo-settings-rotation-test.php proves each saved On gate.
-        if($feature==='renewal'){
-            unset($page);gc_collect_cycles();gc_mem_caches();
-            $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id]);
-            $page->callAction($action)->assertNotified('Saved');
-            expect($class::accepted(Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account->fresh())),$label.' On opens its admitted TEST gate');
-        }
+        unset($page);gc_collect_cycles();gc_mem_caches();
+        $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id]);
+        $page->callAction($action)->assertNotified('Saved');
+        expect($class::accepted(Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account->fresh())),$label.' On opens its admitted TEST gate');
     }catch(Throwable $e){$failures[]=$feature.': '.$e->getMessage();}
     unset($page);gc_collect_cycles();gc_mem_caches();
 }
