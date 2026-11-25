@@ -6,7 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Catalogue\Pricing;
 
 // Column declarations adapted from Enom d2c55e2.
 use Illuminate\Database\Schema\Blueprint;
-use Paymenter\Extensions\Servers\Domains\Services\TableSchema;
+use Paymenter\Extensions\Servers\Domains\Installation\TableSchema;
 
 /** Registrar cost observations and published retail per exact account, ending, action and term. */
 final class PriceSchema extends TableSchema

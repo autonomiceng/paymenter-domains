@@ -1,7 +1,7 @@
 <?php
 // Reference ownership and cleanup regressions. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services {
+namespace Paymenter\Extensions\Servers\Domains\Installation {
     function random_bytes(int $length): string
     {
         return isset($GLOBALS['schemaReferenceRandom']) ? str_repeat('a', $length) : \random_bytes($length);
@@ -12,7 +12,7 @@ namespace {
     use Illuminate\Database\QueryException;
     use Illuminate\Database\Schema\{Blueprint,SQLiteBuilder};
     use Illuminate\Support\Facades\{DB,Schema};
-    use Paymenter\Extensions\Servers\Domains\Services\SchemaVerifier;
+    use Paymenter\Extensions\Servers\Domains\Installation\SchemaVerifier;
 
     $builder = new class(DB::connection()) extends SQLiteBuilder {
         public array $references = [];

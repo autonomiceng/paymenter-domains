@@ -5,6 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{Extension,Server,Setting};
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
+use Paymenter\Extensions\Servers\Domains\Installation\Installer;
 final class NativeServerGuard
 {
     public function pause(int $id): void
@@ -39,7 +40,7 @@ final class NativeServerGuard
         if(!HookRegistration::claim(Server::getEventDispatcher(),self::class)){return;}
         foreach([Server::class,Extension::class] as $model){
             $model::creating(function($s):void {if($s->extension==='Domains'){
-                try{app(Installation::class)->install();}catch(\DomainException|\RuntimeException|\Illuminate\Contracts\Cache\LockTimeoutException $e){
+                try{Installer::install();}catch(\DomainException|\RuntimeException|\Illuminate\Contracts\Cache\LockTimeoutException $e){
                     throw \Illuminate\Validation\ValidationException::withMessages(['data.extension'=>$e->getMessage()]);
                 }
             }});

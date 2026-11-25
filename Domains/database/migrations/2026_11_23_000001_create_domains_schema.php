@@ -3,15 +3,15 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
-use Paymenter\Extensions\Servers\Domains\Services\{FreshInstallation, Installation};
+use Paymenter\Extensions\Servers\Domains\Installation\{Installer, Registry};
 
 return new class extends Migration {
     public function up(): void
     {
-        if (!FreshInstallation::recovering()) {
+        if (!Installer::recovering()) {
             throw new \DomainException('Domains schema creation requires the owning installation intent.');
         }
-        foreach (Installation::SCHEMAS as $schema) {
+        foreach (Registry::SCHEMAS as $schema) {
             $schema::install();
         }
     }

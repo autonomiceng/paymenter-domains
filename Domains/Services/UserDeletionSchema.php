@@ -6,6 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Installation\TableSchema;
 
 final class UserDeletionSchema extends TableSchema
 {

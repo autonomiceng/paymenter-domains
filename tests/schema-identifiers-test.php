@@ -21,7 +21,7 @@ final class IdentifierSweepBuilder extends SQLiteBuilder
     {
         $reference = false;
         foreach (debug_backtrace() as $frame) {
-            if (($frame['class'] ?? '') === Paymenter\Extensions\Servers\Domains\Services\SchemaVerifier::class) { $reference = true; }
+            if (($frame['class'] ?? '') === Paymenter\Extensions\Servers\Domains\Installation\SchemaVerifier::class) { $reference = true; }
         }
         if (!$reference) {
             $this->inspect($table, $callback, null);
@@ -33,7 +33,7 @@ final class IdentifierSweepBuilder extends SQLiteBuilder
     public function getColumns($table)
     {
         foreach (debug_backtrace() as $frame) {
-            if (($frame['class'] ?? '') === Paymenter\Extensions\Servers\Domains\Services\SchemaVerifier::class
+            if (($frame['class'] ?? '') === Paymenter\Extensions\Servers\Domains\Installation\SchemaVerifier::class
                 && $frame['function'] === 'verify' && $table !== $frame['args'][0]) {
                 [$retained, $definition] = $frame['args'];
                 $site = str_replace(dirname(__DIR__).'/', '', $frame['file']).':'.$frame['line'];
@@ -116,7 +116,7 @@ Schema::swap($builder);
 // Exercise both retained install() and verify() entry points (including reminder install).
 foreach (Installation::SCHEMAS as $schema) { $schema::install(); }
 $sites = [];
-foreach (glob(dirname(__DIR__).'/Domains/Services/*.php') as $file) {
+foreach ([...glob(dirname(__DIR__).'/Domains/Installation/*.php'), ...glob(dirname(__DIR__).'/Domains/Services/*.php')] as $file) {
     foreach (file($file) as $line => $text) {
         $count = substr_count($text, 'SchemaVerifier::verify(');
         if ($count) { $sites[str_replace(dirname(__DIR__).'/', '', $file).':'.($line+1)] = $count; }

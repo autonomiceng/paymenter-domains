@@ -7,6 +7,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 // Column declarations adapted from Enom d2c55e2.
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Installation\TableSchema;
 
 final class FoundationSchema extends TableSchema
 {
