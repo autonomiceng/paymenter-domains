@@ -211,8 +211,12 @@ def order_commands(commands, previous=None):
     previous = previous or {}
     def priority(item):
         index, (kind, argv) = item
+        # Previous failures run first, shortest first, for quick feedback. Longer
+        # passing commands start before shorter ones so short ones fill the
+        # tail; a command without a timing may be long and starts first.
         failed, seconds = previous.get((kind, argv[-1]), (False, math.inf))
-        return ORDER.index(kind), not failed, not test_scheduling.installed(kind, argv), seconds, index
+        return (ORDER.index(kind), not failed, not test_scheduling.installed(kind, argv),
+                seconds if failed else -seconds, index)
     return [command for _, command in sorted(enumerate(commands), key=priority)]
 
 def git_tree():
@@ -633,7 +637,7 @@ def lint_files(base=None):
 def main(*, launch=False):
     # The timing receipt is the only argument the host must mount and rewrite.
     timing_option = argparse.ArgumentParser(add_help=False)
-    timing_option.add_argument('--timings-from', metavar='RECEIPT', help='Prioritize previously failing and faster commands within each category.')
+    timing_option.add_argument('--timings-from', metavar='RECEIPT', help='Run previous failures first, then longer commands first, within each category.')
     parser = argparse.ArgumentParser(description=__doc__, parents=[timing_option])
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument('--suite', choices=CATEGORIES, action='append')
