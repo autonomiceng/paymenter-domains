@@ -3,7 +3,8 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-panel.php';
 use Illuminate\Support\Facades\{Auth,DB};
-use Paymenter\Extensions\Servers\Domains\Services\{Installation,ObservationRecords};
+use Paymenter\Extensions\Servers\Domains\Services\Installation;
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,DomainFacts};
 use Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies;
 (new Installation)->install();staffPanel();[, $d]=staffData(ordinaryCompleted:true);

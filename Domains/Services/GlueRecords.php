@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\Schema;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,DnsTemplate};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 /** Glue discovery candidates and saved read evidence. Never writes registrar state or templates. */
 final class GlueRecords
 {

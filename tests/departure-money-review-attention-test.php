@@ -7,7 +7,8 @@ use Illuminate\Support\Facades\{Cache,Crypt,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts;
 use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainQueries;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts,ObservationRecords};
+use Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts;
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 
 $nativeSuccessful=false;
 $restoreCredit = nativeFixtureCheckpoint();

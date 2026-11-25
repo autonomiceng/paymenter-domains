@@ -199,12 +199,12 @@ $dnsDomain->server->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['va
 $state->srv=[['service'=>'sip','protocol'=>'tcp','priority'=>0,'weight'=>5,'port'=>443,'target'=>'sip.example.com.']];
 $inventory=static fn()=>['dns'=>['state'=>'complete','records'=>$state->dns],'srv'=>['state'=>'complete','records'=>$state->srv],
     'ds'=>['state'=>'complete','records'=>[]],'glue'=>['state'=>'partial','records'=>[]]];
-\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::save($dnsDomain->fresh(),$inventory(),$clock->now());
+\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::save($dnsDomain->fresh(),$inventory(),$clock->now());
 $dnsOp=$submit($dnsDomain,$dnsDriver,'dns',['records'=>[['name'=>'@','type'=>'TXT','address'=>'saved record','mx_pref'=>10]],
     'preimage_digest'=>\Paymenter\Extensions\Servers\Domains\Services\ManagementPayload::digest([])]);
 same('succeeded',$management->run($dnsOp->id,$dnsDriver)->state,'DNS change completes before the later failed sync');
 $clock->instant=$clock->now()->modify('+1 minute');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
-\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::failPrimary($dnsDomain->fresh(),$clock->now());
+\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::failPrimary($dnsDomain->fresh(),$clock->now());
 $dnsPage=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$dnsDomain->id]);
 $missing=(string)panelRowText($dnsPage->html(),'DNS records');
 expect(str_contains($missing,'Not read')&&str_contains($missing,'Use Sync now to read them.'),'Unread DNS keeps the current recovery instruction after a saved change');
@@ -213,7 +213,7 @@ same('Saved.',ManagementProgress::for($dnsDomain->fresh())['dns']['text'],'Faile
 $dnsPage->assertSee('DNS records')->assertSee('Saved.');
 // Advance the engine and UI clocks before recording the recovered observation.
 $readAt=$clock->now()->modify('+1 minute');$clock->instant=$readAt;Carbon\Carbon::setTestNow($readAt);Carbon\CarbonImmutable::setTestNow($readAt);
-\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::save($dnsDomain->fresh(),$inventory(),$readAt);
+\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::save($dnsDomain->fresh(),$inventory(),$readAt);
 $dnsPage->call('pollManagement');$available=(string)panelRowText($dnsPage->html(),'DNS records');
 expect(str_contains($available,'1 record')&&str_contains($available,'1 SRV')
     &&str_contains($available,'As of')&&str_contains($available,\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($readAt->getTimestamp())),'Available DNS keeps its as-of time and SRV count beside management status');

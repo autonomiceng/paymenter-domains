@@ -6,7 +6,8 @@ require __DIR__.'/Support/observation-records.php';
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment,ManagementRequest,RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationProjection,ObservationRecords,ObservationSchema,ObservationWork,OwnerRecords,ReadDeferred};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationProjection,ObservationSchema,ObservationWork,OwnerRecords,ReadDeferred};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 require_once __DIR__.'/Support/staff-panel.php';
 \Paymenter\Extensions\Servers\Domains\Services\DnsTemplatesSchema::install();
 // The combined child-host limit is a specific hold; reducing its sources makes retry work.

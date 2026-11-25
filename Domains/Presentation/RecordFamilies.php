@@ -3,7 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,ObservationProjection,ObservationRecords};
+use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,ObservationProjection};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 /** No inferred completeness or edit grants. Last-good evidence remains historical after a failed read. */
 final class RecordFamilies
 {

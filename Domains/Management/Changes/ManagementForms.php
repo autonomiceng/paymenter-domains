@@ -7,7 +7,8 @@ use App\Models\User;
 use Paymenter\Extensions\Servers\Domains\Data\PrivacyMode;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility;
-use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, ObservationRecords, OwnerConfirmRequired, OwnerFormValidation, OwnerPorts, OwnerRecordInput, OwnerRecords, Runtime};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, OwnerConfirmRequired, OwnerFormValidation, OwnerPorts, OwnerRecordInput, OwnerRecords, Runtime};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 /** The one path from a change form to the request queue, for owner and staff alike. */
 final readonly class ManagementForms
 {

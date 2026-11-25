@@ -7,7 +7,8 @@ use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment,ManagementRequest,RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Glue as NameSiloGlue,Management as NameSiloManagement,ObservationReader as NameSiloObservationReader};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationProjection,ObservationRecords,ObservationSchema,ObservationWork,OwnerRecords,ReadDeferred};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationProjection,ObservationSchema,ObservationWork,OwnerRecords,ReadDeferred};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 // Empty TEST list captured on 2026-11-10; only the request IP is replaced with a documentation address.
 $emptyGlueReply='{"request":{"operation":"listRegisteredNameServers","ip":"192.0.2.10"},"reply":{"code":300,"detail":"success"}}';
 $glueReply=$emptyGlueReply;$glueCalls=[];$glueError=null;

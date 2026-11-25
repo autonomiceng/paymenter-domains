@@ -1,9 +1,10 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Holding\Observation;
 use Illuminate\Support\Collection;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
+use Paymenter\Extensions\Servers\Domains\Services\{ObservationProjection,RefundProof};
 /** Skip only proven-unsent acquisitions. Unknown outcomes and known holdings remain readable. */
 final class ObservationEligibility
 {

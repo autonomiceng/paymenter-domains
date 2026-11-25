@@ -426,11 +426,11 @@ expect(!Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::sta
 // A current record hold with no work row stopped sync: the count, the list and the sweep read it as the domain page does.
 $observation=static fn(Domain $d)=>DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','observation_review')->whereNull('resolved_at')->exists();
 $sweep=static fn(Domain $d)=>ObligationAlerts::finish($d,ObligationAlerts::retained(['domain'=>$d,'operations'=>collect()],time()),time());
-$d=$row('active',null,null);Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::hold($d,'caa_unsupported',new DateTimeImmutable());$d=$d->fresh();
+$d=$row('active',null,null);Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::hold($d,'caa_unsupported',new DateTimeImmutable());$d=$d->fresh();
 same(0,DB::table('domains_observation_work')->where('domain_id',$d->id)->count(),'The held domain has no work row');
-expect(Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::stopped($d),'The domain page reads the hold without a job as stopped');
+expect(Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::stopped($d),'The domain page reads the hold without a job as stopped');
 expect(DomainQueries::alerting(Domain::whereKey($d->id))->exists(),'The open alerts count includes the hold without a job');
-expect(isset(Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::stoppedIds(collect([$d]))[$d->id]),'The list reads the hold without a job as stopped');
+expect(isset(Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::stoppedIds(collect([$d]))[$d->id]),'The list reads the hold without a job as stopped');
 $sweep($d);expect($observation($d),'The sweep records the hold without a job');
 // The sweep uses the reader's retry limit and stopped codes: a retry still queued is clear, a stopped incomplete read is not.
 $d=$row('active',null,null);Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::queueInitial($d,new DateTimeImmutable());
@@ -440,7 +440,7 @@ $sweep($d);expect(!$observation($d),'A failed read with its retry queued is not 
 $work->update(['safe_code'=>'records_incomplete','tries'=>0]);
 $sweep($d);expect($observation($d),'A stopped incomplete read is a stopped sync');
 // The list and the count read held domains in a fixed number of queries per page, never per domain.
-$records='Paymenter\\Extensions\\Servers\\Domains\\Services\\ObservationRecords';
+$records='Paymenter\\Extensions\\Servers\\Domains\\Holding\\Observation\\ObservationRecords';
 $heldPage=collect(range(1,3))->map(function()use($row,$records){$h=$row('active',null,null);$records::hold($h,'caa_unsupported',new DateTimeImmutable());return $h->fresh();});
 $queries=static function(Illuminate\Support\Collection $page)use($records):int{DB::enableQueryLog();DB::flushQueryLog();$records::stoppedIds($page);$n=count(DB::getQueryLog());DB::disableQueryLog();return $n;};
 same($queries($heldPage->take(1)),$queries($heldPage),'Three held domains read in the same number of queries as one');

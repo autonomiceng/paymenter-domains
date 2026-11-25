@@ -31,7 +31,8 @@ echo "Native fixture: pinned upstream migrations, model, rollback and HTTP guard
 // Real model casts are required to prove that reads preserve old/new encrypted payloads.
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,ObservationRecords,RegistrarRegistry,Rdap,RenewalAcceptance,RuntimeComposition,RuntimePorts,TransferPrecheck,WriteAcceptance,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,RegistrarRegistry,Rdap,RenewalAcceptance,RuntimeComposition,RuntimePorts,TransferPrecheck,WriteAcceptance,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 $codecClock=new class implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock {
     public function now():DateTimeImmutable{return new DateTimeImmutable('2026-11-04T12:00:00+00:00');}
 };

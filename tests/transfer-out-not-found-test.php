@@ -3,7 +3,8 @@
 declare(strict_types=1);
 require __DIR__.'/Support/departure-fixture.php';
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, DomainBilling, DomainObservation, HoldingLocks, ObservationRecords, ObligationAlerts, RenewalAutoPay, RenewalOwnership};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, DomainBilling, DomainObservation, HoldingLocks, ObligationAlerts, RenewalAutoPay, RenewalOwnership};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 
 $auto=new RenewalAutoPay($clock);
 $failures=[];

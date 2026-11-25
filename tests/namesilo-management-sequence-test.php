@@ -185,7 +185,7 @@ same(['contactAdd','contactDomainAssociate'],array_values(array_filter($physical
 storefrontViews();
 // The contacts editor opens once the first registrar read finished.
 $readAt=$clock->now()->format(DATE_ATOM);
-\Paymenter\Extensions\Servers\Domains\Models\Domain::withoutEvents(static fn()=>$d->fresh()->update(['observation'=>[...($d->fresh()->observation??[]),'records'=>['identity'=>\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d->fresh()),'at'=>$readAt,'last_complete_at'=>$readAt,'sequence'=>0,'families'=>[]]]]));
+\Paymenter\Extensions\Servers\Domains\Models\Domain::withoutEvents(static fn()=>$d->fresh()->update(['observation'=>[...($d->fresh()->observation??[]),'records'=>['identity'=>\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::identity($d->fresh()),'at'=>$readAt,'last_complete_at'=>$readAt,'sequence'=>0,'families'=>[]]]]));
 $ports=new OwnerPorts(fn($b)=>$driver);$owners=new OwnedDomains($clock,$ports,$management);
 $dto=$owners->present($d);same(['contacts'],array_keys($dto->management['contacts']['actions']),'The owner gets one contact-save action');
 $get=Request::create('/domains/'.$d->id);$get->setUserResolver(fn()=>$user);$get->setLaravelSession(app('request')->session());

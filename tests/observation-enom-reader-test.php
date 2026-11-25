@@ -6,7 +6,8 @@ require __DIR__.'/Support/observation-records.php';
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment,ManagementRequest,RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationProjection,ObservationRecords,ObservationSchema,ObservationWork,OwnerRecords,ReadDeferred};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationProjection,ObservationSchema,ObservationWork,OwnerRecords,ReadDeferred};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 // NS15 uses the native encrypted model and existing synthetic provider transport: a plain codec cannot prove owner authority.
 [$d,$driver,$original]=$holding(placeholderComFixtureName('ns15-enom-placeholder.com'));
 $b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$d->server_id)->sole());

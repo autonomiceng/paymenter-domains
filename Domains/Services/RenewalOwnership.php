@@ -5,6 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\{DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Data\DomainSnapshot;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 /** Collection fence only. A missing holding is not proof to retire debt or release its name. */
 final class RenewalOwnership
 {

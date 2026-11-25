@@ -3,7 +3,8 @@
 declare(strict_types=1);
 require __DIR__.'/runtime-records.php';
 use Illuminate\Support\Facades\{DB,Queue};
-use Paymenter\Extensions\Servers\Domains\Services\{RuntimeWork,ObservationRecords,DomainObservation};
+use Paymenter\Extensions\Servers\Domains\Services\{RuntimeWork,DomainObservation};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 Queue::fake();$finance=[$original->fresh()->getAttributes(),$d->fresh()->provider_expires_at->format(DATE_ATOM),$d->confirmed_revision,$d->renewal_policy];
 $state->dns=array_map(fn($i)=>['name'=>'record'.$i,'type'=>'TXT','address'=>' exact TXT '.$i.' ','mx_pref'=>10],range(12,1));
 $state->srv=array_map(fn($i)=>['service'=>'sip'.$i,'protocol'=>'tcp','priority'=>0,'weight'=>5,'port'=>443,'target'=>'sip.example.com.'],range(12,1));

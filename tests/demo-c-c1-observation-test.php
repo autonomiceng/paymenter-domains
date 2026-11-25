@@ -7,7 +7,8 @@ use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ObservationReader;
-use Paymenter\Extensions\Servers\Domains\Services\{DomainObservation,HoldingObservationWork,ObservationProjection,ObservationRecords,OwnerRecords};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainObservation,HoldingObservationWork,ObservationProjection,OwnerRecords};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 // The legacy CAA hold and its scheduled waits, the wired CAA, glue and one-clock recovery, and the wired family
 // failures with complete resume run as cases on the one observed holding. The reset restores the observation rows,
 // scheduled work, fake registrar state, config, login and the clocks.

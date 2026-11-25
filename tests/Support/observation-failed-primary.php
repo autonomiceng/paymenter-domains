@@ -4,7 +4,8 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
-use Paymenter\Extensions\Servers\Domains\Services\{ManagementPayload,ObservationRecords,ObservationWork,OwnerRecords};
+use Paymenter\Extensions\Servers\Domains\Services\{ManagementPayload,ObservationWork,OwnerRecords};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 // Ordinary, current, complete nonempty inventory: no history overflow or existing hold.
 foreach (['nameservers'=>['nameservers'=>$state->ns], 'glue_add'=>['host'=>'ns1.discovery-placeholder.com','ip'=>'8.8.8.8']] as $action=>$payload) {
     Cache::flush();$op=$submit($d,$driver,$action,$payload);

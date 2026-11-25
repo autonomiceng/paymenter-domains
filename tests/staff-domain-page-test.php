@@ -14,7 +14,8 @@ use Paymenter\Extensions\Servers\Domains\Presentation\State;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, DomainEditActions, DomainFacts, HoldingActions, Staff};
 use Paymenter\Extensions\Servers\Domains\Data\{DateEvidence, DomainSnapshot, ExpiryPrecision, TransferStatus};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, DomainAudit};
-use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, ObligationAlerts, ObservationProjection, ObservationRecords, StaffHoldingReview};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, ObligationAlerts, ObservationProjection, StaffHoldingReview};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 // Saving global settings reloads Paymenter settings from the table.
 App\Models\Setting::updateOrCreate(['key'=>'company_name','settingable_type'=>null,'settingable_id'=>null],['value'=>'Example Hosting','type'=>'string','encrypted'=>false]);config(['settings.company_name'=>'Example Hosting']);
 

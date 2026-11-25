@@ -14,7 +14,8 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head,Partial,Row,V
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{RecordDetailPage,Section};
 use Paymenter\Extensions\Servers\Domains\Presentation\{Reader,StaffTime,State};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,HoldingDeparture,HoldingReadRetry,ObservationRecords,OwnedDomains};
+use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,HoldingDeparture,HoldingReadRetry,OwnedDomains};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** One domain: its own state in the head, then its sections as rows, with Activity beside them and History as a tab.
  * Each notice sits first in the section it concerns, one per section. The page follows a change at its own cadence. */
@@ -446,7 +447,7 @@ class ViewDomain extends RecordDetailPage
         $sync=\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::result($d);
         $recordsHeld=false;
         if(($sync['title']??null)==="Couldn't read all records"){
-            try{$recordsHeld=\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::held($d);}catch(\Throwable){}
+            try{$recordsHeld=\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::held($d);}catch(\Throwable){}
         }
         // The late-read summary already says the read's cause and step, so a failed sync result is not said twice.
         if ($late) { $out['Registrar records'][]=$this->lateRecords($heldIn==='Registrar records'?$edits['note']:null); }

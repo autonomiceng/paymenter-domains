@@ -4,7 +4,8 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-use Paymenter\Extensions\Servers\Domains\Services\{FoundationSchema,HoldingObservationWork,ObservationRecords,ObservationSchema};
+use Paymenter\Extensions\Servers\Domains\Services\{FoundationSchema,HoldingObservationWork,ObservationSchema};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 FoundationSchema::install();ObservationSchema::install();
 $now=new DateTimeImmutable('2026-11-10T06:30:00+00:00');
 $clock=new class($now) implements Paymenter\Extensions\Servers\Domains\Contracts\Clock {
