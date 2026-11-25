@@ -7,6 +7,7 @@ use App\Models\{Credit, InvoiceTransaction, User};
 use Illuminate\Support\Facades\{Cache, DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 /** Proved no-send returns. Commit credit or a receipt plan atomically, then let the gateway return its receipts. */
 final readonly class Refunds
 {

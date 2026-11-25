@@ -5,7 +5,8 @@ require __DIR__.'/native-paid-cases.php';
 use App\Models\{Credit,Invoice,InvoiceTransaction,Service};
 use Illuminate\Support\Facades\{DB,Event,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,ContactRecovery,ContactSetup,NativeActivationInformation,NativePaidHooks,Refunds,UnpaidAcquisitionProof};
+use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,ContactRecovery,ContactSetup,NativeActivationInformation,NativePaidHooks,Refunds};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionPaymentReview;
 // Arrange the three visible states through native payment and closure paths.
 $cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('paid-mixed-placeholder.com'));$hosting=commerceHosting();

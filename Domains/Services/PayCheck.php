@@ -11,6 +11,7 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,RegistrarDriver};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Disposition,DriverResult,RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 /** Live name check when a customer starts to pay, before any money moves. Scoped to the native invoice pay call.
  * Local Live acceptance always precedes reads. A read that fails lets payment go: the after-payment preflight still guards the send. */
 class PayCheck

@@ -5,7 +5,8 @@ require __DIR__.'/Support/acquisition-retirement.php';
 use App\Models\{Service,ServiceCancellation};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Illuminate\Support\Facades\{Auth,DB};
-use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,DomainReservations,HoldingLocks,NativeCancellation,NativeIdentity,NativeIntentSchema,ReminderSchema,StaffHoldingReview,UnpaidAcquisitionProof};
+use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,DomainReservations,HoldingLocks,NativeCancellation,NativeIdentity,NativeIntentSchema,ReminderSchema,StaffHoldingReview};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionActions;
 // Native full cron, shared hosting invoice, no invoice model events and all-null stock.
 $cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('unpaid-mixed-placeholder.com'));$hosting=commerceHosting();

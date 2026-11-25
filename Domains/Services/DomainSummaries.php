@@ -8,6 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus,DomainSummary,Missing};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 /** Batched local projection. No transport, writes, locks, lazy model relations or actor cache. */
 final class DomainSummaries
 {

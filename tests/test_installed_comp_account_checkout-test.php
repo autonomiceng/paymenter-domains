@@ -71,7 +71,7 @@ $registry->register('enom',['token'],new class implements \Paymenter\Extensions\
 });
 $features=new \Paymenter\Extensions\Servers\Domains\Services\WriteFeatures(registration:true);
 $accepted=new \Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($binding,true,true,25,catalogue:$caps);
-$preflight=new \Paymenter\Extensions\Servers\Domains\Services\RegistrationPreflight(new \Paymenter\Extensions\Servers\Domains\Services\AccountBindings($registry),$features,$accepted);
+$preflight=new \Paymenter\Extensions\Servers\Domains\Registration\Checkout\RegistrationPreflight(new \Paymenter\Extensions\Servers\Domains\Services\AccountBindings($registry),$features,$accepted);
 $context=new \Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background,$clock->now()->modify('+300 seconds'),new \Paymenter\Extensions\Servers\Domains\Data\RequestBudget(10),$clock);
 $ready=$preflight->inspect($claimed,$held,$context);$sealed=$claims->seal($claimed,$ready,$clock->now(),$preflight);
 expect($sealed!==null,'Complimentary registration seals through existing registrar safeguards');same('complimentary',$sealed->funding['seal']['basis'],'The invoice did not supply a second payment basis');

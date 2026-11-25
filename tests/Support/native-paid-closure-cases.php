@@ -5,7 +5,8 @@ require __DIR__.'/native-paid-cases.php';
 use App\Models\{Credit,Invoice,InvoiceTransaction,Service};
 use Illuminate\Support\Facades\{DB,Event,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,ContactRecovery,ContactSetup,NativeActivationInformation,NativePaidHooks,Refunds,UnpaidAcquisitionProof};
+use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,ContactRecovery,ContactSetup,NativeActivationInformation,NativePaidHooks,Refunds};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionPaymentReview;
 // The original mixed checkout set native time before these closure cases.
 Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());

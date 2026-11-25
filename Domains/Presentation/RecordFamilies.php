@@ -53,7 +53,7 @@ final class RecordFamilies
         if($readable&&in_array($d->status,['cancelled','registration_rejected','transfer_rejected'],true)&&empty($d->observation['records'])&&$status['at']===null&&$d->provider_domain_id===null&&$d->provider_order_id===null&&$d->provider_expires_at===null){
             $ops=$d->operations;
             // An unpaid order that never went out, or a paid one whose every request provably closed unsent (OperationTerminalProof).
-            $never=$ops->count()===1&&\Paymenter\Extensions\Servers\Domains\Services\UnpaidAcquisitionProof::terminal($ops->first(),$d)
+            $never=$ops->count()===1&&\Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof::terminal($ops->first(),$d)
                 ||$ops->isNotEmpty()&&$ops->every(fn($op)=>\Paymenter\Extensions\Servers\Domains\Services\OperationTerminalProof::safe($op,$d));
             $cancelled=$never?($ops->contains('action','transfer')?'transfer':'registration'):false;
         }

@@ -33,7 +33,7 @@ $preflightRegistry->register('enom',['token'],$verifier,$read,registrationPrefli
 $preflightBindings=new \Paymenter\Extensions\Servers\Domains\Services\AccountBindings($preflightRegistry);
 $features=new WriteFeatures(registration:true);$accepted=new WriteAcceptance($binding,true,true,25,catalogue: $GLOBALS['caps']??null);
 $protocol=new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Registration($binding,$exchange);
-$fresh=new \Paymenter\Extensions\Servers\Domains\Services\RegistrationPreflight($preflightBindings,$features,$accepted);
+$fresh=new \Paymenter\Extensions\Servers\Domains\Registration\Checkout\RegistrationPreflight($preflightBindings,$features,$accepted);
 $bridge=new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Writer($binding,$features,$accepted,static function()use(&$engine){return $engine;},$protocol);
 $engine=new \Paymenter\Extensions\Servers\Domains\Services\DomainOperations($claims,$fresh,$bridge,$clock);
 Cache::forget('domains-write-slot:'.$binding->fingerprint);

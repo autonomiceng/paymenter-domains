@@ -5,7 +5,8 @@ require __DIR__.'/Support/acquisition-retirement.php';
 use App\Models\{Service,ServiceCancellation};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Illuminate\Support\Facades\{Auth,DB};
-use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,DomainReservations,HoldingLocks,NativeCancellation,NativeIdentity,NativeIntentSchema,ReminderSchema,StaffHoldingReview,UnpaidAcquisitionProof};
+use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,DomainReservations,HoldingLocks,NativeCancellation,NativeIdentity,NativeIntentSchema,ReminderSchema,StaffHoldingReview};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionActions;
 AcquisitionRetirement::boot();
 // Native gateway reversals are expected closure activity, not new late money or a second Domains return.

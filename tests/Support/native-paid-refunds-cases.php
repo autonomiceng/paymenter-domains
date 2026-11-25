@@ -5,7 +5,8 @@ require __DIR__.'/native-paid-cases.php';
 use App\Models\{Credit,Invoice,InvoiceTransaction,Service};
 use Illuminate\Support\Facades\{DB,Event,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,ContactRecovery,ContactSetup,NativeActivationInformation,NativePaidHooks,Refunds,UnpaidAcquisitionProof};
+use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,ContactRecovery,ContactSetup,NativeActivationInformation,NativePaidHooks,Refunds};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionPaymentReview;
 // Explicit failure before send can be credited once; original payment history is quiet.
 $failed=$new(placeholderComFixtureName('paid-failed-placeholder.com'),paid:false);$preflight->supported=false;$paid($failed);$preflight->supported=true;

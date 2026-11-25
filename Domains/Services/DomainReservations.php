@@ -7,6 +7,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 
 final class DomainReservations
 {

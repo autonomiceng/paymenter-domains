@@ -7,7 +7,8 @@ use App\Models\{Credit, Gateway, Invoice, InvoiceTransaction, Role};
 use Illuminate\Database\{DeadlockException, QueryException};
 use Illuminate\Support\Facades\{Cache, DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement, HoldingLocks, InvoiceMoney, InvoiceScope, MoneyDecisions, MoneyOutcome, MoneyRequest, MoneyScope, MoneyScopeChanged, MoneyWorkSchema, UnpaidAcquisitionProof, MoneyWorkUnqueued, NativeIntentSchema, PricingRule, Refunds, StaffOperationReview, StaffReviewRefused};
+use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement, HoldingLocks, InvoiceMoney, InvoiceScope, MoneyDecisions, MoneyOutcome, MoneyRequest, MoneyScope, MoneyScopeChanged, MoneyWorkSchema, MoneyWorkUnqueued, NativeIntentSchema, PricingRule, Refunds, StaffOperationReview, StaffReviewRefused};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 
 class ContentionCreditGateway extends \App\Classes\Extension\Gateway
 {

@@ -5,6 +5,8 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,RegistrationProtocol,TransferProtocol};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Action};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\RegistrationPreflight;
+use Paymenter\Extensions\Servers\Domains\Transfer\Input\TransferPreflight;
 /** A fixed action, real preflight and real bridge; construction performs no reads or sends. */
 final readonly class AcquisitionPort
 {

@@ -12,7 +12,8 @@ use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\{Auth,Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,EnomTestRegistration,ManagementEvidence,ObservationRecords,ObservationWork,OperationFailure,OperationTerminalProof,ReceiptReturns,StaffOperationReview,StaffOperations,StaffOperationWrites,StaffReviewRefused,StaffSyncReview,TransferInputs,TransferPolling,UnpaidAcquisitionProof};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,EnomTestRegistration,ManagementEvidence,ObservationRecords,ObservationWork,OperationFailure,OperationTerminalProof,ReceiptReturns,StaffOperationReview,StaffOperations,StaffOperationWrites,StaffReviewRefused,StaffSyncReview,TransferInputs,TransferPolling};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 final class OperationActions
 {
     /** Toast titles, named for the action. */

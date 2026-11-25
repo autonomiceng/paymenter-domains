@@ -7,7 +7,8 @@ require __DIR__.'/lifecycle-scenarios.php';
 Illuminate\Support\Facades\Queue::fake();
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-use Paymenter\Extensions\Servers\Domains\Services\{DomainOperations, RegistrationPreflight, WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainOperations, WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\RegistrationPreflight;
 
 
 

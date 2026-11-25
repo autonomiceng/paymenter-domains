@@ -6,7 +6,8 @@ require __DIR__.'/Support/registration-fixture.php';
 use App\Models\{Credit, Role};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Labels;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-use Paymenter\Extensions\Servers\Domains\Services\{DomainOperations, OperationTerminalProof, PricingRule, RefundProof, Refunds, RegistrationPreflight, WriteAcceptance, WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainOperations, OperationTerminalProof, PricingRule, RefundProof, Refunds, WriteAcceptance, WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\RegistrationPreflight;
 
 $staff = commerceUser(); $role = Role::create(['name' => 'Nameserver refunds', 'permissions' => ['admin.domains.manage', 'admin.invoices.update']]);
 $staff->update(['role_id' => $role->id]); $refunds = new Refunds($clock);

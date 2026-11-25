@@ -8,7 +8,8 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, TransferPolling};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{RequestStatus,State};
-use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, ComplimentaryCosts, ContactProfileHold, ContactStepRetries, EnomTestManagement, EnomTestRegistration, ManagementEvidence, ManagementProgress, OperationClaims, RegistrarCheck, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
+use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, ComplimentaryCosts, ContactProfileHold, ContactStepRetries, EnomTestManagement, EnomTestRegistration, ManagementEvidence, ManagementProgress, OperationClaims, RegistrarCheck, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, WriteHeld};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 /** Request page facts and its one notice. A null fact value is Missing and its "_sub" key names the cause. */
 final class RequestFacts
 {
@@ -114,7 +115,7 @@ final class RequestFacts
             elseif ($paid && $op->state==='rejected' && $op->funding_basis!=='paid_invoice') { [$out['refund'],$out['refund_sub']]=[null,'No paid invoice recorded. No action needed.']; }
             elseif ($closed && $op->funding_basis==='paid_invoice') {
                 // Only the closed unpaid order sweep returns these; a rejected transfer or a disposed request gets no refund.
-                $out['refund']='No credit added'; $waits=$op->state==='rejected'&&$op->safe_code===\Paymenter\Extensions\Servers\Domains\Services\UnpaidAcquisitionProof::CODE;
+                $out['refund']='No credit added'; $waits=$op->state==='rejected'&&$op->safe_code===\Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof::CODE;
             }
             $none=($out['refund']??null)==='No credit added';
             if(!$neverPaid&&(!$none||$waits)&&($limit=self::refundLimit($op,$none))!==null){$out['refund_sub']=trim(($out['refund_sub']??'').' '.$limit);}

@@ -5,6 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Enums\InvoiceTransactionStatus;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 /** Exact issued line and complete signed native funding, under HoldingLocks. No lifecycle/price inference. */
 final class RefundPayment
 {

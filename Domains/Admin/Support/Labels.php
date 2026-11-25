@@ -64,7 +64,7 @@ final class Labels
             return $op->state==='succeeded'||$op->safe_code==='registration_correction_required' ? 'Still to fix: '.self::corrections($op) : 'Sent. Waiting for the registrar charge.';
         }
         // Money can still arrive after the order closes, so "not paid" may no longer be true.
-        if ($op->safe_code===\Paymenter\Extensions\Servers\Domains\Services\UnpaidAcquisitionProof::CODE) {
+        if ($op->safe_code===\Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof::CODE) {
             if (!RequestFacts::neverPaid($op)) { return 'Order cancelled: payment recorded later'; }
             if (\App\Models\InvoiceTransaction::where('invoice_id',$op->invoice_id)->exists()) { return 'Order cancelled: payment attempted later'; }
         }

@@ -13,7 +13,8 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts;
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Capabilities,CostUnit,Disposition,DriverResult,Environment,Evidence,HistoryAcceptance,Money,QuoteEvidence,ResultReason,SendState};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceRetries,BalanceSchema,EnomTestRegistration,EnomTestSendLimitSchema,RegistrarRegistry,DomainOperations,HistoryAcceptances,OperationClaims,RegistrationPreflight,RenewalAuthority,WriteAcceptance,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceRetries,BalanceSchema,EnomTestRegistration,EnomTestSendLimitSchema,RegistrarRegistry,DomainOperations,HistoryAcceptances,OperationClaims,RenewalAuthority,WriteAcceptance,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\RegistrationPreflight;
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 // These independent recovery cases span days; arrange dated synthetic facts/costs for that window.
 $fixtureBinding=AccountBindings::binding(Account::where('server_id',$tlds[0]->server_id)->sole());

@@ -1,10 +1,11 @@
 <?php
 // Enom 444f31c TransferOrders::assertReady; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Transfer\Input;
 use Paymenter\Extensions\Servers\Domains\Contracts\SealPreflight;
 use Paymenter\Extensions\Servers\Domains\Data\{BalanceRetry, Action, Capabilities, DispatchReadiness, Money, RequestContext, SaleSelection};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, BalanceReads, BalanceRetries, ComplimentaryCosts, ContactSetup, EnomTestTransfer, OperationClaims, RegistrationProfiles, TransferInputs, TransferPrecheck, WriteAcceptance, WriteFeatures, WriteHeld, WriteMoney};
 /** Both observations are unlocked. The second immediately precedes the seal and local consumption. */
 final readonly class TransferPreflight implements SealPreflight
 {

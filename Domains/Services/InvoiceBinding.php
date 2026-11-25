@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\{DB, Event};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\PriceSnapshot;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation, Tld};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 
 /** Synchronous native hooks, dormant until 39. No jobs, provider calls or spending grants. */
 final class InvoiceBinding

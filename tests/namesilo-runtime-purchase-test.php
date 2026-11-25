@@ -61,7 +61,7 @@ $prepare=static function(string $mode)use($binding,$makeEngine,$exchange,$regist
     commerceReject(fn()=>$protocol->useReservation($transport->reservation));
     $bridge=new Writer($binding,$features=new \Paymenter\Extensions\Servers\Domains\Services\WriteFeatures(registration:true),$acceptance,static function()use(&$engine){return $engine;},$protocol);
     // Use the exact preflight policy objects required by DomainOperations::consume.
-    $fresh=new \Paymenter\Extensions\Servers\Domains\Services\RegistrationPreflight($freshBindings,$features,$acceptance,$profiles);
+    $fresh=new \Paymenter\Extensions\Servers\Domains\Registration\Checkout\RegistrationPreflight($freshBindings,$features,$acceptance,$profiles);
     $engine=new \Paymenter\Extensions\Servers\Domains\Services\DomainOperations($claims,$fresh,$bridge,$clock);
     if($mode==='unsent'){
         config(['domains.provider_send_guard'=>static function()use($registration):void {
