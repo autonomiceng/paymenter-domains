@@ -1,15 +1,81 @@
 // Staff Cancel and refund on held paid renewals, clicked in Chromium. MIT, Copyright (c) 2026 Autonomic Engineering.
 'use strict';
+const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 
+// base is a synthetic origin: every request to it is answered here, and nothing listens on a port.
 const [base, seedFile, out] = process.argv.slice(2);
 const seed = JSON.parse(fs.readFileSync(seedFile, 'utf8'));
 const receipt = { steps: [], requests: [], console: [], errors: [] };
+const app = process.env.PAYMENTER_TEST_FIXTURE;
+const publicRoot = path.join(app, 'public');
+const KERNEL = path.join(__dirname, 'refund-browser-kernel.php');
+// The kernel points the theme's missing compiled assets here.
+const ASSETS = '/refund-browser-assets/';
 // Paymenter serves Livewire updates at /paymenter/update.
 const isUpdate = (url) => /\/update$/.test(new URL(url).pathname);
 const REASON = 'Customer asked to cancel this renewal';
+
+// One PHP process per request, one at a time, as the PHP web server handled them.
+let pending = Promise.resolve();
+function serially(task) {
+  const run = pending.then(task);
+  pending = run.catch(() => {});
+  return run;
+}
+
+function kernel(request) {
+  return new Promise((resolve, reject) => {
+    // PHP diagnostics go to stderr; stdout carries only this driver's report.
+    const php = spawn(process.env.REFUND_BROWSER_PHP, [KERNEL], { cwd: app, env: process.env, stdio: ['pipe', 2, 2, 'pipe'] });
+    const reply = [];
+    const timer = setTimeout(() => php.kill('SIGKILL'), 60000);
+    php.stdio[3].on('data', (chunk) => reply.push(chunk));
+    php.on('error', reject);
+    php.on('close', (code, signal) => {
+      clearTimeout(timer);
+      if (code !== 0) return reject(new Error(`Kernel exit ${code ?? signal} for ${request.method} ${request.url}`));
+      try { resolve(JSON.parse(Buffer.concat(reply).toString('utf8'))); } catch (error) { reject(error); }
+    });
+    php.stdin.end(JSON.stringify(request));
+  });
+}
+
+async function call(method, url, headers = {}, body = Buffer.alloc(0)) {
+  const reply = await serially(() => kernel({ method, url, headers, body: body.toString('base64') }));
+  return { ...reply, body: Buffer.from(reply.body, 'base64') };
+}
+
+// A public file the PHP web server would have served itself, never a script.
+function publicFile(pathname) {
+  if (pathname === '/' || pathname.includes('..') || pathname.endsWith('.php')) return null;
+  const file = path.join(publicRoot, pathname);
+  try { return fs.statSync(file).isFile() ? file : null; } catch { return null; }
+}
+
+async function answer(route) {
+  const request = route.request();
+  const url = new URL(request.url());
+  if (url.origin !== base) {
+    receipt.errors.push(`Request to another origin: ${url.origin}`);
+    return route.abort('blockedbyclient');
+  }
+  if (url.pathname.startsWith(ASSETS)) {
+    return route.fulfill({ status: 200, contentType: url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript', body: '' });
+  }
+  const file = publicFile(url.pathname);
+  if (file) return route.fulfill({ path: file });
+  try {
+    const reply = await call(request.method(), request.url(), await request.allHeaders(), request.postDataBuffer() ?? Buffer.alloc(0));
+    const headers = reply.cookies.length ? { ...reply.headers, 'set-cookie': reply.cookies.join('\n') } : reply.headers;
+    return await route.fulfill({ status: reply.status, headers, body: reply.body });
+  } catch (error) {
+    receipt.errors.push(String((error && error.stack) || error));
+    return route.abort('failed');
+  }
+}
 
 function watch(page) {
   page.on('console', (m) => { if (m.type() === 'error') receipt.console.push(m.text()); });
@@ -76,7 +142,7 @@ async function confirm(page) {
   const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || undefined,
     args: ['--single-process', '--no-zygote', '--disable-gpu', '--disable-software-rasterizer', '--js-flags=--max-old-space-size=32 --optimize-for-size'] });
   const context = await browser.newContext({ viewport: { width: 900, height: 700 }, colorScheme: 'dark' });
-  await context.route((url) => !url.href.startsWith(base), (route) => route.abort());
+  await context.route('**/*', answer);
   try {
     const first = await context.newPage();
     watch(first);
@@ -118,7 +184,7 @@ async function confirm(page) {
     await third.clock.fastForward(60000);
     await state(third, 'failed-later');
     }
-    receipt.facts = await (await context.request.get(`${base}/refund-browser-facts`)).json();
+    receipt.facts = JSON.parse((await call('GET', `${base}/refund-browser-facts`)).body.toString('utf8'));
   } catch (error) {
     receipt.errors.push(String((error && error.stack) || error));
   }

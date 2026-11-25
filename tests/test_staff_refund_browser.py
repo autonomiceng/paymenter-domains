@@ -1,4 +1,4 @@
-"""Staff Cancel and refund on held paid renewals, clicked in Chromium against the served fixture app.
+"""Staff Cancel and refund on held paid renewals, clicked in Chromium against the fixture app's HTTP kernel.
 
 A Livewire test calls the mounted action directly, so it cannot see which button the dialog renders. This check
 types the reason and clicks the dialog's own button, then reads the saved money from the database.
@@ -8,9 +8,7 @@ from decimal import Decimal
 import json
 import os
 from pathlib import Path
-import selectors
 import shutil
-import socket
 import sqlite3
 import subprocess
 import sys
@@ -21,27 +19,8 @@ import installed_fixture
 
 ROOT = Path(__file__).resolve().parents[1]
 REASON = 'Customer asked to cancel this renewal'
-
-
-def free_port():
-    with socket.socket() as probe:
-        probe.bind(('127.0.0.1', 0))
-        return probe.getsockname()[1]
-
-
-def started(server, timeout):
-    """Wait for the built-in server's start line, without sleeping."""
-    with selectors.DefaultSelector() as selector:
-        selector.register(server.stderr, selectors.EVENT_READ)
-        lines = []
-        while selector.select(timeout):
-            line = server.stderr.readline()
-            if not line:
-                break
-            lines.append(line)
-            if 'started' in line:
-                return
-        raise AssertionError('The fixture server did not start: ' + ''.join(lines))
+# The browser driver answers this origin itself through the app's kernel; no port is opened.
+ORIGIN = 'http://paymenter.test'
 
 
 def release_fixture_cache(app, *, copied=True):
@@ -62,21 +41,12 @@ def release_fixture_cache(app, *, copied=True):
 def browse(app, root, facts, scenario):
     node = shutil.which('node')
     assert node, 'Node.js is required for the browser check'
-    php = str(ROOT/'scripts/php-test')
-    port = free_port()
-    base = f'http://127.0.0.1:{port}'
-    env = dict(os.environ, PAYMENTER_TEST_FIXTURE=str(app), REFUND_BROWSER_URL=base, REFUND_BROWSER_DATABASE=str(root/'seed.sqlite'),
-               REFUND_BROWSER_CASE=scenario, REFUND_BROWSER_CLOCK=facts['clock'], REFUND_BROWSER_EMAIL=facts['email'], REFUND_BROWSER_SEED=str(root/'seed.json'))
+    env = dict(os.environ, PAYMENTER_TEST_FIXTURE=str(app), REFUND_BROWSER_URL=ORIGIN, REFUND_BROWSER_PHP=str(ROOT/'scripts/php-test'),
+               REFUND_BROWSER_DATABASE=str(root/'seed.sqlite'), REFUND_BROWSER_CASE=scenario, REFUND_BROWSER_CLOCK=facts['clock'],
+               REFUND_BROWSER_EMAIL=facts['email'], REFUND_BROWSER_SEED=str(root/'seed.json'))
     out = Path(tempfile.mkdtemp(prefix='refund-browser-', dir=root))
-    server = subprocess.Popen([php, '-S', f'127.0.0.1:{port}', '-t', str(app/'public'), str(ROOT/'tests/Support/refund-browser-router.php')],
-                              cwd=app, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-    try:
-        started(server, 30)
-        result = subprocess.run([node, '--max-old-space-size=64', str(ROOT/'tests/Support/refund-browser.cjs'), base, str(root/'seed.json'), str(out)],
-                                cwd=ROOT, env=env, capture_output=True, text=True, timeout=240)
-    finally:
-        server.terminate()
-        server.wait(timeout=30)
+    result = subprocess.run([node, '--max-old-space-size=64', str(ROOT/'tests/Support/refund-browser.cjs'), ORIGIN, str(root/'seed.json'), str(out)],
+                            cwd=ROOT, env=env, capture_output=True, text=True, timeout=240)
     sys.stderr.write(result.stderr)
     log = app/'storage/logs/laravel.log'
     assert result.returncode == 0, f'Browser driver failed with exit {result.returncode}'
