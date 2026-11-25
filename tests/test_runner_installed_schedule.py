@@ -113,6 +113,19 @@ class InstalledSchedulingTests(unittest.TestCase):
         self.assertEqual(beside, [])
         self.assertEqual(started[:2], [0, 1])
 
+    def test_known_failures_keep_their_place_when_lifecycles_are_full(self):
+        commands = [('ui', ['tests/test_browser.py']),
+                    *[('native', [f'tests/test_installed_package_{i}.py']) for i in range(3)],
+                    ('native', ['tests/ordinary-test.php'])]
+        with tempfile.TemporaryDirectory() as scope:
+            (Path(scope)/'memory.max').write_text(str(2*1024**3))
+            started, _, _ = self.schedule(commands, {'DOMAINS_TEST_CGROUP': scope}, retry=frozenset({1, 2, 3}))
+        # Two lifecycles fill the allowance; the passing check waits behind the third known failure.
+        self.assertLess(started.index(3), started.index(4))
+        installed, ordinary = ('native', ['tests/test_installed_package_0.py']), ('native', ['tests/ordinary-test.php'])
+        previous = {(kind, argv[-1]): (True, seconds) for (kind, argv), seconds in [(installed, 60), (ordinary, 2)]}
+        self.assertEqual(runner.order_commands([installed, ordinary], previous), [ordinary, installed])
+
 
 if __name__ == '__main__':
     unittest.main()

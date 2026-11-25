@@ -8,7 +8,7 @@ puts previous failures first within each category, shortest first, then installe
 scenarios, then passing files longest first; files without a timing start before timed
 ones. It never changes the selected case set. At most two installed
 scenarios run together (one with two workers); ordinary native checks can use
-remaining workers while further installed scenarios wait.
+remaining workers while further installed scenarios wait, unless a previous failure is still waiting.
 
 Wide runs share the verified PHP executable and libraries only after sealing their mount
 read-only in the private namespace. Mutable application files, databases and temporary

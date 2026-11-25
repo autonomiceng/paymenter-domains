@@ -215,7 +215,7 @@ def order_commands(commands, previous=None):
         # passing commands start before shorter ones so short ones fill the
         # tail; a command without a timing may be long and starts first.
         failed, seconds = previous.get((kind, argv[-1]), (False, math.inf))
-        return (ORDER.index(kind), not failed, not test_scheduling.installed(kind, argv),
+        return (ORDER.index(kind), not failed, not failed and not test_scheduling.installed(kind, argv),
                 seconds if failed else -seconds, index)
     return [command for _, command in sorted(enumerate(commands), key=priority)]
 

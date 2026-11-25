@@ -64,7 +64,8 @@ def parallel(pool, commands, env, jobs, stopped, scheduling, command, record, su
                     if not installed(*commands[row]):
                         position = i
                         break
-                if position is None:
+                # Never pass a known failure in favour of a check that passed last time.
+                if position is None or (retry.intersection(waiting) and waiting[position] not in retry):
                     break
                 index = waiting[position]
             kind, argv = commands[index]
