@@ -162,7 +162,7 @@ def case_root(env: dict[str, str], *, keep: frozenset[str] = frozenset()):
 
 @contextmanager
 def command_environment(env, *, keep: frozenset[str] = frozenset()):
-    """Give each command private home, cache and temporary paths, and its own disposable app.
+    """Private home, cache and scratch paths for each command, plus its own disposable app when a fixture is set.
 
     The suite verifies the shared inputs."""
     if not env:
