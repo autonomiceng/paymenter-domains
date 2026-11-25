@@ -9,6 +9,8 @@ const { chromium } = require('playwright');
 const [base, seedFile, out] = process.argv.slice(2);
 const seed = JSON.parse(fs.readFileSync(seedFile, 'utf8'));
 const receipt = { steps: [], requests: [], redirects: [], console: [], errors: [] };
+// The browser context, whose cookie store decides what each redirect hop sends.
+let context = null;
 const app = process.env.PAYMENTER_TEST_FIXTURE;
 const publicRoot = path.join(app, 'public');
 const KERNEL = path.join(__dirname, 'refund-browser-kernel.php');
@@ -56,41 +58,63 @@ async function call(method, url, headers = {}, body = Buffer.alloc(0)) {
 
 const headerValue = (headers, name) => Object.entries(headers).find(([key]) => key.toLowerCase() === name)?.[1];
 
-/** The Cookie header after the Set-Cookie lines of one reply, as the browser would send it on the next hop. */
-function nextCookies(header, setCookies) {
-  const jar = new Map((header ?? '').split(';').map((pair) => pair.trim()).filter(Boolean)
-    .map((pair) => [pair.split('=', 1)[0], pair]));
-  for (const line of setCookies) {
-    const [pair, ...attributes] = line.split(';').map((part) => part.trim());
-    const age = attributes.find((part) => /^max-age=/i.test(part));
-    if (age && Number(age.split('=')[1]) <= 0) jar.delete(pair.split('=', 1)[0]);
-    else jar.set(pair.split('=', 1)[0], pair);
-  }
-  return [...jar.values()].join('; ');
+/** The default cookie path for a request path (RFC 6265 section 5.1.4). */
+function defaultPath(pathname) {
+  const slash = pathname.lastIndexOf('/');
+  return slash <= 0 ? '/' : pathname.slice(0, slash);
 }
+
+/** One Set-Cookie line from a reply to URL, as a cookie for the browser context; an expired one replaces and removes. */
+function parsedCookie(line, url) {
+  const [pair, ...attributes] = line.split(';').map((part) => part.trim());
+  const equals = pair.indexOf('=');
+  const cookie = { name: pair.slice(0, equals), value: pair.slice(equals + 1), domain: url.hostname,
+    path: defaultPath(url.pathname), httpOnly: false, secure: false };
+  let age = null;
+  for (const attribute of attributes) {
+    const equals = attribute.indexOf('=');
+    const [key, value] = equals < 0 ? [attribute, ''] : [attribute.slice(0, equals), attribute.slice(equals + 1).trim()];
+    switch (key.trim().toLowerCase()) {
+      case 'domain': if (value) cookie.domain = value.replace(/^\./, ''); break;
+      case 'path': if (value.startsWith('/')) cookie.path = value; break;
+      case 'expires': if (!Number.isNaN(Date.parse(value))) cookie.expires = Math.max(1, Date.parse(value) / 1000); break;
+      case 'max-age': if (/^-?\d+$/.test(value)) age = Number(value); break;
+      case 'httponly': cookie.httpOnly = true; break;
+      case 'secure': cookie.secure = true; break;
+      case 'samesite': cookie.sameSite = value.charAt(0).toUpperCase() + value.slice(1).toLowerCase(); break;
+    }
+  }
+  if (age !== null) cookie.expires = age > 0 ? Date.now() / 1000 + age : 1;
+  return cookie;
+}
+
+const cookieName = (line) => line.split('=', 1)[0].trim();
 
 /**
  * Playwright sends the target of a fulfilled redirect to the network, which this run has none of. The driver follows
- * same-origin redirects itself with the cookies each hop set, and the page shows the last answer under its first URL.
+ * same-origin redirects itself, and the page shows the last answer under its first URL. Each hop's cookies go into
+ * the browser context, and Chromium picks the ones the next URL gets.
  */
 async function follow(request) {
   let [method, url, headers, body] = [request.method(), request.url(), await request.allHeaders(), request.postDataBuffer() ?? Buffer.alloc(0)];
-  const cookies = [];
   for (let hop = 0; ; hop += 1) {
     const reply = await call(method, url, headers, body);
-    cookies.push(...reply.cookies);
-    if (!REDIRECTS.has(reply.status)) return { ...reply, cookies };
+    if (!REDIRECTS.has(reply.status)) return reply;
     const target = new URL(headerValue(reply.headers, 'location') ?? '', url);
     if (target.origin !== base) throw new Error(`Redirect from ${new URL(url).pathname} to another origin: ${target.origin}`);
     if (hop === REDIRECT_LIMIT) throw new Error(`More than ${REDIRECT_LIMIT} redirects from ${request.url()}`);
-    receipt.redirects.push({ from: new URL(url).pathname, to: target.pathname, status: reply.status });
+    await context.addCookies(reply.cookies.map((line) => parsedCookie(line, new URL(url))));
+    const sent = await context.cookies(target.href);
+    receipt.redirects.push({ from: new URL(url).pathname, to: target.pathname, status: reply.status,
+      set: reply.cookies.map(cookieName), sent: sent.map((cookie) => cookie.name) });
     // Browsers resend the method and body only for 307 and 308, and turn a POST into a GET for 301 and 302.
     if (reply.status === 303 || (reply.status < 307 && method === 'POST')) {
       method = 'GET';
       body = Buffer.alloc(0);
       headers = Object.fromEntries(Object.entries(headers).filter(([key]) => !['content-type', 'content-length'].includes(key.toLowerCase())));
     }
-    headers = { ...headers, cookie: nextCookies(headerValue(headers, 'cookie'), reply.cookies) };
+    headers = Object.fromEntries(Object.entries(headers).filter(([key]) => key.toLowerCase() !== 'cookie'));
+    if (sent.length) headers.cookie = sent.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');
     url = target.href;
   }
 }
@@ -189,7 +213,7 @@ async function confirm(page) {
   // Limit renderer overhead for these local fixture pages.
   const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || undefined,
     args: ['--single-process', '--no-zygote', '--disable-gpu', '--disable-software-rasterizer', '--js-flags=--max-old-space-size=32 --optimize-for-size'] });
-  const context = await browser.newContext({ viewport: { width: 900, height: 700 }, colorScheme: 'dark' });
+  context = await browser.newContext({ viewport: { width: 900, height: 700 }, colorScheme: 'dark' });
   await context.route('**/*', answer);
   try {
     const first = await context.newPage();

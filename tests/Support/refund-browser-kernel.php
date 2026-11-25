@@ -30,7 +30,8 @@ $app->booted(static function()use($app):void{
         $user=App\Models\User::where('email',(string)getenv('REFUND_BROWSER_EMAIL'))->sole();
         Illuminate\Support\Facades\Auth::login($user);session()->regenerate();
         session()->put('user_session',App\Models\UserSession::create(['user_id'=>$user->id,'last_activity'=>now()])->ulid);
-        return redirect('/admin');
+        // A cookie scoped to this path, which the browser keeps from the redirect to /admin.
+        return redirect('/admin')->withCookie(cookie('refund-browser-scoped','1',0,'/refund-browser-login'));
     });
     // Test-only readout of the saved money, decrypted the same way the app reads it.
     Illuminate\Support\Facades\Route::get('/refund-browser-facts',static function(){

@@ -79,8 +79,12 @@ def browse(app, root, facts, scenario):
         if log.is_file():
             print(log.read_text()[-6000:])
     assert report['errors'] == [], 'The browser steps did not finish'
-    # The session cookie set by the sign-in reaches the next hop: without it /admin would send the browser to sign in.
-    assert report['redirects'] == [{'from': '/refund-browser-login', 'to': '/admin', 'status': 302}], report['redirects']
+    # Chromium picks the cookies for the next hop: every cookie the sign-in set reaches /admin, which would otherwise
+    # send the browser to sign in, except the one scoped to the sign-in path.
+    [hop] = report['redirects']
+    assert (hop['from'], hop['to'], hop['status']) == ('/refund-browser-login', '/admin', 302), report['redirects']
+    assert 'refund-browser-scoped' in hop['set'] and 'refund-browser-scoped' not in hop['sent'], hop
+    assert set(hop['set']) - {'refund-browser-scoped'} <= set(hop['sent']), hop
     print('SAVED ' + json.dumps(report['facts']))
     return {step['label']: step for step in report['steps']}, report['facts']
 
