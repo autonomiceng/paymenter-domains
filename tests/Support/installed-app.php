@@ -79,4 +79,10 @@ same(getenv('PACKAGE_DATABASE'),config('database.connections.sqlite.database'),'
 same('wal',Illuminate\Support\Facades\DB::scalar('PRAGMA journal_mode'),'Retained fixture uses a real WAL database');
 same(1,(int)Illuminate\Support\Facades\DB::scalar('PRAGMA synchronous'),'Retained fixture synchronizes checkpoints');
 Illuminate\Support\Facades\Http::preventStrayRequests();
-Illuminate\Support\Facades\Artisan::call('migrate',['--force'=>true]);
+// The first boot of a scratch database migrates it. Later phases reuse its committed history,
+// so the command runs again only when a migration is pending and would otherwise be a no-op.
+$migrator=app('migrator');
+if(!$migrator->repositoryExists()||array_diff(array_keys($migrator->getMigrationFiles([...$migrator->paths(),database_path('migrations')])),$migrator->getRepository()->getRan())!==[]){
+    Illuminate\Support\Facades\Artisan::call('migrate',['--force'=>true]);
+}
+unset($migrator);

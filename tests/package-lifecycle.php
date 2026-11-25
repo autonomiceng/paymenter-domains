@@ -75,6 +75,18 @@ function assertRetained(string $receipt): void
         }
     }
 }
+// Reinstall clears it before the extension classes exist again.
+const VERIFIED_KEY='domains_schema_verified';
+/** Only a complete verification writes this record, so a cleared record that returns proves the native call verified. */
+function clearVerification(): void
+{
+    DB::table('settings')->whereNull('settingable_type')->whereNull('settingable_id')->where('key',VERIFIED_KEY)->delete();
+}
+function assertVerified(string $message): void
+{
+    same(VERIFIED_KEY,Installation::VERIFIED_KEY,'Lifecycle checks the shipped verification record');
+    expect(Paymenter\Extensions\Servers\Domains\Installation\Verification::current(),$message);
+}
 function assertBooted(): void
 {
     same(1,count(Event::getListeners('navigation')),'One native navigation listener');
@@ -102,21 +114,21 @@ if($phase==='server-delete'){
     Illuminate\Support\Carbon::setTestNow(TEMPLATE_UPGRADE_AT);
     if(in_array($phase,['install','reinstall'],true)){expect(!is_dir(base_path('extensions/Servers/Domains')),'Native Install branch requires absent runtime files');}
     $zip=(string)getenv('PACKAGE_ZIP');expect(is_file($zip),'Verified upload copy exists');
+    if($phase!=='install'){clearVerification();}
     $installStarted=hrtime(true);
     same('server',app(App\Services\Extensions\UploadExtensionService::class)->handle($zip),'Native uploader classifies and installs server extension');
     $traceTiming('zip_install',$installStarted);
     expect(!file_exists($zip),'Native uploader consumed upload');
     expect(is_file(base_path('extensions/Servers/Domains/manifest.json')),'Native extraction retained embedded manifest');
+    // Upstream commands catch exceptions: the lifecycle's own complete verification must have recorded this schema.
+    assertVerified('Native '.$phase.' verified the complete installed schema');
     if($phase==='install'){
-        // Upstream commands catch exceptions: assert schema and migration history directly.
-        app(Installation::class)->verify();
         same((int)getenv('PACKAGE_MIGRATIONS'),count(glob(base_path('extensions/Servers/Domains/database/migrations/*.php'))),'Installed migration inventory');
         foreach(glob(base_path('extensions/Servers/Domains/database/migrations/*.php')) as $migration){same(1,DB::table('migrations')->where('migration',basename($migration,'.php'))->count(),'Native install ran each extension migration once');}
         same(0,Account::count(),'Fresh package creates no activated accounts');
         same('active',Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation::routeState()['state'],'Fresh native installation activates the offer catalogue');
         echo "Native upload/extract/Install branch passed.\n";
     }elseif($phase==='reinstall'){
-        app(Installation::class)->verify();
         same(1,DB::table('migrations')->where('migration',Installation::BASELINE)->count(),'Reinstall retains the baseline migration record');
         assertRetained($receipt);echo "Native reinstall retained all recorded data and the TEST send limit schema.\n";
     }else{assertRetained($receipt);echo "Native upload retained all recorded data (".$phase.").\n";}
@@ -234,8 +246,8 @@ if($phase==='server-delete'){
 }elseif($phase==='verify'){
     assertBooted(); // Native provider discovery must supply these before any manual boot.
     same('active',Paymenter\Extensions\Servers\Domains\Catalogue\CatalogueActivation::routeState()['state'],'Fresh catalogue remains active across upload, upgrade and reinstall');
-    // Prove the upload-time upgrade succeeded before any second upgrade can repair it.
-    app(Installation::class)->verify();
+    // The upload recorded its verification; a cold boot must still match it before any second upgrade can repair it.
+    assertVerified('Installed schema, migrations and package still match the upload-time verification');
     assertRetained($receipt);
     $before=json_decode(file_get_contents((string)getenv('PACKAGE_MIGRATION_RECEIPT')),true,512,JSON_THROW_ON_ERROR);
     $after=DB::table('migrations')->orderBy('id')->get()->map(fn($r)=>(array)$r)->all();
@@ -252,8 +264,9 @@ if($phase==='server-delete'){
         config(['domains.enom_live'=>$oldLiveConfig,'domains.enom_identity.environment'=>$oldIdentity,'app.url'=>$oldUrl]);
     }
     // A second native command is solely an idempotency check, after proving upload.
-    $rawBefore=retained();
+    $rawBefore=retained();clearVerification();
     Artisan::call(App\Console\Commands\Extension\Upgrade::class,['type'=>'server','name'=>'Domains','oldVersion'=>'0.1.0']);
+    assertVerified('Repeated native upgrade verified the complete installed schema');
     same($after,DB::table('migrations')->orderBy('id')->get()->map(fn($r)=>(array)$r)->all(),'Repeated native upgrade changes no migration history');
     same($rawBefore,retained(),'Repeated native upgrade changes no raw retained rows');
     assertRetained($receipt);

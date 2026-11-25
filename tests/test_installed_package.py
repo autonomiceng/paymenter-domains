@@ -105,13 +105,7 @@ def main(scenario):
                 run_env['PACKAGE_RACE_WORKER'] = str(worker)
             if package:
                 package_started = time.monotonic()
-                receipt = current
-                original = root/package/receipt['archive']
-                build.verify(original, receipt)
-                upload = root/'upload'/receipt['archive']; upload.parent.mkdir(exist_ok=True)
-                shutil.copyfile(original, upload)
-                build.verify(upload, receipt)
-                run_env['PACKAGE_ZIP'] = str(upload)
+                run_env['PACKAGE_ZIP'] = str(installed_fixture.upload(root, package, current))
                 package_seconds = time.monotonic() - package_started
             phase_limit = 120 if name == 'enom-live' else 45
             timeout = phase_limit
@@ -235,15 +229,15 @@ def main(scenario):
         else:
             phase('seed')
             phase('upload', 'current')
-            phase('verify')
+            # Each verify phase boots cold and repeats one native upgrade in process.
             phase('verify')
             evidence.update(activation_default_off=True)
             # The native upgrade is now running current classes and migration history.
             phase('template-defaults')
             phase('upload', 'current')
             phase('verify')
+            # The refused delete asserts every retained row; reinstall and its cold boot follow.
             phase('server-delete')
-            phase('verify')
             # Model removal of runtime files / database restoration in this private copy.
             shutil.rmtree(installed)
             phase('reinstall', 'current')
