@@ -5,6 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AccountBindingMismatch, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{ContactProfile, Operation};
+use Paymenter\Extensions\Servers\Domains\Management\Contacts\ContactProfiles;
 /** Fresh creation/readback only. No account-inventory adoption, shared update or provider-ID input. */
 final class RegistrationProfiles
 {

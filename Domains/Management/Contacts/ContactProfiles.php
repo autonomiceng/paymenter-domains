@@ -1,12 +1,13 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Management\Contacts;
 
 use App\Models\{Server, User};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, ContactProfile};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, ContactDetails};
 
 /** Internal evidence sink, not a provider verifier. No customer-supplied IDs or account inventory adoption. */
 final class ContactProfiles

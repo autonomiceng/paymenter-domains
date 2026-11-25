@@ -4,8 +4,9 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, ManagementRequest};
 use Paymenter\Extensions\Servers\Domains\Models\{ContactProfile, Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{ContactProfiles, ManagementEvidence, ManagementReadRecovery};
+use Paymenter\Extensions\Servers\Domains\Services\{ManagementEvidence, ManagementReadRecovery};
 use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementSequence;
+use Paymenter\Extensions\Servers\Domains\Management\Contacts\ContactProfiles;
 /** Durable creation and association are separate management operations, each with one grant. */
 final class ManagementProfiles
 {
