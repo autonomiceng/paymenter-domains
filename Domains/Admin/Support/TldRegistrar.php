@@ -4,7 +4,8 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\Server;
 use Illuminate\Support\{Facades\Blade,HtmlString};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Facts,OfferState,SellerAvailability,StaffCatalogue,Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Facts,OfferState,SellerAvailability,StaffCatalogue};
+use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferTerms;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,SalesPolicy,Tld};
@@ -135,9 +136,9 @@ final class TldRegistrar
     {
         if(!$row||!$facts){return null;}
         $ending=$row->tld;$registrar=(string)$account->registrar_key;
-        $base=Writer::termsBlock($facts,$registrar,$ending,false,1,false,$now);
+        $base=OfferTerms::termsBlock($facts,$registrar,$ending,false,1,false,$now);
         if($base==='unsupported_facts'){
-            return 'This registrar '.Writer::unsupportedCause($facts,$registrar,$ending).' for .'.$ending.'.';
+            return 'This registrar '.OfferTerms::unsupportedCause($facts,$registrar,$ending).' for .'.$ending.'.';
         }
         if($base==='unsupported_term'){return 'This registrar does not offer annual renewals for .'.$ending.'.';}
         if(!$facts->fresh($now)){return null;}
@@ -146,10 +147,10 @@ final class TldRegistrar
             $defaults=OfferState::decode($account->catalogue_defaults);
         }catch(\Throwable){return "Saved sales settings can't be read for .".$ending.'.';}
         $longest=(int)($intent['longest']??$defaults['defaultLongest']??1);
-        if(($register||!$transfer)&&Writer::termsBlock($facts,$registrar,$ending,true,$longest,false,$now)!==null){
+        if(($register||!$transfer)&&OfferTerms::termsBlock($facts,$registrar,$ending,true,$longest,false,$now)!==null){
             return 'This registrar has no registration term within the saved limit for .'.$ending.'.';
         }
-        if($transfer&&Writer::termsBlock($facts,$registrar,$ending,false,$longest,true,$now)!==null){
+        if($transfer&&OfferTerms::termsBlock($facts,$registrar,$ending,false,$longest,true,$now)!==null){
             return 'This registrar does not offer transfers for .'.$ending.'.';
         }
         return null;

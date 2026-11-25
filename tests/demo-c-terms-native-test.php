@@ -4,7 +4,9 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require_once __DIR__.'/Support/FakeRegistrar.php';
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities, CallerPorts, Cost, Facts, OfferState, Pricing, Retail, TermSupport, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities, CallerPorts, Cost, Facts, OfferState, Pricing, Retail, TermSupport};
+use Paymenter\Extensions\Servers\Domains\Catalogue\Pricing\PriceWriter;
+use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferMutation;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CostUnit, Environment};
 use Paymenter\Extensions\Servers\Domains\Models\{Price, Tld};
 use Paymenter\Extensions\Servers\Domains\Services\Installation;
@@ -88,26 +90,24 @@ foreach (['enom', 'namesilo'] as $registrar) {
     $empty = $caps->renewalTerms($binding, $tld, [], new DateTimeImmutable('2027-11-20T00:00:00+00:00'));
     same([true, null, $available ? 'unknown_price' : $held], [$empty[1]['available'], $empty[1]['cost'], $empty[2]['reason']], $registrar.': empty inventory');
     // Publishing a renew:2 observation after renew:1 never replaces the stored annual retail.
-    $publish = new ReflectionMethod(Writer::class, 'publishPrices');
-    $publish->invoke((new ReflectionClass(Writer::class))->newInstanceWithoutConstructor(), $tld, $now);
+    (new PriceWriter)->publish($tld, $now);
     $annual = Retail::quote(OfferState::cost(OfferState::decode($observe('renew', 1, '14.0000'))), Pricing::rule($tld));
     $longer = Retail::quote(OfferState::cost(OfferState::decode($observe('renew', 2, '24.0000'))), Pricing::rule($tld));
     expect($annual !== $longer, $registrar.': fixture separates annual and two-year retail');
     same($annual, $tld->catalogue_retained_annual_retail, $registrar.': retained annual retail comes from renew:1 only');
     // Native writer mutations reconstruct and store facts on both metadata and bulk-price refreshes.
     // Real SQLite rows are needed to exercise the second path's independent stored-price read.
-    $mutate = new ReflectionMethod(Writer::class, 'mutate');
-    $writer = (new ReflectionClass(Writer::class))->newInstanceWithoutConstructor();
+    $mutation = new OfferMutation($clock, new PriceWriter);
     $target = clone $tld; $target->catalogue_facts = null;
     $command = new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding, 'com', $facts);
-    same(true, $mutate->invoke($writer, $command, $target, $prices, $now), $registrar.': metadata refresh changes facts');
+    same(true, $mutation->apply($command, $target, $prices, $now), $registrar.': metadata refresh changes facts');
     DB::table('domains_tlds')->where('id', $target->id)->update(['catalogue_facts' => $target->catalogue_facts]);
     same($caseEvidence, OfferState::facts($target->fresh()->catalogue_facts)->expansion,
         $registrar.': metadata writer preserves reviewed term and family evidence');
     $bulk = new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding, 'com', [
         new Cost('renew', 1, true, '15.0000', CostUnit::TermTotal,
             $registrar === 'enom' ? 'enom_bulk_bucket_1' : 'namesilo_account_annual', $now, $now->modify('+48 hours'))]);
-    same(true, $mutate->invoke($writer, $bulk, $target, $prices, $now), $registrar.': bulk refresh changes cost');
+    same(true, $mutation->apply($bulk, $target, $prices, $now), $registrar.': bulk refresh changes cost');
     DB::table('domains_tlds')->where('id', $target->id)->update(['catalogue_facts' => $target->catalogue_facts]);
     $saved = OfferState::facts($target->fresh()->catalogue_facts);
     same([[1], $caseEvidence, $facts->observedAt->format(DATE_ATOM)], [$saved->terms['renew'], $saved->expansion, $saved->observedAt->format(DATE_ATOM)],

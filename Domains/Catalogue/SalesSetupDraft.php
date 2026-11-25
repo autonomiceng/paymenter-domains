@@ -10,6 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName, CatalogueFreshness, Environment};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
+use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferTerms;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestCatalogueFacts;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AcquisitionOffers, CardFee, NativeCatalogue, PricingRules, StaffSettingsReview as Review};
 
@@ -156,11 +157,11 @@ final readonly class SalesSetupDraft
                 $intent = $before->intent->forSeller($this->actions, get_object_vars($before->intent));
                 if ($this->longest !== null) { $intent = new Intent(...[...get_object_vars($intent), 'longest' => $this->longest]); }
                 $facts = $before->facts;
-                $block = Writer::termsBlock($facts, $binding->registrarKey, $name, in_array('register', $this->actions, true),
+                $block = OfferTerms::termsBlock($facts, $binding->registrarKey, $name, in_array('register', $this->actions, true),
                     $intent->longest ?? $intent->defaultLongest, in_array('transfer', $this->actions, true), $now);
                 $row['reason'] = match ($block) {
                     null => null,
-                    'unsupported_facts' => Writer::unsupportedCause($facts, $binding->registrarKey, $name),
+                    'unsupported_facts' => OfferTerms::unsupportedCause($facts, $binding->registrarKey, $name),
                     default => 'Requested registrar terms are unsupported.',
                 };
                 [$row, $command] = $this->propose($row, $t, $before, $intent, $block, $rule, $defaultRule, $fee, $showCosts,
@@ -177,7 +178,7 @@ final readonly class SalesSetupDraft
                         $id = (int) $offer->server_id;
                         $source = $prices[$id.':'.$name] ?? collect();
                         $row['problem_account'] = $id;
-                        Writer::validateGroup([$offer], $source, $servers, $accounts);
+                        OfferTerms::validateGroup([$offer], $source, $servers, $accounts);
                         if (isset($accountErrors[$id])) {
                             throw new \DomainException($accountErrors[$id]);
                         }
@@ -307,7 +308,7 @@ final readonly class SalesSetupDraft
         if ($block !== null) { return [$row, null]; }
         $row['status'] = $needsWrite ? 'ready' : 'unchanged';
         $command = $needsWrite ? Edit::setup($binding, $t->tld, $intent, $this->actions, $this->pricing, $rule, $changedSeller, $changedRule) : null;
-        if ($command && ($reason = Writer::intentRefusal($command, $t, get_object_vars($oldIntent), $now)) !== null) {
+        if ($command && ($reason = OfferTerms::intentRefusal($command, $t, get_object_vars($oldIntent), $now)) !== null) {
             throw new \DomainException($reason);
         }
         return [$row, $command];

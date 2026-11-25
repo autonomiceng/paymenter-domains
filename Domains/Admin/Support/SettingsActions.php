@@ -4,7 +4,8 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\User;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,SalesSetup,StaffCatalogue,Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,SalesSetup,StaffCatalogue};
+use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferTerms;
 use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Reader,State};
 use Paymenter\Extensions\Servers\Domains\Services\StaffReason;
 use Filament\Actions\{Action,ActionGroup};
@@ -497,7 +498,7 @@ final class SettingsActions
     }
     private static function previewRegistrarRequirement(Tld $t): string
     {
-        $reason='This registrar '.Writer::unsupportedCause(OfferState::facts($t->catalogue_facts),(string)$t->registrar_key,(string)$t->tld);
+        $reason='This registrar '.OfferTerms::unsupportedCause(OfferState::facts($t->catalogue_facts),(string)$t->registrar_key,(string)$t->tld);
         $seller=TldFacts::sellerId($t->tld);
         if(!TldRegistrar::selectable(TldRegistrar::choices((int)$t->id),$seller)){
             return $reason.'. '.TldRegistrar::none($t->tld,$seller!==null);

@@ -4,7 +4,8 @@
 declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
 use Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Facts, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\Facts;
+use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferTerms;
 
 $seen = new DateTimeImmutable('2026-11-10T20:00:00Z');
 $facts = static fn (?bool $renewalSafe, ?bool $nameservers, ?bool $autoRenew): Facts =>
@@ -19,6 +20,6 @@ $cases = [
     'auto-renew flag missing' => [[null, false, null], TldFacts::UNSUPPORTED[3]],
 ];
 $actual = [];
-foreach ($cases as $name => [$flags, $words]) { $actual[$name] = Writer::unsupportedCause($facts(...$flags), 'enom', 'com'); }
+foreach ($cases as $name => [$flags, $words]) { $actual[$name] = OfferTerms::unsupportedCause($facts(...$flags), 'enom', 'com'); }
 same(array_map(static fn (array $case): string => $case[1], $cases), $actual, 'Requirement words follow what the registrar said: '.json_encode($actual));
 $nativeSuccessful = true; echo "Registrar requirement words passed.\n";
