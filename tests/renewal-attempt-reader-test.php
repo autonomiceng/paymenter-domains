@@ -76,6 +76,8 @@ same([null, $proof], [$facts[$review]->settlement(), $facts[$review]->readProof(
 $f = $facts[$unpaid];
 same([false, null, false], [$f->sealed(), $f->sendState(), $f->locallyRefused()], 'An unpaid closure was never sealed');
 same(['outcome' => 'renewal_cancelled_unpaid', 'evidence' => $terminal, 'recorded_at' => '2026-11-25 12:05:00'], $f->terminal(), 'Operation-level terminal proof');
+same([true, true, false], [$f->closedUnsent(), $f->closedOnlyWith($terminal), $f->closedOnlyWith([...$terminal, 'transactions' => [1]])], 'A local closure before any seal, with its exact terminal evidence');
+same([true, false, false, false], [$facts[$never]->untouched(), $f->untouched(), $facts[$open]->untouched(), $facts[$open]->closedUnsent()], 'Only a renewal with nothing recorded is untouched; a sealed one is no closure');
 
 same([false, null, null], [$facts[$register]->sealed(), $facts[$register]->claimKey(), $facts[999]->sentAt()], 'Other actions and missing rows have no renewal attempt');
 

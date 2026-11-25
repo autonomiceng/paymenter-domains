@@ -9,6 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\Money;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 use Paymenter\Extensions\Servers\Domains\Money\Returns\{ReceiptReturns, RefundPayment};
 /** Explicit internal financial transitions. Native UI/scheduling are separate consumers. */
 final readonly class RenewalCycles
@@ -63,7 +64,8 @@ final readonly class RenewalCycles
         $issue = $calendar['issue'] ?? null;
         $date = is_string($issue) ? \DateTimeImmutable::createFromFormat('!Y-m-d', $issue) : false;
         $funding = ($op->funding ?? []) + ['late_credits' => [], 'receipt_return_results' => [], 'dispute_holds' => []];
-        $ids = $op->attempt['terminal']['transactions'] ?? null;
+        $renewal = RenewalAttempt::of($op);
+        $ids = $renewal->terminal()['evidence']['transactions'] ?? null;
         if (!self::receiptRetired($op) || !FundsWaits::closedRenewal($op, $d)
             || !is_array($early) || array_keys($early) !== ['issue', 'at']
             || !$at || $at->format(DATE_ATOM) !== $early['at'] || $at->getTimestamp() !== $op->completed_at?->getTimestamp()
@@ -78,9 +80,8 @@ final readonly class RenewalCycles
             || !is_array($funding['late_credits']) || !is_array($funding['receipt_return_results'])
             || !is_array($funding['dispute_holds']) || !array_is_list($funding['dispute_holds'])
             || !is_array($ids) || !array_is_list($ids) || !$ids || count($ids) !== count(array_unique($ids, SORT_REGULAR))
-            || $op->attempt !== ['seal' => 'absent', 'send_state' => 'definitely_unsent', 'disposition' => 'rejected',
-                'rejection_basis' => 'definitely_unsent', 'terminal' => ['operation_key' => $op->operation_key,
-                    'generation' => $op->authority_generation, 'invoice_id' => $op->invoice_id, 'transactions' => $ids]]) {
+            || !$renewal->closedOnlyWith(['operation_key' => $op->operation_key, 'generation' => $op->authority_generation,
+                'invoice_id' => $op->invoice_id, 'transactions' => $ids])) {
             throw new \DomainException('Early renewal retirement requires review.');
         }
         RefundProof::requireUnsent($op, $d);
@@ -289,7 +290,8 @@ final readonly class RenewalCycles
     /** No registrar attempt. Native funding must still be checked before admission. */
     public static function registrarVirgin(Operation $op): bool
     {
-        return ($op->attempt ?? []) === [] && ($op->cost ?? []) === [] && FinancialAdjustments::registrarUnattemptedFunding($op)
+        $untouched = $op->action === 'renew' ? RenewalAttempt::of($op)->untouched() : ($op->attempt ?? []) === [];
+        return $untouched && ($op->cost ?? []) === [] && FinancialAdjustments::registrarUnattemptedFunding($op)
             && $op->provider_order_id === null && $op->confirmed_expires_at === null && $op->started_at === null && $op->request_fingerprint === null
             && !array_key_exists('dispatch_attempted_at', $op->policy ?? []);
     }

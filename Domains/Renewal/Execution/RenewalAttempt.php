@@ -37,6 +37,29 @@ final readonly class RenewalAttempt
         return $facts;
     }
 
+    /** True while nothing is recorded for this renewal's attempt: never claimed, sealed or closed. */
+    public function untouched(): bool { return $this->attempt === []; }
+
+    /**
+     * Local closure proof: the renewal stopped before any seal and was closed as rejected and definitely unsent, with
+     * no send time, reply, provider evidence, charge or order candidates recorded.
+     */
+    public function closedUnsent(): bool
+    {
+        $a = $this->attempt;
+        return ($a['disposition'] ?? null) === 'rejected' && ($a['rejection_basis'] ?? null) === 'definitely_unsent'
+            && ($a['send_state'] ?? null) === SendState::DefinitelyUnsent->value && ($a['seal'] ?? null) === 'absent'
+            && !array_intersect(array_keys($a), ['execution', 'dispatch_attempted_at', 'provider_reference', 'evidence', 'registration'])
+            && ($a['charge'] ?? null) === null && ($a['order_candidates'] ?? []) === [];
+    }
+
+    /** True when the only record is a local closure before any seal whose terminal evidence is exactly $evidence. */
+    public function closedOnlyWith(array $evidence): bool
+    {
+        return $this->attempt === ['seal' => 'absent', 'send_state' => SendState::DefinitelyUnsent->value, 'disposition' => 'rejected',
+            'rejection_basis' => 'definitely_unsent', 'terminal' => $evidence];
+    }
+
     /** True once the renewal was sealed for dispatch. From then on it is possibly sent until proved otherwise. */
     public function sealed(): bool { return ($this->attempt['seal'] ?? null) === 'sealed'; }
 
