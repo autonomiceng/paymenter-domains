@@ -256,8 +256,7 @@ function nativeCaseRows(): array
     $normal = static function (mixed $value): mixed {
         if (!is_string($value)) { return $value; }
         if (str_starts_with($value, '$2y$')) { return 'password-hash'; }
-        if (str_starts_with($value, 'eyJpdiI6')) { try { $value = 'decrypted:'.Crypt::decryptString($value); } catch (Throwable) {} }
-        return nativeWallClockMask($value);
+        return nativeWallClockMask(nativeDecrypted($value));
     };
     $rows = [];
     foreach ($pdo->query("SELECT name FROM main.sqlite_master WHERE type = 'table' ORDER BY name")->fetchAll(PDO::FETCH_COLUMN) as $table) {
@@ -272,6 +271,19 @@ function nativeCaseRows(): array
         }
     }
     return $rows;
+}
+
+/**
+ * Encrypted values by their plain text, including the prefixed legacy form and values inside a decrypted payload,
+ * such as a retained copy of an encrypted row: every encryption uses a random IV.
+ */
+function nativeDecrypted(string $value): string
+{
+    // Possessive, so a long payload cannot exhaust the PCRE JIT stack.
+    return preg_replace_callback('~(?:encrypted:v1:)?eyJpdiI6(?:[A-Za-z0-9+=]|\\\\/|/)++~', static function (array $match): string {
+        try { return 'decrypted:'.nativeDecrypted(Crypt::decryptString(str_replace(['encrypted:v1:', '\\/'], ['', '/'], $match[0]))); }
+        catch (Throwable) { return $match[0]; }
+    }, $value) ?? throw new RuntimeException('Case digest decryption failed: '.preg_last_error_msg());
 }
 
 /** Times written by the real clock, which differ by run; the synthetic clocks are months away from it. */
