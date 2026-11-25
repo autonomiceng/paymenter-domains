@@ -26,3 +26,7 @@ RUN apt-get update --error-on=any && apt-get install -y --no-install-recommends 
 RUN mkdir -p /opt/php-suite/runtime && cd / && \
     cp -al --parents usr/bin/php8.4 usr/lib/php/20240924/*.so \
         usr/lib/x86_64-linux-gnu/libicu*.so.* usr/lib/x86_64-linux-gnu/libzip.so.* /opt/php-suite/runtime/
+
+# The base image ships no bytecode and suite commands run with PYTHONDONTWRITEBYTECODE on read-only trees, so
+# compile the standard library once here; otherwise every runner, supervisor and test process compiles its imports.
+RUN python3 -m compileall -q -j0 /usr/local/lib/python3.13
