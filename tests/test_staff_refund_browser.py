@@ -22,6 +22,7 @@ REASON = 'Customer asked to cancel this renewal'
 # The browser driver answers this origin itself through the app's kernel; nothing listens on it. Chromium refuses
 # other hosts as offline before interception in the suite's network-less namespace, so it is a loopback address.
 ORIGIN = 'http://127.0.0.1'
+KERNEL = ROOT/'tests/Support/refund-browser-kernel.php'
 
 
 def release_fixture_cache(app, *, copied=True):
@@ -39,12 +40,33 @@ def release_fixture_cache(app, *, copied=True):
                 os.posix_fadvise(handle.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
 
 
+def bridge_environment(app, root, facts, scenario):
+    return dict(os.environ, PAYMENTER_TEST_FIXTURE=str(app), REFUND_BROWSER_URL=ORIGIN, REFUND_BROWSER_PHP=str(ROOT/'scripts/php-test'),
+                REFUND_BROWSER_DATABASE=str(root/'seed.sqlite'), REFUND_BROWSER_CASE=scenario, REFUND_BROWSER_CLOCK=facts['clock'],
+                REFUND_BROWSER_EMAIL=facts['email'], REFUND_BROWSER_SEED=str(root/'seed.json'))
+
+
+def kernel(env, method, path, headers):
+    """One request through the browser driver's kernel, which writes its reply on descriptor 3."""
+    wire = json.dumps({'method': method, 'url': ORIGIN+path, 'headers': headers, 'body': ''})
+    result = subprocess.run(['sh', '-c', 'exec "$0" "$1" 3>&1 1>&2', env['REFUND_BROWSER_PHP'], str(KERNEL)], input=wire,
+                            cwd=env['PAYMENTER_TEST_FIXTURE'], env=env, capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, f'Kernel failed for {method} {path}:\n{result.stderr[-4000:]}'
+    return json.loads(result.stdout)
+
+
+def mismatched_token_status(env):
+    """A signed-in staff form post whose CSRF token does not match the session."""
+    signed_in = kernel(env, 'GET', '/refund-browser-login', {})
+    cookie = '; '.join(line.split(';', 1)[0] for line in signed_in['cookies'])
+    return kernel(env, 'POST', '/admin/logout', {'cookie': cookie, 'x-csrf-token': 'mismatched',
+                                                 'content-type': 'application/x-www-form-urlencoded'})['status']
+
+
 def browse(app, root, facts, scenario):
     node = shutil.which('node')
     assert node, 'Node.js is required for the browser check'
-    env = dict(os.environ, PAYMENTER_TEST_FIXTURE=str(app), REFUND_BROWSER_URL=ORIGIN, REFUND_BROWSER_PHP=str(ROOT/'scripts/php-test'),
-               REFUND_BROWSER_DATABASE=str(root/'seed.sqlite'), REFUND_BROWSER_CASE=scenario, REFUND_BROWSER_CLOCK=facts['clock'],
-               REFUND_BROWSER_EMAIL=facts['email'], REFUND_BROWSER_SEED=str(root/'seed.json'))
+    env = bridge_environment(app, root, facts, scenario)
     out = Path(tempfile.mkdtemp(prefix='refund-browser-', dir=root))
     result = subprocess.run([node, '--max-old-space-size=64', str(ROOT/'tests/Support/refund-browser.cjs'), ORIGIN, str(root/'seed.json'), str(out)],
                             cwd=ROOT, env=env, capture_output=True, text=True, timeout=240)
@@ -57,6 +79,8 @@ def browse(app, root, facts, scenario):
         if log.is_file():
             print(log.read_text()[-6000:])
     assert report['errors'] == [], 'The browser steps did not finish'
+    # The session cookie set by the sign-in reaches the next hop: without it /admin would send the browser to sign in.
+    assert report['redirects'] == [{'from': '/refund-browser-login', 'to': '/admin', 'status': 302}], report['redirects']
     print('SAVED ' + json.dumps(report['facts']))
     return {step['label']: step for step in report['steps']}, report['facts']
 
@@ -85,6 +109,9 @@ def main(scenario='refund'):
             if scenario == 'refusals':
                 db.execute("CREATE TRIGGER refund_browser_insert_fail BEFORE INSERT ON credits "
                            "BEGIN SELECT RAISE(ABORT, 'synthetic credit failure'); END")
+        if scenario == 'refund':
+            status = mismatched_token_status(bridge_environment(app, root, facts, scenario))
+            assert status == 419, f'The kernel refuses a mismatched CSRF token as the web server does: {status}'
         release_fixture_cache(app)
         steps, saved = browse(app, root, facts, scenario)
         operation = saved['operations']

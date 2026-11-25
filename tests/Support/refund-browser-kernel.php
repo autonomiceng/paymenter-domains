@@ -4,7 +4,8 @@
 declare(strict_types=1);
 $fixture=(string)getenv('PAYMENTER_TEST_FIXTURE');
 $wire=json_decode((string)stream_get_contents(STDIN),true,8,JSON_THROW_ON_ERROR);
-foreach(['APP_ENV'=>'testing','APP_DEBUG'=>'false','APP_KEY'=>'base64:'.base64_encode(str_repeat('t',32)),'APP_URL'=>(string)getenv('REFUND_BROWSER_URL'),
+// The app runs as an HTTP request, as under the PHP web server: in console mode Laravel skips the CSRF check.
+foreach(['APP_ENV'=>'testing','APP_RUNNING_IN_CONSOLE'=>'false','APP_DEBUG'=>'false','APP_KEY'=>'base64:'.base64_encode(str_repeat('t',32)),'APP_URL'=>(string)getenv('REFUND_BROWSER_URL'),
     'DB_CONNECTION'=>'sqlite','DB_DATABASE'=>(string)getenv('REFUND_BROWSER_DATABASE'),'CACHE_STORE'=>'file','QUEUE_CONNECTION'=>'sync',
     'SESSION_DRIVER'=>'file','MAIL_MAILER'=>'array','TELEMETRY_ENABLED'=>'false','LOG_CHANNEL'=>'single'] as $key=>$value){
     putenv($key.'='.$value);$_ENV[$key]=$_SERVER[$key]=$value;
@@ -24,13 +25,12 @@ $app->booted(static function()use($app):void{
         public function __construct(private DateTimeImmutable $instant) {}
         public function now(): DateTimeImmutable { return $this->instant; }
     });
-    // Test-only sign-in: the theme's login page needs compiled assets this fixture does not have. It answers directly,
-    // since Chromium sends the target of an intercepted redirect to the network.
+    // Test-only sign-in: the theme's login page needs compiled assets this fixture does not have.
     Illuminate\Support\Facades\Route::middleware('web')->get('/refund-browser-login',static function(){
         $user=App\Models\User::where('email',(string)getenv('REFUND_BROWSER_EMAIL'))->sole();
         Illuminate\Support\Facades\Auth::login($user);session()->regenerate();
         session()->put('user_session',App\Models\UserSession::create(['user_id'=>$user->id,'last_activity'=>now()])->ulid);
-        return response('');
+        return redirect('/admin');
     });
     // Test-only readout of the saved money, decrypted the same way the app reads it.
     Illuminate\Support\Facades\Route::get('/refund-browser-facts',static function(){

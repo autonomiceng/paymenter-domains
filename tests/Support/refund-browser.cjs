@@ -8,14 +8,17 @@ const { chromium } = require('playwright');
 // base is a synthetic origin: every request to it is answered here, and nothing listens on a port.
 const [base, seedFile, out] = process.argv.slice(2);
 const seed = JSON.parse(fs.readFileSync(seedFile, 'utf8'));
-const receipt = { steps: [], requests: [], console: [], errors: [] };
+const receipt = { steps: [], requests: [], redirects: [], console: [], errors: [] };
 const app = process.env.PAYMENTER_TEST_FIXTURE;
 const publicRoot = path.join(app, 'public');
 const KERNEL = path.join(__dirname, 'refund-browser-kernel.php');
 // The kernel points the theme's missing compiled assets here.
 const ASSETS = '/refund-browser-assets/';
-// Paymenter core links staff avatars to Gravatar. The page gets an empty answer; any other origin fails the run.
-const STAND_INS = new Set(['https://www.gravatar.com']);
+// Paymenter core links staff avatars to Gravatar images, which get an empty answer. Any other request there, or to
+// any other origin, fails the run.
+const isAvatar = (request, url) => url.origin === 'https://www.gravatar.com' && url.pathname.startsWith('/avatar/')
+  && request.method() === 'GET' && request.resourceType() === 'image';
+const REDIRECT_LIMIT = 5;
 // Paymenter serves Livewire updates at /paymenter/update.
 const isUpdate = (url) => /\/update$/.test(new URL(url).pathname);
 const REASON = 'Customer asked to cancel this renewal';
@@ -50,6 +53,47 @@ async function call(method, url, headers = {}, body = Buffer.alloc(0)) {
   return { ...reply, body: Buffer.from(reply.body, 'base64') };
 }
 
+const headerValue = (headers, name) => Object.entries(headers).find(([key]) => key.toLowerCase() === name)?.[1];
+
+/** The Cookie header after the Set-Cookie lines of one reply, as the browser would send it on the next hop. */
+function nextCookies(header, setCookies) {
+  const jar = new Map((header ?? '').split(';').map((pair) => pair.trim()).filter(Boolean)
+    .map((pair) => [pair.split('=', 1)[0], pair]));
+  for (const line of setCookies) {
+    const [pair, ...attributes] = line.split(';').map((part) => part.trim());
+    const age = attributes.find((part) => /^max-age=/i.test(part));
+    if (age && Number(age.split('=')[1]) <= 0) jar.delete(pair.split('=', 1)[0]);
+    else jar.set(pair.split('=', 1)[0], pair);
+  }
+  return [...jar.values()].join('; ');
+}
+
+/**
+ * Playwright sends the target of a fulfilled redirect to the network, which this run has none of. The driver follows
+ * same-origin redirects itself with the cookies each hop set, and the page shows the last answer under its first URL.
+ */
+async function follow(request) {
+  let [method, url, headers, body] = [request.method(), request.url(), await request.allHeaders(), request.postDataBuffer() ?? Buffer.alloc(0)];
+  const cookies = [];
+  for (let hop = 0; ; hop += 1) {
+    const reply = await call(method, url, headers, body);
+    cookies.push(...reply.cookies);
+    if (reply.status < 300 || reply.status >= 400) return { ...reply, cookies };
+    const target = new URL(headerValue(reply.headers, 'location') ?? '', url);
+    if (target.origin !== base) throw new Error(`Redirect from ${new URL(url).pathname} to another origin: ${target.origin}`);
+    if (hop === REDIRECT_LIMIT) throw new Error(`More than ${REDIRECT_LIMIT} redirects from ${request.url()}`);
+    receipt.redirects.push({ from: new URL(url).pathname, to: target.pathname, status: reply.status });
+    // Browsers resend the method and body only for 307 and 308, and turn a POST into a GET for 301 and 302.
+    if (reply.status === 303 || (reply.status < 307 && method === 'POST')) {
+      method = 'GET';
+      body = Buffer.alloc(0);
+      headers = Object.fromEntries(Object.entries(headers).filter(([key]) => !['content-type', 'content-length'].includes(key.toLowerCase())));
+    }
+    headers = { ...headers, cookie: nextCookies(headerValue(headers, 'cookie'), reply.cookies) };
+    url = target.href;
+  }
+}
+
 // A public file the PHP web server would have served itself, never a script.
 function publicFile(pathname) {
   if (pathname === '/' || pathname.includes('..') || pathname.endsWith('.php')) return null;
@@ -60,9 +104,9 @@ function publicFile(pathname) {
 async function answer(route) {
   const request = route.request();
   const url = new URL(request.url());
-  if (STAND_INS.has(url.origin)) return route.fulfill({ status: 204 });
+  if (isAvatar(request, url)) return route.fulfill({ status: 204 });
   if (url.origin !== base) {
-    receipt.errors.push(`Request to another origin: ${url.origin}`);
+    receipt.errors.push(`Request to another origin: ${request.method()} ${url.origin}${url.pathname}`);
     return route.abort('blockedbyclient');
   }
   if (url.pathname.startsWith(ASSETS)) {
@@ -71,9 +115,7 @@ async function answer(route) {
   const file = publicFile(url.pathname);
   if (file) return route.fulfill({ path: file });
   try {
-    const reply = await call(request.method(), request.url(), await request.allHeaders(), request.postDataBuffer() ?? Buffer.alloc(0));
-    // Chromium sends the target of a fulfilled redirect to the network, outside this driver.
-    if (reply.status >= 300 && reply.status < 400) throw new Error(`Redirect from ${url.pathname} to ${reply.headers.Location ?? reply.headers.location}`);
+    const reply = await follow(request);
     const headers = reply.cookies.length ? { ...reply.headers, 'set-cookie': reply.cookies.join('\n') } : reply.headers;
     return await route.fulfill({ status: reply.status, headers, body: reply.body });
   } catch (error) {
@@ -196,5 +238,6 @@ async function confirm(page) {
   await context.close();
   await browser.close();
   fs.writeFileSync(path.join(out, 'receipt.json'), JSON.stringify(receipt, null, 1));
-  console.log(JSON.stringify({ steps: receipt.steps.map(({ shot, text, ...s }) => ({ ...s, text })), errors: receipt.errors, requests: receipt.requests, facts: receipt.facts ?? null }));
+  console.log(JSON.stringify({ steps: receipt.steps.map(({ shot, text, ...s }) => ({ ...s, text })), errors: receipt.errors, requests: receipt.requests,
+    redirects: receipt.redirects, facts: receipt.facts ?? null }));
 })();
