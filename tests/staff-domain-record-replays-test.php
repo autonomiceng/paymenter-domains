@@ -21,9 +21,6 @@ $state->srv=[['service'=>'sip','protocol'=>'tcp','priority'=>'1','weight'=>'2','
 App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 Illuminate\Support\Facades\Cache::flush();
 same('refreshed',(new DomainObservation($readBindings,$clock,new AccountReadBudget($clock),$ports))->run($d->id),'Observe the independent record fixture');
-$registrarDns=static function()use($edit,$last,$finish):void {
-    $edit('Nameservers','nameservers',['nameservers'=>"dns1.name-services.com\ndns2.name-services.com"])->assertNotified(ManagementForms::REQUESTED);$finish($last('nameservers'));
-};
 // A modal keeps what it opened on, though the action rebuilds from current state at save.
 $changed=Filament\Notifications\Notification::make()->danger()->title("Couldn't save this change")->body('This changed after you opened it. Reload the page and try again.');
 foreach(['dns'=>[[...$add,'address'=>'8.8.8.8'],['name'=>'mail','type'=>'A','address'=>'8.8.8.8','mx_pref'=>10]],
@@ -38,16 +35,16 @@ $before=Operation::count();$stale->callMountedAction()->assertNotified($changed)
 $stale=$open('Transfer lock','lock');$seen=$d->fresh()->observation;unset($seen['sections']['lock'],$seen['facts']['locked']);$d->fresh()->update(['observation'=>$seen]);
 same('Change',DomainEditActions::for($d->fresh())['rows']['Transfer lock'][0]->getLabel(),'An unreadable lock offers a choice');
 $stale->callMountedAction()->assertNotified($changed);same($before,Operation::count(),'A form opened on a known lock refuses once the lock is unreadable');
+// Retrying a finished DNS form finds its request, though the list has moved on since. It runs before the nameserver edits
+// below, while the registrar's own nameservers still serve the records.
+$page=$open('DNS records','dns')->setActionData(['records'=>[[...$add,'address'=>'8.8.4.8']]]);$replay=clone $page;$before=Operation::count();
+$page->callMountedAction()->assertNotified(ManagementForms::REQUESTED);$op=$last('dns');$finish($op);$state->dns[]=['name'=>'late','type'=>'A','address'=>'8.8.8.8','mx_pref'=>10];Illuminate\Support\Facades\Cache::flush();
+same('refreshed',(new DomainObservation($readBindings,$clock,new AccountReadBudget($clock),$ports))->run($d->id),'The finished list is read back');
+$replay->callMountedAction()->assertNotified(ManagementForms::REQUESTED);same([$before+1,$op->id],[Operation::count(),$last('dns')->id],'The finished form returns its request');
 // A replayed save is one request; a new open is a new one.
 $ns=['nameservers'=>"ns7.example.com\nns8.example.com"];$page=$open('Nameservers','nameservers')->setActionData($ns);$replay=clone $page;$before=Operation::count();
 $page->callMountedAction()->assertNotified(ManagementForms::REQUESTED);$op=$last('nameservers');
 $replay->callMountedAction();same([$before+1,$op->id],[Operation::count(),$last('nameservers')->id],'A replay shows the existing pending request');$finish($op);
 $edit('Nameservers','nameservers',$ns)->assertNotified(ManagementForms::REQUESTED);expect($last('nameservers')->id!==$op->id,'A new open after a finished edit is a new request');$finish($last('nameservers'));
-$registrarDns();
-// Retrying a finished DNS form finds its request, though the list has moved on since.
-$page=$open('DNS records','dns')->setActionData(['records'=>[[...$add,'address'=>'8.8.4.8']]]);$replay=clone $page;$before=Operation::count();
-$page->callMountedAction()->assertNotified(ManagementForms::REQUESTED);$op=$last('dns');$finish($op);$state->dns[]=['name'=>'late','type'=>'A','address'=>'8.8.8.8','mx_pref'=>10];Illuminate\Support\Facades\Cache::flush();
-same('refreshed',(new DomainObservation($readBindings,$clock,new AccountReadBudget($clock),$ports))->run($d->id),'The finished list is read back');
-$replay->callMountedAction()->assertNotified(ManagementForms::REQUESTED);same([$before+1,$op->id],[Operation::count(),$last('dns')->id],'The finished form returns its request');
 
 echo "Staff stale record forms and replay boundaries passed.\n";$nativeSuccessful=true;

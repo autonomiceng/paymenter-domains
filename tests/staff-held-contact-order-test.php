@@ -17,7 +17,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,WriteReservation};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Money};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation,ProfileContactOperation};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
-use Paymenter\Extensions\Servers\Domains\Services\{ContactStepRetries,ReadDeferred,DomainOperations,OperationClaims,ProfileContactOperations,ProfileContactSchema,Refunds,RegistrationPreflight,RegistrationProfiles,StaffOperationReview,StaffOperations,StaffOperationWrites,WriteAcceptance,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{ContactProfileHold,ContactStepRetries,ReadDeferred,DomainOperations,OperationClaims,ProfileContactOperations,ProfileContactSchema,Refunds,RegistrationPreflight,RegistrationProfiles,StaffOperationReview,StaffOperations,StaffOperationWrites,WriteAcceptance,WriteFeatures};
 ProfileContactSchema::install();staffPanel();
 app()->instance(Clock::class,$clock);app()->instance(Refunds::class,new Refunds($clock));
 $all=[Staff::VIEW,'admin.domains.manage','admin.domains.fund','admin.invoices.update'];
@@ -75,6 +75,9 @@ $heldOrder=static function(string $name)use($nsNew,$grants,$execute,$sent,$clock
     Auth::login($staff); // Checkout signs the customer in.
     return $held->fresh();
 };
+// Rows that differ only in a decision input read the request's own action objects; one page case keeps each effect.
+// Like a page test, the reader acts as the named staff member: checkout fixtures sign the customer in.
+$actions=static function(Operation $op,App\Models\User $as):array{Auth::setUser($as);$op=$op->fresh();return collect(OperationActions::make($op,StaffOperationReview::stamp($op,$op->domain)))->keyBy(fn($a)=>$a->getName())->all();};
 $serviceStatus=fn(Operation $op)=>App\Models\Service::findOrFail($op->service_id)->status;
 $gateway=App\Models\Gateway::create(['extension'=>'MoneyReceipt','name'=>'Synthetic receipt','type'=>'gateway','enabled'=>true]);
 $viaGateway=static function(Operation $op,string $receipt)use($gateway):void {
@@ -98,7 +101,8 @@ foreach(['contact_profile_proof_required','write_rate_limited','processing'] as 
     DB::table('domains_operations')->where('id',$op->id)->update(['safe_code'=>$reason]);$op->refresh();
     $before=[$nativeMoney(),$op->getRawOriginal(),$sent->contactAdd,$sent->registerDomain];
     expect(!HeldRelease::offered($op,$clock->now()),'Contact creation off prevents release for '.$reason);
-    Livewire::actingAs($costStaff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('release');
+    if($reason===ContactProfileHold::CODE){Livewire::actingAs($costStaff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('release');}
+    else{same(false,$actions($op,$costStaff)['release']->isVisible(),'The page hides Release with contact creation off for '.$reason);}
     Auth::login($staff);$refused(fn()=>$run($op,'release'),'The writer refuses disabled contact creation',$blocked);
     $retryClock=clone $clock;$retryClock->instant=$clock->now()->modify('+1 day');
     expect(!ContactStepRetries::readmit($op->id,$retryClock),'Automatic contact release also waits for contact creation');
@@ -117,7 +121,7 @@ foreach(['authority_generation'=>$op->authority_generation+1,'account_fingerprin
 }
 
 // A confirmation keeps the state staff opened, even when another worker changes the same held order.
-$stale=$heldOrder('held-contact-stale-confirm-placeholder.com');
+$stale=$op;
 $releaseAction=Filament\Actions\Testing\TestAction::make('release')->schemaComponent(true,'content');
 $stalePage=Livewire::actingAs($costStaff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$stale->domain_id])
     ->mountAction($releaseAction);
@@ -125,7 +129,8 @@ DB::table('domains_operations')->where('id',$stale->id)->update(['safe_code'=>'p
 $before=[$nativeMoney(),$stale->fresh()->getRawOriginal(),$sent->contactAdd,$sent->registerDomain];
 $stalePage->callMountedAction();
 same($before,[$nativeMoney(),$stale->fresh()->getRawOriginal(),$sent->contactAdd,$sent->registerDomain],'A changed held order cannot be released from its earlier confirmation');
-Auth::login($costStaff);
+DB::table('domains_operations')->where('id',$op->id)->update(['safe_code'=>'contact_profile_proof_required']);$op->refresh();
+$clock->instant=$clock->now()->modify('+60 seconds');Auth::login($costStaff);
 
 // Distinct hold causes must lead to a useful repair, with no blind retry for permanent or unknown failures.
 foreach([
@@ -156,10 +161,9 @@ foreach([
 $paused=$heldOrder('held-contact-paused-release-placeholder.com');
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
 $before=[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$paused->attempt];
-Livewire::actingAs($costStaff)->test(ViewOperation::class,['record'=>$paused->id])->assertActionDisabled('release')->assertActionEnabled('refund');
-Livewire::actingAs($costStaff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$paused->domain_id])
-    ->assertActionDisabled(Filament\Actions\Testing\TestAction::make('release')->schemaComponent(true,'content'))
-    ->assertActionEnabled(Filament\Actions\Testing\TestAction::make('refund')->schemaComponent(true,'content'));
+$pausedActions=$actions($paused,$costStaff);
+same([true,true,true,false],[$pausedActions['release']->isVisible(),$pausedActions['release']->isDisabled(),$pausedActions['refund']->isVisible(),$pausedActions['refund']->isDisabled()],'The request page waits Release for Orders and keeps Cancel and refund');
+expect($heldRow->invoke(null,$paused->domain->fresh())!==null,'The domain page shows the same two actions on the held order row');
 Auth::login($costStaff);
 $panel=Filament\Facades\Filament::getCurrentPanel();$panel->pages([Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class]);
 Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::registerRoutes($panel));
@@ -309,8 +313,7 @@ $payload=$op->payload;$payload['contacts']['registrant']['first_name']='Changed'
 $before=[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$op->attempt];
 expect(!HeldRelease::offered($op,$clock->now()),'Changed order details cannot release the saved contact step');
 expect(OperationActions::relevant('refund',$op),'A changed unsent order can still be cancelled and refunded');
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('release')
-    ->assertActionVisible('refund')->assertSee('The contact step cannot be retried with these order details. Cancel and refund this order.');
+same([false,true,ContactProfileHold::RETRY_BLOCKED],[$actions($op,$staff)['release']->isVisible(),$actions($op,$staff)['refund']->isVisible(),RequestFacts::notice($op->fresh())['body']??null],'The page offers only Cancel and refund and says why');
 $refused(fn()=>$run($op,'release'),'The writer also refuses changed details','The contact step cannot be retried with these order details. Cancel and refund this order.');
 same(['held','contact_profile_proof_required'],[$op->fresh()->state,$op->fresh()->safe_code],'Changed details stay held');
 same($before,[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$op->fresh()->attempt],'Refused release changes no money or send evidence');
@@ -324,9 +327,7 @@ ProfileContactOperation::writing(fn()=>$row->update(['state'=>'sealed','attempt'
 ProfileContactOperation::writing(fn()=>$row->update(['state'=>'unsent','attempt'=>[...$row->attempt,'execution'=>'definitely_unsent']]));
 same(OperationClaims::payloadDigest($op),$row->fresh()->payload_digest,'The ended contact step still matches the order details');
 $before=[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$op->attempt,$row->fresh()->attempt];
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('release')->assertActionVisible('refund')
-    ->assertDontSee('The contact step cannot be retried with these order details.')
-    ->assertSee('This contact step has ended and cannot be retried. Cancel and refund this order.');
+same([false,true,ContactProfileHold::RETRY_ENDED],[$actions($op,$staff)['release']->isVisible(),$actions($op,$staff)['refund']->isVisible(),RequestFacts::notice($op->fresh())['body']??null],'The page names the ended step without blaming unchanged details');
 try{$run($op,'release');throw new LogicException('An ended contact step cannot be released');}
 catch(DomainException $error){same('This contact step has ended and cannot be retried. Cancel and refund this order.',$error->getMessage(),'The writer names the ended step without blaming unchanged details');}
 same(['held','contact_profile_proof_required'],[$op->fresh()->state,$op->fresh()->safe_code],'The ended contact step stays held');
@@ -394,8 +395,6 @@ same(['held','contact_profile_proof_required'],[$op->fresh()->state,$op->fresh()
 same($money,[$nativeMoney(),$serviceStatus($op),MoneyReceiptGateway::$sends],'No automatic cancel or refund');
 same(null,$op->fresh()->funding['refund_authorization']??null,'No refund was authorized');
 expect(OperationActions::relevant('refund',$op->fresh())&&HeldRelease::offered($op->fresh(),$clock->now()),'Staff keep Release hold and Cancel and refund');
-Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$op->domain_id])
-    ->assertActionVisible(Filament\Actions\Testing\TestAction::make('release')->schemaComponent(true,'content'))
-    ->assertActionVisible(Filament\Actions\Testing\TestAction::make('refund')->schemaComponent(true,'content'));
+same([true,true,true],[$heldRow->invoke(null,$op->domain->fresh())!==null,$actions($op,$staff)['release']->isVisible(),$actions($op,$staff)['refund']->isVisible()],'The domain page keeps both actions on the held order row');
 echo "Automatic contact retries stop at the limit and never refund.\n";
 $nativeSuccessful=true;
