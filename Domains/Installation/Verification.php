@@ -12,17 +12,34 @@ final class Verification
 {
     public const KEY = 'domains_schema_verified';
 
+    /** Physical shape after the last complete check in this process, before its migration was recorded. */
+    private static ?string $checked = null;
+
     public static function run(): void
     {
+        self::check();
+        self::finish();
+    }
+
+    /** Check and repair every table without recording success; the baseline migration calls this before Laravel records it. */
+    public static function check(): void
+    {
         // Invalidate first: a failed explicit check must not leave an older success usable.
-        self::record()->delete();
-        $state = self::state();
+        self::$checked = null; self::record()->delete();
         if (Registry::tables() !== Registry::expectedTables()) {
             throw new \RuntimeException('Retained Domains table inventory differs from the installed schema.');
         }
         SchemaVerifier::batch(static function (): void { foreach (Registry::SCHEMAS as $schema) { $schema::verify(); } });
+        self::$checked = SchemaVerifier::fingerprint();
+    }
+
+    /** Record the checked, repaired shape; a changed or unchecked shape takes the full check first. */
+    public static function finish(): void
+    {
+        if (self::$checked === null || self::$checked !== SchemaVerifier::fingerprint()) { self::check(); }
+        self::$checked = null; self::record()->delete();
         self::record()->create(['key'=>self::KEY,'settingable_type'=>null,'settingable_id'=>null,
-            'type'=>'string','encrypted'=>false,'value'=>$state]);
+            'type'=>'string','encrypted'=>false,'value'=>self::state()]);
     }
 
     /** True only while the single record matches this package, migration history and physical schema. */

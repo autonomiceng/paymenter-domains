@@ -8,6 +8,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, CatalogueActivation, OfferScheduler, Capabilities};
+use Paymenter\Extensions\Servers\Domains\Installation\{Registry, Verification};
 use Paymenter\Extensions\Servers\Domains\Services\{Runtime};
 
 final class InitializationInterrupted extends RuntimeException {}
@@ -74,6 +75,19 @@ while ($interrupts) {
     $pending();
     same($intent, Setting::where('key',CatalogueActivation::KEY)->sole()->value, 'Every partial schema resumes only the original initialization intent');
 }
+// A malformed empty owned table fails the complete check inside the pending baseline migration.
+Schema::create('domains_enom_test_sends', static function (Blueprint $t): void { $t->id(); });
+$refused = false;
+try { $entry->installed(); } catch (RuntimeException $e) { $refused = $e->getMessage() === 'Retained Domains schema mismatch: domains_enom_test_sends'; }
+expect($refused, 'Malformed owned table refuses activation');
+expect(!DB::table('migrations')->where('migration', Registry::BASELINE)->exists(), 'Malformed table leaves the baseline migration pending');
+$pending();
+// After repair, the retry recreates the table; its interrupted index is resumed by the check that writes the record.
+Schema::drop('domains_enom_test_sends');
+$interrupts = ['create index "domains_enom_test_sends_account_sent_at_index"'];
+try { $entry->installed(); throw new LogicException('Index interruption did not execute'); }
+catch (InitializationInterrupted) {}
+expect(!Schema::hasIndex('domains_enom_test_sends', ['account', 'sent_at']), 'Interrupted index stays missing until the owned retry');
 Setting::saving(static function (Setting $row) use (&$commit): void {
     if (!$commit || $row->key !== CatalogueActivation::KEY) { return; }
     $commit = false; throw new InitializationInterrupted('Before active-state commit');
@@ -83,12 +97,14 @@ try { $entry->installed(); throw new LogicException('Final commit interruption d
 catch (InitializationInterrupted) {}
 $pending();
 same($intent, Setting::where('key',CatalogueActivation::KEY)->sole()->value, 'DDL and failed activation retain the same durable intent');
+expect(Verification::current(), 'Recorded verification matches the shape its own check repaired');
 $entry->installed();
 same('active', CatalogueActivation::routeState()['state'], 'Retry resumes the proven partial install and commits checked activation');
 same(2, CatalogueActivation::generation(), 'Interrupted retries grant one activation generation');
 $entry->installed(); same(2, CatalogueActivation::generation(), 'Completed retry is idempotent');
-$tables=\Paymenter\Extensions\Servers\Domains\Installation\Registry::tables();
+$tables=Registry::tables();
 same(42,count($tables),'Fresh Domains-owned table inventory');
+expect(Verification::current(), 'Completed install keeps a current verification record');
 $columns=array_sum(array_map(fn($table)=>count(Schema::getColumnListing($table)),$tables));
 echo count($tables)." owned tables, ".$columns." columns\n";
 $nativeSuccessful = true;

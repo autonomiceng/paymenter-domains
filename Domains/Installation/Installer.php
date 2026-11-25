@@ -133,9 +133,9 @@ final class Installer
         self::$owner = $owner;
         try {
             $owner->check();
-            // Each definition creates its tables; this one full verification checks them all for the owner.
+            // The baseline migration checks every table before Laravel records it, so a retry after repair can recreate one.
             app(Migrator::class)->run([dirname(__DIR__).'/database/migrations'], ['force'=>true]);
-            Verification::run(); ReminderTemplates::ensure();
+            Verification::finish(); ReminderTemplates::ensure();
             CatalogueActivation::initialize($owner);
         } finally { self::$owner = null; CallerRouting::reset(); }
     }

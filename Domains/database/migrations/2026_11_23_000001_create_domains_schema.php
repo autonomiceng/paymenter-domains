@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
-use Paymenter\Extensions\Servers\Domains\Installation\{Installer, Registry};
+use Paymenter\Extensions\Servers\Domains\Installation\{Installer, Registry, Verification};
 
 return new class extends Migration {
     public function up(): void
@@ -14,6 +14,8 @@ return new class extends Migration {
         foreach (Registry::SCHEMAS as $schema) {
             $schema::install();
         }
+        // A malformed table fails here, so Laravel leaves this migration pending and a retry after repair recreates it.
+        Verification::check();
     }
 
     public function down(): void

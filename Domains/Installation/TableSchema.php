@@ -32,7 +32,7 @@ abstract class TableSchema
         if (!$present || $owned) {
             static::seed();
         }
-        // The owning fresh install verifies every registered table once, after all are created.
+        // The owning fresh install's baseline migration verifies every registered table once, after all are created.
         if (!$owned) {
             static::verify();
         }
