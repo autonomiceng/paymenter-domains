@@ -1,0 +1,81 @@
+<?php
+// MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+require __DIR__.'/native-app.php';
+
+use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Data\SendState;
+use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
+use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
+use Paymenter\Extensions\Servers\Domains\Services\{FoundationSchema, WriteMoney};
+
+// The renewal reader returns the facts of the retained attempt record in the shapes its writers save.
+FoundationSchema::install();
+$at = '2026-11-25T04:00:00-08:00'; $start = new DateTimeImmutable('2026-11-25T12:00:00Z'); $done = new DateTimeImmutable('2026-11-25T12:05:00Z');
+$sealed = ['claim_key' => str_repeat('c', 32), 'seal' => 'sealed', 'dispatch_attempted_at' => $at, 'send_state' => 'possibly_sent',
+    'authorized_cost' => ['amount' => '8.12', 'currency' => 'USD'], 'renewal_mode' => 'ordinary'];
+$refusal = ['disposition' => 'rejected', 'send_state' => 'definitely_unsent', 'reason' => 'unsent', 'discrepancies' => []];
+$accepted = ['disposition' => 'accepted', 'send_state' => 'sent', 'reason' => 'accepted', 'discrepancies' => []];
+$proof = ['order_reference' => '1234', 'charge' => ['amount' => '8.12', 'currency' => 'USD'], 'expiry' => '2027-11-25', 'source' => 'captured_order'];
+$n = 0;
+// The rows hold only the saved attempt record; binding and transition guards have their own tests.
+$make = static function (array $row) use (&$n): int {
+    $n++;
+    return (int) Operation::withoutEvents(static fn () => Operation::create([...['domain_id' => $n, 'service_id' => $n, 'server_id' => 1, 'registrar_key' => 'enom', 'account_fingerprint' => str_repeat('f', 64),
+        'authority_generation' => 1, 'action' => 'renew', 'term' => 1, 'operation_key' => 'reader:'.$n, 'funding_basis' => 'paid_invoice',
+        'state' => 'queued', 'amount' => '8.95', 'currency' => 'USD', 'payload' => [], 'policy' => []], ...$row]))->id;
+};
+$never = $make([]);
+$open = $make(['state' => 'running', 'started_at' => $start, 'attempt' => $sealed]);
+$refused = $make(['state' => 'held', 'safe_code' => 'renewal_definitely_unsent', 'started_at' => $start, 'attempt' => [...$sealed, 'execution' => $refusal]]);
+$settled = $make(['state' => 'succeeded', 'started_at' => $start, 'completed_at' => $done,
+    'attempt' => [...$sealed, 'execution' => $accepted, 'renewal' => ['query' => ['name' => 'placeholder.com', 'years' => 1], 'order_reference' => '1234'], 'reconciliation' => $proof],
+    'renewal_proof' => ['claim_key' => $sealed['claim_key'], 'identity' => 'i', 'at' => $at, 'observation' => ['expiry' => '2027-11-25']]]);
+$lost = $make(['state' => 'pending', 'started_at' => $start, 'attempt' => [...$sealed, 'execution' => null, 'send_failure' => ['phase' => 'reply']]]);
+$review = $make(['state' => 'uncertain', 'safe_code' => 'actual_charge_changed', 'started_at' => $start,
+    'attempt' => [...$sealed, 'execution' => $accepted, 'reconciliation' => $proof]]);
+$terminal = ['operation_key' => 'reader:7', 'generation' => 1, 'invoice_id' => 9, 'transactions' => []];
+$unpaid = $make(['state' => 'rejected', 'safe_code' => 'renewal_cancelled_unpaid', 'completed_at' => $done,
+    'attempt' => ['seal' => 'absent', 'send_state' => 'definitely_unsent', 'disposition' => 'rejected', 'rejection_basis' => 'definitely_unsent', 'terminal' => $terminal]]);
+$register = $make(['action' => 'register', 'state' => 'running', 'started_at' => $start, 'attempt' => $sealed]);
+
+DB::enableQueryLog(); DB::flushQueryLog();
+$facts = RenewalAttempt::many([$never, $open, $refused, $settled, $lost, $review, $unpaid, $register, 999]);
+same(1, count(DB::getQueryLog()), 'One read gives every renewal its facts'); DB::disableQueryLog();
+same([$never, $open, $refused, $settled, $lost, $review, $unpaid, $register, 999], array_keys($facts), 'Every given id has facts');
+
+$f = $facts[$never];
+same([false, null, null, null, null, false, null, null, null, null, null, null, false], [$f->sealed(), $f->sentAt(), $f->sendState(), $f->authorizedCost(), $f->mode(),
+    $f->locallyRefused(), $f->replyOutcome(), $f->settlement(), $f->terminal(), $f->claimKey(), $f->orderReference(), $f->windowStart(), $f->observed()], 'A never-sealed renewal has no send facts');
+
+$f = $facts[$open]; $cost = $f->authorizedCost();
+same([true, SendState::PossiblySent, 'ordinary', 'USD', false, null, null, str_repeat('c', 32), null, false], [$f->sealed(), $f->sendState(), $f->mode(), $cost->currency,
+    $f->locallyRefused(), $f->replyOutcome(), $f->settlement(), $f->claimKey(), $f->orderReference(), $f->observed()], 'A sealed renewal without a reply is possibly sent');
+expect(WriteMoney::compare($cost->amount, '8.12') === 0, 'Authorized cost');
+same(['2026-11-25T12:00:00+00:00', 'UTC'], [$f->sentAt()->format(DATE_ATOM), $f->sentAt()->getTimezone()->getName()], 'Seal time in UTC');
+same((new DateTimeImmutable($at))->getTimestamp(), $f->windowStart()->getTimestamp(), 'The read window starts at the attempt start');
+same((new DateTimeImmutable($at))->getTimestamp() + ExecuteOperation::EXECUTION_SECONDS, $f->windowEnd()->getTimestamp(), 'The read window ends after the execution limit');
+
+$f = $facts[$refused];
+same([true, SendState::DefinitelyUnsent, 'unsent', null], [$f->locallyRefused(), $f->sendState(), $f->replyOutcome(), $f->settlement()], 'A prewire refusal is the local refusal');
+
+$f = $facts[$settled];
+same([false, SendState::Sent, 'accepted', '1234', true], [$f->locallyRefused(), $f->sendState(), $f->replyOutcome(), $f->orderReference(), $f->observed()], 'An accepted reply with its order and observation');
+same(['outcome' => 'succeeded', 'evidence' => $proof, 'recorded_at' => '2026-11-25 12:05:00'], $f->settlement(), 'A confirmed renewal settled on its proof');
+
+$f = $facts[$lost];
+same([false, SendState::PossiblySent, 'unknown', null], [$f->locallyRefused(), $f->sendState(), $f->replyOutcome(), $f->settlement()], 'A lost reply stays possibly sent');
+same(null, $facts[$review]->settlement(), 'Captured proof under charge review is no settlement');
+
+$f = $facts[$unpaid];
+same([false, null, false], [$f->sealed(), $f->sendState(), $f->locallyRefused()], 'An unpaid closure was never sealed');
+same(['outcome' => 'renewal_cancelled_unpaid', 'evidence' => $terminal, 'recorded_at' => '2026-11-25 12:05:00'], $f->terminal(), 'Operation-level terminal proof');
+
+same([false, null, null], [$facts[$register]->sealed(), $facts[$register]->claimKey(), $facts[999]->sentAt()], 'Other actions and missing rows have no renewal attempt');
+
+DB::enableQueryLog(); DB::flushQueryLog();
+$one = RenewalAttempt::of(Operation::findOrFail($settled)); $count = count(DB::getQueryLog()); DB::disableQueryLog();
+same(1, $count, 'One loaded renewal reads its facts without another query');
+same([$facts[$settled]->settlement(), $facts[$settled]->sentAt()->format(DATE_ATOM), $facts[$settled]->claimKey()], [$one->settlement(), $one->sentAt()->format(DATE_ATOM), $one->claimKey()], 'One renewal reads the same facts');
+echo "Renewal attempt reader passed.\n"; $nativeSuccessful = true;
