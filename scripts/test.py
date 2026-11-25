@@ -376,7 +376,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         phased = bounded and test_workers.installed_phases(argv[-1])
         local_budget = bounded and env.get('DOMAINS_TEST_BUDGET') == str(ROOT/'scripts/case_budget.py')
         resource_receipt = output / f'{index:04d}.resources.json'
-        # Browser cases run alone and include Chromium, Node and the PHP server.
+        # Browser cases include Chromium, Node and the PHP server.
         test_limits = dict(wall_seconds=60 if Path(argv[-1]).name in {'native-paid-baseline-test.php', 'renewal-safety-test.php', 'staff-release-parity-test.php', 'staff-transfer-release-parity-test.php'} else 30 if kind in ('ui', 'native') else 10,
                            memory_bytes=(768 if kind == 'ui' else 256)*1024**2)
         if local_budget and env.get('DOMAINS_TEST_LIMITS') != 'wide':

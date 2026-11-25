@@ -1,4 +1,4 @@
-"""Installed lifecycles start early and leave workers for ordinary native tests."""
+"""Installed lifecycles start early and leave workers for ordinary native tests; ordinary native tests may run beside a browser case."""
 # MIT, Copyright (c) 2026 Autonomic Engineering.
 from concurrent.futures import ThreadPoolExecutor
 import importlib.util
@@ -58,6 +58,42 @@ class InstalledSchedulingTests(unittest.TestCase):
             self.assertEqual(sorted(finished), [(i, i) for i in range(len(commands))])
             self.assertEqual(submitted, {})
             self.assertTrue(all((root/f'started-{i}').exists() for i in range(4)))
+
+    def test_bounded_browser_case_admits_four_ordinary_native_commands_and_no_lifecycle(self):
+        commands = [('ui', ['tests/test_browser.py']),
+                    *[('native', [f'tests/test_installed_package_{i}.py']) for i in range(2)],
+                    *[('native', [f'tests/ordinary-{i}-test.php']) for i in range(6)]]
+
+        class Future:
+            def __init__(self, index):
+                self.index = index
+
+            def result(self):
+                return self.index
+
+        def schedule(env):
+            pending, beside = [], []
+
+            class Pool:
+                def submit(pool, function, index, worker):
+                    if any(commands[row][0] == 'ui' for row in pending):
+                        beside.append(index)
+                        self.assertLessEqual(len(pending), 4)
+                    pending.append(index)
+                    return Future(index)
+
+            def wait_for(futures, timeout, return_when):
+                # Native commands finish before the browser case, one at a time.
+                future = min(futures, key=lambda f: commands[f.index][0] == 'ui')
+                pending.remove(future.index)
+                return {future}, set(futures) - {future}
+
+            runner.test_scheduling.parallel(Pool(), commands, env, 10, threading.Event(), threading.Lock(),
+                                            None, lambda index, value: None, {}, wait_for=wait_for)
+            return beside
+
+        self.assertEqual(schedule({'DOMAINS_TEST_CGROUP': 'test'}), [3, 4, 5, 6, 7, 8])
+        self.assertEqual(schedule({}), [])
 
 
 if __name__ == '__main__':

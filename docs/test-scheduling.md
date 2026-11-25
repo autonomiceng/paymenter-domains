@@ -4,8 +4,9 @@ Use `scripts/test.py --fail-fast --jobs 2` for a full run that cancels in-flight
 process trees on the first failure. Without `--fail-fast`, the runner stops
 scheduling and lets in-flight checks finish. Short lint, provider, contract,
 runner and package checks precede native checks. `--timings-from receipt.json`
-puts previous failures first within each category, then installed scenarios, then
-faster files. It never changes the selected case set. At most two installed
+puts previous failures first within each category, shortest first, then installed
+scenarios, then passing files longest first; files without a timing start before timed
+ones. It never changes the selected case set. At most two installed
 scenarios run together (one with two workers); ordinary native checks can use
 remaining workers while further installed scenarios wait.
 
@@ -35,7 +36,10 @@ runner's calculated budget.
 The 1024 MiB host reserve applies only to available memory; the default budget
 permits two workers. Explicit `--jobs 1` retains serial support on small hosts
 and requires only a budget of at least 1024 MiB. This is a scheduling reservation,
-not a kernel memory limit. UI checks always drain the pool and run alone.
+not a kernel memory limit. UI checks always drain the pool before they start. With
+`DOMAINS_TEST_CGROUP` set, at most four ordinary native checks run beside a UI check
+under the per-case ceilings (768 MiB for the UI check, 256 MiB each); installed
+lifecycles wait for it to finish. Without it, UI checks run alone.
 Installed-package checks also drain the pool and run alone when `DOMAINS_TEST_CGROUP`
 is unset. With it set, at most two installed lifecycles run concurrently (one with
 two workers), leaving spare workers for ordinary native work. Standalone installed-package

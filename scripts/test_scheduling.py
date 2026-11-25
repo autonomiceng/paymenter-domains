@@ -10,17 +10,27 @@ def installed(kind, argv):
         name.startswith('test_installed_package') or name == 'test_installed_namesilo_enrollment.py')
 
 
+# Ordinary native commands that may run beside a browser case under the
+# per-case memory ceilings: 768 MiB for the browser case and 256 MiB each
+# leave 256 MiB of a 2 GiB scope for the controller.
+BESIDE_UI = 4
+
+
 def parallel(pool, commands, env, jobs, stopped, scheduling, command, record, submitted, *, wait_for=wait):
     waiting, pending, available = list(range(len(commands))), {}, list(range(jobs))
-    exclusive_running = False
+    exclusive_running = None
     installed_limit = min(2, max(1, jobs-1))
+    beside_limit = BESIDE_UI if env.get('DOMAINS_TEST_CGROUP') else 0
     while pending or (waiting and not stopped.is_set()):
         while available and waiting and not stopped.is_set():
+            beside_ui = exclusive_running is not None and commands[exclusive_running][0] == 'ui'
+            if exclusive_running is not None and not (beside_ui and len(pending) <= beside_limit):
+                break
             position = 0
             index = waiting[position]
             active = sum(installed(*commands[row]) for row, _ in pending.values())
             # Bypass only blocked native lifecycles, never a category/exclusive barrier.
-            if installed(*commands[index]) and active >= installed_limit:
+            if installed(*commands[index]) and (beside_ui or active >= installed_limit):
                 position = None
                 for i, row in enumerate(waiting):
                     if commands[row][0] != 'native':
@@ -35,7 +45,7 @@ def parallel(pool, commands, env, jobs, stopped, scheduling, command, record, su
             exclusive = kind == 'ui' or (not env.get('DOMAINS_TEST_CGROUP') and kind != 'lint'
                                          and argv[-1].endswith('.py')
                                          and Path(argv[-1]).name.startswith('test_installed_'))
-            if exclusive_running or (exclusive and pending):
+            if (exclusive and pending) or (beside_ui and kind != 'native'):
                 break
             with scheduling:
                 if stopped.is_set():
@@ -44,7 +54,8 @@ def parallel(pool, commands, env, jobs, stopped, scheduling, command, record, su
                 future = pool.submit(command, index, worker)
                 pending[future] = (index, worker)
                 submitted[future] = index
-                exclusive_running = exclusive
+                if exclusive:
+                    exclusive_running = index
                 waiting.pop(position)
         if not pending:
             break
@@ -54,5 +65,5 @@ def parallel(pool, commands, env, jobs, stopped, scheduling, command, record, su
             record(index, future.result())
             submitted.pop(future, None)
             available.append(worker)
-        if not pending:
-            exclusive_running = False
+            if index == exclusive_running:
+                exclusive_running = None
