@@ -4,7 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/fixture-checkpoint.php';
 use Illuminate\Support\Facades\{Crypt, DB, Facade};
 
-/** Case order of every multi-case command: listed, reverse or shuffle:<seed>. Order proofs change only this line. */
+/** Case order of every multi-case command: listed, reverse, second-first or shuffle:<seed>. Order proofs change only this line. */
 const NATIVE_CASE_ORDER = 'listed';
 /** Receipt instrumentation that accumulates across cases; the reset never rewinds it. */
 const NATIVE_CASE_KEPT_STATICS = ['FixtureSetup'];
@@ -21,6 +21,8 @@ function nativeFixtureCases(array $cases, array $state = []): void
     $names = match (true) {
         NATIVE_CASE_ORDER === 'listed' => $names,
         NATIVE_CASE_ORDER === 'reverse' => array_reverse($names),
+        // The second case runs straight after the checkpoint, with no earlier case or restore before it.
+        NATIVE_CASE_ORDER === 'second-first' => [...array_slice($names, 1, 1), ...array_slice($names, 0, 1), ...array_slice($names, 2)],
         str_starts_with(NATIVE_CASE_ORDER, 'shuffle:') => nativeCaseShuffle($names, substr(NATIVE_CASE_ORDER, 8)),
     };
     // Process CPU spent on the shared reset, reported so cohort growth can be priced.
@@ -271,13 +273,18 @@ function nativeCaseEffects(array $prepared, array $state): string
         }
     }
     ksort($changes);
-    $ports = static function (mixed $value, int $depth = 0) use (&$ports): mixed {
+    // An anonymous class name holds the absolute path of its file, which differs for each export: use file and line.
+    $class = static function (object $value): string {
+        $class = new ReflectionClass($value);
+        return $class->isAnonymous() ? 'anonymous@'.basename((string) $class->getFileName()).':'.$class->getStartLine() : $value::class;
+    };
+    $ports = static function (mixed $value, int $depth = 0) use (&$ports, $class): mixed {
         return match (true) {
             is_array($value) => array_map(static fn ($item) => $ports($item, $depth), $value),
             $value instanceof DateTimeInterface => $value->format(DATE_ATOM),
             $value instanceof Illuminate\Database\Eloquent\Model => [$value::class, $value->getKey()],
             $value instanceof Closure, $value instanceof UnitEnum => is_object($value) ? $value::class : $value,
-            is_object($value) => $depth > 2 ? $value::class : [$value::class, $ports(get_object_vars($value), $depth + 1)],
+            is_object($value) => $depth > 2 ? $class($value) : [$class($value), $ports(get_object_vars($value), $depth + 1)],
             default => $value,
         };
     };
