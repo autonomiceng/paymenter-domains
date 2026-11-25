@@ -27,7 +27,7 @@ $make = static function (array $row) use (&$n): int {
         'state' => 'queued', 'amount' => '8.95', 'currency' => 'USD', 'payload' => [], 'policy' => []], ...$row]))->id;
 };
 $never = $make([]);
-$open = $make(['state' => 'running', 'started_at' => $start, 'attempt' => $sealed]);
+$open = $make(['state' => 'running', 'started_at' => $start, 'request_fingerprint' => str_repeat('d', 64), 'attempt' => $sealed]);
 $refused = $make(['state' => 'held', 'safe_code' => 'renewal_definitely_unsent', 'started_at' => $start, 'attempt' => [...$sealed, 'execution' => $refusal]]);
 $settled = $make(['state' => 'succeeded', 'started_at' => $start, 'completed_at' => $done,
     'attempt' => [...$sealed, 'execution' => $accepted, 'renewal' => ['query' => ['name' => 'example.com', 'years' => 1], 'order_reference' => '1234'], 'reconciliation' => $proof],
@@ -58,6 +58,7 @@ same(['2026-11-25T12:00:00+00:00', 'UTC'], [$f->sentAt()->format(DATE_ATOM), $f-
 same($at, $f->windowStart()->format(DATE_ATOM), 'The read window starts at the seal time as recorded');
 same([$start->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds')->format(DATE_ATOM), 'UTC'], [$f->windowEnd()->format(DATE_ATOM), $f->windowEnd()->getTimezone()->getName()], 'The read window ends after the execution limit, in UTC');
 same([ExecutionRecord::Absent, null, null, null], [$f->replyRecord(), $f->reply(), $f->acceptance(), $f->readProof()], 'No reply, acceptance or proof yet');
+same([$start->getTimestamp(), str_repeat('d', 64), null, null], [$f->claimedAt()->getTimestamp(), $f->requestDigest(), $facts[$never]->claimedAt(), $facts[$settled]->requestDigest()], 'The sealed attempt claim time and request digest');
 
 $f = $facts[$refused];
 same([true, SendState::DefinitelyUnsent, 'unsent', null], [$f->locallyRefused(), $f->sendState(), $f->replyOutcome(), $f->settlement()], 'A prewire refusal is the local refusal');

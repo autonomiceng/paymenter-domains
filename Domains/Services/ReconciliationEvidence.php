@@ -14,8 +14,8 @@ final class ReconciliationEvidence
         $a = $op->attempt ?? []; $query = OperationClaims::query($op, $domain);
         // A renewal's attempt facts come from its reader. The proof saves the window start as recorded, in its stored zone.
         $renewal = $op->action === 'renew' ? RenewalAttempt::of($op) : null;
-        if (!$op->started_at || !$op->request_fingerprint || ($renewal ? $renewal->claimKey() === null || $renewal->windowStart() === null
-            : !isset($a['claim_key'], $a['dispatch_attempted_at']) || ($a['seal'] ?? null) !== 'sealed')) { throw new \DomainException('No sealed original attempt.'); }
+        if ($renewal ? $renewal->claimedAt() === null || $renewal->requestDigest() === null || $renewal->claimKey() === null || $renewal->windowStart() === null
+            : !$op->started_at || !$op->request_fingerprint || !isset($a['claim_key'], $a['dispatch_attempted_at']) || ($a['seal'] ?? null) !== 'sealed') { throw new \DomainException('No sealed original attempt.'); }
         $start = ExecutionWindow::start($op)??throw new \DomainException('Missing execution window.');
         $end = $renewal?->windowEnd() ?? $start->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds');
         $dispatch = $renewal?->windowStart() ?? new \DateTimeImmutable($a['dispatch_attempted_at']);

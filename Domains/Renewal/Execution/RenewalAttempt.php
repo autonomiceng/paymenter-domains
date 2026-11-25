@@ -16,7 +16,8 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 final readonly class RenewalAttempt
 {
     private function __construct(private array $attempt, private ?string $state = null, private ?string $safeCode = null,
-        private ?\DateTimeImmutable $startedAt = null, private ?\DateTimeImmutable $completedAt = null, private ?Operation $row = null) {}
+        private ?\DateTimeImmutable $startedAt = null, private ?\DateTimeImmutable $completedAt = null, private ?Operation $row = null,
+        private ?string $digest = null) {}
 
     /** The renewal's attempt facts from this row as loaded. A renewal that was never sealed has no send facts but may have terminal proof. */
     public static function of(Operation $op): self
@@ -24,14 +25,15 @@ final readonly class RenewalAttempt
         if ($op->action !== 'renew') { return new self([]); }
         $attempt = $op->attempt;
         // The retained proof is read only when a caller asks for it, as before this reader.
-        return new self(is_array($attempt) ? $attempt : [], $op->state, $op->safe_code, $op->started_at, $op->completed_at, $op);
+        return new self(is_array($attempt) ? $attempt : [], $op->state, $op->safe_code, $op->started_at, $op->completed_at, $op,
+            is_string($op->request_fingerprint) ? $op->request_fingerprint : null);
     }
 
     /** Attempt facts of many renewals in one read, keyed by every given operation id. */
     public static function many(array $operationIds): array
     {
         $ids = array_values(array_unique(array_map('intval', $operationIds)));
-        $rows = $ids ? Operation::whereKey($ids)->get(['id', 'action', 'state', 'safe_code', 'attempt', 'renewal_proof', 'started_at', 'completed_at'])->keyBy('id') : collect();
+        $rows = $ids ? Operation::whereKey($ids)->get(['id', 'action', 'state', 'safe_code', 'attempt', 'renewal_proof', 'started_at', 'completed_at', 'request_fingerprint'])->keyBy('id') : collect();
         $facts = [];
         foreach ($ids as $id) { $facts[$id] = ($row = $rows->get($id)) ? self::of($row) : new self([]); }
         return $facts;
@@ -65,6 +67,12 @@ final readonly class RenewalAttempt
 
     /** When the renewal was sealed for dispatch, in UTC; null when never sealed. */
     public function sentAt(): ?\DateTimeImmutable { return $this->windowStart()?->setTimezone(new \DateTimeZone('UTC')); }
+
+    /** When the sealed attempt was claimed, as stored; null when never sealed. The registrar read window cannot open before it. */
+    public function claimedAt(): ?\DateTimeImmutable { return $this->sealed() ? $this->startedAt : null; }
+
+    /** The request digest the sealed attempt was claimed with; null when never sealed or when none was recorded. */
+    public function requestDigest(): ?string { return $this->sealed() && $this->digest !== null && $this->digest !== '' && $this->digest !== '0' ? $this->digest : null; }
 
     /** The sealed attempt's claim key, its exact identity; null when never sealed. */
     public function claimKey(): ?string
