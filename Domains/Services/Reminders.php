@@ -5,6 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
+use Paymenter\Extensions\Servers\Domains\Holding\Retention\HistoryRetention;
 /** Dormant explicit worker. No provider calls, financial mutation, registration or default activation. */
 final readonly class Reminders
 {

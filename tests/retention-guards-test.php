@@ -6,7 +6,8 @@ require_once __DIR__.'/Support/fixture-cases.php';
 use App\Models\User;
 use Illuminate\Support\Facades\{Crypt,DB};
 use Paymenter\Extensions\Servers\Domains\Models\DomainAudit;
-use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,AuditEvents,EnomTestSendLimitSchema,HistoryRetention,NativeUserDeletion,RetentionSchema,StaffSettingsReview,UserDeletionSchema};
+use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,AuditEvents,EnomTestSendLimitSchema,NativeUserDeletion,RetentionSchema,StaffSettingsReview,UserDeletionSchema};
+use Paymenter\Extensions\Servers\Domains\Holding\Retention\HistoryRetention;
 // Every case starts from the same installed extension, owner, other customer, server and DNS profile. Each case adds
 // its own history, money or deletion rows; the deletion cases boot the native user deletion hooks themselves.
 $nativeSuccessful=false;
@@ -86,7 +87,7 @@ $event=DB::table(AuditArchives::TABLE)->where('event_key',$key)->value('id');
 $utc=DomainAudit::create(['subject_type'=>'dns_profile','subject_id'=>$profile->id,'user_id'=>$owner->id,'event'=>'dns_profile_saved','after_revision'=>'1','data'=>[],'created_at'=>gmdate('Y-m-d H:i:s',$now)]);
 DB::table(RetentionSchema::MARKS)->where('family','domain_audit')->where('source_id',$utc->id)->delete();
 $at=Carbon\CarbonImmutable::createFromTimestampUTC($now)->addMonthsNoOverflow(13)->getTimestamp()+1;
-if(is_file(dirname(__DIR__).'/Domains/Services/HistoryRetention.php')){HistoryRetention::tick($at);}
+HistoryRetention::tick($at);
 expect(!DomainAudit::whereKey($a->id)->exists(),'Marked ordinary audit leaves active history after thirteen months');
 expect(DomainAudit::whereKey($legacy->id)->exists(),'Unmarked mixed-zone audit stays active');
 same('unmarked_audit_time',DB::table(RetentionSchema::MARKS)->where('family','domain_audit')->where('source_id',$legacy->id)->value('reason'),'Ambiguous audit is listed explicitly');
@@ -146,7 +147,7 @@ try{$owner->fresh()->delete();}catch(DomainException $e){same(NativeUserDeletion
 expect(App\Models\Invoice::whereKey($invoice->id)->exists(),'Customer deletion cannot cascade retained invoices');
 expect(App\Models\User::whereKey($owner->id)->exists(),'Financial invoice still has its native owner');
 $rows=DB::table('invoices')->get()->toJson();
-if(is_file(dirname(__DIR__).'/Domains/Services/HistoryRetention.php')){HistoryRetention::tick(strtotime('2036-11-11 UTC'));}
+HistoryRetention::tick(strtotime('2036-11-11 UTC'));
 same($rows,DB::table('invoices')->get()->toJson(),'Even after seven years money is never automatically deleted');
 };
 
@@ -156,7 +157,7 @@ $cases['sends']=static function()use($fixed):void {extract($fixed);
 $now=1800000000;$account=str_repeat('a',64);
 DB::table(EnomTestSendLimitSchema::ACCOUNTS)->insert(['account'=>$account]);
 foreach([$now-30*86400-1,$now-30*86400,$now-86400,$now-1] as $at){DB::table(EnomTestSendLimitSchema::SENDS)->insert(['account'=>$account,'command'=>'GetDomains','sent_at'=>$at]);}
-if(is_file(dirname(__DIR__).'/Domains/Services/HistoryRetention.php')){HistoryRetention::tick($now);}
+HistoryRetention::tick($now);
 same(3,DB::table(EnomTestSendLimitSchema::SENDS)->count(),'TEST sends older than thirty days are deleted');
 // The count window remains intact; a second turn at the same time is harmless.
 HistoryRetention::tick($now);same(3,DB::table(EnomTestSendLimitSchema::SENDS)->count(),'Repeated sweep does not delete boundary or live sends');

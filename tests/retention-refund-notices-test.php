@@ -6,7 +6,8 @@ require __DIR__.'/Support/reminder-mail.php';
 require_once __DIR__.'/Support/reserved-fixtures.php';
 use Illuminate\Support\Facades\{DB,Mail};
 use Paymenter\Extensions\Servers\Domains\Mail\DomainNotice;
-use Paymenter\Extensions\Servers\Domains\Services\{HistoryRetention,ReminderSchedules,Reminders,RetentionSchema};
+use Paymenter\Extensions\Servers\Domains\Services\{ReminderSchedules,Reminders,RetentionSchema};
+use Paymenter\Extensions\Servers\Domains\Holding\Retention\HistoryRetention;
 
 $op=$newTransfer(placeholderComFixtureName('retention-refund-placeholder.com'),0,true,false);
 ReminderSchedules::enroll($op->server_id);

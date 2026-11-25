@@ -27,7 +27,7 @@ final class DomainAudit extends Model
             $row->attributes['time_zone']='UTC';
         });
         static::created(static function (self $row): void {
-            \Paymenter\Extensions\Servers\Domains\Services\HistoryRetention::recorded('domain_audit',(int)$row->id,time());
+            \Paymenter\Extensions\Servers\Domains\Holding\Retention\HistoryRetention::recorded('domain_audit',(int)$row->id,time());
         });
         static::updating(static function (): never { throw new \DomainException('Domain audit is append-only.'); });
         static::deleting(static function (): never { throw new \DomainException('Domain audit is retained.'); });

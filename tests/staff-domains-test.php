@@ -326,10 +326,10 @@ $excluded=[
 // Auto Pay uses its own explicit labels in this class.
 preg_match_all("/'([a-z][a-z0-9_]*)'\\s*=>/",explode('public static function statuses()', $labelsSource, 2)[0],$autoPay);
 $excluded['RenewalAutoPay.php']=$autoPay[1];
-foreach(new RecursiveIteratorIterator(new RecursiveDirectoryIterator(dirname(__DIR__).'/Domains/Services')) as $file){
+foreach(['Services','Holding'] as $folder){foreach(new RecursiveIteratorIterator(new RecursiveDirectoryIterator(dirname(__DIR__).'/Domains/'.$folder)) as $file){
     if($file->getExtension()!=='php'){continue;}
     foreach(array_diff($inventory(file_get_contents($file->getPathname())),$excluded[$file->getBasename()]??[]) as $code){$emitted[$code][]=$file->getBasename();}
-}
+}}
 // These services forward codes from closed vocabularies rather than emitting literals at the write.
 preg_match_all('/[\'"]([a-z][a-z0-9_]*)[\'"]/D',file_get_contents(dirname(__DIR__).'/Domains/Services/WriteHeld.php'),$holds);
 foreach($holds[1] as $code){$emitted[$code][]='WriteHeld whitelist';}
