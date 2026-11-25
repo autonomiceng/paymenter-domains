@@ -18,7 +18,7 @@ $fixed=compact('u','server','query','original','name','placeholder','pin');
 
 // Malformed reminder days.
 $cases['malformed']=static function()use($fixed):void {extract($fixed);
-    $pin();
+    $pin();same($original,(array)(clone $query)->sole(),'Each case starts from the enrolled reminder schedule');
 // Every stored JSON shape exercises the parser and locked write guard.
 // The two parser failure classes also traverse the real mounted form for each field.
 foreach(['before','after'] as $field){
@@ -42,9 +42,10 @@ foreach(['before','after'] as $field){
 
 // Reminder writes recheck saved days under the write lock and save a valid schedule.
 $cases['write']=static function()use($fixed):void {extract($fixed);
-    $pin();
+    $pin();same($original,(array)(clone $query)->sole(),'Each case starts from the enrolled reminder schedule');
 // Recheck retained data under the write lock, including corruption after a valid mount.
 $page=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$server])->mountAction($name)->assertActionMounted($name);
+same((int)$original['revision'],(int)$page->get('mountedActions.0.data.revision'),'A valid mount carries the saved revision');
 $query->update(['after_days'=>'[{}]']);$before=(array)(clone $query)->sole();
 $page->setActionData(['enabled'=>true,'before'=>'7','after'=>'3','reason'=>'Refuse changed saved days'])->callMountedAction()->assertHasNoActionErrors()->assertNotified("Couldn't save reminders");
 same($before,(array)(clone $query)->sole(),'Corruption after mounting changes no saved facts');
@@ -64,7 +65,7 @@ same('[7,30]',(clone $query)->sole()->before_days,'Valid schedule remains editab
 
 // Reminder recovery and permission refusals.
 $cases['recovery']=static function()use($fixed):void {extract($fixed);
-    $pin();
+    $pin();same($original,(array)(clone $query)->sole(),'Each case starts from the enrolled reminder schedule');
 // A repaired schedule still needs a fresh form: its saved days were never shown.
 $query->update([...$original,'before_days'=>'{']);
 $page=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$server])->mountAction($name)->assertActionMounted($name);
