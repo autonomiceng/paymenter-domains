@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
+use Paymenter\Extensions\Servers\Domains\Staff\Requests\RequestReads;
 use Paymenter\Extensions\Servers\Domains\Services\StaffReason;
 use Filament\Actions\Action;
 use Filament\Forms\Components\{Hidden,Textarea};
@@ -40,7 +41,7 @@ final class OperationActions
                 // confirm button only as $action; any other name gets this action itself, whose button reopens the dialog.
                 if($name==='refund'){$action->modalCancelActionLabel('Keep order')->modalSubmitAction(fn(Action $action)=>$action->color('danger'));}
             }
-            $account=$name==='release'&&!$contactRecovery&&$op->state==='held'?RequestFacts::account($op)['account']:null;
+            $account=$name==='release'&&!$contactRecovery&&$op->state==='held'?RequestReads::account($op)['account']:null;
             // A held complimentary cost comes back on release, so release sends nothing until the cost is approved.
             $sends=EnomTestRegistration::releaseSends($op,$account)&&!\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::awaitingApproval($op)?RequestFacts::sendWords($op,$account):null;
             // Every release starts paid work again, so each one asks first and says what it starts.

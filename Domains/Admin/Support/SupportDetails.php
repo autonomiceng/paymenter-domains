@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Filament\Actions\Action;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Staff\Requests\RequestReads;
 use Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers;
 /** The facts registrar support needs to find one request, as plain text for a support ticket. It reads only; nothing is sent. */
 final class SupportDetails
@@ -11,7 +12,7 @@ final class SupportDetails
     public const LABEL='Copy details for support';
     public static function text(Operation $op): string
     {
-        $account=RequestFacts::account($op);
+        $account=RequestReads::account($op);
         $attempt=RegistrarAnswers::readable($op)?($op->attempt??[]):[];
         try { $sent=isset($attempt['dispatch_attempted_at'])?(new \DateTimeImmutable((string)$attempt['dispatch_attempted_at']))->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s').' UTC':null; }
         catch (\Throwable) { $sent=null; }

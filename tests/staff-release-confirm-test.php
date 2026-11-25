@@ -3,13 +3,14 @@
 declare(strict_types=1);
 require __DIR__.'/Support/staff-operation-fixture.php';
 use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Staff\Requests\RequestReads;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{OperationActions,RequestFacts};
 use Paymenter\Extensions\Servers\Domains\Services\EnomTestRegistration;
 $release=static fn($op)=>collect(OperationActions::make($op->fresh(),'release-confirm-stamp'))->first(fn($a)=>$a->getName()==='release');
 $op=$held('staff-release-confirm-placeholder.com');
-$account=RequestFacts::account($op)['account'];$original=(bool)$account->processing_enabled;
+$account=RequestReads::account($op)['account'];$original=(bool)$account->processing_enabled;
 expect(!EnomTestRegistration::releaseSends($op,$account),'This release queues the request instead of sending it to Enom at once');
 foreach([true,false] as $processing){
     DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>$processing]);

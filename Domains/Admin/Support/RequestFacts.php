@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Staff\Release\{HeldRelease,ReleaseDecision};
+use Paymenter\Extensions\Servers\Domains\Staff\Requests\RequestReads;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, TransferPolling};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
@@ -328,7 +329,7 @@ final class RequestFacts
     {
         if ($release!==null && $op->state==='held') { return 'Not sent.'; }
         $read=fn():?Account=>$release!==null&&array_key_exists($key=OperationQueries::accountKey($op->server_id,$op->registrar_key,$op->account_fingerprint),$release['accounts'])
-            ?$release['accounts'][$key]:self::account($op)['account'];
+            ?$release['accounts'][$key]:RequestReads::account($op)['account'];
         if (ManagementEvidence::recoverable($op)) {
             return self::ordersOn($op,$read(),$accounts)?'Not sent. It will retry automatically.':'Not sent. '.self::ORDERS_OFF;
         }
@@ -382,7 +383,7 @@ final class RequestFacts
     /** A held order that goes out by itself once Orders are on, named by its registrar account. */
     private static function ordersPaused(Operation $op): string
     {
-        $name=trim((string)\App\Models\Server::whereKey($op->server_id)->value('name'));
+        $name=trim((string)RequestReads::account($op)['value']);
         return 'Not sent: Orders paused for '.($name!==''?$name:'this registrar account').'. This order goes out when Orders are turned on.';
     }
     /** When a timed retry runs next, in the viewer's time zone like every other time here. Nothing once it is due: the next tick takes it. */
@@ -466,14 +467,14 @@ final class RequestFacts
                 'action'=>$recover?HistoryRecovery::NAME:(OperationActions::readLimit($op)&&in_array($op->action,['register','transfer','renew'],true)?'resume_reads':'recheck')];
         }
         if ($op->state==='queued' && ($ready=self::readyMessage($op))!==null) {
-            $ordersLink=!ManagementEvidence::retryable($op)||!self::account($op)['account']?->processing_enabled;
+            $ordersLink=!ManagementEvidence::retryable($op)||!RequestReads::account($op)['account']?->processing_enabled;
             return ['title'=>$ready,'tone'=>'warning',...($ordersLink?['link'=>'registrars','link_label'=>self::ORDERS_SWITCH]:[])];
         }
         if (($until=\Paymenter\Extensions\Servers\Domains\Services\RenewalRepeatWait::until($op))!==null) { return self::repeatWait($op,$until); }
         if ($op->state==='held'&&$op->safe_code==='management_unconfirmed'&&ManagementEvidence::idle($op)) { return self::unsent($op); }
         $review=BalanceRetries::pending($op)?OperationClaims::balanceAdmissionReason($op)
             :(in_array($op->safe_code,BalanceRetries::REVIEW_CODES,true)?$op->safe_code:null);
-        if(BalanceRetries::pending($op)&&self::heldByOrders($review,$op,self::account($op)['account'])){$review=null;}
+        if(BalanceRetries::pending($op)&&self::heldByOrders($review,$op,RequestReads::account($op)['account'])){$review=null;}
         if($op->state==='held'&&$review==='pre_send_interrupted'){return ['title'=>rtrim(Labels::reason($review),'.').'.','body'=>'Check status before retrying or cancelling this request.','tone'=>'warning','action'=>'recheck'];}
         if($op->state==='held'&&$review!==null){
             $payment=$review==='balance_retry_funding_changed';
@@ -487,7 +488,7 @@ final class RequestFacts
             $releasable=OperationActions::relevant('release',$op);
             $recovery=RequestHoldReasons::for($op);$fix=$recovery['link_label'];
             $body=$facts['contact_missing']??$facts['contact_recovery']??$facts['contact_ready']??$facts['auto_renew']??$facts['admission']??null;
-            $owes=OperationActions::customerOwes($op); $account=self::account($op)['account'];
+            $owes=OperationActions::customerOwes($op); $account=RequestReads::account($op)['account'];
             // A contact hold has its own recovery, and only the customer can clear what they owe.
             $open=$owes===null&&$op->safe_code!=='contact_details_required';
             $sends=$open&&EnomTestRegistration::releaseSends($op,$account)&&$releasable;
@@ -732,11 +733,10 @@ final class RequestFacts
             ? '"Use updated account details" copies the account details into this request. The transfer stays on hold for a separate release review. If the auth code deadline has passed, it cannot be released.'
             : '"Use updated account details" copies the account details into this request and puts it back in the queue. It may then be sent to '.$registrar.'.');
     }
-    /** Account name, registrar and mode for the Registrar account fact. */
     /** A change that never reached the registrar. The system tries it again itself, so staff only have a step when the switch stops it or the tries run out. */
     private static function unsent(Operation $op): array
     {
-        $again=ManagementEvidence::recoverable($op); $account=self::account($op)['account'];
+        $again=ManagementEvidence::recoverable($op); $account=RequestReads::account($op)['account'];
         try { $off=$op->registrar_key==='enom'&&$account&&!EnomTestManagement::accepted(AccountBindings::binding($account)); } catch (\Throwable) { $off=false; }
         if ($off) {
             return ['title'=>RequestStatus::UNSENT,'body'=>'DNS, nameservers and contacts are Off for this registrar account. Turn them on'.($again?' and we try again by ourselves.':', then make the change again on the domain page.'),
@@ -744,13 +744,5 @@ final class RequestFacts
         }
         return $again?['title'=>RequestStatus::UNSENT,'body'=>'We try again by ourselves. There is nothing to do yet.','tone'=>'info']
             :['title'=>RequestStatus::UNSENT,'body'=>'We won\'t try again. If the change is still needed, make it again on the domain page.','tone'=>'warning','link'=>'domain'];
-    }
-    public static function account(Operation $op): array
-    {
-        $account=Account::where('server_id',$op->server_id)->where('registrar_key',$op->registrar_key)->where('account_fingerprint',$op->account_fingerprint)->first();
-        $registrar=['enom'=>'Enom','namesilo'=>'NameSilo'][$op->registrar_key]??null;
-        $name=\App\Models\Server::whereKey($op->server_id)->value('name');
-        if (!$name) { return ['value'=>null,'sub'=>'Registrar account not found. Check Registrars.','account'=>null]; }
-        return ['value'=>$name,'sub'=>implode(', ',array_filter([$registrar,['test'=>'Test','live'=>'Live'][$account?->environment]??null])) ?: null,'account'=>$account];
     }
 }

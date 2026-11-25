@@ -5,6 +5,7 @@ declare(strict_types=1);
 require __DIR__.'/Support/operation-fixture.php';
 use App\Models\{Credit,Invoice,InvoiceTransaction,Role,Service};
 use Illuminate\Support\Facades\{Auth,DB};
+use Paymenter\Extensions\Servers\Domains\Staff\Requests\RequestReads;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{OperationActions,RequestFacts};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
 use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts,EnomTestRegistration,FundsWaits,HoldingLocks,OwnerPorts,OwnerSetup,StaffOperationReview,StaffOperations,TransferNotifications};
@@ -121,7 +122,7 @@ $check('complimentary price hold release only retries until its cost is approved
     try{
         $priced=$newRegistration(placeholderComFixtureName('comp-price-check-placeholder.com'));
         $priced->update(['state'=>'held','safe_code'=>'registrar_price_increased','policy'=>[...$priced->policy,'complimentary_cost_review'=>['amount'=>'8.01','usual'=>'8.00']]]);
-        Auth::login($staff);$op=$priced->fresh();$account=RequestFacts::account($op)['account'];
+        Auth::login($staff);$op=$priced->fresh();$account=RequestReads::account($op)['account'];
         expect(EnomTestRegistration::releaseSends($op,$account),'Release would send this complimentary registration to Enom');
         expect(Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::awaitingApproval($op),'The held cost is above the usual with no approval');
         $release=static fn(Paymenter\Extensions\Servers\Domains\Models\Operation $op)=>collect(OperationActions::make($op,'price-check-stamp'))->first(fn($a)=>$a->getName()==='release')->getModalHeading();

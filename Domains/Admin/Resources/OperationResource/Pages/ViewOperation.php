@@ -11,6 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head, Row, Value};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{RecordDetailPage, Section};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Staff\Requests\RequestReads;
 use Paymenter\Extensions\Servers\Domains\Presentation\{Fact, Reader, State};
 use Paymenter\Extensions\Servers\Domains\Services\{EnomAnswers, StaffOperationReview, StaffSettingsReview};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
@@ -37,6 +38,9 @@ class ViewOperation extends RecordDetailPage
     public string $reviewStamp='';
     #[\Livewire\Attributes\Locked]
     public string $answerStamp='';
+    /** Each Livewire request reads the request's account and release facts once (RequestReads), and drops them with its response. */
+    public function boot(): void { RequestReads::open(); }
+    public function dehydrate(): void { RequestReads::close(); }
     public function mount(int|string $record): void
     { parent::mount($record); $this->stamp($this->getRecord()); }
     private function stamp(Operation $op): void
@@ -75,6 +79,7 @@ class ViewOperation extends RecordDetailPage
     private function reloadRequest(): void
     {
         // Writers load their own locked models. Rebuild every snapshot, including after a caught partial failure.
+        RequestReads::open();
         $this->stamp($this->getRecord()->refresh());
         unset($this->cachedSchemas['content']);
         $this->cachedActions=[]; $this->cachedHeaderActions=[];
@@ -131,7 +136,7 @@ class ViewOperation extends RecordDetailPage
             $review=self::transferReview($op,$transferChecks,$lead);
         } elseif ($notice) { $review[]=RequestRows::notice($notice,$state,$lead); }
         elseif ($status['reason']!==null&&($reason=RequestRows::sentence($status['reason']))!==null) { $review[]=RequestRows::reason($reason); }
-        $account=RequestFacts::account($op);
+        $account=RequestReads::account($op);
         $domain = $op->domain;
         $customer = Staff::can('admin.users.view') ? $domain?->user : null;
         $email = $customer?->email;

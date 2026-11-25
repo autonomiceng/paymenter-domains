@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Staff\Release;
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Staff\Requests\RequestReads;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceRetries,ComplimentaryInvoices,ContactDetails,ContactProfileHold,ContactRecovery,ContactSetup,
     EnomTestRegistration,EnomTestRenewal,EnomTestTransfer,HoldingLocks,OperationClaims,RefundPayment,RefundProof,RenewalFunding,RenewalStop,StaffOperationReview,StaffOperationWrites,TransferInputs};
 /** Releases a held request back to the queue. The offer and the locked writer run the same check over complete native facts. */
@@ -17,15 +18,19 @@ final class HeldRelease
         if($op->action==='renew'){unset($policy['renewal_execution']);$op->renewal_admission_until=null;}
         $op->update(['state'=>'queued','safe_code'=>null,'policy'=>$policy]);
     }
-    /** Read-only facts only; no locks, mutation, registrar exchange or spending grant. */
+    /** Read-only facts only; no locks, mutation, registrar exchange or spending grant. A request page reads them once. */
     public static function readFacts(Operation $op): array
     {
-        return HoldingLocks::take($op->domain, staffId:Auth::id(), advisory:true, completeInvoices:true);
+        return RequestReads::releaseFacts($op,static fn():array=>HoldingLocks::take($op->domain, staffId:Auth::id(), advisory:true, completeInvoices:true));
     }
     /** The offer: the signed-in staff member may release this request now. The writer repeats every check under its locks. */
     public static function offered(Operation $op,\DateTimeImmutable $now): bool
     {
         if($op->state!=='held'||!in_array($op->action,ReleaseDecision::ACTIONS,true)||BalanceRetries::pending($op)){return false;}
+        return RequestReads::offered($op,static fn():bool=>self::offer($op,$now));
+    }
+    private static function offer(Operation $op,\DateTimeImmutable $now): bool
+    {
         try {
             $l=self::readFacts($op);$op=$l['operations']->firstWhere('id',$op->id)??throw new \DomainException('Missing request.');$op->setRelation('domain',$l['domain']);
             StaffOperationReview::requirePermission($l['staff'],'release',$op);StaffOperationReview::requireHistory($op,'release');
