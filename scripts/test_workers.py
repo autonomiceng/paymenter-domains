@@ -7,28 +7,25 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import re
 import shutil
 import subprocess
+import sys
 import uuid
 import native
 import installed_fixture
 import php_suite
 
 # Runner controls and named test options that reach commands; other DOMAINS_TEST_ values stay with the caller.
-RUNNER_ENV = ['DOMAINS_TEST_CGROUP', 'DOMAINS_TEST_BUDGET', 'DOMAINS_TEST_RECEIPTS', 'DOMAINS_TEST_LIMITS',
+RUNNER_ENV = ['DOMAINS_TEST_CGROUP', 'DOMAINS_TEST_BUDGET', 'DOMAINS_TEST_LIMITS',
               'DOMAINS_TEST_JOBS', 'DOMAINS_TEST_FIXTURE_COSTS', 'DOMAINS_TEST_MONEY_SCALE_FULL_MATRIX']
 # The MariaDB launcher reaches the caller's Docker client, and keeps its short socket scratch path, through
-# these until it gets its own isolated home.
+# these, and runs unconfined, until it gets its own isolated home.
 MARIADB_HOST_PATHS = frozenset({'HOME', 'XDG_RUNTIME_DIR', 'TMPDIR'})
-# Writable per-user locations, each inside the command's own root.
+# Writable per-user locations and nested resource receipts, each inside the command's own root.
 PRIVATE_PATHS = {'HOME': 'home', 'XDG_CONFIG_HOME': 'home/.config', 'XDG_DATA_HOME': 'home/.local/share',
                  'XDG_STATE_HOME': 'home/.local/state', 'XDG_CACHE_HOME': 'cache', 'XDG_RUNTIME_DIR': 'run',
-                 'TMPDIR': 'tmp', 'TMP': 'tmp', 'TEMP': 'tmp'}
-# Every command's root lives in the output's cases directory under one of these prefixes.
-CASE_PREFIXES = ('domains-case-', 'domains-installed-case-')
-# Per-command logs and receipts the runner writes beside the cases directory while commands run.
-RUNNER_RECORD = re.compile(r'\d{3,4}\.(?:stdout\.txt|stderr\.txt|rss\.txt|resources\.json)')
+                 'TMPDIR': 'tmp', 'TMP': 'tmp', 'TEMP': 'tmp', 'DOMAINS_TEST_RECEIPTS': 'receipts'}
+CONFINE = Path(__file__).resolve().parent/'confine.py'
 
 
 def runtime_hashes(root):
@@ -41,10 +38,7 @@ def runtime_hashes(root):
 def environment(index, *, env, output, runtime, fixture, fixture_snapshot, runtime_snapshot):
     directory = output/'workers'/str(index)
     directory.mkdir(parents=True)
-    temporary = directory/'tmp'
-    temporary.mkdir()
-    child = dict(env, TMPDIR=str(temporary), TMP=str(temporary), TEMP=str(temporary),
-                 PYTHONDONTWRITEBYTECODE='1')
+    child = dict(env, PYTHONDONTWRITEBYTECODE='1')
     if fixture:
         copy = directory/'paymenter'
         vendor = (fixture/'vendor').resolve(strict=True)
@@ -157,72 +151,42 @@ def case_environment(env: dict[str, str], root: Path, *, keep: frozenset[str] = 
 def case_root(env: dict[str, str], cases: Path, *, keep: frozenset[str] = frozenset()):
     """A private, exclusively created root in CASES for one command that does not need its own app copy."""
     cases.mkdir(mode=0o700, exist_ok=True)
-    root = cases/(CASE_PREFIXES[0]+uuid.uuid4().hex)
+    root = cases/('domains-case-'+uuid.uuid4().hex)
     root.mkdir(mode=0o700)
     try:
-        yield case_environment(env, root, keep=keep)
+        yield root, case_environment(env, root, keep=keep)
     finally:
         shutil.rmtree(root)
 
 
 @contextmanager
-def command_environment(env, cases: Path, *, keep: frozenset[str] = frozenset()):
-    """Private home, cache and scratch paths in CASES for each command, plus its own disposable app when a fixture is set.
-
-    The suite verifies the shared inputs."""
-    if not env:
-        yield env
-        return
+def command_environment(env: dict[str, str], cases: Path, *, keep: frozenset[str] = frozenset()):
+    """A private root in CASES for each command, with its home, cache and scratch paths, and its own disposable app
+    when a fixture is set. Yields the root and the command's environment; the suite verifies the shared inputs."""
     if not env.get('PAYMENTER_TEST_FIXTURE'):
-        with case_root(env, cases, keep=keep) as child:
-            yield child
+        with case_root(env, cases, keep=keep) as case:
+            yield case
         return
     fixture = Path(env['PAYMENTER_TEST_FIXTURE'])
     cases.mkdir(mode=0o700, exist_ok=True)
     with installed_fixture.application(fixture, 'case', verify_vendor=False, parent=cases) as (root, app):
-        yield case_environment(dict(env, PAYMENTER_TEST_FIXTURE=str(app)), root, keep=keep)
+        yield root, case_environment(dict(env, PAYMENTER_TEST_FIXTURE=str(app)), root, keep=keep)
 
 
-class Scratch:
-    """OUTPUT is the one writable place commands share; each command's root lives in its cases directory."""
-
-    def __init__(self, output: Path):
-        self.output = output
-        self.cases = output/'cases'
-        self.cases.mkdir(mode=0o700, exist_ok=True)
-        self.setup = frozenset(path.name for path in output.iterdir())
-
-    def strays(self) -> list[str]:
-        """Remove and name what commands left outside their case roots, so that no later command reads it."""
-        found = [path for path in self.output.iterdir() if path.name not in self.setup and not RUNNER_RECORD.fullmatch(path.name)]
-        found += [path for path in self.cases.iterdir() if not path.name.startswith(CASE_PREFIXES)]
-        for path in found:
-            if path.is_dir() and not path.is_symlink():
-                shutil.rmtree(path, ignore_errors=True)
-            else:
-                path.unlink(missing_ok=True)
-        return sorted(str(path.relative_to(self.output)) for path in found)
-
-    def audit(self, result: dict) -> int | None:
-        """Fail the finished command in RESULT when the scratch holds leftovers, and return its exit code.
-
-        With parallel workers, the command that finishes first reports a neighbour's leftovers; the run fails either way.
-        The MariaDB launcher keeps the caller's scratch until it gets its own home."""
-        if result['kind'] != 'mariadb' and (strays := self.strays()):
-            result['exit'] = result['exit'] or 1
-            result['scratch_error'] = 'Left outside the case roots, now removed: '+', '.join(strays)
-        return result['exit']
+def confined(argv: list[str], root: Path) -> list[str]:
+    """ARGV run so that its case ROOT is the only place it can write."""
+    return [sys.executable, '-I', '-S', str(CONFINE), str(root), '--', *argv]
 
 
 def prepare_database(env, output, root):
     snapshot = output/'core-database.sql'
-    with case_root(env, output/'cases') as child:
+    with case_root(env, output/'cases') as (_, child):
         subprocess.run([str(root/'scripts/php-test'), 'tests/native-database.php'], cwd=root,
                        env=dict(child, PAYMENTER_TEST_DATABASE_EXPORT=str(snapshot)), check=True, timeout=10)
     env.update(PAYMENTER_TEST_DATABASE=str(snapshot),
                PAYMENTER_TEST_DATABASE_SHA256=hashlib.sha256(snapshot.read_bytes()).hexdigest())
     installed = output/'commerce-database.sql'
-    with case_root(env, output/'cases') as child:
+    with case_root(env, output/'cases') as (_, child):
         subprocess.run([str(root/'scripts/php-test'), 'tests/commerce-database.php'], cwd=root,
                        env=dict(child, PAYMENTER_TEST_COMMERCE_EXPORT=str(installed)), check=True, timeout=10)
     env.update(PAYMENTER_TEST_COMMERCE_DATABASE=str(installed),
@@ -234,7 +198,7 @@ def prepare_funded_registration(env, output):
     root = Path(__file__).resolve().parents[1]
     operation = output/'operation-catalogue.sql'
     funded = output/'funded-registration.sql'
-    with command_environment(env, output/'cases') as child:
+    with command_environment(env, output/'cases') as (_, child):
         subprocess.run([str(root/'scripts/php-test'), 'tests/Support/export-funded-registration.php'], cwd=root,
                        env=dict(child, PAYMENTER_TEST_OPERATION_EXPORT=str(operation), PAYMENTER_TEST_FUNDED_EXPORT=str(funded)), check=True, timeout=10)
     env.update(PAYMENTER_TEST_OPERATION_DATABASE=str(operation),

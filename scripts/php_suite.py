@@ -111,6 +111,10 @@ def configure(bundle, rootfs, argv, cwd, env, mounts, writable, temporary):
     config['root'] = {'path': str(rootfs), 'readonly': True}
     config['process'].update(terminal=False, cwd=str(cwd), args=argv,
                              env=[key+'='+str(value) for key, value in env.items()])
+    # scripts/confine.py maps this container's root into each command's user namespace, which the kernel allows
+    # only to a creator holding CAP_SETFCAP. It acts only inside this rootless container's namespace.
+    for kind in ('bounding', 'effective', 'permitted'):
+        config['process']['capabilities'][kind].append('CAP_SETFCAP')
     # An implicit runc cgroup may be a sibling of the caller, outside its memory and swap limits.
     config['linux']['cgroupsPath'] = str(membership()/name)
     config['linux']['namespaces'] = [n for n in config['linux']['namespaces'] if n['type'] != 'cgroup']
@@ -209,20 +213,18 @@ def domains(root, arguments, *, history=None):
                 or 'memory' not in (group/'cgroup.subtree_control').read_text().split()):
             raise RuntimeError('The test cgroup must contain the suite controller.')
         output = Path(tempfile.mkdtemp(prefix='domains-tests-')).resolve()
-        receipts = Path(os.environ.get('DOMAINS_TEST_RECEIPTS', output/'resources')).resolve()
-        receipts.mkdir(exist_ok=True)
         budget = root/'scripts/case_budget.py'
         # The runner's own home; each command gets a private one inside its case root.
         home = output/'home'
         home.mkdir(mode=0o700)
         env = dict(FIXED_INPUTS, PATH='/usr/local/bin:/usr/bin:/bin', HOME=str(home), TMPDIR=str(output),
                    GIT_NO_REPLACE_OBJECTS='1', DOMAINS_TEST_CGROUP=str(group),
-                   DOMAINS_TEST_BUDGET=str(budget), DOMAINS_TEST_RECEIPTS=str(receipts))
+                   DOMAINS_TEST_BUDGET=str(budget))
         # A delegated wide run supplies its own per-category limits. The repository
         # controller enforces both profiles and writes the same per-command receipts.
         if existing and Path(os.environ['DOMAINS_TEST_BUDGET']) != budget:
             env['DOMAINS_TEST_LIMITS'] = 'wide'
-        mounts = {path: path for path in [root, output, group, receipts]}
+        mounts = {path: path for path in [root, output, group]}
         if (root/'.git').exists():
             mounts.update({path: path for path in git_inputs(root)})
         if source := os.environ.get('PAYMENTER_TEST_APP'):
@@ -247,10 +249,9 @@ def domains(root, arguments, *, history=None):
             with image_root(bundle) as (rootfs, image):
                 env['PHP_SUITE_IMAGE'] = image
                 env['PHP_SUITE_OUTPUT'] = str(output)
-                # The checkout and /tmp stay read-only: commands write only inside their case roots under the output,
-                # and the runner fails a command that leaves anything else there.
+                # The checkout and /tmp stay read-only; each command can write only inside its case root under the output.
                 code = run_bundle(bundle, rootfs, ['python3', str(root/'scripts/test.py'), *arguments],
-                                  root, env, mounts, writable=(output, group, receipts))
+                                  root, env, mounts, writable=(output, group))
         receipt = output/'receipt.json'
         if not code and (not receipt.is_file() or json.loads(receipt.read_text()).get('complete') is not True):
             raise RuntimeError('Container exited successfully without a complete suite receipt: '+str(receipt))

@@ -349,7 +349,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
     jobs = 1 if any(kind == 'mariadb' for kind, _ in commands) else jobs
     completed, attempted, submitted = {}, {}, {}
     captured, outputs_saved = {}, set()
-    scratch = test_workers.Scratch(output)
+    cases = output/'cases'
     with timing('runtime_snapshot', timings):
         before = hashes()
         fingerprint = runtime_fingerprint() if jobs > 1 else None
@@ -399,11 +399,12 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
             if pure and source_env:
                 source_env = {key: value for key, value in source_env.items() if key != 'PAYMENTER_TEST_FIXTURE'}
             keep = test_workers.MARIADB_HOST_PATHS if kind == 'mariadb' else frozenset()
-            with test_workers.command_environment(source_env, scratch.cases, keep=keep) as child:
+            with test_workers.command_environment(source_env or {}, cases, keep=keep) as (case, child):
+                test = argv if kind == 'mariadb' else test_workers.confined(argv, case)
                 launched = ([sys.executable, env['DOMAINS_TEST_BUDGET'], '--name', argv[-1],
                              '--test-scope', '--wall', str(test_limits['wall_seconds']),
                              '--memory', str(test_limits['memory_bytes']),
-                             '--receipt', str(resource_receipt), '--', *argv] if case_budget else argv)
+                             '--receipt', str(resource_receipt), '--', *test] if case_budget else test)
                 stdout, stderr, code, timed_out = execute(launched, cwd=ROOT, env=child,
                                                         timeout=test_limits['wall_seconds']+2 if case_budget else timeout, graceful=60 if kind == 'mariadb' else 0,
                                                         processes=processes, index=index, rss_path=rss_path, supervised=owns_descendants)
@@ -421,7 +422,6 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                   'guard_complete': False, 'skipped': kind == 'mariadb' and code == 77,
                   'seconds': seconds, 'guard_seconds': 0, 'started_seconds': started-started_run,
                   'finished_seconds': time.monotonic()-started_run}
-        code = scratch.audit(result)
         if kind == 'native' and code == 0 and (env or {}).get('DOMAINS_TEST_FIXTURE_COSTS') == '1' and argv[-1].endswith('.php'):
             record = re.search(rb'^DOMAINS_FIXTURE_COSTS (.+)$', stderr, re.MULTILINE)
             if record:

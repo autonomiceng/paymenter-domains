@@ -90,12 +90,12 @@ class RunnerTests(unittest.TestCase):
             root = Path(temp); (root/'Domains').mkdir(); output = root/'output'; output.mkdir()
             commands = [('provider', [str(index)]) for index in range(4)]
             def execute(argv, **kwargs):
-                if argv == ['0']:
+                if argv[-1] == '0':
                     deadline = time.monotonic() + 5
                     while not (output/'001.stdout.txt').exists():
                         if time.monotonic() > deadline: raise AssertionError('Second command never completed')
                         time.sleep(0.01)
-                return ('output '+argv[0]).encode(), ('error '+argv[0]).encode(), 0, False
+                return ('output '+argv[-1]).encode(), ('error '+argv[-1]).encode(), 0, False
             with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'execute', side_effect=execute), \
                  contextlib.redirect_stdout(io.StringIO()) as stdout, contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(runner.run(commands, {}, output, ['provider'], {}, jobs=2), 0)
@@ -131,13 +131,13 @@ class RunnerTests(unittest.TestCase):
             root = Path(temp); (root/'Domains').mkdir(); output = root/'output'; output.mkdir()
             commands = [('provider', [str(index)]) for index in range(8)]
             def execute(argv, **kwargs):
-                if argv == ['0']:
+                if argv[-1] == '0':
                     deadline = time.monotonic() + 5
                     while not (output/'001.stdout.txt').exists():
                         if time.monotonic() > deadline: raise AssertionError('Failure never completed')
                         time.sleep(0.01)
                     return b'inflight finished', b'', 0, False
-                self.assertEqual(argv, ['1'], 'A command was scheduled after failure')
+                self.assertEqual(argv[-1], '1', 'A command was scheduled after failure')
                 return b'failed', b'problem', 1, False
             with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'execute', side_effect=execute) as called, \
                  mock.patch.object(runner.Processes, 'cancel') as cancel, \
@@ -200,7 +200,7 @@ class RunnerTests(unittest.TestCase):
             with self.subTest(failed=failed), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp); (root/'Domains').mkdir(); output = root/'output'; output.mkdir()
                 def execute(argv, **kwargs):
-                    return b'output', b'', int(argv == commands[failed][1]), False
+                    return b'output', b'', int(argv[-1] == commands[failed][1][-1]), False
                 with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'execute', side_effect=execute) as called, \
                      contextlib.redirect_stdout(io.StringIO()):
                     self.assertEqual(runner.run(commands, {}, output, ['native'], {}, jobs=4, fail_fast=True), 1)
@@ -269,7 +269,7 @@ class RunnerTests(unittest.TestCase):
                                             ['native'], {}, jobs=2, workers=workers), 0)
             self.assertNotEqual((output/'000.stdout.txt').read_bytes(), (output/'001.stdout.txt').read_bytes())
             self.assertFalse((fixture/'state').exists())
-            for key in ['PAYMENTER_TEST_FIXTURE', 'PAYMENTER_TEST_PHP', 'TMPDIR']:
+            for key in ['PAYMENTER_TEST_FIXTURE', 'PAYMENTER_TEST_PHP']:
                 self.assertNotEqual(workers[0][key], workers[1][key])
             runner.test_workers.verify(workers, fixture_snapshot, runtime_snapshot)
             self.assertTrue(Path(workers[1]['PAYMENTER_TEST_PHP']).with_name('php').is_symlink())
@@ -313,9 +313,11 @@ class RunnerTests(unittest.TestCase):
             with mock.patch.object(runner, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(runner.run([('native', [sys.executable, '-c', change_vendor])], env,
                                             root/'changed', ['native'], {}), 1)
+            # The shared vendor is read-only to commands, so the write fails and the dependency stays unchanged.
             receipt = json.loads((root/'changed/receipt.json').read_text())
-            self.assertFalse(receipt['dependency_unchanged'])
-            self.assertEqual(receipt['results'][0]['exit'], 0)
+            self.assertEqual((receipt['dependency_unchanged'], receipt['results'][0]['exit']), (True, 1))
+            self.assertIn('[Errno 30]', (root/'changed/000.stderr.txt').read_text())
+            self.assertEqual((fixture/'vendor/autoload.php').read_text(), '<?php')
 
     def test_worker_copies_use_canonical_paths_under_a_linked_output_parent(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -330,7 +332,7 @@ class RunnerTests(unittest.TestCase):
                    'PAYMENTER_TEST_PHP': str(runtime/'usr/bin/php8.4')}
             workers, fixture_snapshot, runtime_snapshot = runner.test_workers.environments(env, output, 2, runtime)
             for worker in workers:
-                for key in ['PAYMENTER_TEST_FIXTURE', 'PAYMENTER_TEST_PHP', 'TMPDIR']:
+                for key in ['PAYMENTER_TEST_FIXTURE', 'PAYMENTER_TEST_PHP']:
                     path = Path(worker[key])
                     self.assertEqual(path, path.resolve())
                     self.assertTrue(path.is_relative_to(root/'output/workers'))
@@ -540,7 +542,8 @@ class RunnerTests(unittest.TestCase):
     def test_escaped_session_pipe_drain_is_bounded_and_receipted(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); (root/'Domains').mkdir(); (root/'output').mkdir()
-            pid_file = root/'escaped.pid'
+            # Commands cannot write here, so the escaped child reports its process id through a pipe the test holds open.
+            pid_file = root/'escaped.pid'; os.mkfifo(pid_file); pid_reader = os.open(pid_file, os.O_RDONLY | os.O_NONBLOCK)
             child_script = (f"import os,sys,signal; from pathlib import Path; Path({str(pid_file)!r}).write_text(str(os.getpid())); "
                             "print('escaped-stdout',flush=True); print('escaped-stderr',file=sys.stderr,flush=True); "
                             f"Path({str(root/'timeout-ready')!r}).write_text('ready'); signal.pause()")
@@ -557,9 +560,10 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual((root/'output/000.stdout.txt').read_bytes(), b'escaped-stdout\n')
                 self.assertEqual((root/'output/000.stderr.txt').read_bytes(), b'escaped-stderr\n')
             finally:
-                if pid_file.exists():
-                    try: os.kill(int(pid_file.read_text()), signal.SIGKILL)
+                if escaped := os.read(pid_reader, 32):
+                    try: os.kill(int(escaped), signal.SIGKILL)
                     except ProcessLookupError: pass
+                os.close(pid_reader)
 
     def test_registered_javascript_is_explicitly_refused(self):
         with tempfile.TemporaryDirectory() as temp:

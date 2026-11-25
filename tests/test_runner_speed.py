@@ -23,17 +23,32 @@ def ready_pipe(root, name='ready'):
     return path
 
 
-def detached_waiter(root):
+def report_pipe(case, root, name):
+    """A pipe that commands, which cannot create or change files here, write their reports to; read it with reported()."""
+    path = ready_pipe(root, name)
+    reader = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    case.addCleanup(os.close, reader)
+    return path, reader
+
+
+def reported(reader):
+    try:
+        return os.read(reader, 64).decode()
+    except BlockingIOError:
+        return ''
+
+
+def detached_waiter(case, root):
     """A detached child announces its PID before its parent announces readiness."""
     child_ready = ready_pipe(root, 'child-ready')
-    pidfile = root/'pid'
+    pidfile, pid = report_pipe(case, root, 'pid')
     child = ("import os,signal; from pathlib import Path; "
              f"Path({str(pidfile)!r}).write_text(str(os.getpid())); "
              f"Path({str(child_ready)!r}).write_text('ready'); signal.pause()")
     parent = ("import subprocess,sys,signal; from pathlib import Path; "
               f"subprocess.Popen([sys.executable,'-c',{child!r}],start_new_session=True); "
               f"assert Path({str(child_ready)!r}).read_text() == 'ready'; ")
-    return parent, pidfile
+    return parent, pid
 
 
 class SchedulingTests(unittest.TestCase):
@@ -51,7 +66,6 @@ class SchedulingTests(unittest.TestCase):
                 workers, fixture_snapshot, runtime_snapshot = runner.test_workers.environments(env, output, 2, runtime)
             self.assertTrue(all(worker['PAYMENTER_TEST_PHP'] == env['PAYMENTER_TEST_PHP'] for worker in workers))
             self.assertNotEqual(workers[0]['PAYMENTER_TEST_FIXTURE'], workers[1]['PAYMENTER_TEST_FIXTURE'])
-            self.assertNotEqual(workers[0]['TMPDIR'], workers[1]['TMPDIR'])
             runner.test_workers.verify(workers, fixture_snapshot, runtime_snapshot)
             # The final content guard also covers an input whose mount protection was later removed.
             (runtime/'usr/bin/php8.4').write_text('changed')
@@ -375,7 +389,8 @@ class SchedulingTests(unittest.TestCase):
                 process.returncode = 0
                 self.assertEqual(runner.run(commands, {}, output, ['lint', 'provider'], {}), 0)
             invocations = [call.args[0] for call in popen.call_args_list]
-            self.assertEqual(invocations[0], commands[0][1])
+            # Every command runs inside its own case root; only syntax lint skips the supervisor.
+            self.assertEqual(invocations[0][:3]+invocations[0][-3:], [sys.executable, '-I', '-S', *commands[0][1]])
             for invocation, (_, argv) in zip(invocations[1:], commands[1:]):
                 self.assertEqual(invocation[:2], [sys.executable, str(runner.SUPERVISOR)])
                 self.assertIn('/usr/bin/time', invocation)
@@ -391,7 +406,7 @@ class SchedulingTests(unittest.TestCase):
             (root/'Domains').mkdir()
             output = root/'output'; output.mkdir()
             ready = ready_pipe(root)
-            parent, pidfile = detached_waiter(root)
+            parent, pid = detached_waiter(self, root)
             sleeper = (parent + "print('started',flush=True); "
                        f"Path({str(ready)!r}).write_text('ready'); signal.pause()")
             failure = ("from pathlib import Path; "
@@ -409,7 +424,7 @@ class SchedulingTests(unittest.TestCase):
             self.assertEqual(receipt['not_run'], [{'index': 2, 'kind': 'provider', 'argv': commands[2][1]}])
             self.assertEqual(receipt['commands_planned'], len(commands))
             self.assertIn('started', (output/'000.stdout.txt').read_text())
-            self.assertFalse(Path('/proc/'+pidfile.read_text()).exists(), 'Grandchild was not reaped')
+            self.assertFalse(Path('/proc/'+reported(pid)).exists(), 'Grandchild was not reaped')
 
 
     def test_unexpected_output_error_cancels_peers_without_fail_fast(self):
@@ -417,7 +432,7 @@ class SchedulingTests(unittest.TestCase):
             root = Path(temporary); (root/'Domains').mkdir()
             output = root/'output'; output.mkdir()
             ready = ready_pipe(root)
-            parent, pidfile = detached_waiter(root)
+            parent, pid = detached_waiter(self, root)
             sleeper = parent + f"Path({str(ready)!r}).write_text('ready'); signal.pause()"
             success = "from pathlib import Path; " + f"assert Path({str(ready)!r}).read_text() == 'ready'"
             commands = [('provider', [sys.executable, '-c', script]) for script in [sleeper, success]]
@@ -431,7 +446,7 @@ class SchedulingTests(unittest.TestCase):
             self.assertFalse(receipt['complete'])
             self.assertEqual(len(receipt['results']), 2)
             self.assertEqual(receipt['not_run'], [])
-            self.assertFalse(Path('/proc/'+pidfile.read_text()).exists(), 'Grandchild was not reaped')
+            self.assertFalse(Path('/proc/'+reported(pid)).exists(), 'Grandchild was not reaped')
 
 
     def test_interrupt_allows_resource_owner_cleanup(self):
@@ -457,7 +472,7 @@ class SchedulingTests(unittest.TestCase):
             root = Path(temporary); (root/'Domains').mkdir()
             output = root/'output'; output.mkdir()
             ready = ready_pipe(root)
-            parent, pidfile = detached_waiter(root)
+            parent, pid = detached_waiter(self, root)
             orphan = parent + f"import os; Path({str(ready)!r}).write_text(str(os.getpid()))"
             failure = ("import os,select; from pathlib import Path; "
                        f"pid=int(Path({str(ready)!r}).read_text())\n"
@@ -471,7 +486,7 @@ class SchedulingTests(unittest.TestCase):
             self.assertEqual(status, 1)
             receipt = json.loads((output/'receipt.json').read_text())
             self.assertEqual(receipt['results'][1]['exit'], 7, 'The intentional failure must follow the parent exit, not a fixture error')
-            self.assertFalse(Path('/proc/'+pidfile.read_text()).exists(), 'Grandchild was not reaped')
+            self.assertFalse(Path('/proc/'+reported(pid)).exists(), 'Grandchild was not reaped')
 
 
     def test_missing_kernel_child_list_refuses_before_spawning(self):
@@ -577,15 +592,15 @@ class SchedulingTests(unittest.TestCase):
             root = Path(temporary); (root/'Domains').mkdir()
             output = root/'output'
             ready, child_ready, intermediate_ready = [ready_pipe(root, name) for name in ['ready', 'child-ready', 'intermediate-ready']]
-            cleaned, adopted, pidfile = [root/name for name in ['cleaned', 'adopted', 'pid']]
+            (cleaned, cleanup), (adopted, adoption), (pidfile, pid) = [report_pipe(self, root, name) for name in ['cleaned', 'adopted', 'pid']]
             grandchild = ("import os,signal; from pathlib import Path; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
                           f"Path({str(pidfile)!r}).write_text(str(os.getpid())); Path({str(child_ready)!r}).write_text('ready'); signal.pause()")
             intermediate = ("import subprocess,sys,signal; from pathlib import Path; "
-                            f"signal.signal(signal.SIGTERM,lambda *args:(Path({str(adopted)!r}).touch(),sys.exit(0))); "
+                            f"signal.signal(signal.SIGTERM,lambda *args:(Path({str(adopted)!r}).write_text('adopted'),sys.exit(0))); "
                             f"subprocess.Popen([sys.executable,'-c',{grandchild!r}],start_new_session=True); "
                             f"assert Path({str(child_ready)!r}).read_text() == 'ready'; Path({str(intermediate_ready)!r}).write_text('ready'); signal.pause()")
             slow = ("import subprocess,sys,signal; from pathlib import Path; "
-                    f"signal.signal(signal.SIGTERM,lambda *args:(Path({str(cleaned)!r}).touch(),sys.exit(0))); "
+                    f"signal.signal(signal.SIGTERM,lambda *args:(Path({str(cleaned)!r}).write_text('cleaned'),sys.exit(0))); "
                     f"subprocess.Popen([sys.executable,'-c',{intermediate!r}],start_new_session=True); "
                     f"assert Path({str(intermediate_ready)!r}).read_text() == 'ready'; Path({str(ready)!r}).write_text('ready'); signal.pause()")
             fail = "from pathlib import Path; " + f"assert Path({str(ready)!r}).read_text() == 'ready'; raise SystemExit(7)"
@@ -593,9 +608,9 @@ class SchedulingTests(unittest.TestCase):
             commands = [('provider', [sys.executable, '-c', code]) for code in [slow, fail]]
             with mock.patch.object(runner, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(runner.run(commands, dict(os.environ), output, ['provider'], {}, jobs=2, fail_fast=True), 1)
-            self.assertTrue(cleaned.exists(), 'Command cleanup was skipped')
-            self.assertTrue(adopted.exists(), 'Detached intermediate did not exit during cancellation')
-            self.assertFalse(Path('/proc/'+pidfile.read_text()).exists(), 'Adopted child was not killed and reaped')
+            self.assertEqual(reported(cleanup), 'cleaned', 'Command cleanup was skipped')
+            self.assertEqual(reported(adoption), 'adopted', 'Detached intermediate did not exit during cancellation')
+            self.assertFalse(Path('/proc/'+reported(pid)).exists(), 'Adopted child was not killed and reaped')
 
     def test_supervisor_ignores_repeated_signals_before_unwinding(self):
         spec = importlib.util.spec_from_file_location('signal_probe', ROOT/'scripts/process_supervisor.py')
@@ -639,8 +654,8 @@ class SchedulingTests(unittest.TestCase):
             for trial in range(2):
                 with self.subTest(trial=trial), tempfile.TemporaryDirectory() as temporary:
                     root = Path(temporary); (root/'Domains').mkdir()
-                    ready, cleaned, pidfile = ready_pipe(root), root/'cleaned', root/'pid'
-                    child = "import os,signal,sys; from pathlib import Path; signal.signal(signal.SIGTERM,lambda *a:(Path(%r).touch(),sys.exit(0))); Path(%r).write_text(str(os.getpid())); Path(%r).write_text('ready'); signal.pause()" % (str(cleaned), str(pidfile), str(ready))
+                    ready, (cleaned, cleanup), (pidfile, pid) = ready_pipe(root), report_pipe(self, root, 'cleaned'), report_pipe(self, root, 'pid')
+                    child = "import os,signal,sys; from pathlib import Path; signal.signal(signal.SIGTERM,lambda *a:(Path(%r).write_text('cleaned'),sys.exit(0))); Path(%r).write_text(str(os.getpid())); Path(%r).write_text('ready'); signal.pause()" % (str(cleaned), str(pidfile), str(ready))
                     driver = ("import importlib.util,os,signal,sys; from pathlib import Path; "
                               "sys.path.insert(0,%r); spec=importlib.util.spec_from_file_location('subject',%r); subject=importlib.util.module_from_spec(spec); spec.loader.exec_module(subject); subject.ROOT=Path(%r); "
                               "signal.signal(signal.SIGTERM,subject.interrupted); signal.signal(signal.SIGINT,subject.interrupted); "
@@ -660,8 +675,8 @@ class SchedulingTests(unittest.TestCase):
                         status = process.wait()
                         receipt, = root.rglob('receipt.json')
                         self.assertEqual(status, 130, receipt.read_text())
-                        self.assertTrue(cleaned.exists())
-                        self.assertFalse(Path('/proc/'+pidfile.read_text()).exists())
+                        self.assertEqual(reported(cleanup), 'cleaned')
+                        self.assertFalse(Path('/proc/'+reported(pid)).exists())
                         receipt, = root.rglob('receipt.json')
                         evidence = json.loads(receipt.read_text())
                         self.assertFalse(evidence['complete'])

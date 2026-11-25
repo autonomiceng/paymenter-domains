@@ -148,7 +148,7 @@ fi
             selected = root/'profiled-runc'
             selected.write_text("""#!/bin/sh
 if [ "$1" = spec ]; then
-    printf '%s' '{"linux":{"namespaces":[]},"process":{},"mounts":[]}' > config.json
+    printf '%s' '{"linux":{"namespaces":[]},"process":{"capabilities":{"bounding":[],"effective":[],"permitted":[]}},"mounts":[]}' > config.json
 elif [ "$4" = run ]; then
     mkdir -p "$2/$7" && exit 23
 elif [ "$4" = delete ]; then
@@ -366,7 +366,7 @@ sudo() {
             def cancel(processes):
                 processes.cancelled.add(0); stopping.set()
             def execute(argv, **kwargs):
-                if argv == ['0']:
+                if argv[-1] == '0':
                     # The sibling is still running when the failure stops the run.
                     if not stopping.wait(5): raise AssertionError('Failure never cancelled the sibling')
                     return b'', b'', -signal.SIGTERM, False
@@ -581,31 +581,41 @@ sudo() {
 
 
     def test_commands_write_only_inside_their_case_root_and_ignore_host_settings(self):
-        """A command that reads the caller's Git, zone or home, or leaves files beside its case root, fails here."""
+        """Two commands at once: the one that writes outside its case root fails, its neighbour passes, and neither
+        reads the caller's Git, zone or home."""
         probe = ("import json, os, subprocess, tempfile, time; from pathlib import Path; "
                  "(Path.home()/'mark').write_text('home'); handle, scratch = tempfile.mkstemp(); "
                  "names = ['HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME', 'XDG_RUNTIME_DIR', 'TMPDIR']; "
                  "git = subprocess.run(['git', 'config', '--get', 'user.name'], capture_output=True, text=True); "
                  "print(json.dumps({'paths': [os.environ[n] for n in names] + [scratch], 'git': git.stdout, "
-                 "'zone': time.strftime('%Z'), 'locale': os.environ['LC_ALL']}))")
-        # Fixed names one and two levels above the case root, where a later command could find them.
-        beside = "from pathlib import Path; import os; case = Path(os.environ['TMPDIR']).parent; "
-        leave = beside + "(case.parent/'left-beside').write_text('state'); (case.parent.parent/'left-above').write_text('state')"
-        find = beside + "assert not (case.parent/'left-beside').exists() and not (case.parent.parent/'left-above').exists()"
+                 "'zone': time.strftime('%Z'), 'locale': os.environ['LC_ALL']}), flush=True); time.sleep(0.5)")
+        # Fixed names where a later command could find them; this command outlives its neighbour.
+        leak = ("import errno, json, sys, time; outcome = {}\n"
+                "for path in sys.argv[1:]:\n"
+                "    try: open(path, 'w').write('state'); outcome[path] = 'written'\n"
+                "    except OSError as error: outcome[path] = errno.errorcode[error.errno]\n"
+                "print(json.dumps(outcome), flush=True); time.sleep(1); sys.exit(set(outcome.values()) != {'written'})")
         with tempfile.TemporaryDirectory() as temp:
             root, host = Path(temp), Path(temp)/'host'
-            (root/'Domains').mkdir(); output = root/'output'; output.mkdir(); (host/'git').mkdir(parents=True)
+            (root/'Domains').mkdir(); output = root/'output'; (output/'resources').mkdir(parents=True); (host/'git').mkdir(parents=True)
             for config in (host/'.gitconfig', host/'git/config'):
                 config.write_text('[user]\n\tname = Host Person\n')
             caller = {'PATH': os.environ['PATH'], 'TMPDIR': str(output), 'HOME': str(host), 'XDG_CONFIG_HOME': str(host),
-                      'TZ': 'America/Los_Angeles', 'LC_ALL': 'en_US.UTF-8'}
-            commands = [('runner', [sys.executable, '-c', code]) for code in (probe, leave, find)]
+                      'TZ': 'America/Los_Angeles', 'LC_ALL': 'en_US.UTF-8', 'DOMAINS_TEST_RECEIPTS': str(output/'resources')}
+            workers, _, _ = runner.test_workers.environments(caller, output, 2)
+            # The shared output, the receipts directory every command used to get, and a worker's directory.
+            targets = [str(output/'left-above'), str(output/'resources/left'), str(output/'workers/0/left')]
+            commands = [('runner', [sys.executable, '-c', probe]), ('runner', [sys.executable, '-c', leak, *targets])]
             with mock.patch.object(runner, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()), \
                  contextlib.redirect_stderr(io.StringIO()):
-                status = runner.run(commands, caller, output, ['runner'], {})
+                status = runner.run(commands, caller, output, ['runner'], {}, jobs=2, workers=workers)
             receipt = json.loads((output/'receipt.json').read_text())
-            self.assertEqual((status, receipt['failures']), (1, [1]), 'Only the command that left files fails')
-            self.assertEqual(receipt['results'][1]['scratch_error'], 'Left outside the case roots, now removed: cases/left-beside, left-above')
+            first, second = receipt['results']
+            self.assertLess(max(first['started_seconds'], second['started_seconds']),
+                            min(first['finished_seconds'], second['finished_seconds']), 'The commands overlap')
+            self.assertEqual((status, receipt['failures']), (1, [1]), 'Only the command that wrote outside its root fails')
+            self.assertEqual(json.loads((output/'001.stdout.txt').read_text()), dict.fromkeys(targets, 'EROFS'))
+            self.assertEqual([path for path in targets if Path(path).exists()], [])
             report = json.loads((output/'000.stdout.txt').read_text())
             cases = {Path(path).relative_to(output/'cases').parts[0] for path in report['paths']}
             self.assertEqual(len(cases), 1, report)
