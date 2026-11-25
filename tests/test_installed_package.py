@@ -236,8 +236,9 @@ def main(scenario):
             phase('template-defaults')
             phase('upload', 'current')
             phase('verify')
-            # The refused delete asserts every retained row; reinstall and its cold boot follow.
             phase('server-delete')
+            # A cold boot after the uninstall hook, before reinstall restores any file it removed.
+            phase('verify')
             # Model removal of runtime files / database restoration in this private copy.
             shutil.rmtree(installed)
             phase('reinstall', 'current')
