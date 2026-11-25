@@ -148,7 +148,7 @@ fi
             selected = root/'profiled-runc'
             selected.write_text("""#!/bin/sh
 if [ "$1" = spec ]; then
-    printf '%s' '{"linux":{"namespaces":[]},"process":{},"mounts":[]}' > config.json
+    printf '%s' '{"linux":{"namespaces":[]},"process":{"capabilities":{"bounding":[],"effective":[],"permitted":[]}},"mounts":[]}' > config.json
 elif [ "$4" = run ]; then
     mkdir -p "$2/$7" && exit 23
 elif [ "$4" = delete ]; then
@@ -303,6 +303,9 @@ sudo() {
                 self.assertEqual(other, flags)
                 path = parsed.timings_from[-1]
                 self.assertEqual(cwd, repo)
+                # Neither the checkout nor /tmp is writable; the runner's home lives in its own output.
+                self.assertEqual((options.get('temporary', ()), cwd in options['writable']), ((), False))
+                self.assertTrue(Path(env['HOME']).is_relative_to(options['writable'][0]))
                 self.assertEqual(mounts[cwd/path], timing)
                 self.assertNotIn(cwd/path, options['writable'])
                 self.assertEqual(runner.history(cwd/path), {})
@@ -363,7 +366,7 @@ sudo() {
             def cancel(processes):
                 processes.cancelled.add(0); stopping.set()
             def execute(argv, **kwargs):
-                if argv == ['0']:
+                if argv[-1] == '0':
                     # The sibling is still running when the failure stops the run.
                     if not stopping.wait(5): raise AssertionError('Failure never cancelled the sibling')
                     return b'', b'', -signal.SIGTERM, False
@@ -576,6 +579,58 @@ sudo() {
                     self.assertIn('resource_error', receipt['results'][0])
                     self.assertIn('later native failure', (output/'001.stdout.txt').read_text())
 
+
+    def test_commands_write_only_inside_their_case_root_and_ignore_host_settings(self):
+        """Two commands at once: the one that writes outside its case root fails, its neighbour passes, and neither
+        reads the caller's Git, zone or home. Neither can set file capabilities."""
+        # The neighbour finishes after the writer has tried its writes, and the writer exits only after the runner
+        # has recorded the neighbour; the alarm fails a command whose partner never arrives.
+        probe = ("import json, os, signal, subprocess, sys, tempfile, time; from pathlib import Path; signal.alarm(20); "
+                 "(Path.home()/'mark').write_text('home'); handle, scratch = tempfile.mkstemp(); "
+                 "names = ['HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME', 'XDG_RUNTIME_DIR', 'TMPDIR']; "
+                 "git = subprocess.run(['git', 'config', '--get', 'user.name'], capture_output=True, text=True); "
+                 "setfcap = [line.split(':')[0] for line in open('/proc/self/status') if line.startswith('Cap') and int(line.split()[1], 16) >> 31 & 1]; "
+                 "open(sys.argv[1]).read(); "
+                 "print(json.dumps({'paths': [os.environ[n] for n in names] + [scratch], 'git': git.stdout, "
+                 "'zone': time.strftime('%Z'), 'locale': os.environ['LC_ALL'], 'setfcap': setfcap}), flush=True)")
+        # Fixed names where a later command could find them.
+        leak = ("import ctypes, errno, json, os, signal, sys; signal.alarm(20); gate, recorded, *paths = sys.argv[1:]; outcome = {}\n"
+                "libc = ctypes.CDLL(None); watch = libc.inotify_init(); libc.inotify_add_watch(watch, os.path.dirname(recorded).encode(), 0x100)\n"
+                "for path in paths:\n"
+                "    try: open(path, 'w').write('state'); outcome[path] = 'written'\n"
+                "    except OSError as error: outcome[path] = errno.errorcode[error.errno]\n"
+                "setfcap = [line.split(':')[0] for line in open('/proc/self/status') if line.startswith('Cap') and int(line.split()[1], 16) >> 31 & 1]\n"
+                "print(json.dumps({'writes': outcome, 'setfcap': setfcap}), flush=True); open(gate, 'w').close()\n"
+                "while not os.path.exists(recorded): os.read(watch, 4096)\n"
+                "sys.exit(set(outcome.values()) != {'written'})")
+        with tempfile.TemporaryDirectory() as temp:
+            root, host, gate = Path(temp), Path(temp)/'host', Path(temp)/'gate'
+            (root/'Domains').mkdir(); output = root/'output'; (output/'resources').mkdir(parents=True); (host/'git').mkdir(parents=True)
+            os.mkfifo(gate)
+            for config in (host/'.gitconfig', host/'git/config'):
+                config.write_text('[user]\n\tname = Host Person\n')
+            caller = {'PATH': os.environ['PATH'], 'TMPDIR': str(output), 'HOME': str(host), 'XDG_CONFIG_HOME': str(host),
+                      'TZ': 'America/Los_Angeles', 'LC_ALL': 'en_US.UTF-8', 'DOMAINS_TEST_RECEIPTS': str(output/'resources')}
+            workers, _, _ = runner.test_workers.environments(caller, output, 2)
+            # The shared output, the receipts directory every command used to get, and a worker's directory.
+            targets = [str(output/'left-above'), str(output/'resources/left'), str(output/'workers/0/left')]
+            commands = [('lint', [sys.executable, '-c', probe, str(gate)]),
+                        ('runner', [sys.executable, '-c', leak, str(gate), str(output/'000.stdout.txt'), *targets])]
+            with mock.patch.object(runner, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()), \
+                 contextlib.redirect_stderr(io.StringIO()):
+                status = runner.run(commands, caller, output, ['lint', 'runner'], {}, jobs=2, workers=workers)
+            receipt = json.loads((output/'receipt.json').read_text())
+            self.assertEqual((status, receipt['failures']), (1, [1]), 'Only the command that wrote outside its root fails')
+            self.assertEqual(json.loads((output/'001.stdout.txt').read_text()), {'writes': dict.fromkeys(targets, 'EROFS'), 'setfcap': []},
+                             'A runner command that is not a runner self-test cannot set file capabilities')
+            self.assertEqual([path for path in targets if Path(path).exists()], [])
+            report = json.loads((output/'000.stdout.txt').read_text())
+            cases = {Path(path).relative_to(output/'cases').parts[0] for path in report['paths']}
+            self.assertEqual(len(cases), 1, report)
+            self.assertTrue(next(iter(cases)).startswith('domains-case-'), report)
+            self.assertEqual((report['git'], report['zone'], report['locale'], report['setfcap']), ('', 'UTC', 'C.UTF-8', []))
+            self.assertEqual(list((output/'cases').iterdir()), [], 'Each case root is removed with its command')
+            self.assertEqual(sorted(str(path.relative_to(host)) for path in host.rglob('*')), ['.gitconfig', 'git', 'git/config'])
 
 if __name__ == '__main__':
     unittest.main()

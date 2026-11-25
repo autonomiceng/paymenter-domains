@@ -15,11 +15,12 @@ import native
 
 
 @contextmanager
-def application(fixture, scenario, *, verify_vendor=True):
+def application(fixture, scenario, *, verify_vendor=True, parent=None):
+    """A private copy of FIXTURE in PARENT, by default beside the fixture."""
     vendor = (fixture / "vendor").resolve(strict=True)
     before = native.admitted_vendor_hashes(vendor) if verify_vendor else None
     with tempfile.TemporaryDirectory(
-        prefix=f"domains-installed-{scenario}-", dir=fixture.parent
+        prefix=f"domains-installed-{scenario}-", dir=parent or fixture.parent
     ) as temporary:
         root = Path(temporary)
         app = root / "paymenter"

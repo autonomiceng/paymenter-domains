@@ -14,7 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class SendLimitConcurrency(unittest.TestCase):
     def test_concurrent_sends_admit_exactly_the_limit(self):
-        with tempfile.TemporaryDirectory(prefix='send-limit-', dir=ROOT / '.cache') as directory:
+        # The runner gives each command a private TMPDIR; the checkout stays read-only.
+        with tempfile.TemporaryDirectory(prefix='send-limit-') as directory:
             database = Path(directory) / 'limit.sqlite'
             database.touch()
 

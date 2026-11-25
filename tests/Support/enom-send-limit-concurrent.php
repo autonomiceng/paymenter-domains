@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit,EnomTestSendLimit,EnomTestSendLimitSchema};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 $path=getenv('SEND_LIMIT_DB');
-expect(is_string($path)&&str_starts_with($path,dirname(__DIR__,2).'/.cache/')&&is_file($path),'Private synthetic SQLite database');
+expect(is_string($path)&&str_starts_with($path,rtrim(sys_get_temp_dir(),'/').'/')&&is_file($path),'Private synthetic SQLite database in the case scratch');
 // Real independent connections are needed to exercise the lock, but full app boot/migrations
 // in each of six workers only create unrelated in-memory databases that are then discarded.
 // Use the pinned native Setting model and Laravel database services without booting the UI/jobs.

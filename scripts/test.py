@@ -2,7 +2,7 @@
 """Run registered offline suites with pinned PHP and optional pristine native fixture."""
 # Adapted from Paymenter Enom scripts/test.py; MIT, Copyright (c) 2026 Autonomic Engineering.
 import argparse
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import fnmatch
 import json
@@ -349,6 +349,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
     jobs = 1 if any(kind == 'mariadb' for kind, _ in commands) else jobs
     completed, attempted, submitted = {}, {}, {}
     captured, outputs_saved = {}, set()
+    cases = output/'cases'
     with timing('runtime_snapshot', timings):
         before = hashes()
         fingerprint = runtime_fingerprint() if jobs > 1 else None
@@ -397,13 +398,13 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
             pure = kind in ('lint', 'provider', 'contracts', 'package', 'runner')
             if pure and source_env:
                 source_env = {key: value for key, value in source_env.items() if key != 'PAYMENTER_TEST_FIXTURE'}
-            context = (nullcontext(source_env) if pure else
-                       test_workers.command_environment(source_env))
-            with context as child:
+            keep = test_workers.MARIADB_HOST_PATHS if kind == 'mariadb' else frozenset()
+            with test_workers.command_environment(source_env or {}, cases, keep=keep) as (case, child):
+                test = argv if kind == 'mariadb' else test_workers.confined(argv, case, nested=argv[-1] in test_workers.NESTED)
                 launched = ([sys.executable, env['DOMAINS_TEST_BUDGET'], '--name', argv[-1],
                              '--test-scope', '--wall', str(test_limits['wall_seconds']),
                              '--memory', str(test_limits['memory_bytes']),
-                             '--receipt', str(resource_receipt), '--', *argv] if case_budget else argv)
+                             '--receipt', str(resource_receipt), '--', *test] if case_budget else test)
                 stdout, stderr, code, timed_out = execute(launched, cwd=ROOT, env=child,
                                                         timeout=test_limits['wall_seconds']+2 if case_budget else timeout, graceful=60 if kind == 'mariadb' else 0,
                                                         processes=processes, index=index, rss_path=rss_path, supervised=owns_descendants)
@@ -729,7 +730,7 @@ def main(*, launch=False):
                 runtime, binary, extension = prepare(native=needs_fixture)
         env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
                'PHPRC': '', 'PHP_INI_SCAN_DIR': '', 'TMPDIR': str(output), 'PYTHONDONTWRITEBYTECODE': '1'}
-        env.update({key: value for key, value in os.environ.items() if key.startswith('DOMAINS_TEST_')})
+        env.update({name: os.environ[name] for name in test_workers.RUNNER_ENV if name in os.environ})
         if 'ui' in selected:
             env.update({name: os.environ[name] for name in BROWSER_ENV if name in os.environ})
         if binary:

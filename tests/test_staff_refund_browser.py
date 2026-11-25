@@ -1,4 +1,4 @@
-"""Staff Cancel and refund on held paid renewals, clicked in Chromium against the served fixture app.
+"""Staff Cancel and refund on held paid renewals, clicked in Chromium against the fixture app's HTTP kernel.
 
 A Livewire test calls the mounted action directly, so it cannot see which button the dialog renders. This check
 types the reason and clicks the dialog's own button, then reads the saved money from the database.
@@ -8,9 +8,7 @@ from decimal import Decimal
 import json
 import os
 from pathlib import Path
-import selectors
 import shutil
-import socket
 import sqlite3
 import subprocess
 import sys
@@ -21,27 +19,10 @@ import installed_fixture
 
 ROOT = Path(__file__).resolve().parents[1]
 REASON = 'Customer asked to cancel this renewal'
-
-
-def free_port():
-    with socket.socket() as probe:
-        probe.bind(('127.0.0.1', 0))
-        return probe.getsockname()[1]
-
-
-def started(server, timeout):
-    """Wait for the built-in server's start line, without sleeping."""
-    with selectors.DefaultSelector() as selector:
-        selector.register(server.stderr, selectors.EVENT_READ)
-        lines = []
-        while selector.select(timeout):
-            line = server.stderr.readline()
-            if not line:
-                break
-            lines.append(line)
-            if 'started' in line:
-                return
-        raise AssertionError('The fixture server did not start: ' + ''.join(lines))
+# The browser driver answers this origin itself through the app's kernel; nothing listens on it. Chromium refuses
+# other hosts as offline before interception in the suite's network-less namespace, so it is a loopback address.
+ORIGIN = 'http://127.0.0.1'
+KERNEL = ROOT/'tests/Support/refund-browser-kernel.php'
 
 
 def release_fixture_cache(app, *, copied=True):
@@ -59,24 +40,36 @@ def release_fixture_cache(app, *, copied=True):
                 os.posix_fadvise(handle.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
 
 
+def bridge_environment(app, root, facts, scenario):
+    return dict(os.environ, PAYMENTER_TEST_FIXTURE=str(app), REFUND_BROWSER_URL=ORIGIN, REFUND_BROWSER_PHP=str(ROOT/'scripts/php-test'),
+                REFUND_BROWSER_DATABASE=str(root/'seed.sqlite'), REFUND_BROWSER_CASE=scenario, REFUND_BROWSER_CLOCK=facts['clock'],
+                REFUND_BROWSER_EMAIL=facts['email'], REFUND_BROWSER_SEED=str(root/'seed.json'))
+
+
+def kernel(env, method, path, headers):
+    """One request through the browser driver's kernel, which writes its reply on descriptor 3."""
+    wire = json.dumps({'method': method, 'url': ORIGIN+path, 'headers': headers, 'body': ''})
+    result = subprocess.run(['sh', '-c', 'exec "$0" "$1" 3>&1 1>&2', env['REFUND_BROWSER_PHP'], str(KERNEL)], input=wire,
+                            cwd=env['PAYMENTER_TEST_FIXTURE'], env=env, capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, f'Kernel failed for {method} {path}:\n{result.stderr[-4000:]}'
+    return json.loads(result.stdout)
+
+
+def mismatched_token_status(env):
+    """A signed-in staff form post whose CSRF token does not match the session."""
+    signed_in = kernel(env, 'GET', '/refund-browser-login', {})
+    cookie = '; '.join(line.split(';', 1)[0] for line in signed_in['cookies'])
+    return kernel(env, 'POST', '/admin/logout', {'cookie': cookie, 'x-csrf-token': 'mismatched',
+                                                 'content-type': 'application/x-www-form-urlencoded'})['status']
+
+
 def browse(app, root, facts, scenario):
     node = shutil.which('node')
     assert node, 'Node.js is required for the browser check'
-    php = str(ROOT/'scripts/php-test')
-    port = free_port()
-    base = f'http://127.0.0.1:{port}'
-    env = dict(os.environ, PAYMENTER_TEST_FIXTURE=str(app), REFUND_BROWSER_URL=base, REFUND_BROWSER_DATABASE=str(root/'seed.sqlite'),
-               REFUND_BROWSER_CASE=scenario, REFUND_BROWSER_CLOCK=facts['clock'], REFUND_BROWSER_EMAIL=facts['email'], REFUND_BROWSER_SEED=str(root/'seed.json'))
+    env = bridge_environment(app, root, facts, scenario)
     out = Path(tempfile.mkdtemp(prefix='refund-browser-', dir=root))
-    server = subprocess.Popen([php, '-S', f'127.0.0.1:{port}', '-t', str(app/'public'), str(ROOT/'tests/Support/refund-browser-router.php')],
-                              cwd=app, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-    try:
-        started(server, 30)
-        result = subprocess.run([node, '--max-old-space-size=64', str(ROOT/'tests/Support/refund-browser.cjs'), base, str(root/'seed.json'), str(out)],
-                                cwd=ROOT, env=env, capture_output=True, text=True, timeout=240)
-    finally:
-        server.terminate()
-        server.wait(timeout=30)
+    result = subprocess.run([node, '--max-old-space-size=64', str(ROOT/'tests/Support/refund-browser.cjs'), ORIGIN, str(root/'seed.json'), str(out)],
+                            cwd=ROOT, env=env, capture_output=True, text=True, timeout=240)
     sys.stderr.write(result.stderr)
     log = app/'storage/logs/laravel.log'
     assert result.returncode == 0, f'Browser driver failed with exit {result.returncode}'
@@ -86,6 +79,12 @@ def browse(app, root, facts, scenario):
         if log.is_file():
             print(log.read_text()[-6000:])
     assert report['errors'] == [], 'The browser steps did not finish'
+    # Chromium picks the cookies for the next hop: every cookie the sign-in set reaches /admin, which would otherwise
+    # send the browser to sign in, except the one scoped to the sign-in path.
+    [hop] = report['redirects']
+    assert (hop['from'], hop['to'], hop['status']) == ('/refund-browser-login', '/admin', 302), report['redirects']
+    assert 'refund-browser-scoped' in hop['set'] and 'refund-browser-scoped' not in hop['sent'], hop
+    assert set(hop['set']) - {'refund-browser-scoped'} <= set(hop['sent']), hop
     print('SAVED ' + json.dumps(report['facts']))
     return {step['label']: step for step in report['steps']}, report['facts']
 
@@ -114,6 +113,9 @@ def main(scenario='refund'):
             if scenario == 'refusals':
                 db.execute("CREATE TRIGGER refund_browser_insert_fail BEFORE INSERT ON credits "
                            "BEGIN SELECT RAISE(ABORT, 'synthetic credit failure'); END")
+        if scenario == 'refund':
+            status = mismatched_token_status(bridge_environment(app, root, facts, scenario))
+            assert status == 419, f'The kernel refuses a mismatched CSRF token as the web server does: {status}'
         release_fixture_cache(app)
         steps, saved = browse(app, root, facts, scenario)
         operation = saved['operations']

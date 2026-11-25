@@ -9,8 +9,23 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
+import uuid
 import native
 import installed_fixture
+import php_suite
+
+# Runner controls and named test options that reach commands; other DOMAINS_TEST_ values stay with the caller.
+RUNNER_ENV = ['DOMAINS_TEST_CGROUP', 'DOMAINS_TEST_BUDGET', 'DOMAINS_TEST_LIMITS',
+              'DOMAINS_TEST_JOBS', 'DOMAINS_TEST_FIXTURE_COSTS', 'DOMAINS_TEST_MONEY_SCALE_FULL_MATRIX']
+# The MariaDB launcher reaches the caller's Docker client, and keeps its short socket scratch path, through
+# these, and runs unconfined, until it gets its own isolated home.
+MARIADB_HOST_PATHS = frozenset({'HOME', 'XDG_RUNTIME_DIR', 'TMPDIR'})
+# Writable per-user locations and nested resource receipts, each inside the command's own root.
+PRIVATE_PATHS = {'HOME': 'home', 'XDG_CONFIG_HOME': 'home/.config', 'XDG_DATA_HOME': 'home/.local/share',
+                 'XDG_STATE_HOME': 'home/.local/state', 'XDG_CACHE_HOME': 'cache', 'XDG_RUNTIME_DIR': 'run',
+                 'TMPDIR': 'tmp', 'TMP': 'tmp', 'TEMP': 'tmp', 'DOMAINS_TEST_RECEIPTS': 'receipts'}
+CONFINE = Path(__file__).resolve().parent/'confine.py'
 
 
 def runtime_hashes(root):
@@ -23,10 +38,7 @@ def runtime_hashes(root):
 def environment(index, *, env, output, runtime, fixture, fixture_snapshot, runtime_snapshot):
     directory = output/'workers'/str(index)
     directory.mkdir(parents=True)
-    temporary = directory/'tmp'
-    temporary.mkdir()
-    child = dict(env, TMPDIR=str(temporary), TMP=str(temporary), TEMP=str(temporary),
-                 PYTHONDONTWRITEBYTECODE='1')
+    child = dict(env, PYTHONDONTWRITEBYTECODE='1')
     if fixture:
         copy = directory/'paymenter'
         vendor = (fixture/'vendor').resolve(strict=True)
@@ -123,29 +135,64 @@ def pristine_fixture_check(env, original):
                    force_vendor=True)
 
 
+def case_environment(env: dict[str, str], root: Path, *, keep: frozenset[str] = frozenset()) -> dict[str, str]:
+    """Point home, cache, runtime and temporary paths into ROOT; KEEP names caller values that stay."""
+    child = dict(env, **php_suite.FIXED_INPUTS)
+    for name, relative in PRIVATE_PATHS.items():
+        if name in keep and name in env:
+            continue
+        path = root/relative
+        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        child[name] = str(path)
+    return child
+
+
 @contextmanager
-def command_environment(env):
-    """Dispose of each case's app. The suite verifies the shared inputs."""
-    if not env or not env.get('PAYMENTER_TEST_FIXTURE'):
-        yield env
+def case_root(env: dict[str, str], cases: Path, *, keep: frozenset[str] = frozenset()):
+    """A private, exclusively created root in CASES for one command that does not need its own app copy."""
+    cases.mkdir(mode=0o700, exist_ok=True)
+    root = cases/('domains-case-'+uuid.uuid4().hex)
+    root.mkdir(mode=0o700)
+    try:
+        yield root, case_environment(env, root, keep=keep)
+    finally:
+        shutil.rmtree(root)
+
+
+@contextmanager
+def command_environment(env: dict[str, str], cases: Path, *, keep: frozenset[str] = frozenset()):
+    """A private root in CASES for each command, with its home, cache and scratch paths, and its own disposable app
+    when a fixture is set. Yields the root and the command's environment; the suite verifies the shared inputs."""
+    if not env.get('PAYMENTER_TEST_FIXTURE'):
+        with case_root(env, cases, keep=keep) as case:
+            yield case
         return
     fixture = Path(env['PAYMENTER_TEST_FIXTURE'])
-    with installed_fixture.application(fixture, 'case', verify_vendor=False) as (root, app):
-        temporary = root/'tmp'
-        temporary.mkdir()
-        yield dict(env, PAYMENTER_TEST_FIXTURE=str(app), TMPDIR=str(temporary),
-                   TMP=str(temporary), TEMP=str(temporary))
+    cases.mkdir(mode=0o700, exist_ok=True)
+    with installed_fixture.application(fixture, 'case', verify_vendor=False, parent=cases) as (root, app):
+        yield root, case_environment(dict(env, PAYMENTER_TEST_FIXTURE=str(app)), root, keep=keep)
+
+
+# Runner self-tests that run the real runner, which confines its own commands; every other command loses CAP_SETFCAP.
+NESTED = frozenset({'tests/test_lint.py', 'tests/test_runner.py', 'tests/test_runner_receipts.py', 'tests/test_runner_speed.py'})
+
+
+def confined(argv: list[str], root: Path, *, nested: bool = False) -> list[str]:
+    """ARGV run so that its case ROOT is the only place it can write; only a NESTED command may confine another."""
+    return [sys.executable, '-I', '-S', str(CONFINE), *(['--nested'] if nested else []), str(root), '--', *argv]
 
 
 def prepare_database(env, output, root):
     snapshot = output/'core-database.sql'
-    subprocess.run([str(root/'scripts/php-test'), 'tests/native-database.php'], cwd=root,
-                   env=dict(env, PAYMENTER_TEST_DATABASE_EXPORT=str(snapshot)), check=True, timeout=10)
+    with case_root(env, output/'cases') as (_, child):
+        subprocess.run([str(root/'scripts/php-test'), 'tests/native-database.php'], cwd=root,
+                       env=dict(child, PAYMENTER_TEST_DATABASE_EXPORT=str(snapshot)), check=True, timeout=10)
     env.update(PAYMENTER_TEST_DATABASE=str(snapshot),
                PAYMENTER_TEST_DATABASE_SHA256=hashlib.sha256(snapshot.read_bytes()).hexdigest())
     installed = output/'commerce-database.sql'
-    subprocess.run([str(root/'scripts/php-test'), 'tests/commerce-database.php'], cwd=root,
-                   env=dict(env, PAYMENTER_TEST_COMMERCE_EXPORT=str(installed)), check=True, timeout=10)
+    with case_root(env, output/'cases') as (_, child):
+        subprocess.run([str(root/'scripts/php-test'), 'tests/commerce-database.php'], cwd=root,
+                       env=dict(child, PAYMENTER_TEST_COMMERCE_EXPORT=str(installed)), check=True, timeout=10)
     env.update(PAYMENTER_TEST_COMMERCE_DATABASE=str(installed),
                PAYMENTER_TEST_COMMERCE_SHA256=hashlib.sha256(installed.read_bytes()).hexdigest())
 
@@ -155,7 +202,7 @@ def prepare_funded_registration(env, output):
     root = Path(__file__).resolve().parents[1]
     operation = output/'operation-catalogue.sql'
     funded = output/'funded-registration.sql'
-    with command_environment(env) as child:
+    with command_environment(env, output/'cases') as (_, child):
         subprocess.run([str(root/'scripts/php-test'), 'tests/Support/export-funded-registration.php'], cwd=root,
                        env=dict(child, PAYMENTER_TEST_OPERATION_EXPORT=str(operation), PAYMENTER_TEST_FUNDED_EXPORT=str(funded)), check=True, timeout=10)
     env.update(PAYMENTER_TEST_OPERATION_DATABASE=str(operation),

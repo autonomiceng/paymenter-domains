@@ -1,10 +1,11 @@
 <?php
-// Serves the seeded fixture app to a local browser. MIT, Copyright (c) 2026 Autonomic Engineering.
+// Answers one browser request with the seeded fixture app's own HTTP kernel. MIT, Copyright (c) 2026 Autonomic Engineering.
+// refund-browser.cjs writes the request as JSON on stdin and reads the reply as JSON from descriptor 3; nothing listens on a port.
 declare(strict_types=1);
 $fixture=(string)getenv('PAYMENTER_TEST_FIXTURE');
-$path=(string)(parse_url((string)$_SERVER['REQUEST_URI'],PHP_URL_PATH)?:'/');
-if($path!=='/'&&!str_contains($path,'..')&&is_file($fixture.'/public'.$path)&&!str_ends_with($path,'.php')){return false;}
-foreach(['APP_ENV'=>'testing','APP_DEBUG'=>'false','APP_KEY'=>'base64:'.base64_encode(str_repeat('t',32)),'APP_URL'=>(string)getenv('REFUND_BROWSER_URL'),
+$wire=json_decode((string)stream_get_contents(STDIN),true,8,JSON_THROW_ON_ERROR);
+// The app runs as an HTTP request, as under the PHP web server: in console mode Laravel skips the CSRF check.
+foreach(['APP_ENV'=>'testing','APP_RUNNING_IN_CONSOLE'=>'false','APP_DEBUG'=>'false','APP_KEY'=>'base64:'.base64_encode(str_repeat('t',32)),'APP_URL'=>(string)getenv('REFUND_BROWSER_URL'),
     'DB_CONNECTION'=>'sqlite','DB_DATABASE'=>(string)getenv('REFUND_BROWSER_DATABASE'),'CACHE_STORE'=>'file','QUEUE_CONNECTION'=>'sync',
     'SESSION_DRIVER'=>'file','MAIL_MAILER'=>'array','TELEMETRY_ENABLED'=>'false','LOG_CHANNEL'=>'single'] as $key=>$value){
     putenv($key.'='.$value);$_ENV[$key]=$_SERVER[$key]=$value;
@@ -15,8 +16,8 @@ $loader->addPsr4('Paymenter\\Extensions\\',$fixture.'/extensions/',true);
 $app=require $fixture.'/bootstrap/app.php';
 $app->booted(static function()use($app):void{
     config(['settings.mail_disabled'=>true,'settings.default_currency'=>'USD','settings.tax_enabled'=>false,'audit.enabled'=>false]);
-    // Upstream has no compiled theme assets; these inert URLs are never fetched.
-    $hot=storage_path('framework/refund-browser-assets');file_put_contents($hot,'http://assets.example.test');
+    // Upstream has no compiled theme assets; the driver answers this prefix with empty files.
+    $hot=storage_path('framework/refund-browser-assets');file_put_contents($hot,(string)getenv('REFUND_BROWSER_URL').'/refund-browser-assets');
     app(Illuminate\Foundation\Vite::class)->useHotFile($hot);
     Illuminate\Support\Facades\Http::preventStrayRequests();
     $instant=new DateTimeImmutable((string)getenv('REFUND_BROWSER_CLOCK'));
@@ -29,7 +30,8 @@ $app->booted(static function()use($app):void{
         $user=App\Models\User::where('email',(string)getenv('REFUND_BROWSER_EMAIL'))->sole();
         Illuminate\Support\Facades\Auth::login($user);session()->regenerate();
         session()->put('user_session',App\Models\UserSession::create(['user_id'=>$user->id,'last_activity'=>now()])->ulid);
-        return redirect('/admin');
+        // A cookie scoped to this path, which the browser keeps from the redirect to /admin.
+        return redirect('/admin')->withCookie(cookie('refund-browser-scoped','1',0,'/refund-browser-login'));
     });
     // Test-only readout of the saved money, decrypted the same way the app reads it.
     Illuminate\Support\Facades\Route::get('/refund-browser-facts',static function(){
@@ -46,4 +48,39 @@ $app->booted(static function()use($app):void{
             'credits'=>App\Models\Credit::where('user_id',$seed['user'])->get(['amount','currency_code'])->map(fn($c)=>[(string)$c->amount,$c->currency_code])->all()]);
     });
 });
-$app->handleRequest(Illuminate\Http\Request::capture());
+
+/** Rebuild the browser's request as the PHP web server would have presented it. */
+function browserRequest(array $wire): Illuminate\Http\Request
+{
+    $server=['REMOTE_ADDR'=>'127.0.0.1','SERVER_PROTOCOL'=>'HTTP/1.1'];
+    foreach($wire['headers'] as $name=>$value){
+        $key=strtoupper(str_replace('-','_',(string)$name));
+        $server[in_array($key,['CONTENT_TYPE','CONTENT_LENGTH'],true)?$key:'HTTP_'.$key]=(string)$value;
+    }
+    $cookies=[];
+    foreach(explode(';',(string)($wire['headers']['cookie']??'')) as $pair){
+        [$name,$value]=array_pad(explode('=',trim($pair),2),2,'');
+        if($name!==''){$cookies[$name]=urldecode($value);}
+    }
+    $content=base64_decode((string)$wire['body'],true);
+    if(!is_string($content)){throw new RuntimeException('Browser request body is not base64');}
+    $type=(string)($server['CONTENT_TYPE']??'');
+    if(str_starts_with($type,'multipart/')){throw new RuntimeException('The refund pages send no file uploads');}
+    $parameters=[];
+    if(str_starts_with($type,'application/x-www-form-urlencoded')){parse_str($content,$parameters);}
+    Illuminate\Http\Request::enableHttpMethodParameterOverride();
+    return Illuminate\Http\Request::create((string)$wire['url'],(string)$wire['method'],$parameters,$cookies,[],$server,$content);
+}
+
+$request=browserRequest($wire);
+$kernel=$app->make(Illuminate\Contracts\Http\Kernel::class);
+$response=$kernel->handle($request);
+ob_start();
+$response->sendContent();
+$body=(string)ob_get_clean();
+$headers=array_map(static fn(array $values):string=>implode(', ',$values),$response->headers->allPreserveCaseWithoutCookies());
+$reply=fopen('php://fd/3','wb')?:throw new RuntimeException('The driver opens the reply descriptor');
+fwrite($reply,json_encode(['status'=>$response->getStatusCode(),'headers'=>$headers,
+    'cookies'=>array_map('strval',$response->headers->getCookies()),'body'=>base64_encode($body)],JSON_THROW_ON_ERROR));
+fclose($reply);
+$kernel->terminate($request,$response);
