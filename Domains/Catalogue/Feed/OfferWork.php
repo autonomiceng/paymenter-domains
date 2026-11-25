@@ -56,23 +56,21 @@ final class OfferWork
             $t = Tld::where('server_id', $binding->serverId)->where('tld', $tld)->firstOrFail();
             $this->queue->offerBinding($binding, $t); $work = OfferState::decode($row->offer_work);
             $facts = OfferState::facts($t->catalogue_facts);
-            $rejected = !OfferState::testFactsAccepted($binding, $tld, $facts, $this->clock);
             $state = $work['facts'][$tld] ?? null;
             $authority = hash('sha256', OfferState::json(TermSupport::evidence($binding, $tld)));
-            $current = $facts && TermSupport::currentFacts($binding, $tld, $facts);
-            if ($state !== null && !$current && $binding->registrarKey === 'enom'
-                && ($state['authority'] ?? null) !== $authority) {
+            if ($state === null) {
+                if (count($work['facts'] ?? []) >= 5000) { throw new \DomainException('Offer facts queue is full.'); }
+                $work['facts'][$tld] = ['sold_only' => $soldOnly, 'authority' => $authority, 'due_at' => OfferState::readyFacts($binding, $tld, $facts, $this->clock) ? $facts->freshUntil->getTimestamp() : $this->at()];
+            } elseif ($binding->registrarKey === 'enom' && ($state['authority'] ?? null) !== $authority
+                && !($facts && TermSupport::currentFacts($binding, $tld, $facts))) {
                 // Wake once for a changed approval; repeated hints preserve the new failure backoff.
                 $work['facts'][$tld] = ['sold_only' => $state['sold_only'] ?? $soldOnly,
                     'authority' => $authority, 'due_at' => $this->at()];
-            } elseif ($state !== null) {
-                // Promote an old freshness deadline, while preserving failures and unsupported readers.
-                if (!$rejected || !empty($state['tries']) || !empty($state['unsupported'])
-                    || ($state['due_at'] ?? 0) <= $this->at()) { return; }
-                $work['facts'][$tld]['due_at'] = $this->at();
             } else {
-                if (count($work['facts'] ?? []) >= 5000) { throw new \DomainException('Offer facts queue is full.'); }
-                $work['facts'][$tld] = ['sold_only' => $soldOnly, 'authority' => $authority, 'due_at' => OfferState::readyFacts($binding, $tld, $facts, $this->clock) ? $facts->freshUntil->getTimestamp() : $this->at()];
+                // Promote an old freshness deadline, while preserving failures and unsupported readers.
+                if (!empty($state['tries']) || !empty($state['unsupported']) || ($state['due_at'] ?? 0) <= $this->at()
+                    || OfferState::testFactsAccepted($binding, $tld, $facts, $this->clock)) { return; }
+                $work['facts'][$tld]['due_at'] = $this->at();
             }
             $q->update(['offer_work' => OfferState::json($work)]);
         });

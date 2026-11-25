@@ -322,6 +322,16 @@ $worker->accountTurn($n->serverId);
 same($clock->now()->getTimestamp(),$worker->status($n,'com')['due_at'],'Worker save preserves an earlier facts hint created during republication');
 $worker->accountTurn($n->serverId);
 same('unsupported',$worker->status($n,'com')['state'],'The promoted hint reaches the existing unsupported-reader path');
+// A first hint for fresh TEST facts checks the saved evidence once while it holds the queue lock.
+$fresh=fixtureNameSiloFacts($n,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register'=>[1],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$clock->now(),$clock->now()->modify('+1 day')));
+DB::table('domains_tlds')->where('server_id',$n->serverId)->where('tld','com')->update(['catalogue_facts'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeFacts($fresh)]);
+DB::table('domains_observation_queues')->where('server_id',$n->serverId)->update(['offer_work'=>'{}','offer_claim'=>null,'offer_lease'=>0]);
+$evidenceReads=0;DB::listen(static function($query)use(&$evidenceReads):void{if(in_array(\Paymenter\Extensions\Servers\Domains\Services\LocalAccountEnrollment::KEY,$query->bindings,true)){$evidenceReads++;}});
+expect(\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestCatalogueFacts::current($n,'com',$fresh,$clock),'The fresh TEST facts match their saved evidence');
+$oneCheck=$evidenceReads;$evidenceReads=0;
+$worker->requestFacts($n,'com');
+same($oneCheck,$evidenceReads,'A first hint for fresh TEST facts reads the saved evidence once');
+same($fresh->freshUntil->getTimestamp(),$worker->status($n,'com')['due_at'],'A first hint for fresh TEST facts waits for their expiry');
 echo "Dormant offer queue and lazy facts checks passed.\n";
 
 // Shared scheduler account turns, formerly offer-runtime-work-test.php.
