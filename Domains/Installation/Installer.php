@@ -133,6 +133,7 @@ final class Installer
         self::$owner = $owner;
         try {
             $owner->check();
+            // Each definition creates its tables; this one full verification checks them all for the owner.
             app(Migrator::class)->run([dirname(__DIR__).'/database/migrations'], ['force'=>true]);
             Verification::run(); ReminderTemplates::ensure();
             CatalogueActivation::initialize($owner);

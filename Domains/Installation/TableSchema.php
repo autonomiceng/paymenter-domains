@@ -19,8 +19,9 @@ abstract class TableSchema
     public static function install(): void
     {
         $definitions = static::definitions();
+        $owned = Installer::recovering();
         $present = array_filter(array_keys($definitions), Schema::hasTable(...));
-        if ($present && count($present) !== count($definitions) && !Installer::recovering()) {
+        if ($present && count($present) !== count($definitions) && !$owned) {
             throw new \RuntimeException('Partial retained Domains schema.');
         }
         foreach ($definitions as $table => $definition) {
@@ -28,10 +29,13 @@ abstract class TableSchema
                 Schema::create($table, $definition);
             }
         }
-        if (!$present || Installer::recovering()) {
+        if (!$present || $owned) {
             static::seed();
         }
-        static::verify();
+        // The owning fresh install verifies every registered table once, after all are created.
+        if (!$owned) {
+            static::verify();
+        }
     }
 
     protected static function seed(): void {}
