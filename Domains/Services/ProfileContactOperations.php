@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,WriteReservation};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{ContactProfile,Operation,ProfileContactOperation as ProfileOperation};
+use Paymenter\Extensions\Servers\Domains\Management\Contacts\ContactProfiles;
 /** One contactAdd, then read-only recovery by its durably returned ID. Explicit injection only. */
 final class ProfileContactOperations
 {

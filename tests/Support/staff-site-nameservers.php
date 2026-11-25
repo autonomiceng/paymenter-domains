@@ -18,7 +18,7 @@ $nsModal->callAction(\Filament\Actions\Testing\TestAction::make('fill_site_defau
 $nsModal->assertActionDataSet(['nameservers'=>implode("\n",$siteServers)]);
 same($count,$d->operations()->count(),'Staff fill does not submit a change');
 $profile->nameservers=['ns1.new-site.example.net','ns2.new-site.example.net'];$profile->saveQuietly();
-$nsModal->callMountedAction()->assertNotified(\Paymenter\Extensions\Servers\Domains\Services\ManagementForms::REQUESTED);
+$nsModal->callMountedAction()->assertNotified(\Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementForms::REQUESTED);
 $nsSaved=$d->operations()->where('action','nameservers')->latest('id')->firstOrFail();
 same(['nameservers'=>$siteServers],$nsSaved->payload,'Staff save freezes the filled list even after the site default changes');
 same((int)$staff->id,(int)$nsSaved->authorized_by,'The explicit change is credited to staff');

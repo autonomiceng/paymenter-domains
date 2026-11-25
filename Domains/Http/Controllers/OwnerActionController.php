@@ -5,7 +5,8 @@ namespace Paymenter\Extensions\Servers\Domains\Http\Controllers;
 use Illuminate\Http\Request;
 use Paymenter\Extensions\Servers\Domains\Http\{FormKeys,RawPost};
 use Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility;
-use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery, DomainManagement, OwnedDomains, OwnerPorts, OwnerSetup, OwnerNameservers, OwnerFormValidation, TransferInputs};
+use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery, DomainManagement, OwnedDomains, OwnerPorts, OwnerSetup, OwnerFormValidation, TransferInputs};
+use Paymenter\Extensions\Servers\Domains\Management\Changes\OwnerNameservers;
 /** Dormant owner POST boundary. Never calls a driver write. Contact correction wakes only the existing paid registration. */
 final readonly class OwnerActionController
 {
@@ -77,14 +78,14 @@ final readonly class OwnerActionController
                 $request->request->set('records',$p['records']??[]);
             }
             if ($action==='nameservers' && ($p['fill_site_default']??null)==='1') {
-                $servers=\Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::defaults($d,$this->ports);
+                $servers=\Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementNameservers::defaults($d,$this->ports);
                 if (!$servers) { throw new OwnerFormValidation(['nameservers']); }
                 unset($p['confirmed']);$request->request->remove('confirmed');
                 $p['nameservers']=implode("\n",$servers);
                 $request->request->set('nameservers',$p['nameservers']);
             }
-            (new \Paymenter\Extensions\Servers\Domains\Services\ManagementForms($this->management,$this->ports))->submit($request->user(),$d,$action,$p,$nonce,contactsDigest:$contactsDigest);
-        },\Paymenter\Extensions\Servers\Domains\Services\ManagementForms::REQUESTED);
+            (new \Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementForms($this->management,$this->ports))->submit($request->user(),$d,$action,$p,$nonce,contactsDigest:$contactsDigest);
+        },\Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementForms::REQUESTED);
     }
     private function submit(Request $request,int $domain,string $action,\Closure $work,string $message)
     {

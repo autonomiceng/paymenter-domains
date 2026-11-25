@@ -10,7 +10,8 @@ use Illuminate\Support\Facades\{Auth,Cache};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,ManagementForms,OwnedDomains,OwnerPorts};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,OwnedDomains,OwnerPorts};
+use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementForms;
 staffPanel();storefrontViews();
 [$d,$driver,$original]=$holding('contacts');$contact=$original->payload['contacts']['registrant'];
 $ports=new OwnerPorts(fn($b)=>$driver);
@@ -43,7 +44,7 @@ $stage=$last('contact_profile');same((int)$staff->id,(int)$stage->authorized_by,
 same(['all',$contact],[$op->payload['role'],$op->payload['contact']],'The request freezes the owner contact shape');
 same('queued',$management->run($op->id,$driver)->state,'Creation finishes before association');
 $partial='Contact details saved. Applying them to the domain.';
-same($partial,\Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::for($d)['contacts']['text'],'Shared progress shows the verified prerequisite awaiting association');
+same($partial,\Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementProgress::for($d)['contacts']['text'],'Shared progress shows the verified prerequisite awaiting association');
 $checkProgress($partial);
 Cache::flush();
 same('succeeded',$management->run($op->id,$driver)->state,'The same queue completes the staff change');

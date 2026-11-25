@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, ManagementProtocol};
 use Paymenter\Extensions\Servers\Domains\Data\{ManagementRequest, ManagementResult, PrivacyMode, RequestBudget, RequestContext, RequestOrigin, Support};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Management\Changes\{CorrectionProgress, ManagementCorrections, ManagementDeferred, ManagementPreparation, ManagementPrivacy, ManagementProgress, ManagementSequence};
 /** Dormant engine boundary. All reads/writes outside locks; every request owns one durable attempt. */
 final class DomainManagement
 {

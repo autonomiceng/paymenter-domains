@@ -10,8 +10,9 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainEditActions,DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainManagement,DomainObservation,ManagementForms,ObservationSchema,OwnedDomains,OwnerPorts};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainManagement,DomainObservation,ObservationSchema,OwnedDomains,OwnerPorts};
 use Paymenter\Extensions\Servers\Domains\Services\{StaffOperationReview,StaffOperations};
+use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementForms;
 // Arrange the independently observed provider state left by successful record edits.
 $state->ns=['dns1.name-services.com','dns2.name-services.com'];
 $observation->nameservers=$state->ns; // The native domain reader has its own independent wire fixture.

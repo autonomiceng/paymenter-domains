@@ -13,9 +13,10 @@ use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
 use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Models\{ContactProfile, Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, ContactDetails, ContactProfiles, ContactProfileSchema,
+use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, ContactDetails, ContactProfileSchema,
     ContactRecovery, ContactSetup, ContactValidation, InvoiceBinding, RegistryInputs};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
+use Paymenter\Extensions\Servers\Domains\Management\Contacts\ContactProfiles;
 $fixtureEnding = 'test';
 extract(commerceFixture(true, ending: $fixtureEnding)); ContactProfileSchema::install(); ContactProfileSchema::verify();
 $clock ??= new FakeClock($now); $admission = activeFixtureAdmission($native, $sellers, activeFixtureEligibility($bindings, $clock), $clock);

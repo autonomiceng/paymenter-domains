@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Management\Changes\OwnerNameservers;
 /** Safe field identifiers and reason codes only; never carry submitted values or provider errors. */
 final class OwnerFormValidation extends \DomainException
 {

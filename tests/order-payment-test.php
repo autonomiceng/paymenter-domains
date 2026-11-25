@@ -161,7 +161,7 @@ same('Under review',$word($steps->item(1)),'Other steps end in their word');
 $noEdit=storefrontDom(view('domains::partials.activity',['domain'=>new OwnedDomain('order.example','Active','ok',null,'',null,['show'=>'/domains/1'],[['label'=>'Contacts','state'=>'Failed','date'=>'2026-10-27','note'=>'Not sent. Nothing changed at the registrar.','retry'=>false]],[],[],[],false)])->render());
 $step=$norm($noEdit->query('//ol[@class="domains-trace"]/li')->item(0)->textContent);
 expect(str_contains($step,'Not sent. Nothing changed at the registrar. Contact support to make this change.')&&!str_contains($step,'Try again'),'A failed change the customer can\'t make asks them to contact us');
-$row=['id'=>75,'pending'=>false,'text'=>'Not sent. Nothing changed at the registrar.'.Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::TRY_AGAIN];
+$row=['id'=>75,'pending'=>false,'text'=>'Not sent. Nothing changed at the registrar.'.Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementProgress::TRY_AGAIN];
 same('Not sent. Nothing changed at the registrar. Contact support to make this change.',OwnedDomains::askUs($row,false)['text'],'The row under a setting without Edit asks them to contact us');
 same($row,OwnedDomains::askUs($row,true),'With Edit, the row keeps Try again');
 $done=storefrontDom(view('domains::partials.activity',['domain'=>new OwnedDomain('order.example','Active','ok',null,'',null,['show'=>'/domains/1'],[['label'=>'Renewal','state'=>'Cancelled','date'=>'2026-10-27','note'=>'We added $1.00 to account credit.']],[],[],[],false)])->render());

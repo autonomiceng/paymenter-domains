@@ -76,7 +76,7 @@
 @component('domains::partials.owner-edit', ['id' => $cap, 'title' => 'Edit nameservers', 'open' => $editOpen, 'cancel' => $show, 'buttons' => true, 'headerClose' => true])
 <form method="POST" action="{{ $section['url'] }}" class="domains-owner-form" data-confirm data-nameservers-max="{{ $section['max'] }}" @if ($section['letterEnding'] ?? false) data-nameservers-letter-ending="1" @endif @if ($section['defaults'] ?? false) data-default-servers="{{ implode("\n", $section['defaultServers'] ?? []) }}" @endif>
 @include('domains::partials.form-key', ['action' => 'nameservers'])
-@if (!($section['defaults'] ?? false))<p class="domains-hint">{{ $section['defaultError'] ?? \Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::MISSING }}</p>@endif
+@if (!($section['defaults'] ?? false))<p class="domains-hint">{{ $section['defaultError'] ?? \Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementNameservers::MISSING }}</p>@endif
 @include('domains::partials.nameservers', ['id' => 'domains-ns', 'max' => $section['max'], 'required' => true, 'useOld' => $failed === $section['url'], 'value' => $nsValue, 'placeholder' => "ns1.example.com\nns2.example.com", 'fieldLabel' => 'Nameservers', 'autofocus' => true, 'hint' => 'One per line, 2 to '.$section['max'].', like ns1.example.com.'])
 @if ($section['defaults'] ?? false)
 <button type="submit" name="fill_site_default" value="1" formnovalidate class="domains-btn domains-btn--secondary" data-fill-defaults>Use {{ \Paymenter\Extensions\Servers\Domains\Dns\CompanyLabels::nameservers() }}</button>
@@ -84,7 +84,7 @@
 @include('domains::partials.edit-buttons', ['open' => $editOpen, 'cancel' => $show, 'label' => 'Save'])
 @include('domains::partials.owner-confirm', ['id' => 'nameservers', 'open' => $confirmStep === 'nameservers', 'cancel' => $show.'?edit=nameservers#edit-nameservers', 'title' => 'Change nameservers?', 'tone' => 'primary', 'button' => 'Change nameservers',
     'facts' => [['label' => 'Current', 'value' => $currentServers], ['label' => 'New', 'slot' => 'nameservers', 'value' => preg_split('/\R/', trim($nsValue), -1, PREG_SPLIT_NO_EMPTY)]],
-    'risk' => \Paymenter\Extensions\Servers\Domains\Services\ManagementForms::NAMESERVERS_RISK])
+    'risk' => \Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementForms::NAMESERVERS_RISK])
 </form>
 @endcomponent
 @endif
@@ -115,7 +115,7 @@
 @if ($checking && $section['actions'])
 <span class="domains-row__a"><button class="domains-a domains-linkbtn" type="button" aria-disabled="true" disabled>Change</button></span>
 @elseif ($section['actions'])
-@php($lockRisk = \Paymenter\Extensions\Servers\Domains\Services\ManagementForms::lockRisk($domain->name, $section['transferOutDate'] ?? null))
+@php($lockRisk = \Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementForms::lockRisk($domain->name, $section['transferOutDate'] ?? null))
 @if ($state === null)
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">Change</a></span>
 @php($lockOff = $confirmStep === 'lock' || ($failed === $section['url'] && old('locked') === '0'))
@@ -160,7 +160,7 @@
 @if (!$section['saved'])<p class="domains-hint">Enter the full details. We replace what's saved.</p>@endif
 <p class="domains-hint">We use these details for every contact on this domain.</p>
 @include('domains::partials.contact', ['prefix' => 'contact', 'values' => $section['saved'], 'useOld' => $contactFailed, 'errors' => $contactFailed ? $errors : new \Illuminate\Support\ViewErrorBag, 'idPrefix' => $action, 'section' => 'owner-'.$action, 'stateRequired' => $section['staged'], 'limits' => $section['limits'] ?? null])
-<p class="domains-hint">{{ \Paymenter\Extensions\Servers\Domains\Services\ManagementForms::CONTACTS_RISK }}</p>
+<p class="domains-hint">{{ \Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementForms::CONTACTS_RISK }}</p>
 @include('domains::partials.edit-buttons', ['open' => $editOpen, 'cancel' => $show, 'label' => 'Save'])
 </form>
 @endcomponent

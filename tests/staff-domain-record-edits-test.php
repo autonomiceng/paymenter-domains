@@ -11,8 +11,9 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Relation
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainEditActions,DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Presentation\State;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainManagement,DomainObservation,ManagementForms,ManagementProgress,ObservationSchema,OwnedDomains,OwnerPorts};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainManagement,DomainObservation,ObservationSchema,OwnedDomains,OwnerPorts};
 use Paymenter\Extensions\Servers\Domains\Services\{StaffOperationReview,StaffOperations};
+use Paymenter\Extensions\Servers\Domains\Management\Changes\{ManagementForms, ManagementProgress};
 $view()->assertSee('Email auth code');
 $edit('Transfer lock','lock',['locked'=>'0'])->assertNotified(ManagementForms::REQUESTED);$finish($last('lock'));
 // Registrar record forms need observed registrar delegation, including after a nameserver edit.

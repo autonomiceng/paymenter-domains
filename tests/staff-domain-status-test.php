@@ -12,7 +12,8 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Labels,Reque
 use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainQueries;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus, RequestStatus, State};
-use Paymenter\Extensions\Servers\Domains\Services\{ManagementCorrections, ObligationAlerts};
+use Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts;
+use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementCorrections;
 staffPanel(); [, $seed]=staffData();
 $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
 

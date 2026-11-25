@@ -111,7 +111,7 @@ expect(str_contains($html,'DNS records')&&str_contains($html,'SRV records')&&str
 expect(!preg_match('/As of \d{4}-\d{2}-\d{2}T/',strip_tags($html))&&str_contains($html,'data-domains-time'),'Read times follow the date rule');
 // DNS and SRV share pending work but keep their own finished results, on the owner page and for staff.
 $sectionText=fn($id)=>preg_replace('/\s+/u',' ',storefrontDom($page())->query('//li[@id="'.$id.'"]')->item(0)->textContent);$failed='change failed.';
-$staffRow=fn($section)=>\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::progress(\Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::for($d->fresh()),$section);
+$staffRow=fn($section)=>\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::progress(\Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementProgress::for($d->fresh()),$section);
 $srvForm=function()use($owners,$d){$m=$owners->present($d->fresh())->management['srv'];return [array_map(fn($r,$i)=>[...array_map('strval',array_diff_key($r,['host_id'=>true])),'_source'=>(string)$i],$m['records'],array_keys($m['records'])),$m['digest']];};
 $save=function(string $action,array $payload,bool $refused)use($controller,$post,$d,$management,$driver,$state):string{
     Cache::flush();$state->fault=$refused?'refused':'';$controller->manage($post($action,$payload),$d->id,$action);

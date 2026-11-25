@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{ManagementRequest, RequestBudget,
 [$d,$driver,$original]=$holding('baseline');
 staffPanel(); $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
 same(PrivacyMode::Free,$driver->capabilities()->privacy,'Free privacy declared');
-$forms=new \Paymenter\Extensions\Servers\Domains\Services\ManagementForms($management,new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts(fn()=>$driver));
+$forms=new \Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementForms($management,new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts(fn()=>$driver));
 $before=[$d->operations()->count(),$ms->calls];
 commerceReject(fn()=>$forms->submit($user,$d,'privacy_enable',['privacy'=>'1'],$key()));
 same($before,[$d->operations()->count(),$ms->calls],'Hidden free privacy cannot be enabled by posting the old form');

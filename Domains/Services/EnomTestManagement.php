@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
+use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementDeferred;
 /** Independent management opt-in. DNS tools retain their separate server gate. */
 final class EnomTestManagement
 {
