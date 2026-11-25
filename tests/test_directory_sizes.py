@@ -2,8 +2,9 @@
 """A Domains directory holds at most 40 PHP files of its own; subdirectories count separately.
 
 OVERSIZED records the directories already above the limit at their current counts. A count may only go down:
-lower the entry when files leave, and drop it once the directory is back within the limit. Put new code in the
-owning feature folder from docs/design/layout.md.
+lower the entry when files leave, and drop it once the directory is back within the limit. Raising an entry or
+adding one to make this test pass is a review block. Put new code in the owning feature folder from
+docs/design/layout.md.
 """
 from pathlib import Path
 import unittest
@@ -30,7 +31,7 @@ class DirectorySizes(unittest.TestCase):
     def test_no_directory_grows_past_its_limit(self):
         over = [f'{d}: {n} PHP files, limit {OVERSIZED.get(d, LIMIT)}'
                 for d, n in sorted(counts().items()) if n > OVERSIZED.get(d, LIMIT)]
-        self.assertEqual([], over, 'Move code into its feature folder (docs/design/layout.md):\n' + '\n'.join(over))
+        self.assertEqual([], over, 'Move code into its feature folder (docs/design/layout.md); never raise OVERSIZED:\n' + '\n'.join(over))
 
     def test_oversized_counts_only_go_down(self):
         found = counts()

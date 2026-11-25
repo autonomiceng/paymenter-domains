@@ -11,6 +11,7 @@ One MIT Paymenter server extension that sells and manages domains through Enom a
   name only their own namespace.
 - A directory holds at most 40 PHP files of its own. `tests/test_directory_sizes.py` and
   `tests/test_registrar_api_imports.py` enforce both rules; their lists of today's exceptions may only shrink.
+  Never raise a count or add an entry to make them pass: move the code instead.
 - Offline tests are in `tests/`, development tools in `scripts/`, design notes in `docs/design/`.
 
 ## Tests
@@ -20,8 +21,10 @@ One MIT Paymenter server extension that sells and manages domains through Enom a
 - One file: `scripts/test.py --only tests/<file>`. Native tests also need `PAYMENTER_TEST_APP` set to a pristine
   Paymenter 1.5.9 checkout.
 - The tests a change affects: `python3 scripts/affected.py --base origin/main --suite <suite>` for each suite in
-  `tests/suites.json` plus `native`; pass the listed paths to `--only`. Add a test the map cannot find through
+  `tests/suites.json` plus `native`; pass the listed paths to `--only`. `--base` sees committed changes only; for
+  edits not yet committed use `--files <changed paths>` instead. Add a test the map cannot find through
   imports or file names under `explicit` in `tests/affected.json`.
+- Native and UI tests need `PAYMENTER_TEST_APP`. Run MariaDB tests in their own `scripts/test.py` call.
 - Register a new non-native test in its `tests/suites.json` category.
 
 ## Provider and upgrade rules
