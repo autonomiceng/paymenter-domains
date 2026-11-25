@@ -1,10 +1,17 @@
 # MIT, Copyright (c) 2026 Autonomic Engineering.
-"""Registrar API clients stay protocol code: each file under Registrars/<Provider>/Api names only that subtree.
+"""Registrar API clients stay protocol code, and the rest of Domains reaches a provider only through Dispatch.
 
-A `use` import or a fully qualified class name outside that namespace must appear in ALLOWED. The list records
-what the clients reach today and may only shrink: remove an entry when its last reference goes, and move code
-instead of adding one. Adding an entry to make this test pass is a review block. See docs/design/layout.md.
+Each file under Registrars/<Provider>/Api names only that subtree. A `use` import or a fully qualified class name
+outside that namespace must appear in ALLOWED. The list records what the clients reach today and may only shrink:
+remove an entry when its last reference goes, and move code instead of adding one.
+
+Outside the provider trees and Registrars/Dispatch, every reference to a provider class is listed in
+tests/registrar-reverse-imports.json: Registrars/Enom and Registrars/NameSilo classes, the Enom* and NameSilo*
+classes still in Services, and provider class names or source paths written in strings. The list must match
+the code exactly. Delete an entry when its reference goes, and call a Dispatch entry point instead of adding one.
+Adding an entry to make this test pass is a review block. See docs/design/layout.md.
 """
+import json
 from pathlib import Path
 import re
 import tempfile
@@ -13,6 +20,13 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 API = ROOT/'Domains/Registrars'
 BASE = 'Paymenter\\Extensions\\Servers\\Domains\\'
+REVERSE = ROOT/'tests/registrar-reverse-imports.json'
+PROVIDERS = ('Registrars/Enom/', 'Registrars/NameSilo/')
+# Dispatch files that build provider objects or classify their refusals. Other Dispatch files stay provider neutral.
+COMPOSITION = {'Registrars/Dispatch/Offers.php', 'Registrars/Dispatch/RegistrarFactories.php',
+               'Registrars/Dispatch/RegistrarRegistry.php', 'Registrars/Dispatch/RenewalWriter.php'}
+# One provider naming the other. Only shrinks: the shared pre-wire refusal type replaces this Enom one.
+CROSSING = ['NameSilo/ObservationReader.php: Services\\EnomTestCallLimit']
 
 ALLOWED = {
     'Enom/Api/AdoptionTransport.php': ['Data\\Environment'],
@@ -82,6 +96,92 @@ def current(root=API):
     return {str(p.relative_to(root)): found for p in sorted(root.glob('*/Api/**/*.php')) if (found := outside(p, root))}
 
 
+PROVIDER = re.compile(r'Registrars\\(?:Enom|NameSilo)\\\w|Services\\(?:Enom|NameSilo)\w*$')
+# A name in code: not a variable, member or class constant, and not the tail of a longer name.
+TOKEN = re.compile(r'(?<!::)(?<!->)(?<![\w$\\])\\?[A-Za-z_]\w*(?:\\[A-Za-z_]\w*)*')
+STRING_NAME = re.compile(r'Registrars\\{1,2}(?:Enom|NameSilo)\\{1,2}\w+(?:\\{1,2}\w+)*|Services\\{1,2}(?:Enom|NameSilo)\w*')
+STRING_PATH = re.compile(r'(?:Registrars/)?(?:Enom|NameSilo)/[\w/]*\w\.php|Services/(?:Enom|NameSilo)\w*\.php')
+
+
+def provider(name):
+    """A provider class relative to the Domains root namespace, or None."""
+    relative = name[len(BASE):] if name.startswith(BASE) else ''
+    return relative if PROVIDER.match(relative) else None
+
+
+def provider_names(source, blade=False, own=None):
+    """Provider classes one runtime file reaches, resolved the way PHP resolves them.
+
+    Imports (grouped and aliased) count, and so does each use of an imported namespace prefix (`Enom\\Driver` after
+    `use ...\\Registrars\\{Enom}`), a relative name, `namespace\\` and a fully qualified name. Strings count when they
+    hold a provider class name or source path. Blade has no imports, so only its fully qualified names count."""
+    found = set()
+    for match in NOISE.finditer(source):
+        text = match.group(0)
+        if text[:1] in '\'"' or text.startswith('<<<'):
+            found.update(re.sub(r'\\+', r'\\', name) for name in STRING_NAME.findall(text))
+            found.update('path:'+path for path in STRING_PATH.findall(text))
+    if blade:
+        return found | {name for name in map(provider, QUALIFIED.findall(source)) if name}
+    code = NOISE.sub("''", source)
+    namespace, level, depth, aliases, spans = '', 0, 0, {}, []
+    for match in SCOPE.finditer(code):
+        if match['brace']:
+            depth += 1 if match['brace'] == '{' else -1
+            continue
+        spans.append(match.span())
+        if match['opener']:
+            namespace, aliases = match['space'], {}
+            depth += match['opener'] == '{'
+            level = depth
+        elif depth == level:
+            if re.match(r'(?:function|const)\s', match['text']):
+                continue
+            prefix = match['text'].strip().lstrip('\\') if match['block'] else ''
+            for item in (match['block'][1:-1] if match['block'] else match['text']).split(','):
+                if not item.strip():
+                    continue
+                name, *alias = re.split(r'\s+as\s+', item.strip())
+                full = prefix+name.lstrip('\\')
+                aliases[alias[0] if alias else full.rsplit('\\', 1)[-1]] = full
+                found.add(provider(full))
+        else:
+            found.update(provider(item.lstrip('\\') if item.startswith('\\') else namespace+'\\'+item)
+                         for item in (part.strip() for part in match['text'].split(',')) if item)
+    # Blank namespace and use statements so their names are not read again as uses.
+    body = list(code)
+    for start, end in spans:
+        body[start:end] = ' '*(end-start)
+    for name in TOKEN.findall(''.join(body)):
+        head, _, rest = name.partition('\\')
+        if name.startswith('\\'):
+            full = name[1:]
+        elif head.lower() == 'namespace' and rest:
+            full = namespace+'\\'+rest
+        elif head in aliases:
+            full = aliases[head]+('\\'+rest if rest else '')
+        else:
+            full = namespace+'\\'+name
+        found.add(provider(full))
+    found.discard(None)
+    if own:
+        found.discard(provider(namespace+'\\'+own))
+    return found
+
+
+def reverse(root=ROOT/'Domains'):
+    """Provider names reached by each runtime file outside the provider trees, Dispatch included."""
+    found = {}
+    for path in sorted(root.rglob('*.php')):
+        relative = str(path.relative_to(root))
+        if relative.startswith(PROVIDERS):
+            continue
+        blade = relative.endswith('.blade.php')
+        if names := provider_names(path.read_text(), blade, None if blade else path.stem):
+            found[relative] = sorted(names)
+    return found
+
+
 class RegistrarApiImports(unittest.TestCase):
     def test_api_files_name_only_their_namespace_and_the_allowlist(self):
         added = [f'{file}: {name}' for file, found in current().items()
@@ -129,6 +229,47 @@ class RegistrarApiImports(unittest.TestCase):
             self.assertEqual({'Enom/Api/Client.php': ['Data\\Environment'],
                               'Enom/Api/Protocol/Request.php': ['Other\\Shared', 'Services\\OperationClaims']},
                              current(root))
+
+    def test_reverse_imports_match_the_recorded_list(self):
+        found = {file: names for file, names in reverse().items() if not file.startswith('Registrars/Dispatch/')}
+        recorded = json.loads(REVERSE.read_text())
+        added = [f'{file}: {name}' for file, names in found.items() for name in names if name not in recorded.get(file, [])]
+        stale = [f'{file}: {name}' for file, names in recorded.items() for name in names if name not in found.get(file, [])]
+        self.assertEqual([], added, 'Runtime code reaches a provider class directly; call a Registrars/Dispatch entry '
+                         'point instead (never extend tests/registrar-reverse-imports.json):\n' + '\n'.join(added))
+        self.assertEqual([], stale, 'Remove these entries from tests/registrar-reverse-imports.json; the reference '
+                         'is gone:\n' + '\n'.join(stale))
+        self.assertEqual(sorted(recorded), list(recorded), 'Keep tests/registrar-reverse-imports.json sorted by file')
+
+    def test_only_composition_files_in_dispatch_reach_a_provider(self):
+        reaching = sorted(file for file in reverse() if file.startswith('Registrars/Dispatch/'))
+        self.assertEqual([], [file for file in reaching if file not in COMPOSITION])
+
+    def test_providers_do_not_name_each_other(self):
+        crossing = []
+        for own, other in (('Enom', 'NameSilo'), ('NameSilo', 'Enom')):
+            for path in sorted((API/own).rglob('*.php')):
+                crossing += [f'{path.relative_to(API)}: {name}' for name in sorted(provider_names(path.read_text()))
+                             if name.startswith((f'Registrars\\{other}\\', f'Services\\{other}', f'path:{other}/',
+                                                 f'path:Registrars/{other}/', f'path:Services/{other}'))]
+        self.assertEqual(CROSSING, crossing, 'A provider names the other provider; move the shared part out instead')
+
+    def test_reverse_reader_resolves_prefixes_aliases_strings_and_blade(self):
+        source = (f'<?php\nnamespace {BASE}Catalogue;\nuse {BASE}Registrars\\{{Enom, NameSilo as Silo}};\n'
+                  f'use {BASE}Registrars as R;\nuse {BASE}Services\\{{EnomLive, Storefront}};\n'
+                  'final class Probe { function f(): Enom\\Driver { R\\NameSilo\\Dns::x(); Silo\\Glue::y();\n'
+                  '    $this->Enom; self::EnomLive; return "\\\\' + BASE.replace('\\', '\\\\') + 'Registrars\\\\Enom\\\\Writer"'
+                  ' . \'/NameSilo/AdmittedTransport.php\'; } }\n')
+        self.assertEqual({'Registrars\\Enom\\Driver', 'Registrars\\NameSilo\\Dns', 'Registrars\\NameSilo\\Glue',
+                          'Registrars\\Enom\\Writer', 'Services\\EnomLive', 'path:NameSilo/AdmittedTransport.php'},
+                         provider_names(source))
+        relative = f'<?php\nnamespace {BASE[:-1]};\nfinal class EnomLike {{ function f() {{ Registrars\\Enom\\Driver::x(); }} }}\n'
+        self.assertEqual({'Registrars\\Enom\\Driver'}, provider_names(relative))
+        own = f'<?php\nnamespace {BASE}Services;\nfinal class EnomLive {{ function f() {{ EnomTestCalls::x(); }} }}\n'
+        self.assertEqual({'Services\\EnomTestCalls'}, provider_names(own, own='EnomLive'))
+        blade = f'@foreach (\\{BASE}Registrars\\NameSilo\\DnsForm::notes($x) as $note) Don\'t @endforeach'
+        self.assertEqual({'Registrars\\NameSilo\\DnsForm'}, provider_names(blade, blade=True))
+
 
 if __name__ == '__main__':
     unittest.main()

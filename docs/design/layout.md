@@ -11,6 +11,9 @@ changes. New code goes straight to its target folder.
   their counts.
 - `Registrars/<Provider>/Api/` is wire protocol code and names only its own namespace. Today's references to
   `Data`, `Services` and the provider root are listed in `tests/test_registrar_api_imports.py` and may only shrink.
+- Other code reaches a provider through `Registrars/Dispatch/`. Today's direct references to provider classes,
+  including the `Enom*` and `NameSilo*` classes in `Services/`, are listed in `tests/registrar-reverse-imports.json`
+  and may only shrink.
 - A feature folder owns its writer, rules and read projection. Other features read its published types and ports;
   shared value types keep their current contract.
 - A class moved out of a folder keeps a narrow entry point at its old name only while proven outside callers use
@@ -34,7 +37,7 @@ today's names in `Services/` unless a folder is given.
 | `Catalogue/Publication`, `Catalogue/Pricing`, `Catalogue/Feed`, `Catalogue/Staff` | Seller selection, publish revision, admitted terms, native price projection, offer feed and expiry; staff catalogue next steps, snapshots and settings reads | `Catalogue/`, `Publication/`, `Pricing/`, `Feed/` and `Staff/` exist. `SellerPolicies`, `NativeCatalogue`, `PolicyEndings`, `PriceCatalogue`, `PricingRules`, `HolderPricing`, `CatalogueSync`; split the `Catalogue/` root by role |
 | `Storefront/Checkout`, `Storefront/Search` | Query translation, cart refresh and handoff, public lookup quotas | `Search/` exists with the DNS and RDAP quotas; `Checkout/` is target. `Storefront*`, `Cart*`, `EndingChoices`, `PriceList`, `Rdap*`, `PublicRegistryReader`. Reads published facts through Catalogue; Registration approves acquisition |
 | `Staff/Release`, `Staff/Requests`, `Staff/Holdings`, `Staff/Settings` | Staff authorization, actions and request, holding and settings projections | `Release/`, `Requests/` and `Holdings/` exist; `Settings/` is target. `StaffOperation*`, `StaffHoldingReview`, `StaffSettings*`, `StaffSyncReview`, `AuditEvents`, and `Admin/Support/` classes as their screens change |
-| `Registrars/Accounts`, `Registrars/Enom`, `Registrars/NameSilo`, `Registrars/Dispatch` | Verified registrar assignment and environment, enrolment, provider caps, send grants, factories and driver results | `Enom/`, `NameSilo/` and `Dispatch/` (renewal writer and unsent proof) exist; `Accounts/` is target. `AccountBindings`, `RegistrarRegistry`, `RegistrarFactories`, the `Enom*` and `NameSilo*` classes in `Services/`, balance and call limit code |
+| `Registrars/Accounts`, `Registrars/Enom`, `Registrars/NameSilo`, `Registrars/Dispatch` | Verified registrar assignment and environment, enrolment, provider caps, send grants, factories and driver results | `Enom/`, `NameSilo/` and `Dispatch/` (registry, reader factories, catalogue offers, renewal writer and unsent proof) exist; `Accounts/` is target. `AccountBindings`, the old `RegistrarRegistry` and `RegistrarFactories` alias names, the `Enom*` and `NameSilo*` classes in `Services/`, balance and call limit code |
 | `Installation`, `Installation/Runtime` | Fresh install and verification, autoload and bootstrap, native composition, one registry of feature-owned table definitions | `Installation/` exists; `Runtime/` is target. `FreshInstallation`, `Installation`, `Runtime`, `RuntimePorts`, `RuntimeComposition`, `NativeServerGuard`, hook registration |
 | `Support` | Clock and typed shared infrastructure | Exists |
 

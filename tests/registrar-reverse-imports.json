@@ -1,0 +1,440 @@
+{
+ "Admin/Pages/RegistrarAccount.php": [
+  "Services\\EnomLiveActivation"
+ ],
+ "Admin/Pages/WhatYouSell.php": [
+  "Services\\NameSiloSandbox"
+ ],
+ "Admin/Resources/OperationResource/Pages/ViewOperation.php": [
+  "Services\\EnomAnswers"
+ ],
+ "Admin/Support/AccountChecklist.php": [
+  "Services\\EnomLateRenewal",
+  "Services\\EnomLiveActivation",
+  "Services\\EnomTestManagement",
+  "Services\\EnomTestRenewal",
+  "Services\\EnomTestTransfer",
+  "Services\\NameSiloSandbox"
+ ],
+ "Admin/Support/BalanceCheck.php": [
+  "Services\\EnomTestSendLimit"
+ ],
+ "Admin/Support/DomainEditActions.php": [
+  "Registrars\\NameSilo\\DnsForm"
+ ],
+ "Admin/Support/LiveActivationAction.php": [
+  "Services\\EnomLiveActivation"
+ ],
+ "Admin/Support/OperationActions.php": [
+  "Services\\EnomTestRegistration"
+ ],
+ "Admin/Support/RegistrarFacts.php": [
+  "Services\\EnomLive",
+  "Services\\EnomTestSendLimit",
+  "Services\\NameSiloSandbox"
+ ],
+ "Admin/Support/RequestFacts.php": [
+  "Services\\EnomTestManagement",
+  "Services\\EnomTestRegistration"
+ ],
+ "Admin/Support/SettingsActions.php": [
+  "Services\\EnomLateRenewal",
+  "Services\\EnomTestCallLimit",
+  "Services\\EnomTestManagement",
+  "Services\\EnomTestRenewal",
+  "Services\\EnomTestSendLimit",
+  "Services\\EnomTestTransfer",
+  "Services\\NameSiloSandbox"
+ ],
+ "Admin/Support/TldFacts.php": [
+  "Services\\EnomTestRegistration"
+ ],
+ "Admin/Support/TldRegistrar.php": [
+  "Registrars\\NameSilo\\AdmittedTransport",
+  "Registrars\\NameSilo\\NameSiloLiveReservationPolicy",
+  "Registrars\\NameSilo\\TestReservationPolicy"
+ ],
+ "Catalogue/Feed/FeedTurn.php": [
+  "Services\\EnomTestCallLimit"
+ ],
+ "Contracts/ManagementProtocol.php": [
+  "Services\\EnomTestCallLimit",
+  "Services\\EnomTestWriteReservation"
+ ],
+ "Contracts/RegistrationProtocol.php": [
+  "Services\\NameSiloAccountGuard"
+ ],
+ "Contracts/RegistrationTransport.php": [
+  "Registrars\\NameSilo\\Api\\Environment",
+  "Services\\EnomTestCallLimit"
+ ],
+ "Data/RequestContext.php": [
+  "Services\\EnomTestCallLimit"
+ ],
+ "Holding/Retention/HistoryRetention.php": [
+  "Services\\EnomTestSendLimitSchema"
+ ],
+ "Installation/Registry.php": [
+  "Services\\EnomLiveCallSchema",
+  "Services\\EnomTestSendLimitSchema"
+ ],
+ "Management/Changes/ManagementForms.php": [
+  "Registrars\\NameSilo\\DnsForm"
+ ],
+ "Models/Account.php": [
+  "Services\\NameSiloSandbox"
+ ],
+ "Models/Operation.php": [
+  "Services\\EnomAnswers",
+  "Services\\EnomTestCalls"
+ ],
+ "Presentation/DsState.php": [
+  "Registrars\\NameSilo\\DsRegistryPolicy"
+ ],
+ "Registration/Checkout/RegistrationPreflight.php": [
+  "Registrars\\Enom\\Registration",
+  "Registrars\\NameSilo\\Api\\PurchaseMapping",
+  "Registrars\\NameSilo\\Registration",
+  "Services\\EnomTestRegistration"
+ ],
+ "Renewal/Execution/RenewalAdmission.php": [
+  "Services\\EnomLateRenewal"
+ ],
+ "Renewal/Execution/RenewalCompletion.php": [
+  "Services\\EnomBillZones",
+  "Services\\EnomTestCallLimit"
+ ],
+ "Renewal/Execution/RenewalExecution.php": [
+  "Services\\EnomLateRenewal",
+  "Services\\EnomTestCallLimit",
+  "Services\\EnomTestCalls",
+  "Services\\EnomTestRenewal",
+  "Services\\EnomTestWriteReservation"
+ ],
+ "Renewal/Execution/RenewalStanding.php": [
+  "Services\\EnomLateRenewal"
+ ],
+ "Services/AccountBindings.php": [
+  "Registrars\\Enom\\RuntimeFactory",
+  "Registrars\\NameSilo\\ReadRuntime",
+  "Services\\EnomTestRegistration",
+  "Services\\EnomTestTransfer",
+  "Services\\NameSiloAccountGuard",
+  "Services\\NameSiloSandbox"
+ ],
+ "Services/AcquisitionPort.php": [
+  "Registrars\\Enom\\Writer",
+  "Registrars\\NameSilo\\Writer"
+ ],
+ "Services/AcquisitionSetup.php": [
+  "Registrars\\Enom\\Registration",
+  "Registrars\\NameSilo\\Api\\PurchaseMapping"
+ ],
+ "Services/ApiCallLimits.php": [
+  "Services\\EnomLive",
+  "Services\\EnomLiveCallSchema",
+  "Services\\EnomTestCalls",
+  "Services\\EnomTestSendLimit"
+ ],
+ "Services/BalanceReads.php": [
+  "Services\\EnomTestCallLimit"
+ ],
+ "Services/BalanceRetries.php": [
+  "Services\\EnomTestCalls"
+ ],
+ "Services/CartAdmission.php": [
+  "Services\\EnomTestRegistration",
+  "Services\\EnomTestTransfer"
+ ],
+ "Services/CartHandoffFailure.php": [
+  "Services\\EnomTestCallLimit"
+ ],
+ "Services/DomainBilling.php": [
+  "Services\\EnomLateRenewal",
+  "Services\\EnomTestRenewal"
+ ],
+ "Services/DomainManagement.php": [
+  "Services\\EnomTestCallLimit",
+  "Services\\EnomTestCalls",
+  "Services\\EnomTestManagement",
+  "Services\\EnomTestWriteReservation"
+ ],
+ "Services/DomainObservation.php": [
+  "Services\\EnomTestCallLimit"
+ ],
+ "Services/DomainOperations.php": [
+  "Services\\EnomTestCallLimit",
+  "Services\\EnomTestCalls",
+  "Services\\EnomTestRegistration",
+  "Services\\EnomTestTransfer"
+ ],
+ "Services/EnomLateRenewal.php": [
+  "Services\\EnomLive",
+  "Services\\EnomTestRenewal"
+ ],
+ "Services/EnomLive.php": [
+  "Services\\EnomLiveCalls"
+ ],
+ "Services/EnomLiveActivation.php": [
+  "Registrars\\Enom\\ActivationEvidence",
+  "Registrars\\NameSilo\\ActivationEvidence",
+  "Services\\EnomLive",
+  "Services\\EnomLiveCalls",
+  "Services\\EnomTestManagement",
+  "Services\\EnomTestRenewal",
+  "Services\\EnomTestTransfer",
+  "Services\\NameSiloFeatureSettings"
+ ],
+ "Services/EnomLiveCalls.php": [
+  "Registrars\\Enom\\EnomLiveReservationPolicy",
+  "Services\\EnomLive",
+  "Services\\EnomTestCalls"
+ ],
+ "Services/EnomProtocol.php": [
+  "Registrars\\Enom\\RuntimeFactory"
+ ],
+ "Services/EnomTestCalls.php": [
+  "Services\\EnomLive",
+  "Services\\EnomLiveCalls",
+  "Services\\EnomTestCallLimit",
+  "Services\\EnomTestTransfer"
+ ],
+ "Services/EnomTestManagement.php": [
+  "Registrars\\Enom\\Api\\ManagementCommand",
+  "Services\\EnomLive",
+  "Services\\EnomLiveActivation",
+  "Services\\NameSiloFeatureSettings"
+ ],
+ "Services/EnomTestRegistration.php": [
+  "Registrars\\Enom\\RuntimeFactory",
+  "Services\\EnomLive",
+  "Services\\EnomLiveActivation",
+  "Services\\EnomProtocol",
+  "Services\\EnomTestManagement",
+  "Services\\EnomTestRenewal",
+  "Services\\EnomTestTransfer"
+ ],
+ "Services/EnomTestRenewal.php": [
+  "Registrars\\Enom\\Api\\RegistrationCommand",
+  "Services\\EnomLateRenewal",
+  "Services\\EnomLive",
+  "Services\\EnomLiveActivation",
+  "Services\\NameSiloFeatureSettings"
+ ],
+ "Services/EnomTestSendLimit.php": [
+  "Services\\EnomTestCallLimit",
+  "Services\\EnomTestCalls",
+  "Services\\EnomTestSendLimitSchema"
+ ],
+ "Services/EnomTestTransfer.php": [
+  "Registrars\\Enom\\Api\\RegistrationCommand",
+  "Services\\EnomLive",
+  "Services\\EnomLiveActivation",
+  "Services\\NameSiloFeatureSettings"
+ ],
+ "Services/EnomTestWriteReservation.php": [
+  "Services\\EnomLive",
+  "Services\\EnomLiveCalls",
+  "Services\\EnomTestCallLimit",
+  "Services\\EnomTestCalls"
+ ],
+ "Services/HistoryAcceptances.php": [
+  "Registrars\\Enom\\TestOrderHistory",
+  "Registrars\\NameSilo\\TestOrderHistory",
+  "Services\\EnomLiveActivation"
+ ],
+ "Services/HoldingObservationWork.php": [
+  "Services\\EnomLive",
+  "Services\\EnomTestCallLimit",
+  "Services\\EnomTestManagement",
+  "Services\\EnomTestRegistration",
+  "Services\\EnomTestRenewal",
+  "Services\\EnomTestTransfer"
+ ],
+ "Services/LiveReservations.php": [
+  "Services\\EnomLiveCallSchema"
+ ],
+ "Services/LocalAccountEnrollment.php": [
+  "Registrars\\NameSilo\\AccountVerifier",
+  "Registrars\\NameSilo\\Api\\CurlTransport",
+  "Registrars\\NameSilo\\Api\\DeadlineTransport",
+  "Registrars\\NameSilo\\Client",
+  "Registrars\\NameSilo\\CredentialAuthenticator",
+  "Registrars\\NameSilo\\Driver",
+  "Registrars\\NameSilo\\LiveRuntime",
+  "Registrars\\NameSilo\\TestRuntime",
+  "Services\\NameSiloSandbox"
+ ],
+ "Services/ManagementEvidence.php": [
+  "Services\\EnomTestWriteReservation"
+ ],
+ "Services/ManagementPayload.php": [
+  "Registrars\\NameSilo\\Glue"
+ ],
+ "Services/NameSiloAccountGuard.php": [
+  "Registrars\\NameSilo\\Api\\Environment",
+  "Registrars\\NameSilo\\DefaultContact"
+ ],
+ "Services/NameSiloAccountReset.php": [
+  "Registrars\\NameSilo\\DefaultContact",
+  "Registrars\\NameSilo\\Driver",
+  "Services\\NameSiloAccountGuard"
+ ],
+ "Services/NameSiloFeatureSettings.php": [
+  "Registrars\\NameSilo\\ActivationEvidence",
+  "Registrars\\NameSilo\\TestRuntime",
+  "Services\\EnomLiveActivation"
+ ],
+ "Services/NameSiloSandbox.php": [
+  "Registrars\\NameSilo\\AccountVerifier",
+  "Registrars\\NameSilo\\Api\\CurlTransport",
+  "Registrars\\NameSilo\\Api\\Environment",
+  "Registrars\\NameSilo\\Api\\Outcome",
+  "Registrars\\NameSilo\\Api\\RegistrarClient",
+  "Registrars\\NameSilo\\Api\\RegistrarRequest",
+  "Registrars\\NameSilo\\Api\\RequestContext",
+  "Registrars\\NameSilo\\Client",
+  "Registrars\\NameSilo\\Driver"
+ ],
+ "Services/NewDomainDns.php": [
+  "Registrars\\Enom\\Registration",
+  "Registrars\\NameSilo\\Api\\PurchaseMapping"
+ ],
+ "Services/OperationClaims.php": [
+  "Services\\EnomTestCalls"
+ ],
+ "Services/OperationReconciliation.php": [
+  "Registrars\\Enom\\Driver",
+  "Registrars\\Enom\\EnomTestReconciliationReader",
+  "Registrars\\NameSilo\\Driver",
+  "Services\\EnomBillZones",
+  "Services\\EnomTestCallLimit"
+ ],
+ "Services/OperationTerminalProof.php": [
+  "Services\\EnomAnswers"
+ ],
+ "Services/OwnedDomains.php": [
+  "Registrars\\NameSilo\\Dns"
+ ],
+ "Services/OwnerRecordInput.php": [
+  "Registrars\\NameSilo\\Dns"
+ ],
+ "Services/OwnerRecords.php": [
+  "Registrars\\NameSilo\\DnsForm",
+  "Registrars\\NameSilo\\DnsSequence"
+ ],
+ "Services/PayCheck.php": [
+  "Services\\EnomTestRegistration",
+  "Services\\EnomTestTransfer"
+ ],
+ "Services/ProfileContactOperations.php": [
+  "Registrars\\NameSilo\\Api\\Environment"
+ ],
+ "Services/ProviderSendGuard.php": [
+  "Services\\EnomTestCalls"
+ ],
+ "Services/ReconciliationEvidence.php": [
+  "Services\\EnomAnswers",
+  "Services\\EnomBillZones"
+ ],
+ "Services/RecordInventory.php": [
+  "Registrars\\NameSilo\\Dns"
+ ],
+ "Services/RefundProof.php": [
+  "Services\\EnomAnswers"
+ ],
+ "Services/RegistrarBalances.php": [
+  "Registrars\\Enom\\CataloguePreview",
+  "Registrars\\NameSilo\\Api\\Environment",
+  "Services\\EnomLive",
+  "Services\\EnomTestCallLimit",
+  "Services\\NameSiloSandbox"
+ ],
+ "Services/RegistrationDns.php": [
+  "Registrars\\Enom\\ManagementRead",
+  "Registrars\\NameSilo\\Dns"
+ ],
+ "Services/RegistrationProfiles.php": [
+  "Registrars\\NameSilo\\Api\\ContactReadback",
+  "Registrars\\NameSilo\\Api\\Environment"
+ ],
+ "Services/RegistryInputs.php": [
+  "Registrars\\NameSilo\\Api\\UsNexus"
+ ],
+ "Services/RenewalAutoPay.php": [
+  "Services\\EnomLateRenewal",
+  "Services\\EnomTestRenewal"
+ ],
+ "Services/RenewalRetries.php": [
+  "Services\\EnomAnswers"
+ ],
+ "Services/Runtime.php": [
+  "Services\\EnomTestTransfer"
+ ],
+ "Services/RuntimePorts.php": [
+  "Registrars\\NameSilo\\LiveRuntime",
+  "Registrars\\NameSilo\\TestRuntime",
+  "Services\\EnomLive",
+  "Services\\EnomTestManagement",
+  "Services\\EnomTestRegistration",
+  "Services\\EnomTestRenewal",
+  "Services\\EnomTestTransfer"
+ ],
+ "Services/RuntimeReason.php": [
+  "Services\\EnomTestCallLimit"
+ ],
+ "Services/RuntimeWork.php": [
+  "Registrars\\Enom\\TestOrderHistory",
+  "Services\\EnomTestRegistration"
+ ],
+ "Services/StaffSettingsReview.php": [
+  "Services\\EnomLateRenewal",
+  "Services\\EnomLiveActivation",
+  "Services\\EnomTestManagement",
+  "Services\\EnomTestRenewal",
+  "Services\\EnomTestTransfer"
+ ],
+ "Services/StaffSettingsWrites.php": [
+  "Services\\EnomAnswers",
+  "Services\\EnomLateRenewal",
+  "Services\\EnomLiveActivation",
+  "Services\\EnomTestManagement",
+  "Services\\EnomTestRenewal",
+  "Services\\EnomTestTransfer"
+ ],
+ "Services/TestCatalogue.php": [
+  "Services\\EnomLive"
+ ],
+ "Services/TransferPrecheck.php": [
+  "Services\\EnomTestTransfer"
+ ],
+ "Services/TransferReadBudget.php": [
+  "Services\\EnomLive",
+  "Services\\EnomLiveCallSchema",
+  "Services\\EnomLiveCalls",
+  "Services\\EnomTestCalls",
+  "Services\\EnomTestSendLimit"
+ ],
+ "Services/TransferRejections.php": [
+  "Registrars\\NameSilo\\TransferState"
+ ],
+ "Staff/Holdings/DomainDecisions.php": [
+  "Services\\EnomTestRenewal"
+ ],
+ "Staff/Release/HeldRelease.php": [
+  "Services\\EnomTestRegistration",
+  "Services\\EnomTestRenewal",
+  "Services\\EnomTestTransfer"
+ ],
+ "Transfer/Input/TransferPreflight.php": [
+  "Registrars\\NameSilo\\Api\\PurchaseMapping",
+  "Registrars\\NameSilo\\Transfer",
+  "Services\\EnomTestTransfer"
+ ],
+ "resources/views/partials/owner-dns.blade.php": [
+  "Registrars\\NameSilo\\DnsForm"
+ ],
+ "resources/views/partials/owner-renew.blade.php": [
+  "Services\\EnomLateRenewal"
+ ]
+}
