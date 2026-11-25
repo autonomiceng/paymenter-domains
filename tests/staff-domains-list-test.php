@@ -28,6 +28,10 @@ $long=str_repeat('Longname ',5).'Owner';DB::table('users')->where('id',$owner->i
 $dom=Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->html(),LIBXML_NOERROR);
 $cell=$dom->querySelector('[title="'.$long.'"]');
 expect($cell!==null&&trim($cell->textContent)===$long,'A long customer name keeps its full text (screen readers, copy) and its title (hover)');
+// Each row opens its own record through links that keep a destination, a readable name and their tab stop.
+$links=iterator_to_array($dom->querySelectorAll('table tbody a[href]'));
+expect(in_array(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('view',['record'=>$active]),array_map(fn($a)=>$a->getAttribute('href'),$links),true),'The row links to its domain record');
+expect(array_all($links,fn($a)=>$a->getAttribute('href')!=='#'&&trim($a->textContent)!==''&&$a->getAttribute('tabindex')!=='-1'),'Record links keep their destination, accessible name and tab stop');
 // Duplicate staff account names remain distinguishable in filters and rows.
 App\Models\Server::whereIn('id',[$held->server_id,$active->server_id])->update(['name'=>'Shared account']);
 $accountsPage=Livewire::actingAs($viewer)->test(ListDomains::class);

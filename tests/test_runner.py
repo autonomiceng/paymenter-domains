@@ -585,13 +585,13 @@ class RunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp, \
              mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': 'pristine', 'UNRELATED_SETTING': 'hidden', **browser}), \
              mock.patch.object(runner.tempfile, 'mkdtemp', return_value=temp), \
-             mock.patch.object(runner.sys, 'argv', ['test.py', '--jobs', '1', '--only', 'tests/test_rendered_layout.py']), \
+             mock.patch.object(runner.sys, 'argv', ['test.py', '--jobs', '1', '--only', 'tests/test_staff_refund_browser.py']), \
              mock.patch.object(runner.native, 'prepare', return_value={'source': 'digest'}) as native_prepare, \
              mock.patch.object(runner, 'prepare', return_value=(Path(temp)/'runtime', Path(temp)/'runtime/php', Path(temp)/'runtime/curl.so')) as php_prepare, \
              mock.patch.object(runner, 'run', return_value=0) as run, contextlib.redirect_stdout(io.StringIO()):
             (Path(temp)/'runtime').mkdir()
             self.assertEqual(runner.main(), 0)
-            self.assertEqual([(kind, argv[-1]) for kind, argv in run.call_args.args[0]], [('ui', 'tests/test_rendered_layout.py')])
+            self.assertEqual([(kind, argv[-1]) for kind, argv in run.call_args.args[0]], [('ui', 'tests/test_staff_refund_browser.py')])
             php_prepare.assert_called_once_with(native=True)
             self.assertTrue(native_prepare.call_args.kwargs['share_vendor'])
             env = run.call_args.args[1]

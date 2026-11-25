@@ -34,14 +34,14 @@ The browser blocks network/application scripts and measures both text axes: Tran
 wrapped height/padding, and the real Renewal card's Pay invoice link on one line at default size in both modes at 320/360/768/1280px.
 It compares Register/Transfer/Retry geometry with prior inline-flex/normal-wrap/1.25rem rules. Output artifacts and `button-layout-receipt.json` include failures; this minimal shell proves neither installed-theme nor browser-zoom acceptance.
 
-## Rendered data and links (UI suite)
+## Rendered data and links
 
-`tests/test_rendered_layout.py` and `tests/test_rendered_managed_dns.py` render real Blade and use
-`scripts/check-name-and-heading.cjs` in Chromium. They guard full domain and customer data and native record links
-at desktop and phone widths. `tests/test_domain_page_artifact.py` covers the customer heading in the invoice-due
-Blade fixture with populated history. Screenshots beside the approved mock cover visual presentation.
+`tests/staff-domains-list-test.php` reads full domain and customer names and each row's record links from the
+rendered staff Domains table. `tests/test_domain_page_artifact.py` checks that one heading names the domain in the
+invoice-due Blade fixture with populated history. Screenshots beside the approved mock cover visual presentation.
 Set `DOMAINS_PANEL_SETUP` to a PHP file that configures `$panel` and returns its
-built theme to render with a host skin. The UI suite uses the image’s Node.js, Playwright 1.60.0 and matching Chromium headless shell.
+built theme to render with a host skin. The UI suite (`tests/test_staff_refund_browser.py`) uses the image’s Node.js,
+Playwright 1.60.0 and matching Chromium headless shell.
 
 Build the PHP suite image with `python3 scripts/bootstrap.py --download`, then run
 `scripts/test.py` offline. Bootstrap without `--download` checks the local image only.
