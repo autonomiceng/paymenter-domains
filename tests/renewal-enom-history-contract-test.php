@@ -6,7 +6,8 @@ use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Data\{HistoryAcceptance};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, HistoryAcceptances, RegistrarRegistry, RenewalCompletion};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, HistoryAcceptances, RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion;
 
 // Keep the normal funded/sealed renewal and its lost reply; replace only recovery reads.
 [$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-history-contract-placeholder.com'));

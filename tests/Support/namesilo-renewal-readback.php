@@ -2,7 +2,7 @@
 // Fresh auto-renew-off proof after one sealed write; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 use Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts;
-use Paymenter\Extensions\Servers\Domains\Services\RenewalAdmission;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAdmission;
 require_once __DIR__.'/staff-panel.php';
 $financial=nativeFinancialSnapshot($renewal);$originalAttempt=$renewal->fresh()->attempt;
 foreach(['on','missing','invalid','outage','late'] as $case){

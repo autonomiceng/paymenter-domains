@@ -33,7 +33,7 @@ same('16.0000', $op->policy['renewal']['cost_cap']['amount'], 'Saved two-year ce
 same($op->amount, $invoice->items()->sole()->price, 'Native invoice matches frozen customer total');
 config(['domains.enom_identity.environment' => 'test', 'domains.enom_catalogue.enabled' => true, 'domains.enom_writes.renewal' => true]);
 $accepted = new \Paymenter\Extensions\Servers\Domains\Services\RenewalAcceptance($b, true, true, 25);
-$admission = new \Paymenter\Extensions\Servers\Domains\Services\RenewalAdmission($authority, $renewBindings, $accepted, $clock);
+$admission = new \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAdmission($authority, $renewBindings, $accepted, $clock);
 $request = new \Paymenter\Extensions\Servers\Domains\Data\RenewalRequest($d->id, $d->authority_generation,
     $d->confirmed_revision, '2027-10-18', '456', 2, $op->operation_key);
 $decision = $admission->check($request);
@@ -80,7 +80,7 @@ foreach (['changed' => ['20.00', 'actual_charge_changed'], 'overrun' => ['16.00'
     same($before, $held->fresh()->getRawOriginal(), 'Captured hold preserves reason, proof, polls and all operation state');
     $fresh = $held->fresh();
     same(1, $fresh->policy['renewal_polls'], 'Captured financial hold is below the normal read limit');
-    app()->instance(\Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::class, $compCompletion);
+    app()->instance(\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion::class, $compCompletion);
     \Illuminate\Support\Facades\Auth::setUser($staff);
     // Reproduce damaged encrypted storage without changing the issued operation or its financial proof.
     $storedAttempt = $fresh->getRawOriginal('attempt');

@@ -12,8 +12,10 @@ if(defined('NATIVE_PAID_LIFECYCLE')){
 }
 require __DIR__.'/operation-fixture.php';require __DIR__.'/installed.php';require_once __DIR__.'/staff-panel.php';
 require_once __DIR__.'/offline-acquisition.php';
-use Paymenter\Extensions\Servers\Domains\Services\{Runtime, RuntimePorts, RuntimeWork, AccountBindings, NativeCatalogue, PriceCatalogue, SellerPolicies, CartAdmission, InvoiceBinding, OperationReconciliation, RenewalAuthority, RenewalAcceptance, RenewalAdmission, RenewalExecution, RenewalWriter, RenewalCompletion, DomainManagement, WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{Runtime, RuntimePorts, RuntimeWork, AccountBindings, NativeCatalogue, PriceCatalogue, SellerPolicies, CartAdmission, InvoiceBinding, OperationReconciliation, RenewalAuthority, RenewalAcceptance, DomainManagement, WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
+use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAdmission, RenewalCompletion, RenewalExecution};
 // Initialize the complete installed holding route before module-only checkout adapters replace their fixtures.
 Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed();
 foreach([Paymenter\Extensions\Servers\Domains\Contracts\Clock::class=>$clock,AccountBindings::class=>$bindings,

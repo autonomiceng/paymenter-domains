@@ -10,7 +10,8 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\HistoryAcceptance;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client,ReadCommand,Transport};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,HistoryAcceptances,HoldingLocks,InvoiceMoney,ObligationAlerts,OperationTerminalProof,PricingRule,RegistrarRegistry,Refunds,ReminderSchema,RenewalCompletion,StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,HistoryAcceptances,HoldingLocks,InvoiceMoney,ObligationAlerts,OperationTerminalProof,PricingRule,RegistrarRegistry,Refunds,ReminderSchema,StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion;
 
 ReminderSchema::install();
 app()->instance(Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);

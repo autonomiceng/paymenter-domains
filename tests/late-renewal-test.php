@@ -21,7 +21,7 @@ $page=\Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\D
 $page->callMountedAction()->assertHasNoActionErrors();expect(EnomLateRenewal::accepted($b),'Account switch confirmation enables TEST late renewal');
 $audit=collect(StaffSettingsReview::historyRows($server))->where('action',StaffSettingsReview::ACTIONS['late_renewal'])->sole();same([false,true],[$audit['before']['late_renewal'],$audit['after']['late_renewal']],'Audit records switch before and after');
 // Retain the same admission object across an account switch, as a queue worker's factory does.
-$coldAdmission=new \Paymenter\Extensions\Servers\Domains\Services\RenewalAdmission($authority,$renewBindings,$coldAcceptance,$clock);
+$coldAdmission=new \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAdmission($authority,$renewBindings,$coldAcceptance,$clock);
 $lateRequest=new \Paymenter\Extensions\Servers\Domains\Data\RenewalRequest($d->id,$d->authority_generation,$d->confirmed_revision,$d->provider_expires_at->format('Y-m-d'),$d->provider_domain_id,manual:true);
 Cache::flush();expect($coldAdmission->check($lateRequest)->allowed(),'Retained worker observes late renewal switched On');
 $toggle(false);Cache::flush();expect(!$coldAdmission->check($lateRequest)->allowed(),'Retained worker observes late renewal switched Off');$toggle(true);

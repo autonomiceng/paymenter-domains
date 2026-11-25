@@ -21,8 +21,8 @@
     "composer.lock"
   ],
   "explicit": {
-    "Domains/Services/RenewalDecision.php": ["tests/renewal-dispatch-test.php", "tests/paid-renewal-hook-test.php"],
-    "Domains/Services/RenewalExecution.php": ["tests/renewal-worker-contention-test.php", "tests/paid-renewal-hook-test.php", "tests/test_installed_package_enom_renewal.py"],
+    "Domains/Renewal/Execution/RenewalDecision.php": ["tests/renewal-dispatch-test.php", "tests/paid-renewal-hook-test.php"],
+    "Domains/Renewal/Execution/RenewalExecution.php": ["tests/renewal-worker-contention-test.php", "tests/paid-renewal-hook-test.php", "tests/test_installed_package_enom_renewal.py"],
     "Domains/Services/RenewalFundingLedger.php": ["tests/renewal-worker-contention-test.php", "tests/refund-renewals-test.php"],
     "tests/staff-tld-pricing-render.php": ["tests/staff-sales-setup-action-test.php"],
     "tests/Support/refund-browser-router.php": ["tests/test_staff_refund_browser.py", "tests/test_staff_refund_refusals_browser.py"],
@@ -30,7 +30,7 @@
     "Domains/Data/RequestContext.php": ["tests/enom-history-scan-test.php", "tests/renewal-history-deadline-proof-test.php"],
     "Domains/Services/StaffSettingsReview.php": ["tests/renewal-answer-retained-proof-test.php"],
     "Domains/Services/HoldingLocks.php": ["tests/renewal-worker-contention-test.php", "tests/renewal-proof-observed-test.php"],
-    "Domains/Services/RenewalProof.php": [
+    "Domains/Renewal/Execution/RenewalProof.php": [
       "tests/renewal-order-unproven-test.php",
       "tests/renewal-proof-observed-test.php",
       "tests/renewal-check-claim-test.php",
@@ -55,7 +55,7 @@
     "Domains/Services/NativeDomainGuard.php": ["tests/complimentary-acquisition-receipt-test.php", "tests/complimentary-departed-receipt-test.php", "tests/complimentary-departed-owner-credit-test.php", "tests/complimentary-receipt-repair-test.php", "tests/cli-complimentary-external-refund-test.php"],
     "Domains/Services/Refunds.php": ["tests/complimentary-acquisition-receipt-test.php", "tests/complimentary-departed-receipt-test.php", "tests/complimentary-departed-owner-credit-test.php", "tests/complimentary-receipt-repair-test.php", "tests/complimentary-refunded-receipt-test.php", "tests/cli-complimentary-external-refund-test.php"],
     "Domains/Services/ComplimentaryInvoices.php": ["tests/complimentary-refunded-receipt-test.php", "tests/cli-complimentary-external-refund-test.php"],
-    "Domains/Services/RenewalCompletion.php": ["tests/renewal-worker-contention-test.php", "tests/renewal-check-claim-test.php", "tests/renewal-proof-observed-test.php", "tests/renewal-proof-unresolved-test.php"],
+    "Domains/Renewal/Execution/RenewalCompletion.php": ["tests/renewal-worker-contention-test.php", "tests/renewal-check-claim-test.php", "tests/renewal-proof-observed-test.php", "tests/renewal-proof-unresolved-test.php"],
     "Domains/Services/MoneyDecisions.php": ["tests/renewal-proof-observed-test.php"],
     "Domains/Services/HoldingDeparture.php": ["tests/complimentary-departed-receipt-test.php", "tests/complimentary-departed-owner-credit-test.php"],
     "Domains/Services/DisputeRecoveries.php": ["tests/walk3-invoice-state-test.php"],

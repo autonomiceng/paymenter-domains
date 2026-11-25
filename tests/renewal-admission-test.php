@@ -8,7 +8,8 @@ use Paymenter\Extensions\Servers\Domains\Data\{Capabilities, CostUnit, DateEvide
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, EnomLateRenewal, EnomTestRenewal, RenewalAcceptance, RenewalAdmission, RenewalAuthority, RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, EnomLateRenewal, EnomTestRenewal, RenewalAcceptance, RenewalAuthority, RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAdmission;
 [$original, $binding] = $prepare(placeholderComFixtureName('renew-held-placeholder.com'));
 same('succeeded', $reconcile->run($original->id)->state, 'Prior completion uses real reconciliation');
 $domain = $original->domain()->firstOrFail();

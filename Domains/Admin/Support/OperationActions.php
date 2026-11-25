@@ -182,7 +182,7 @@ final class OperationActions
         try {
             $p=$op->policy??[];
             if($op->action==='renew'&&($op->attempt['seal']??null)==='sealed'
-                &&\Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::capturedChargeHeld($op)){return true;}
+                &&\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion::capturedChargeHeld($op)){return true;}
         } catch (\Throwable) { return false; }
         $now = app(Clock::class)->now()->getTimestamp();
         if (TransferPolling::followupScheduled($op, $now)) { return false; }

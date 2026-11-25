@@ -12,7 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,NativeIntentSchema,ObservationSchema,ObservationWork,Refunds,RenewalReplacements,StaffOperationReview,StaffOperations};
 staffPanel(); ObservationSchema::install(); NativeIntentSchema::install();
 app()->instance(Clock::class,$clock); app()->instance(Refunds::class,new Refunds($clock));
-app()->instance(Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::class,new Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion($renewBindings,$clock));
+app()->instance(Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion::class,new Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion($renewBindings,$clock));
 app()->instance(Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::class,$reconcile);
 app()->instance(ObservationWork::class,new ObservationWork(new DomainObservation($readBindings,$clock,new AccountReadBudget($clock)),$clock,new AccountReadBudget($clock)));
 $all=[Staff::VIEW,'admin.domains.manage','admin.domains.fund','admin.invoices.update'];

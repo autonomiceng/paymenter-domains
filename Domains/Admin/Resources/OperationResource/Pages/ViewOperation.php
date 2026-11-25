@@ -164,7 +164,7 @@ class ViewOperation extends RecordDetailPage
         $history=StaffReviewHistory::rows($op,$grants);
         if ($history===null) { $request[]=Row::make('Created',RequestRows::time($op->created_at,RequestFacts::NO_TIME)); }
         // A renewal waiting out Enom's repeat refusal goes at a fixed time; the notice says why, this row says when.
-        if (($goes=\Paymenter\Extensions\Servers\Domains\Services\RenewalRepeatWait::until($op))!==null) { $review[]=Row::make('Goes to registrar',RequestRows::time($goes,RequestFacts::NO_TIME)); }
+        if (($goes=\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalRepeatWait::until($op))!==null) { $review[]=Row::make('Goes to registrar',RequestRows::time($goes,RequestFacts::NO_TIME)); }
         // Sent to registrar is hidden while the request has not been sent. An unsure send is History's to say, once.
         if (($sent=self::sentAt($op))!==null) { $request[]=Row::make(StaffReviewHistory::SENT,RequestRows::time($sent,RequestFacts::NO_TIME)); }
         if (!($facts['unreadable']??false)) {

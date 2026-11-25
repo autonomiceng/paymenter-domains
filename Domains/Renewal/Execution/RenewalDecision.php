@@ -1,9 +1,10 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Renewal\Execution;
 
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Disposition, DomainSnapshot, OrderEvidence, SendState};
+use Paymenter\Extensions\Servers\Domains\Services\{RenewalHold, WriteMoney};
 
 /** Decisions for a worker holding the current operation facts. */
 final class RenewalDecision

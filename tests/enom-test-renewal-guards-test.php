@@ -11,7 +11,9 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,ReadLimiter};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory;
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
-use Paymenter\Extensions\Servers\Domains\Services\{EnomTestRenewal,EnomTestSendLimit,EnomTestSendLimitSchema,EnomTestWriteReservation as Reservation,EnomTestCallLimit,Rdap,RenewalAcceptance,RenewalAdmission,RenewalExecution,RenewalWriter,Runtime,TransferPrecheck,WriteAcceptance,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{EnomTestRenewal,EnomTestSendLimit,EnomTestSendLimitSchema,EnomTestWriteReservation as Reservation,EnomTestCallLimit,Rdap,RenewalAcceptance,Runtime,TransferPrecheck,WriteAcceptance,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAdmission, RenewalExecution};
 app()->instance(Clock::class,$clock);EnomTestSendLimitSchema::install();
 $checkoutPolicy=['domains.enom_identity.environment'=>config('domains.enom_identity.environment'),'domains.enom_catalogue.enabled'=>config('domains.enom_catalogue.enabled')];
 // An explicitly supplied pre-existing runtime keeps its transient-cap behavior with opt-in off.

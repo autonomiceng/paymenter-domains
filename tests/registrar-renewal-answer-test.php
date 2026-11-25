@@ -8,7 +8,9 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,Cost,FeedObserved,Qu
 use Paymenter\Extensions\Servers\Domains\Data\CostUnit;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Operation,Price};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,DomainBilling,EnomAnswers,HolderPricing,NativeDomainGuard,RenewalAcceptance,RenewalAdmission,RenewalAuthority,RenewalCompletion,RenewalExecution,RenewalWriter,StaffSettingsReview as Review,StaffSettingsWrites,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,DomainBilling,EnomAnswers,HolderPricing,NativeDomainGuard,RenewalAcceptance,RenewalAuthority,StaffSettingsReview as Review,StaffSettingsWrites,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAdmission, RenewalCompletion, RenewalExecution};
 nameSiloGuardExpected($binding,'expected@example.com');
 $renewBindings=new AccountBindings($registry);$authority=new RenewalAuthority($renewBindings,$clock,offers: $GLOBALS['caps']??null);
 $guard=new NativeDomainGuard(new HolderPricing($prices),$clock);$guard->boot();Queue::fake();

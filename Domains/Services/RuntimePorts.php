@@ -3,6 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalCompletion, RenewalExecution};
 /** Deployment-owned, account-bound executors. Absent acceptance is a hard refusal, never a sender fallback. */
 final class RuntimePorts
 {

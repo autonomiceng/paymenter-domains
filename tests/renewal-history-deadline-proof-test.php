@@ -35,7 +35,8 @@ $stop = static function ($op, $completion) use ($clock): void {
 use Paymenter\Extensions\Servers\Domains\Data\HistoryAcceptance;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, Transport};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
-use Paymenter\Extensions\Servers\Domains\Services\{HistoryAcceptances, RegistrarRegistry, RenewalCompletion};
+use Paymenter\Extensions\Servers\Domains\Services\{HistoryAcceptances, RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion;
 app()->instance(AccountBindings::class, $bindings);
 [$op, $d, $b] = $makeRenewal(placeholderComFixtureName('history-deadline-proof-placeholder.com'));
 [$engine, $writer] = $compose($b); $state->lost = true;

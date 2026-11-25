@@ -4,7 +4,8 @@ declare(strict_types=1);
 require __DIR__.'/Support/namesilo-no-id-registered.php';
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Data\{Action, Disposition, Query, RenewalCode, RenewalRequest, RenewalStatus, RequestBudget, RequestContext, RequestOrigin, ResultReason, SendState};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, RenewalAcceptance, RenewalAdmission, RenewalAuthority};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, RenewalAcceptance, RenewalAuthority};
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAdmission;
 // Ordinary admission uses the completed nonpremium purchase, never a fabricated provider domain ID.
 $renewBindings = new AccountBindings($registry);
 $admission = new RenewalAdmission(

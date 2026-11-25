@@ -7,7 +7,8 @@ use Filament\Notifications\Notification;
 use Illuminate\Database\QueryException;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-use Paymenter\Extensions\Servers\Domains\Services\{MoneyDecisions, MoneyWorkSchema, RegistrarCheck, RenewalCompletion};
+use Paymenter\Extensions\Servers\Domains\Services\{MoneyDecisions, MoneyWorkSchema, RegistrarCheck};
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion;
 
 MoneyWorkSchema::install();
 $target = null; $failures = 0; $attempts = 0;

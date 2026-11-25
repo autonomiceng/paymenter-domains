@@ -3,7 +3,8 @@
 declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, DateEvidence, Disposition, DomainSnapshot, Environment, ExpiryPrecision, Money, OrderEvidence, Query, SendState};
-use Paymenter\Extensions\Servers\Domains\Services\{RenewalDecision, RenewalHold};
+use Paymenter\Extensions\Servers\Domains\Services\RenewalHold;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalDecision;
 
 $now = new DateTimeImmutable('2027-10-01T12:00:00Z');
 $future = $now->modify('+1 second');

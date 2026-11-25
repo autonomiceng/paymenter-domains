@@ -14,7 +14,8 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{CataloguePreview,EnomTestReconciliationReader};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationRecords,ObservationSchema,ObservationWork,OperationReconciliation,ReconciliationEvidence,RegistrarAnswers,RegistrarCheck,Refunds,RenewalCompletion,RenewalReplacements,StaffOperationReview,StaffOperations,StaffSettingsReview,StaffSyncReview};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationRecords,ObservationSchema,ObservationWork,OperationReconciliation,ReconciliationEvidence,RegistrarAnswers,RegistrarCheck,Refunds,RenewalReplacements,StaffOperationReview,StaffOperations,StaffSettingsReview,StaffSyncReview};
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion;
 \Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
 // Rows that differ only in a decision input read the page's own action objects instead of mounting the page again.
 // Like a page test, the reader acts as staff: checkout fixtures sign the customer in.
@@ -186,7 +187,7 @@ InvoiceTransaction::create(['invoice_id'=>$renew->invoice_id,'amount'=>'0.01','f
 // The clock is on the expiry date, where owner requests stop; the scheduled path still reuses issued debt.
 same($invoice->id,$billing->invoice($domain->id)->id,'Late old payment never duplicates admitted replacement');
 expect(RenewalReplacements::activity($domain->fresh())!==[],'Late old financial activity is a read-only review fact');
-$completion=app(\Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::class);$state->fail=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Info;
+$completion=app(\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion::class);$state->fail=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Info;
 $calls=count($state->calls);same('pending',$completion->run($replacement->id)->state,'Engine read remains available after late old payment');expect(count($state->calls)>$calls,'No global lock-time freeze');
 $state->fail=null;$state->expiry='2028-10-18';$state->charge='8.00';
 same([(int)$renew->id],RenewalReplacements::activityIds($domain->fresh()),'Late refunded-debt activity exposes the affected request ID');

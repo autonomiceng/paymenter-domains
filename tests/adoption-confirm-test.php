@@ -128,9 +128,9 @@ $queued = count(Queue::pushedJobs()); $dispatch->enqueue($op->id, true); same($q
 $accepted = new \Paymenter\Extensions\Servers\Domains\Services\RenewalAcceptance($binding, true, true, 25);
 $features = new \Paymenter\Extensions\Servers\Domains\Services\WriteFeatures(renewal: true);
 $authorityPort = new RenewalAuthority($bindings, $clock,offers: $GLOBALS['caps']??null);
-$admission = new \Paymenter\Extensions\Servers\Domains\Services\RenewalAdmission($authorityPort, $bindings, $accepted, $clock);
-$engine = new \Paymenter\Extensions\Servers\Domains\Services\RenewalExecution($bindings, $authorityPort, $admission, $accepted, $features, $clock);
-$writes = 0; $writer = new \Paymenter\Extensions\Servers\Domains\Services\RenewalWriter($binding, $features, $accepted, fn () => $engine, static function () use (&$writes): never { $writes++; throw new LogicException('Forbidden renewal send'); });
+$admission = new \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAdmission($authorityPort, $bindings, $accepted, $clock);
+$engine = new \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalExecution($bindings, $authorityPort, $admission, $accepted, $features, $clock);
+$writes = 0; $writer = new \Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter($binding, $features, $accepted, fn () => $engine, static function () use (&$writes): never { $writes++; throw new LogicException('Forbidden renewal send'); });
 $calls = count($wire->calls);
 same('held', $engine->run($op->id, $writer)->state, 'Direct installed executor holds funded DNR before admission');
 same('renewal_funding_or_authority', $op->fresh()->safe_code, 'Executor reaches current funding/authority refusal');
@@ -144,13 +144,17 @@ $ctx = new \Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding, \
     $clock->now()->modify('+60 seconds'), new \Paymenter\Extensions\Servers\Domains\Data\RequestBudget(1), $clock);
 $grantMap = (new ReflectionProperty($engine, 'grants'))->getValue($engine);
 $grantMap[$descriptor] = ['context' => $ctx, 'stamp' => $l['stamp'], 'id' => $op->id,
-    'revision' => $op->fresh()->transition_revision, 'mode' => 'ordinary', 'writer' => $writer];
+    'revision' => $op->fresh()->transition_revision, 'mode' => 'ordinary', 'writer' => $writer,
+    'binding' => $binding, 'query' => $descriptor->query, 'claim' => 'synthetic-claim', 'digest' => str_repeat('a', 64)];
 try {
     $engine->consume($descriptor, $ctx, $writer);
     throw new LogicException('Last local consume boundary admitted a stopped renewal');
-} catch (\Paymenter\Extensions\Servers\Domains\Services\RenewalUnsent $refusal) {
+} catch (\Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalUnsent $refusal) {
     expect($refusal->getPrevious()?->getMessage() === $stopReason, 'Final consume preserves the funding authority refusal');
 }
+// The refused grant is spent: the writer now has no grant and refuses before the wire.
+try { $writer->renew($descriptor, $ctx); throw new LogicException('Writer sent without a live grant'); }
+catch (DomainException $missing) { same('No live renewal grant.', $missing->getMessage(), 'Writer refuses a descriptor without a live grant'); }
 same(0, $writes, 'Final consume never reaches writer');
 // Sent original attempts still need outcome reconciliation; no second execution is authorized.
 foreach (['pending', 'uncertain', 'running'] as $sentState) {

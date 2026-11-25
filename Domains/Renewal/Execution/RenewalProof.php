@@ -1,11 +1,12 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Renewal\Execution;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AttemptEvidence, DomainSnapshot, OrderEvidence};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, FreshTransaction, MoneyDecisions, RegistrarAnswers};
 
 /** An attempt's registrar read claim and any positive evidence retained from its replies. */
 final class RenewalProof

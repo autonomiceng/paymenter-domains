@@ -1,10 +1,11 @@
 <?php
 // Enom d1392a8 renewal completion; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Renewal\Execution;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CapturedChargeReview, ComplimentaryCosts, ComplimentaryInvoices, EnomBillZones, EnomTestCallLimit, EntryDeadline, FreshTransaction, HistoryResumption, HoldingLocks, HoldingObservationWork, MoneyDecisions, MoneyOutcome, MoneyRequest, ObservationProjection, OperationClaims, OperationReconciliation, ReadDeferred, ReconciliationEvidence, RegistrarCheck, RenewalBusy, RenewalFunding, Runtime, StaffOperationReview, StaffReviewRefused};
 /** Bounded observation of the original sealed renewal. Never retries, refunds or invents expiry. */
 final readonly class RenewalCompletion
 {
