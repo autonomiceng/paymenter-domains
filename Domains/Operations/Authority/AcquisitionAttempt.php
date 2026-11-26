@@ -3,12 +3,13 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Operations\Authority;
 
+use Illuminate\Contracts\Encryption\DecryptException;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 
 /** Acquisition evidence as seen by checkout, staff, profile and refund readers. */
 final readonly class AcquisitionAttempt
 {
-    private function __construct(public AttemptFacts $facts, private array $rows, private array $origin) {}
+    private function __construct(public AttemptFacts $facts, private array $rows, private array $origin, private array $history) {}
 
     public static function key(string $action): ?StepKey
     {
@@ -20,14 +21,26 @@ final readonly class AcquisitionAttempt
         $key = self::key($action);
         $facts = $key ? OperationAttempts::latest($id, $key, $lock) : null;
         if (!$facts) { return null; }
-        $rows = OperationAttempts::evidenceMany([$id], ['claim', 'admission', 'reply', 'test_capacity', 'settlement'])[$id] ?? [];
+        $rows = OperationAttempts::evidenceMany([$id], ['claim', 'admission', 'reply', 'test_capacity', 'capacity', 'settlement'])[$id] ?? [];
+        foreach ($rows as $evidence) {
+            if (in_array(OperationAttempts::UNREADABLE, $evidence, true)) { throw new DecryptException('Acquisition attempt evidence is unreadable.'); }
+        }
         $current = $rows[$facts->token->attemptId] ?? [];
         $origin = $current['claim']['evidence'] ?? throw new \DomainException('Acquisition claim evidence unavailable.');
         if (isset($origin['origin_attempt_id'])) {
             $original = $rows[$origin['origin_attempt_id']]['claim']['evidence'] ?? throw new \DomainException('Original acquisition claim unavailable.');
             $origin = [...$original, 'origin_attempt_id' => $origin['origin_attempt_id']];
         }
-        return new self($facts, $current, $origin);
+        $history = [];
+        ksort($rows);
+        foreach ($rows as $attempt) {
+            foreach ($attempt['claim']['evidence']['history'] ?? [] as $kind => $events) { $history[$kind] = $events; }
+            if (isset($attempt['capacity']['recorded_at'])) { $history['capacity_deferrals'][] = $attempt['capacity']['recorded_at']; }
+            if (($attempt['test_capacity']['outcome'] ?? null) === 'fresh') {
+                $history['test_call_refusals'][] = $attempt['test_capacity']['evidence'];
+            }
+        }
+        return new self($facts, $current, $origin, $history);
     }
 
     public function originId(): int { return $this->origin['origin_attempt_id'] ?? $this->facts->token->attemptId; }
@@ -36,13 +49,6 @@ final readonly class AcquisitionAttempt
     { return ($this->rows['test_capacity']['outcome'] ?? null) !== 'fresh'; }
 
     public function sealed(): bool { return $this->facts->sealed() && !$this->facts->released; }
-
-    public function balanceCap(): ?array
-    {
-        $cap = $this->rows['test_capacity'] ?? [];
-        return ($cap['outcome'] ?? null) === 'balance' && $this->facts->sealed() && $this->facts->released
-            ? array_intersect_key($cap['evidence'], array_flip(['dispatch_attempted_at', 'authorized_cost', 'refused_at'])) : null;
-    }
 
     public function start(): ?\DateTimeImmutable
     { return $this->hasOriginalClaim() ? new \DateTimeImmutable($this->origin['started_at']) : null; }
@@ -57,17 +63,13 @@ final readonly class AcquisitionAttempt
 
     public function attempt(string $action): array
     {
-        $id = $this->facts->token->operationId;
-        $deferrals = array_column(OperationAttempts::history($id, 'capacity'), 'recorded_at');
-        $caps = array_column(array_filter(OperationAttempts::history($id, 'test_capacity'), static fn ($r) => $r['outcome'] === 'fresh'), 'evidence');
-        $history = [...($caps ? ['test_call_refusals' => $caps] : []), ...($deferrals ? ['capacity_deferrals' => $deferrals] : [])];
-        if (!$this->hasOriginalClaim()) { return $history; }
+        if (!$this->hasOriginalClaim()) { return $this->history; }
         $attempt = ['claim_key' => $this->origin['identity'], 'seal' => $this->sealed() ? 'sealed' : 'absent',
             'send_state' => $this->sealed() ? $this->facts->sendState->value : 'definitely_unsent'];
-        if (!$this->sealed()) { return [...$attempt, ...$history]; }
+        if (!$this->sealed()) { return [...$attempt, ...$this->history]; }
         $admission = $this->rows['admission']['evidence'] ?? throw new \DomainException('Acquisition admission evidence unavailable.');
         $admissionKey = $action === 'transfer' ? 'transfer_admission' : 'registration_admission';
-        return [...$attempt, ...$history, 'dispatch_attempted_at' => $this->facts->sealedAt->format(DATE_ATOM),
+        return [...$attempt, ...$this->history, 'dispatch_attempted_at' => $this->facts->sealedAt->format(DATE_ATOM),
             'authorized_cost' => ['amount' => $this->facts->authorizedAmount, 'currency' => $this->facts->authorizedCurrency],
             $admissionKey => $admission[$admissionKey], ...array_diff_key($this->rows['reply']['evidence'] ?? [], ['reason' => true]),
             ...($this->rows['settlement']['evidence'] ?? [])];

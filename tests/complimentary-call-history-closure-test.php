@@ -4,6 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/Support/operation-fixture.php';require __DIR__.'/Support/staff-panel.php';staffPanel();app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 use Illuminate\Support\Facades\{Cache,Crypt,DB};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts,EnomTestSendLimit,EnomTestSendLimitSchema,FundsWaits,HolderPricing,NativeDomainGuard,OperationClaims,OperationTerminalProof,RefundProof};
 EnomTestSendLimitSchema::install();(new NativeDomainGuard(new HolderPricing($prices),$clock))->boot();
@@ -21,13 +22,19 @@ foreach(['register','transfer']as$action){
     $history=$held->attempt['test_call_refusals'];$virgin=$held->getRawOriginal();$account=Account::where('server_id',$op->server_id)->sole();$money=$nativeMoney();
     foreach(['malformed','foreign','sent']as$case){
         $attempt=$held->attempt;
-        if($case==='malformed'){unset($attempt['test_call_refusals'][0]['phase']);}
+        $cap = DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $op->id, 'kind' => 'test_capacity']);
+        $retainedCap = $cap->value('evidence');
+        if ($case === 'malformed') {
+            $damaged = $history[0]; unset($damaged['phase']);
+            $cap->update(['evidence' => Crypt::encryptString(json_encode($damaged, JSON_THROW_ON_ERROR))]);
+        }
         if($case==='foreign'){$attempt['terminal']=['operation_key'=>'foreign','generation'=>999];}
         if($case==='sent'){$attempt['seal']='sealed';$attempt['send_state']='possibly_sent';}
         DB::table('domains_operations')->where('id',$op->id)->update(['attempt'=>Crypt::encryptString(json_encode($attempt))]);
         FundsWaits::sweep($account,$now->modify('+3 days'));
         same('held',$op->fresh()->state,'Damaged/sent history never closes: '.$action.':'.$case);same($money,$nativeMoney(),'Damaged history moves no money');
         DB::table('domains_operations')->where('id',$op->id)->update($virgin);
+        if ($case === 'malformed') { $cap->update(['evidence' => $retainedCap]); }
     }
     // An interrupted/legacy rejected projection without terminal proof is not an actionable Close order.
     DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'rejected']);
@@ -48,7 +55,7 @@ foreach(['register','transfer']as$action){
         if($case==='foreign'){$facts['terminal']['generation']=999;}
         if($case==='sent'){$facts['send_state']='possibly_sent';}
         if($case==='future'){$facts['test_call_refusals'][0]['refused_at']=$now->modify('+4 days')->format(DATE_ATOM);}
-        $bad->attempt=$facts;if(OperationTerminalProof::safe($bad,$closed->domain)){$failures[]=$action.': '.$case.' completed history must not become terminal proof';}
+        unset($bad->id); $bad->attempt=$facts;if(OperationTerminalProof::safe($bad,$closed->domain)){$failures[]=$action.': '.$case.' completed history must not become terminal proof';}
         commerceReject(fn()=>RefundProof::requireUnsent($bad,$closed->domain));
     }
     $raw=$closed->getRawOriginal();FundsWaits::sweep($account,$now->modify('+4 days'));same($raw,$op->fresh()->getRawOriginal(),'Repeated sweep preserves the terminal history');same($money,$nativeMoney(),'Closure preserves Paid zero receipt and financial history');

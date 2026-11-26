@@ -41,7 +41,12 @@ same(['Check','PE_GetProductPrice','GetBalance'],array_column(array_slice($GLOBA
 same(['held','name_unavailable'],[$capOp->fresh()->state,$capOp->fresh()->safe_code],'A taken name keeps its cause and stays a reviewed unsent hold');
 same(1,count($capOp->fresh()->attempt['test_call_refusals']??[]),'Retry retains original cap refusal history');
 expect(Paymenter\Extensions\Servers\Domains\Services\OperationClaims::testCallRefusalRetryable($capOp->fresh()),'Prior cap refusal preserves narrow retry and refund proof');
-$exhausted=clone $capOp->fresh();$attempt=$exhausted->attempt;$attempt['capacity_deferrals']=array_fill(0,6,$clock->now()->format(DATE_ATOM));$exhausted->setAttribute('attempt',$attempt);
+$exhausted = $capOp->fresh();
+$attempt = $exhausted->attempt; $funding = $exhausted->funding;
+$start = $exhausted->started_at; $digest = $exhausted->request_fingerprint;
+unset($exhausted->id); // Exercise the format an installed pre-ledger order would retain.
+$attempt['capacity_deferrals'] = array_fill(0, 6, $clock->now()->format(DATE_ATOM));
+$exhausted->fill(['attempt' => $attempt, 'funding' => $funding, 'started_at' => $start, 'request_fingerprint' => $digest]);
 expect(!Paymenter\Extensions\Servers\Domains\Services\OperationClaims::testCallRefusalRetryable($exhausted),'Six capacity deferrals exhaust the TEST retry budget');
 Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireUnsent($exhausted,$capDomain);
 try{HeldRelease::release($exhausted,['account'=>$a,'domain'=>$capDomain],$clock->now());throw new LogicException('Exhausted TEST retries cannot be released.');}catch(DomainException $e){same('This hold requires its original recovery or evidence path.',$e->getMessage(),'Exhausted TEST retries refuse readmission with complete domain facts');}

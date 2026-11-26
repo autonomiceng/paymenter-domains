@@ -145,48 +145,47 @@ final class OperationClaims
                 $op->policy=$renewed;$window=ExecutionWindow::start($op,$windowReason);
             }
             if(($claimRetry||$balanceRetry)&&isset($op->attempt['claim_key'])&&($op->request_fingerprint!==$digest||($op->funding['claim']??null)!==$paid)){$op->update(['state'=>'held','safe_code'=>'claim_authority_invalid']);return null;}
-            $this->startWorker($op, $claimRetry, $testCallRetry, $claimStartedAt, $digest, $paid, $now);
+            if (!$this->startWorker($op, $claimRetry, $claimStartedAt, $digest, $paid, $now)) { return null; }
             return [$op, $domain, $binding];
         });
     }
 
-    private function startWorker(Operation $op, bool $retry, bool $testRetry, \DateTimeImmutable $start, string $digest,
-        array $paid, \DateTimeImmutable $now): void
+    private function startWorker(Operation $op, bool $retry, \DateTimeImmutable $start, string $digest,
+        array $paid, \DateTimeImmutable $now): bool
     {
         $system = BalanceRetry::from($op);
         $lease = $now->modify('+'.ExecuteOperation::LEASE_SECONDS.' seconds');
         $prior = AcquisitionAttempt::of((int) $op->id, $op->action, true);
-        if (!$prior && ($op->started_at !== null || $op->attempt)) {
-            $this->startLegacyWorker($op, $retry, $testRetry, $start, $digest, $paid, $lease, $system);
-            return;
+        $origin = ['started_at' => $start->format(DATE_ATOM), 'digest' => $digest, 'funding' => $paid];
+        if ($retry && $prior) {
+            $origin = ['origin_attempt_id' => $prior->originId()];
+        } elseif (!$prior && $op->attempt) {
+            // Historic unsealed retries passed the same admission checks above. Import their audit
+            // with the first new worker rather than starting another legacy claim.
+            $origin['history'] = array_intersect_key($op->attempt, ['test_call_refusals' => true, 'capacity_deferrals' => true]);
+            if ($retry) {
+                $origin['identity'] = $op->attempt['claim_key'];
+                $origin['started_at'] = $op->started_at->format(DATE_ATOM);
+            }
+            self::retireLegacyClaim($op);
         }
-        $origin = $retry && $prior ? ['origin_attempt_id' => $prior->originId()]
-            : ['started_at' => $start->format(DATE_ATOM), 'digest' => $digest, 'funding' => $paid];
         $token = $this->attempts->claim((int) $op->id, AcquisitionAttempt::key($op->action), $lease, $origin);
         if (!$token instanceof AttemptToken) { throw new \DomainException('Acquisition claim changed.'); }
         $policy = $op->policy;
         if ($system && $system->record['claim_key'] === null) { $policy['balance_retry'] = $system->claimed($op)->record; }
         $op->acquisitionWorker = $token;
         $op->update(['state' => 'running', 'safe_code' => null, 'policy' => $policy]);
+        return true;
     }
 
-    /** Already retained claims keep their recorded format until their work settles. */
-    private function startLegacyWorker(Operation $op, bool $retry, bool $testRetry, \DateTimeImmutable $start, string $digest,
-        array $paid, \DateTimeImmutable $lease, ?BalanceRetry $system): void
+    /** Called only for an unsealed legacy retry after current funding, identity and negative evidence were checked. */
+    private static function retireLegacyClaim(Operation $op): void
     {
-        $attempt = $retry ? $op->attempt : [
-            ...($testRetry ? array_intersect_key($op->attempt, ['test_call_refusals' => true, 'capacity_deferrals' => true]) : []),
-            'claim_key' => bin2hex(random_bytes(16)), 'seal' => 'absent', 'send_state' => 'definitely_unsent',
-        ];
-        $policy = $op->policy;
-        if ($system && $system->record['claim_key'] === null) {
-            $first = clone $op;
-            $first->fill(['attempt' => $attempt, 'started_at' => $start, 'request_fingerprint' => $digest]);
-            $policy['balance_retry'] = $system->claimed($first)->record;
-        }
-        $op->update(['state' => 'running', 'safe_code' => null, 'started_at' => $retry ? $op->started_at : $start,
-            'lease_expires_at' => $lease, 'request_fingerprint' => $digest, 'attempt' => $attempt,
-            'funding' => [...($op->funding ?? []), 'claim' => $paid], 'policy' => $policy]);
+        $funding = array_diff_key($op->funding ?? [], ['claim' => true]);
+        $op->fill(['funding' => $funding ?: null]);
+        DB::table('domains_operations')->where('id', $op->id)->update(['attempt' => null,
+            'started_at' => null, 'request_fingerprint' => null, 'lease_expires_at' => null, 'funding' => ($op->getAttributes()['funding'] ?? null)]);
+        $op->refresh();
     }
 
     public function seal(Operation $claimed, DispatchReadiness $ready, \DateTimeImmutable $entry, ?SealPreflight $preflight = null, ?WriteGate $writer = null, ?RequestContext $wire = null): ?Operation
@@ -228,7 +227,7 @@ final class OperationClaims
                 $this->releasePreSeal($claimed);
                 $op->update(['state' => 'held', 'safe_code' => $reason, 'lease_expires_at' => null]); return null;
             }
-            $this->persistSeal($op, $claimed, $ready, $lastSend, $now, $paid);
+            $this->persistSeal($op, $claimed, $ready, $lastSend, $paid);
             // A retry's backoff paces only this send. Once it may be sent, status checks keep their own schedule.
             if (array_key_exists('balance_retry', $op->policy ?? [])) {
                 DB::table('domains_runtime_operations')->where('operation_id', $op->id)->where('due_at', '>', $now->getTimestamp())->update(['due_at' => $now->getTimestamp()]);
@@ -238,30 +237,25 @@ final class OperationClaims
     }
 
     private function persistSeal(Operation $op, Operation $claimed, DispatchReadiness $ready, \DateTimeImmutable $until,
-        \DateTimeImmutable $now, array $paid): void
+        array $paid): void
     {
         $cost = ['amount' => $ready->cost->amount, 'currency' => $ready->cost->currency];
         $admission = $ready->query->action === Action::Register
             ? ['registration_admission' => ['premium' => false, 'name' => $ready->query->name, 'years' => $ready->query->years, 'cost' => $cost]]
             : ['transfer_admission' => $ready->transfer];
-        if ($token = $claimed->acquisitionWorker) {
-            $revision = $op->transition_revision + 1;
-            if ($this->attempts->seal($token, new SealTerms($revision, $op->request_fingerprint, $ready->cost, $op->action, $until),
-                ['funding' => $paid, ...$admission]) !== Transition::Applied) {
-                throw new \DomainException('Acquisition claim changed.');
-            }
-            $op->acquisitionWorker = $token;
-            $op->update(['transition_revision' => $revision]);
-            return;
+        $token = $claimed->acquisitionWorker;
+        $revision = $op->transition_revision + 1;
+        if ($this->attempts->seal($token, new SealTerms($revision, $op->request_fingerprint, $ready->cost, $op->action, $until),
+            ['funding' => $paid, ...$admission]) !== Transition::Applied) {
+            throw new \DomainException('Acquisition claim changed.');
         }
-        $op->update(['attempt' => [...$op->attempt, 'seal' => 'sealed', 'dispatch_attempted_at' => $now->format(DATE_ATOM),
-            'send_state' => 'possibly_sent', 'authorized_cost' => $cost, ...$admission],
-            'funding' => [...$op->funding, 'seal' => $paid]]);
+        $op->acquisitionWorker = $token;
+        $op->update(['transition_revision' => $revision]);
     }
 
     private function releasePreSeal(Operation $claimed): void
     {
-        if ($token = $claimed->acquisitionWorker) { $this->attempts->releasePreSeal($token); }
+        $this->attempts->releasePreSeal($claimed->acquisitionWorker);
     }
 
     /** Post-read/write bookkeeping needs only domain -> ordered operations, never financial authority again. */
@@ -280,26 +274,19 @@ final class OperationClaims
             $expired = $late || !$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now();
             $unsent=$sealed&&!array_key_exists('execution',$op->attempt)&&$locallyUnsent&&$op->registrar_key==='namesilo'&&in_array($op->action,['register','transfer'],true)
                 &&$result?->jsonSerialize()===['disposition'=>'rejected','send_state'=>'definitely_unsent','reason'=>'unsent','discrepancies'=>[]];
-            $attempt = $op->attempt;
-            if ($sealed && !array_key_exists('execution', $attempt)) {
+            if ($sealed && !array_key_exists('execution', $op->attempt)) {
                 $reply = self::replyFacts($result, $failure, $unsent);
-                if ($token = $claimed->acquisitionWorker) {
-                    $outcome = $unsent ? WireOutcome::localRefusal('transport', $reply)
-                        : ($result && $result->sendState !== \Paymenter\Extensions\Servers\Domains\Data\SendState::DefinitelyUnsent
-                            ? WireOutcome::reply($result->sendState, $result->disposition->value, $reply)
-                            : WireOutcome::unknown($reply));
-                    if ($this->attempts->recordReply($token, $outcome) !== Transition::Applied) { return $op; }
-                    $attempt = $op->attempt;
-                } else {
-                    $attempt = [...$attempt, ...$reply];
-                }
+                $outcome = $unsent ? WireOutcome::localRefusal('transport', $reply)
+                    : ($result && $result->sendState !== \Paymenter\Extensions\Servers\Domains\Data\SendState::DefinitelyUnsent
+                        ? WireOutcome::reply($result->sendState, $result->disposition->value, $reply)
+                        : WireOutcome::unknown($reply));
+                if ($this->attempts->recordReply($claimed->acquisitionWorker, $outcome) !== Transition::Applied) { return $op; }
             } elseif (!$sealed) {
                 $this->releasePreSeal($claimed);
             }
             // Ack/rejection still require action-specific correlation/completion in 21/22. No refund/release here.
-            if (!$claimed->acquisitionWorker) { $op->attempt = $attempt; }
             $completion = !$expired && $sealed && $result ? RegistrationCompletion::record($op, $domain, $result) : null;
-            $op->update(array_replace([...($claimed->acquisitionWorker ? [] : ['attempt' => $attempt]), 'state' => $unsent?'held':(($sealed || $expired) ? 'uncertain' : 'held'),
+            $op->update(array_replace(['state' => $unsent?'held':(($sealed || $expired) ? 'uncertain' : 'held'),
                 'safe_code' => $unsent?'acquisition_definitely_unsent':($expired ? 'stale_claim' : ($sealed ? 'reconciliation_required' : ($holdReason ?? 'pre_send_interrupted'))), 'lease_expires_at' => null], $completion ?? []));
             if(BalanceRetries::candidate($op)){BalanceRetries::held($op,$this->clock->now(),$holdCost);}
             return $op;
@@ -324,12 +311,9 @@ final class OperationClaims
         if(BalanceRetry::from($claimed)?->window){return $this->finish($claimed,holdReason:'write_rate_limited');}
         return $this->locked((int)$claimed->id,function($op)use($claimed):Operation {
             if(!self::sameClaim($op,$claimed)||!$op->lease_expires_at||$op->lease_expires_at<=$this->clock->now()||!self::unsealed($op)){return $op;}
-            $history=$op->attempt['capacity_deferrals']??[];$a=[...$op->attempt,'capacity_deferrals'=>[...$history,$this->clock->now()->format(DATE_ATOM)]];
-            if ($token = $claimed->acquisitionWorker) {
-                if ($this->attempts->deferClaim($token) !== Transition::Applied) { return $op; }
-            }
-            $op->update(['state'=>count($history)<5?'queued':'held','safe_code'=>'write_rate_limited',
-                ...($claimed->acquisitionWorker ? [] : ['attempt' => $a]),'lease_expires_at'=>null]);
+            $deferrals = count($op->attempt['capacity_deferrals'] ?? []);
+            if ($this->attempts->deferClaim($claimed->acquisitionWorker) !== Transition::Applied) { return $op; }
+            $op->update(['state' => $deferrals < 5 ? 'queued' : 'held', 'safe_code' => 'write_rate_limited']);
             if($op->state==='held'){BalanceRetries::rateHeld($op,$this->clock->now());}return $op;
         });
     }
@@ -344,26 +328,7 @@ final class OperationClaims
                 if(($attempt['send_state']??null)!=='possibly_sent'||!isset($attempt['dispatch_attempted_at'],$attempt['authorized_cost'],$attempt[$op->action==='transfer'?'transfer_admission':'registration_admission'])) { return $op; }
                 if(!EnomTestCalls::purchaseUnconsumed($op->account_fingerprint,(int)$op->id)) { return $op; }
             } elseif(!self::unsealed($op)||($attempt['send_state']??null)!=='definitely_unsent') { return $op; }
-            $system=BalanceRetry::from($op);
-            if ($token = $claimed->acquisitionWorker) { return $this->refuseTestCapacity($op, $token, $system); }
-            if($system?->window){
-                $funding=$op->funding;if($sealed){unset($funding['seal']);$system=$system->refused($op,$this->clock->now());}
-                $op->update(['attempt'=>['claim_key'=>$attempt['claim_key'],'seal'=>'absent','send_state'=>'definitely_unsent',
-                    ...array_intersect_key($attempt,['capacity_deferrals'=>true,'test_call_refusals'=>true])],
-                    'funding'=>$funding,'policy'=>[...$op->policy,'balance_retry'=>$system->record],
-                    'state'=>'held','safe_code'=>'write_rate_limited','lease_expires_at'=>null]);
-                BalanceRetries::held($op,$this->clock->now());return $op;
-            }
-            $history=$attempt['test_call_refusals']??[];
-            if(!self::testCallHistory($history)) { return $op; }
-            $event=['phase'=>$sealed?'purchase':'preflight','refused_at'=>$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM),
-                'dispatch_attempted_at'=>$sealed?$attempt['dispatch_attempted_at']:null,'authorized_cost'=>$sealed?$attempt['authorized_cost']:null];
-            if(count($history)>=100) { return $op; }
-            $funding=$op->funding??[];unset($funding['claim'],$funding['seal']);
-            $refusalAttempt=['test_call_refusals'=>[...$history,$event],...array_intersect_key($attempt,['capacity_deferrals'=>true])];
-            $op->update(['attempt'=>$refusalAttempt,'funding'=>$funding,'state'=>'held','safe_code'=>$op->action==='transfer'?'enom_test_transfer_call_cap':'enom_test_call_cap',
-                'lease_expires_at'=>null,'started_at'=>null,'request_fingerprint'=>null]);
-            return $op;
+            return $this->refuseTestCapacity($op, $claimed->acquisitionWorker, BalanceRetry::from($op));
         });
     }
 
@@ -377,11 +342,9 @@ final class OperationClaims
         if (!$balance && (!self::testCallHistory($history) || count($history) >= 100)) { return $op; }
         $proof = ['phase' => $sealed ? 'purchase' : 'preflight', 'refused_at' => $now->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM),
             'dispatch_attempted_at' => $sealed ? $attempt['dispatch_attempted_at'] : null, 'authorized_cost' => $sealed ? $attempt['authorized_cost'] : null];
-        if ($balance && $sealed) { $system = $system->refused($op, $now); }
         if ($this->attempts->refuseTestCapacity($token, $proof, $balance) !== Transition::Applied) { return $op; }
         $reason = $op->action === 'transfer' ? 'enom_test_transfer_call_cap' : 'enom_test_call_cap';
-        $op->update(['state' => 'held', 'safe_code' => $balance ? 'write_rate_limited' : $reason,
-            ...($balance ? ['policy' => [...$op->policy, 'balance_retry' => $system->record]] : [])]);
+        $op->update(['state' => 'held', 'safe_code' => $balance ? 'write_rate_limited' : $reason]);
         if ($balance) { BalanceRetries::held($op, $now); }
         return $op;
     }
@@ -724,19 +687,13 @@ final class OperationClaims
     }
     private static function sameClaim(Operation $a, Operation $b): bool
     {
-        return $a->state === 'running' && $b->state === 'running' && self::sameWorker($a, $b)
-            && $a->getRawOriginal('lease_expires_at') === $b->getRawOriginal('lease_expires_at');
+        return $a->state === 'running' && $b->state === 'running' && self::sameWorker($a, $b);
     }
     private static function sameWorker(Operation $a, Operation $b): bool
     {
-        if ($token = $b->acquisitionWorker) {
-            $facts = OperationAttempts::attempt($token, true);
-            return $facts?->current && !$facts->released && !AcquisitionAttempt::conflicts($a);
-        }
-        return AcquisitionAttempt::of((int) $a->id, $a->action) === null
-            && ($a->attempt['claim_key'] ?? null) !== null && ($a->attempt['claim_key'] ?? null) === ($b->attempt['claim_key'] ?? null)
-            && $a->getRawOriginal('started_at') === $b->getRawOriginal('started_at')
-            && $a->request_fingerprint === $b->request_fingerprint;
+        if (!($token = $b->acquisitionWorker)) { return false; }
+        $facts = OperationAttempts::attempt($token, true);
+        return $facts?->current && !$facts->released && !AcquisitionAttempt::conflicts($a);
     }
     public static function payloadDigest(Operation $op): string { return hash('sha256', json_encode($op->payload, JSON_THROW_ON_ERROR)); }
     public static function query(Operation $op, Domain $domain): Query { return new Query($domain->domain, Action::from($op->action), (int) $op->term); }

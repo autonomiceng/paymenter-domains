@@ -98,13 +98,6 @@ final class OperationAttempts
         return $row ? self::decoded($row) : null;
     }
 
-    /** Insertion order preserves repeated local refusals, including equal timestamps. */
-    public static function history(int $operationId, string $kind): array
-    {
-        return DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $operationId, 'kind' => $kind])
-            ->orderBy('id')->get()->map(self::decoded(...))->all();
-    }
-
     /**
      * The first evidence of each kind for the given operations in one read, keyed by operation id, then attempt id
      * (0 for operation-level evidence), then kind. A row that no longer decrypts reads as UNREADABLE, so it never

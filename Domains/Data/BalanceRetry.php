@@ -59,12 +59,6 @@ final readonly class BalanceRetry
         $copy=clone $op;$copy->policy=[...$op->policy,'balance_retry'=>array_replace($this->record,
             ['tries'=>min(1000000,$this->record['tries']+1),'window_at'=>self::stamp($now)])];return self::from($copy);
     }
-    public function refused(Operation $op,\DateTimeImmutable $now): self
-    {
-        $copy=clone $op;$copy->policy=[...$op->policy,'balance_retry'=>array_replace($this->record,['cap_refusal'=>[
-            'dispatch_attempted_at'=>$op->attempt['dispatch_attempted_at'],'authorized_cost'=>$op->attempt['authorized_cost'],'refused_at'=>self::stamp($now)]])];
-        return self::from($copy);
-    }
     public function delay(): int {return min(21600,900*(2**min(5,$this->record['tries'])));}
     /** Closing an unsent pre-claim retry retains its history, never creates purchase authority. */
     private static function unclaimedTerminal(Operation $op): bool

@@ -96,7 +96,10 @@ foreach(['success','unsent','timeout','cap','off'] as $mode){
         same(['held','acquisition_definitely_unsent'],[$result->state,$result->safe_code],'Local sealed refusal retains definitely-unsent result');
         same('sealed',$result->attempt['seal'],'Seal never reset for retry');same(0,$writes,'Local refusal has zero physical purchase');
         same($deferrals,$result->attempt['capacity_deferrals'],'Sealed local refusal retains capacity deferral');
-        $bad=clone $result;$bad->attempt=array_replace($result->attempt,['capacity_deferrals'=>['invalid']]);
+        $malformed = array_replace($result->attempt, ['capacity_deferrals' => ['invalid']]);
+        commerceReject(fn () => $result->fresh()->update(['attempt' => $malformed]));
+        $bad = clone $result; unset($bad->id); $bad->attempt = $malformed;
+        $bad->started_at = $result->started_at; $bad->request_fingerprint = $result->request_fingerprint;
         try{RefundProof::requireUnsent($bad,$result->domain);expect(false,'Malformed sealed deferral must fail');}
         catch(\DomainException $error){same('Unknown capacity deferral.',$error->getMessage(),'Sealed deferrals retain timestamp validation');}
         commerceReject(fn()=>$result->update(['attempt'=>array_replace($result->attempt,['execution'=>null]) ]));$result->refresh();

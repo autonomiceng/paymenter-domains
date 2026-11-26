@@ -72,38 +72,8 @@ final class BalanceRetries
         $op->update(['policy'=>[...$op->policy,'balance_retry'=>BalanceRetry::held($op,$now,null)->admitted($op,$now)->record]]);
         if(self::candidate($op)){self::held($op,$now);}
     }
-    /** The existing purchase-scope negative proof also permits retaining a system retry's original claim. */
-    public static function capReset(Operation $op): bool
-    {
-        if ($attempt = AcquisitionAttempt::of((int) $op->id, $op->action)) {
-            $old = $op->getOriginal('policy')['balance_retry'] ?? null;
-            $next = $op->policy['balance_retry'] ?? null;
-            $proof = $attempt->balanceCap();
-            return $proof !== null && $old !== null && $next !== null
-                && $op->getOriginal('state') === 'running' && $op->state === 'held' && $op->safe_code === 'write_rate_limited'
-                && $next === array_replace($old, ['cap_refusal' => ['dispatch_attempted_at' => $proof['dispatch_attempted_at'],
-                    'authorized_cost' => $proof['authorized_cost'], 'refused_at' => $proof['refused_at']]]);
-        }
-        try {
-            $before=clone $op;$before->setRawAttributes($op->getRawOriginal(),true);
-            $old=BalanceRetry::from($before);$next=BalanceRetry::from($op);
-            if(!$old?->window||!$next||$before->registrar_key!=='enom'||$before->state!=='running'||$op->state!=='held'||$op->safe_code!=='write_rate_limited'
-                ||$op->lease_expires_at!==null||$op->started_at!=$before->started_at||$op->request_fingerprint!==$before->request_fingerprint
-                ||$op->provider_order_id!==null||$op->confirmed_expires_at!==null||$op->completed_at!==null
-                ||($before->attempt['seal']??null)!=='sealed'||($before->attempt['send_state']??null)!=='possibly_sent'
-                ||!isset($before->attempt['authorized_cost'],$before->attempt['dispatch_attempted_at'],$before->attempt[$op->action==='transfer'?'transfer_admission':'registration_admission'])
-                ||array_diff(array_keys($before->attempt),['claim_key','seal','send_state','dispatch_attempted_at','authorized_cost','registration_admission','transfer_admission','capacity_deferrals','test_call_refusals'])
-                ||array_diff(array_keys($op->cost??[]),['estimated','currency','unit'])||array_key_exists('dispatch_attempted_at',$op->policy??[])
-                ||!EnomTestCalls::purchaseUnconsumed($op->account_fingerprint,(int)$op->id)){return false;}
-            $cap=$next->record['cap_refusal'];$policy=$before->policy;$policy['balance_retry']=array_replace($old->record,['cap_refusal'=>$cap]);
-            $funding=$before->funding;unset($funding['seal']);
-            return $cap!==null&&$cap['dispatch_attempted_at']===$before->attempt['dispatch_attempted_at']&&$cap['authorized_cost']===$before->attempt['authorized_cost']
-                &&$op->policy===$policy&&$op->funding===$funding&&$op->attempt===['claim_key'=>$before->attempt['claim_key'],'seal'=>'absent','send_state'=>'definitely_unsent',
-                    ...array_intersect_key($before->attempt,['capacity_deferrals'=>true,'test_call_refusals'=>true])];
-        }catch(\Throwable){return false;}
-    }
     /** Retry windows may advance only on locked held-to-queued admission; sent authority is retained. */
-    public static function guard(Operation $op,bool $capReset): void
+    public static function guard(Operation $op): void
     {
         $old=$op->getOriginal('policy')['balance_retry']??null;$next=BalanceRetry::from($op);
         if($old===null){return;}
@@ -122,8 +92,10 @@ final class BalanceRetries
                 throw new \DomainException('System retry window requires readmission.');
             }
         }
-        if($old['cap_refusal']!==$next->record['cap_refusal']&&!$capReset
-            ||($op->getOriginal('attempt')['seal']??null)==='sealed'&&!$capReset&&$old!==$next->record){throw new \DomainException('Sealed system retry authority is frozen.');}
+        if ($old['cap_refusal'] !== $next->record['cap_refusal']
+            || ($op->getOriginal('attempt')['seal'] ?? null) === 'sealed' && $old !== $next->record) {
+            throw new \DomainException('Sealed system retry authority is frozen.');
+        }
     }
     /** Use the last fresh quote only to stop early. A positive result still needs the full fresh preflight. */
     public static function probe(Operation $op,RegistrarDriver $reader,RequestContext $context): ?DriverResult
