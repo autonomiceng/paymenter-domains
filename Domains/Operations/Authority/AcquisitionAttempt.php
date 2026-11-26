@@ -21,7 +21,8 @@ final readonly class AcquisitionAttempt
         $key = self::key($action);
         $facts = $key ? OperationAttempts::latest($id, $key, $lock) : null;
         if (!$facts) { return null; }
-        $rows = OperationAttempts::evidenceMany([$id], ['claim', 'admission', 'reply', 'decision', 'test_capacity', 'capacity', 'settlement'])[$id] ?? [];
+        $rows = OperationAttempts::evidenceMany([$id], ['claim', 'admission', 'reply', 'decision', 'test_capacity',
+            'capacity', 'answer', 'settlement'])[$id] ?? [];
         foreach ($rows as $evidence) {
             if (in_array(OperationAttempts::UNREADABLE, $evidence, true)) { throw new DecryptException('Acquisition attempt evidence is unreadable.'); }
         }
@@ -54,6 +55,11 @@ final readonly class AcquisitionAttempt
     { return $this->hasOriginalClaim() ? new \DateTimeImmutable($this->origin['started_at']) : null; }
 
     public function digest(): ?string { return $this->hasOriginalClaim() ? $this->origin['digest'] : null; }
+
+    public function answer(): ?array
+    {
+        return $this->rows['settlement']['evidence']['answer'] ?? $this->rows['answer']['evidence']['answer'] ?? null;
+    }
 
     public function funding(): array
     {

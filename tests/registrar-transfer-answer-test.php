@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/Support/transfer-completion-namesilo-fixture.php';
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, StepKey};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,PricingRule,RefundProof,StaffSettingsReview as Review,StaffSettingsWrites,TransferRejections};
 app()->instance(Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);
 $staff=commerceUser();$permissions=['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.enom_answer','admin.domains.manage','admin.invoices.update'];
@@ -54,6 +55,9 @@ $form=[...array_diff_key($answer($op),['final_confirmed'=>true]),'review_key'=>R
 \Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction::make($op->fresh(),$stamp)->data($form)->call();$op->refresh();
 same(['rejected','transfer_rejected','cancelled'],[$op->state,$op->domain->status,$op->domain->service->status],'Audited finality closes the native transfer');
 same($attempt,$op->attempt,'Sent attempt remains byte-for-byte intact');
+$sealed = OperationAttempts::sealed((int) $op->id, new StepKey('transfer', 1));
+$settlement = OperationAttempts::evidence((int) $op->id, $sealed->token->attemptId, 'settlement');
+same('transfer_rejected', $settlement['outcome'] ?? null, 'Audited finality settles the exact original attempt');
 same(['amount'=>'5.95','currency'=>'USD'],$op->cost['actual'],'Only the net failed fee is absorbed');
 same(['99.00','93.05','Transfer Rejected','9001'],array_map(fn($k)=>$op->policy['enom_answer'][$k],['charge','registrar_refund','transfer_status','order_reference']),'Exact final amounts, status and order retained');
 same($staff->id,$op->policy['enom_answer']['actor_id'],'Accountable staff identity retained');

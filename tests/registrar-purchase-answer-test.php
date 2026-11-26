@@ -6,6 +6,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{Environment,ExecutionRecord};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client,Driver};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport,TransportResponse};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, StepKey};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,HistoryAcceptances,OperationReconciliation,ReconciliationEvidence,Refunds,RegistrarCheck,RenewalAuthority,StaffSettingsReview as Review,StaffSettingsWrites};
 app()->instance(Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);
 $staff=commerceUser();$role=App\Models\Role::create(['name'=>'Purchase answers','permissions'=>['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.enom_answer','admin.domains.manage','admin.invoices.update']]);$staff->update(['role_id'=>$role->id]);
@@ -58,6 +59,10 @@ foreach(['accepted','not_processed'] as $outcome){
     }
     $settings->run($review($op),$input($op,$outcome),$clock->now());$op->refresh();
     same($attempt,$op->attempt,'Answer never changes the original sent attempt');
+    $sealed = OperationAttempts::sealed((int) $op->id, new StepKey('register', 1));
+    $kind = $outcome === 'accepted' ? 'answer' : 'settlement';
+    same($outcome, OperationAttempts::evidence((int) $op->id, $sealed->token->attemptId, $kind)['outcome'] ?? null,
+        'Audited answer addresses the original registration attempt');
     if($outcome==='accepted'){
         $a=ReconciliationEvidence::attempt($op,$op->domain,$binding);same(ExecutionRecord::StaffAnswer,$a->execution,'Exact order carries staff provenance');
         foreach(['id','name','term','status','time','expiry'] as $fault){

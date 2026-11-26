@@ -169,6 +169,20 @@ final readonly class OperationWriter
             ? Transition::Applied : Transition::Stale;
     }
 
+    /** An audited answer belongs to the sealed acquisition. Final answers use its one settlement identity. */
+    public function recordAcquisitionAnswer(AttemptToken $token, array $answer): Transition
+    {
+        self::requireTransaction();
+        $facts = OperationAttempts::attempt($token, true);
+        $outcome = $answer['outcome'];
+        if (!$facts?->current || !$facts->sealed() || $facts->reading($this->clock->now())
+            || ($outcome === 'not_processed' && ($facts->readToken !== null || $facts->readUnresolved
+                || OperationAttempts::evidence($token->operationId, $token->attemptId, 'observation')))) { return Transition::Stale; }
+        $kind = $outcome === 'accepted' ? 'answer' : 'settlement';
+        return $this->append($token->operationId, $token->attemptId, $kind, 'staff_answer', $outcome, ['answer' => $answer], $kind)
+            ? Transition::Applied : Transition::Stale;
+    }
+
     /** A new read claim on the sealed attempt. A live read is busy. An earlier claim that was never closed leaves uncertainty. */
     public function openRead(AttemptToken $token, \DateTimeImmutable $until): ReadToken|Transition
     {

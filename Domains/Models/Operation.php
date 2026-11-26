@@ -37,6 +37,7 @@ class Operation extends Model
     }
 
     protected function funding(): Attribute { return $this->retainedEvidence('funding'); }
+    protected function policy(): Attribute { return $this->retainedEvidence('policy'); }
 
     private function retainedEvidence(string $field): Attribute
     {
@@ -58,7 +59,12 @@ class Operation extends Model
     private function acquisitionEvidence(string $field, array $row): array
     {
         $attempt = $this->acquisition($row);
-        return $attempt ? ($field === 'attempt' ? $attempt->attempt($row['action']) : $attempt->funding()) : [];
+        if (!$attempt) { return []; }
+        return match ($field) {
+            'attempt' => $attempt->attempt($row['action']),
+            'funding' => $attempt->funding(),
+            'policy' => ($answer = $attempt->answer()) ? ['enom_answer' => $answer] : [],
+        };
     }
 
     private function acquisition(array $row): ?AcquisitionAttempt
