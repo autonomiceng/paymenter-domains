@@ -62,7 +62,7 @@ class Operation extends Model
         $attempt = $this->acquisition($row);
         if (!$attempt) { return []; }
         return match ($field) {
-            'attempt' => $attempt->attempt($row['action']),
+            'attempt' => $attempt->attempt(),
             'funding' => $attempt->funding(),
             'policy' => ($answer = $attempt->answer()) ? ['enom_answer' => $answer] : [],
         };
@@ -72,7 +72,7 @@ class Operation extends Model
     {
         if (!isset($row['id'], $row['action'], $row['transition_revision'])) { return null; }
         if (!$this->acquisitionLoaded) {
-            $this->acquisitionAttempt = AcquisitionAttempt::of((int) $row['id'], $row['action']);
+            $this->acquisitionAttempt = AcquisitionAttempt::of((int) $row['id'], $this->getRawOriginal('action') ?? $row['action']);
             $this->acquisitionLoaded = true;
         }
         return $this->acquisitionAttempt;

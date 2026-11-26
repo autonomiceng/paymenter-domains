@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 /** Acquisition evidence as seen by checkout, staff, profile and refund readers. */
 final readonly class AcquisitionAttempt
 {
-    private function __construct(public AttemptFacts $facts, private array $rows, private array $origin, private array $history) {}
+    private function __construct(public AttemptFacts $facts, private string $action, private array $rows, private array $origin, private array $history) {}
 
     public static function key(string $action): ?StepKey
     {
@@ -43,7 +43,7 @@ final readonly class AcquisitionAttempt
                 $history['test_call_refusals'][] = $attempt['test_capacity']['evidence'];
             }
         }
-        return new self($facts, $current, $origin, $history);
+        return new self($facts, $action, $current, $origin, $history);
     }
 
     public function originId(): int { return $this->origin['origin_attempt_id'] ?? $this->facts->token->attemptId; }
@@ -70,7 +70,7 @@ final readonly class AcquisitionAttempt
         return ['claim' => $this->origin['funding'], ...($this->sealed() ? ['seal' => $this->rows['admission']['evidence']['funding']] : [])];
     }
 
-    public function attempt(string $action): array
+    public function attempt(): array
     {
         if (!$this->hasOriginalClaim()) { return $this->history; }
         $settlement = array_intersect_key($this->rows['settlement']['evidence'] ?? [], ['reconciliation' => true]);
@@ -79,7 +79,7 @@ final readonly class AcquisitionAttempt
             'send_state' => $this->sealed() ? $this->facts->sendState->value : 'definitely_unsent'];
         if (!$this->sealed()) { return [...$attempt, ...$this->history]; }
         $admission = $this->rows['admission']['evidence'] ?? throw new \DomainException('Acquisition admission evidence unavailable.');
-        $admissionKey = $action === 'transfer' ? 'transfer_admission' : 'registration_admission';
+        $admissionKey = $this->action === 'transfer' ? 'transfer_admission' : 'registration_admission';
         return [...$attempt, ...$this->history, 'dispatch_attempted_at' => $this->facts->sealedAt->format(DATE_ATOM),
             'authorized_cost' => ['amount' => $this->facts->authorizedAmount, 'currency' => $this->facts->authorizedCurrency],
             $admissionKey => $admission[$admissionKey], ...array_diff_key($this->rows['reply']['evidence'] ?? [], ['reason' => true]),
