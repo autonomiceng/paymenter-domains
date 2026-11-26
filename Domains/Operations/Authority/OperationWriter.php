@@ -137,7 +137,8 @@ final readonly class OperationWriter
     public function consumeGrant(AttemptToken $token): Transition
     {
         self::requireTransaction(); $facts = OperationAttempts::attempt($token, true);
-        if (!$facts?->current || !$facts->sealed() || $facts->grantConsumedAt !== null || $facts->sendState !== SendState::PossiblySent) { return Transition::Stale; }
+        if (!$facts?->current || !$facts->sealed() || $facts->claimUntil === null
+            || $facts->grantConsumedAt !== null || $facts->sendState !== SendState::PossiblySent) { return Transition::Stale; }
         if (DB::table(OperationSchema::EVIDENCE)->where(['attempt_id' => $token->attemptId, 'kind' => 'settlement'])
             ->lockForUpdate()->first(['id'])) { return Transition::Stale; }
         $now = OperationAttempts::at($this->clock->now());

@@ -6,6 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Models;
 
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\{Builder, Model};
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AttemptFacts, AttemptToken, OperationAttempts, OperationSchema};
 
@@ -82,7 +83,7 @@ class Operation extends Model
     {
         if (in_array($key, ['attempt', 'funding', 'policy'], true)) {
             // Both versions use the same retained attempt. Eloquent otherwise constructs a fresh model on every call.
-            return $this->projectEvidence($key, $this->original[$key] ?? $default, $this->original);
+            return $this->projectEvidence($key, Arr::get($this->original, $key, $default), $this->original);
         }
         return parent::getOriginal($key, $default);
     }
@@ -203,9 +204,12 @@ class Operation extends Model
         });
         static::updating(static function (self $operation): void {
             $dirty = array_keys($operation->getDirty());
-            if (array_intersect($dirty, ['payload', 'started_at', 'request_fingerprint', 'lease_expires_at'])
-                && ($attempt = $operation->acquisition($operation->attributes))) {
-                if ($attempt->sealed() || array_intersect($dirty, ['started_at', 'request_fingerprint', 'lease_expires_at'])) {
+            $claimIdentity = array_intersect($dirty, ['started_at', 'request_fingerprint', 'lease_expires_at']);
+            if (AcquisitionAttempt::key($operation->action) && ($claimIdentity || in_array('payload', $dirty, true))) {
+                // A model loaded before a worker's seal may still have an empty, cached attempt.
+                $operation->reloadAcquisitionAttempt();
+                $attempt = $operation->acquisition($operation->attributes);
+                if ($attempt && ($attempt->sealed() || $claimIdentity)) {
                     throw new \DomainException('Acquisition authority belongs to its operation attempt.');
                 }
             }

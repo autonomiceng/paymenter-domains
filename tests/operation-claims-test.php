@@ -27,8 +27,13 @@ $cases['claims'] = static function () use ($new, $engine, $writer, $assertNoSend
 $cases['attempt-authority'] = static function () use ($new, $engine, $writer): void {
     foreach (['register', 'transfer'] as $action) {
         $op = $new('ledger-'.$action.'.example.com', action: $action);
+        $stale = $op->fresh();
+        same([], $stale->attempt ?? [], 'The earlier instance has no attempt yet');
         $before = $writer->calls;
         $result = $engine->execute($op->id)->fresh();
+        $payload = $result->payload;
+        commerceReject(fn () => $stale->update(['payload' => [...$payload, 'nameservers' => ['ns1.example.net', 'ns2.example.net']]]));
+        same($payload, $result->fresh()->payload, 'A stale instance cannot change the sealed payload');
         same($before + 1, $writer->calls, 'Exactly one acquisition crossed the writer boundary');
         $attempt = OperationAttempts::sealed((int) $result->id, new StepKey($action, 1));
         expect($attempt !== null && $attempt->grantConsumedAt !== null, 'Acquisition seal and grant are durable across reload');
