@@ -20,10 +20,7 @@ abstract class TableSchema
     {
         $definitions = static::definitions();
         $owned = Installer::recovering();
-        $present = array_filter(array_keys($definitions), Schema::hasTable(...));
-        if ($present && count($present) !== count($definitions) && !$owned) {
-            throw new \RuntimeException('Partial retained Domains schema.');
-        }
+        $present = self::requireWhole(array_keys($definitions), $owned);
         foreach ($definitions as $table => $definition) {
             if (!Schema::hasTable($table)) {
                 Schema::create($table, $definition);
@@ -36,6 +33,16 @@ abstract class TableSchema
         if (!$owned) {
             static::verify();
         }
+    }
+
+    /** The present tables. Outside owned recovery, some but not all of them present is a partial retained schema. */
+    protected static function requireWhole(array $tables, bool $owned): array
+    {
+        $present = array_filter($tables, Schema::hasTable(...));
+        if ($present && count($present) !== count($tables) && !$owned) {
+            throw new \RuntimeException('Partial retained Domains schema.');
+        }
+        return $present;
     }
 
     protected static function seed(): void {}

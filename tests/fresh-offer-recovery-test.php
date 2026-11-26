@@ -103,7 +103,7 @@ same('active', CatalogueActivation::routeState()['state'], 'Retry resumes the pr
 same(2, CatalogueActivation::generation(), 'Interrupted retries grant one activation generation');
 $entry->installed(); same(2, CatalogueActivation::generation(), 'Completed retry is idempotent');
 $tables=Registry::tables();
-same(42,count($tables),'Fresh Domains-owned table inventory');
+same(45,count($tables),'Fresh Domains-owned table inventory');
 expect(Verification::current(), 'Completed install keeps a current verification record');
 $columns=array_sum(array_map(fn($table)=>count(Schema::getColumnListing($table)),$tables));
 echo count($tables)." owned tables, ".$columns." columns\n";

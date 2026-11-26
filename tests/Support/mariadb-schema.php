@@ -8,6 +8,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\{Artisan,DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Installation\SchemaVerifier;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
 use Paymenter\Extensions\Servers\Domains\Services\{AdoptionSchema,Installation,DomainAuditSchema};
 
 same(getenv('DB_SOCKET'), DB::connection()->getConfig('unix_socket'), 'Resolved socket belongs to this disposable fixture');
@@ -42,7 +43,7 @@ $tables = Schema::getTableListing($database, false); sort($tables);
 $owned = array_values(array_diff($tables, $native));
 $prefix = DB::connection()->getTablePrefix();
 $registered = array_map(static fn (string $table): string => $prefix.$table, Installation::expectedTables()); sort($registered);
-same(42, count($registered), 'The registry lists the complete Domains schema');
+same(45, count($registered), 'The registry lists the complete Domains schema');
 same($registered, $owned, 'Fresh native install created exactly the registered Domains schema: '
     .json_encode(['missing' => array_values(array_diff($registered, $owned)), 'extra' => array_values(array_diff($owned, $registered))]));
 foreach ($owned as $table) {
@@ -54,7 +55,7 @@ $snapshot = static function () use ($owned, $prefix): array {
     $result = [];
     foreach ($owned as $physical) {
         $table = substr($physical, strlen($prefix));
-        $result[$physical] = [Schema::getColumns($table), Schema::getIndexes($table), DB::table($table)->get()->toJson()];
+        $result[$physical] = [Schema::getColumns($table), Schema::getIndexes($table), Schema::getForeignKeys($table), DB::table($table)->get()->toJson()];
     }
     return $result;
 };
@@ -73,6 +74,20 @@ try { AdoptionSchema::verify(); throw new LogicException('Schema drift accepted'
 catch (RuntimeException $error) { same('Retained Domains schema mismatch: domains_adoptions', $error->getMessage(), 'Specific drift refusal'); }
 $after = Schema::getTableListing($database, false); sort($after); same($tables, $after, 'Failed verification also removes reference tables');
 Schema::table('domains_adoptions', static fn ($t) => $t->dropColumn('unexpected'));
+// A dropped or weakened reference refuses retained verification; restoring the exact reference passes again.
+$evidenceKeys = Schema::getForeignKeys(OperationSchema::EVIDENCE);
+same(2, count($evidenceKeys), 'Evidence references its operation and attempt');
+$attemptKey = array_values(array_filter($evidenceKeys, static fn (array $key): bool => $key['columns'] === ['attempt_id']))[0];
+Schema::table(OperationSchema::EVIDENCE, static fn ($t) => $t->dropForeign($attemptKey['name']));
+try { OperationSchema::verify(); throw new LogicException('Missing attempt reference accepted'); }
+catch (RuntimeException $error) { same('Retained Domains schema mismatch: '.OperationSchema::EVIDENCE, $error->getMessage(), 'Missing reference refusal'); }
+Schema::table(OperationSchema::EVIDENCE, static fn ($t) => $t->foreign('attempt_id', $attemptKey['name'])->references('id')->on(OperationSchema::ATTEMPTS)->cascadeOnDelete());
+try { OperationSchema::verify(); throw new LogicException('Cascading attempt reference accepted'); }
+catch (RuntimeException $error) { same('Retained Domains schema mismatch: '.OperationSchema::EVIDENCE, $error->getMessage(), 'Changed referential action refusal'); }
+Schema::table(OperationSchema::EVIDENCE, static fn ($t) => $t->dropForeign($attemptKey['name']));
+Schema::table(OperationSchema::EVIDENCE, static fn ($t) => $t->foreign('attempt_id', $attemptKey['name'])->references('id')->on(OperationSchema::ATTEMPTS)->restrictOnDelete()->restrictOnUpdate());
+OperationSchema::verify();
+same($evidenceKeys, Schema::getForeignKeys(OperationSchema::EVIDENCE), 'Restored reference has the original shape');
 $guardServer=\App\Models\Server::create(['name'=>'Freshness guard','type'=>'server','extension'=>'Domains','enabled'=>true]);
 Schema::create('domains_freshness_guard',static function($table):void {$table->id();$table->unsignedBigInteger('server_id');});
 DB::table('domains_freshness_guard')->insert(['server_id'=>$guardServer->id]);
@@ -81,6 +96,14 @@ try{(new \ReflectionMethod(\Paymenter\Extensions\Servers\Domains\Services\Accoun
     throw new LogicException('Prefixed retained Domains table passed the fresh-server guard');
 }catch(DomainException $error){same('Account enrollment requires a fresh server.',$error->getMessage(),'Prefixed retained table blocks account enrollment');}
 Schema::drop('domains_freshness_guard');$guardServer->newQuery()->whereKey($guardServer->id)->delete();
+// The writer treats a duplicate authority key as already recorded; it relies on MariaDB naming that key in the error.
+DB::statement('SET FOREIGN_KEY_CHECKS = 0');
+$evidenceRow = ['operation_id' => 1, 'source' => 'local', 'kind' => 'terminal', 'outcome' => 'x', 'authority_key' => str_repeat('a', 64), 'evidence' => 'x'];
+DB::table(OperationSchema::EVIDENCE)->insert($evidenceRow);
+try { DB::table(OperationSchema::EVIDENCE)->insert($evidenceRow); throw new LogicException('Duplicate authority key accepted'); }
+catch (\Illuminate\Database\UniqueConstraintViolationException $error) { expect(str_contains((string) ($error->errorInfo[2] ?? ''), 'authority_key'), 'A duplicate authority key names its key'); }
+DB::table(OperationSchema::EVIDENCE)->where('authority_key', $evidenceRow['authority_key'])->delete();
+DB::statement('SET FOREIGN_KEY_CHECKS = 1');
 $version = DB::selectOne('SELECT VERSION() AS version')->version;
 expect(str_starts_with($version, '11.4.5-MariaDB'), 'Pinned real MariaDB version');
 echo json_encode(['complete' => true, 'server_version' => $version, 'prefix' => $prefix,

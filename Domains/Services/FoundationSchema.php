@@ -6,10 +6,10 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 // Column declarations adapted from Enom d2c55e2.
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Installation\TableSchema;
-use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementProgress;
+use Paymenter\Extensions\Servers\Domains\Installation\{Installer, TableSchema};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
 
+/** Holdings, renewal funding postings and accounts. Registry also lists OperationSchema on its own. */
 final class FoundationSchema extends TableSchema
 {
     protected static function definitions(): array
@@ -46,53 +46,6 @@ final class FoundationSchema extends TableSchema
                 $t->unsignedBigInteger('adoption_id')->nullable();
                 $t->index(['server_id', 'id']);
             },
-            'domains_operations' => static function (Blueprint $t): void {
-                $t->id();
-                $t->unsignedBigInteger('server_id');
-                $t->string('registrar_key', 32);
-                $t->string('account_fingerprint', 64)->nullable();
-                $t->unsignedBigInteger('authority_generation')->nullable();
-                $t->unsignedBigInteger('domain_id')->index();
-                $t->unsignedBigInteger('service_id')->index();
-                $t->unsignedBigInteger('invoice_id')->nullable()->index();
-                $t->unsignedBigInteger('invoice_item_id')->nullable();
-                $t->string('operation_key', 191)->unique();
-                $t->string('action', 32);
-                $t->unsignedSmallInteger('term')->default(1);
-                $t->string('funding_basis', 32)->default('paid_invoice');
-                $t->string('state', 32)->index();
-                $t->decimal('amount', 12, 2)->default(0);
-                $t->string('currency', 3);
-                $t->date('base_expires_at')->nullable();
-                $t->date('expected_expires_at')->nullable();
-                $t->date('confirmed_expires_at')->nullable();
-                $t->longText('payload')->nullable();
-                $t->longText('policy')->nullable();
-                $t->longText('cost')->nullable();
-                $t->string('request_fingerprint', 64)->nullable();
-                $t->string('safe_code', 64)->nullable();
-                $t->unsignedBigInteger('transition_revision')->default(0);
-                $t->timestamp('renewal_admission_until')->nullable();
-                $t->unsignedBigInteger('renewal_reserved_revision')->nullable();
-                $t->longText('renewal_proof')->nullable();
-                $t->longText('renewal_check')->nullable();
-                $t->longText('attempt')->nullable();
-                $t->longText('funding')->nullable();
-                $t->string('provider_order_id', 128)->nullable();
-                $t->unsignedBigInteger('authorized_by')->nullable();
-                $t->string('funding_reason', 500)->nullable();
-                $t->timestamp('started_at')->nullable();
-                $t->timestamp('lease_expires_at')->nullable();
-                $t->timestamp('completed_at')->nullable();
-                $t->timestamp('created_at')->nullable();
-                $t->timestamp('updated_at')->nullable();
-                $t->boolean('management_pending')->nullable();
-                $t->unsignedTinyInteger('retry_number')->default(0);
-                $t->char('renewal_previous_proof', 64)->nullable();
-                $t->index(['server_id', 'account_fingerprint', 'id']);
-                $t->index(['domain_id', 'authority_generation', 'account_fingerprint', 'action', 'management_pending', 'id'], $t->getTable().'_management_progress_i');
-                $t->unique(['invoice_item_id', 'action', 'retry_number'], $t->getTable().'_debt_retry_u');
-            },
             RenewalFundingLedger::TABLE => static function (Blueprint $t): void {
                 $t->unsignedBigInteger('invoice_item_id');
                 $t->unsignedTinyInteger('retry_number');
@@ -119,11 +72,14 @@ final class FoundationSchema extends TableSchema
         ];
     }
 
-    public static function verify(): void
+    /**
+     * Fixtures and commerce install the holding foundation with its operations in one call; each part verifies its own
+     * tables. The two inventories are checked together first, so retained foundation tables never get new empty operation tables.
+     */
+    public static function install(): void
     {
-        parent::verify();
-        if (DB::table('domains_operations')->whereIn('action', ManagementProgress::ACTIONS)->whereNull('management_pending')->exists()) {
-            throw new \RuntimeException('Retained management operation has no progress state.');
-        }
+        self::requireWhole([...self::tables(), ...OperationSchema::tables()], Installer::recovering());
+        parent::install();
+        OperationSchema::install();
     }
 }

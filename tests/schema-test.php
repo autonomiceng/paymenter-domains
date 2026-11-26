@@ -9,7 +9,9 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Paymenter\Extensions\Servers\Domains\Domains;
+use Paymenter\Extensions\Servers\Domains\Installation\{Registry, SchemaVerifier};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, Price, Tld};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
 use Paymenter\Extensions\Servers\Domains\Services\{FoundationSchema, ObservationSchema};
 
 // The extension lifecycle owns fresh-install authority through catalogue retirement.
@@ -22,7 +24,7 @@ $verificationQueries=DB::getQueryLog(); DB::disableQueryLog();
 $referenceCreates=count(array_filter($verificationQueries,static fn(array $q):bool=>str_starts_with(strtolower($q['query']),'create table ')));
 expect($referenceCreates<=100,'One verification uses at most 100 reference tables, got '.$referenceCreates);
 
-FoundationSchema::verify();
+FoundationSchema::verify(); OperationSchema::verify();
 expect(DB::table('migrations')->where('migration', '2026_11_23_000001_create_domains_schema')->exists(), 'Native migration history recorded');
 foreach (Schema::getTableListing() as $table) {
     if (!str_starts_with($table, 'domains_')) { continue; }
@@ -111,9 +113,59 @@ foreach (['domains_domains', 'domains_operations', 'domains_tlds', 'domains_pric
 $entry = new Domains([]);
 $entry->uninstalled();
 $entry->installed();
-FoundationSchema::verify();
+FoundationSchema::verify(); OperationSchema::verify();
 expect(DB::table('migrations')->where('migration', '2026_11_23_000001_create_domains_schema')->exists(), 'Native migration history recorded');
 foreach ($before as $table => $rows) { same($rows, DB::table($table)->orderBy('id')->get()->toJson(), 'Reinstall retains bytes: '.$table); }
+$operationTables = OperationSchema::tables();
+same($operationTables, array_values(array_intersect($operationTables, Registry::expectedTables())), 'The table inventory lists the operation tables');
+// Nullable time columns without a default are the declaration MariaDB never initializes or updates implicitly.
+$timeColumns = [];
+foreach ($operationTables as $table) {
+    foreach (Schema::getColumns($table) as $column) {
+        if ($column['type_name'] === 'datetime') { $timeColumns[$table.'.'.$column['name']] = [$column['nullable'], $column['default']]; }
+    }
+}
+same(array_fill_keys(['domains_operations.renewal_admission_until', 'domains_operations.started_at', 'domains_operations.lease_expires_at',
+    'domains_operations.completed_at', 'domains_operations.created_at', 'domains_operations.updated_at', 'domains_operation_attempts.claimed_at', 'domains_operation_attempts.claim_until', 'domains_operation_attempts.released_at',
+    'domains_operation_attempts.sealed_at', 'domains_operation_attempts.dispatch_until', 'domains_operation_attempts.grant_consumed_at',
+    'domains_operation_attempts.read_until', 'domains_operation_evidence.observed_at', 'domains_operation_evidence.recorded_at'], [true, null]),
+    $timeColumns, 'Operation time columns are nullable with no default');
+// Attempts and evidence cannot outlive their operation, and verification compares each reference's columns, target and actions.
+$ownedRows = static fn (): array => [DB::table(OperationSchema::STEPS)->count(), DB::table(OperationSchema::EVIDENCE)->count()];
+try { DB::table(OperationSchema::STEPS)->insert(['operation_id' => 999999, 'step_type' => 'renew', 'sequence' => 1]); expect(false, 'Step without operation accepted'); }
+catch (QueryException) { same([0, 0], $ownedRows(), 'Orphan step refused'); }
+$stepId = DB::table(OperationSchema::STEPS)->insertGetId(['operation_id' => 71, 'step_type' => 'renew', 'sequence' => 1]);
+try { DB::table('domains_operations')->where('id', 71)->delete(); expect(false, 'Operation with a step deleted'); }
+catch (QueryException) { same(1, DB::table('domains_operations')->where('id', 71)->count(), 'Restrictive step reference keeps the operation'); }
+DB::table(OperationSchema::STEPS)->where('id', $stepId)->delete();
+$evidence = (new ReflectionMethod(OperationSchema::class, 'definitions'))->invoke(null)[OperationSchema::EVIDENCE];
+$rebuildEvidence = static function (Closure $change) use ($evidence): void {
+    Schema::drop(OperationSchema::EVIDENCE);
+    Schema::create(OperationSchema::EVIDENCE, static function (Blueprint $t) use ($evidence, $change): void { $evidence($t); $change($t); });
+};
+$withoutAttemptReference = static function (Blueprint $t): void {
+    (fn () => $this->commands = array_values(array_filter($this->commands, static fn ($command): bool => $command->name !== 'foreign' || $command->columns !== ['attempt_id'])))->call($t);
+};
+foreach ([
+    'Missing attempt reference' => $withoutAttemptReference,
+    'Cascading attempt reference' => static function (Blueprint $t) use ($withoutAttemptReference): void {
+        $withoutAttemptReference($t);
+        $t->foreign('attempt_id', 'domains_operation_evidence_cascade_f')->references('id')->on(OperationSchema::ATTEMPTS)->cascadeOnDelete();
+    },
+    'Unexpected reference' => static fn (Blueprint $t) => $t->foreign('operation_id', 'domains_operation_evidence_extra_f')->references('id')->on(OperationSchema::STEPS),
+] as $case => $change) {
+    $rebuildEvidence($change);
+    try { OperationSchema::verify(); expect(false, $case.' accepted'); }
+    catch (RuntimeException $e) { same('Retained Domains schema mismatch: '.OperationSchema::EVIDENCE, $e->getMessage(), $case.' refuses retained verification'); }
+}
+$rebuildEvidence(static function (): void {});
+OperationSchema::verify();
+// A same-named target in another database is a different reference. SQLite cannot build one; MariaDB proves it physically.
+$reference = new ReflectionMethod(SchemaVerifier::class, 'reference');
+$key = Schema::getForeignKeys(OperationSchema::EVIDENCE)[0];
+expect($reference->invoke(null, $key) !== $reference->invoke(null, ['foreign_schema' => 'restored_copy'] + $key), 'Reference target includes its schema');
+expect($reference->invoke(null, ['foreign_schema' => 'paymenter'] + $key) !== $reference->invoke(null, ['foreign_schema' => 'Paymenter'] + $key), 'A case-distinct schema is another target');
+expect($reference->invoke(null, $key) !== $reference->invoke(null, ['foreign_table' => strtoupper($key['foreign_table'])] + $key), 'A case-distinct table is another target');
 // Missing indexes and changed columns fail closed; verification never repairs retained history.
 Schema::table('domains_domains', static fn (Blueprint $t) => $t->dropUnique(['reservation_name']));
 app(Illuminate\Database\Migrations\Migrator::class)->run([dirname(__DIR__).'/Domains/database/migrations']);
@@ -133,6 +185,10 @@ Schema::drop('domains_operations');
 try { FoundationSchema::install(); expect(false, 'Partial retained installation accepted'); }
 catch (RuntimeException $e) { expect(str_contains($e->getMessage(), 'Partial retained'), 'Partial installation refusal'); }
 expect(!Schema::hasTable('domains_operations'), 'Missing history was not silently recreated');
+foreach ([OperationSchema::EVIDENCE, OperationSchema::ATTEMPTS, OperationSchema::STEPS] as $table) { Schema::drop($table); }
+try { FoundationSchema::install(); expect(false, 'Foundation without operation tables accepted'); }
+catch (RuntimeException $e) { expect(str_contains($e->getMessage(), 'Partial retained'), 'Missing operation inventory refusal'); }
+expect(!Schema::hasTable(OperationSchema::STEPS), 'Missing operation tables were not silently created');
 // A connection prefix must not hide missing or weakened reservation constraints.
 $connection = DB::getDefaultConnection();
 $schema = Schema::getFacadeRoot();
@@ -141,13 +197,13 @@ DB::setDefaultConnection('prefixed');
 Schema::swap(DB::connection()->getSchemaBuilder());
 try {
     FoundationSchema::install();
-    FoundationSchema::verify();
+    FoundationSchema::verify(); OperationSchema::verify();
     DB::table('domains_operations')->insert($operationRow);
     $rejectDuplicate('domains_operations',array_replace($operationRow,['operation_key'=>'other-key']));
     $retryIndexes=array_values(array_filter(Schema::getIndexes('domains_operations'),fn($i)=>$i['columns']===['invoice_item_id','action','retry_number']&&$i['unique']));
     same(1,count($retryIndexes),'One exact retry identity index');
     Schema::table('domains_operations',static fn(Blueprint $t)=>$t->dropUnique($retryIndexes[0]['name']));
-    try{FoundationSchema::verify();expect(false,'Missing retry uniqueness accepted');}
+    try{OperationSchema::verify();expect(false,'Missing retry uniqueness accepted');}
     catch(RuntimeException $e){expect(str_contains($e->getMessage(),'schema mismatch'),'Retained retry drift refuses');}
     Schema::table('domains_operations',static fn(Blueprint $t)=>$t->unique(['invoice_item_id','action','retry_number'],$t->getTable().'_debt_retry_u'));
     Schema::table('domains_domains', static fn (Blueprint $t) => $t->dropUnique(['reservation_name']));
