@@ -4,7 +4,8 @@ declare(strict_types=1);
 require __DIR__.'/Support/runtime-records-ready.php';
 use Illuminate\Support\Facades\{DB,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{Runtime,RuntimeWork,ObservationWork,ObservationRecords,OwnerRecords,ManagementPayload,ReadDeferred,DomainObservation};
+use Paymenter\Extensions\Servers\Domains\Services\{Runtime,RuntimeWork,ObservationWork,OwnerRecords,ManagementPayload,ReadDeferred,DomainObservation};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 // Current holds suppress automatic retries, and the note states the manual-resume prerequisite.
 $state->fault='GetHosts';DB::table('domains_observation_work')->where('id',$job->id)->update(['tries'=>4]);$dueRecords();$runtimePorts->initialManagedRecordObservations();expect(ObservationRecords::held($d->fresh()),'Failed native discovery creates current hold');
 $html=$page();same(1,substr_count($html,e(Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD)),'Held notice describes manual recovery once');expect(!str_contains($html,Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::TEAM_CHECK),'Record rows do not repeat the held notice');expect(!str_contains($html,'Fills in by itself within a day'),'Held records never promise an automatic record retry');

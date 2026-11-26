@@ -1,8 +1,9 @@
 <?php
 // Enom 444f31c snapshot/glue refresh; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Services;
+namespace Paymenter\Extensions\Servers\Domains\Holding\Observation;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
+use Paymenter\Extensions\Servers\Domains\Services\{GlueDiscoveryLimit,GlueRecords,HoldingObservationWork,HoldingReadRetry,ManagementPayload,ObservationWork,RecordFormat,RecordInventory};
 /** Encrypted inventory with explicit completeness, current identity and readback-sequence binding. */
 final class ObservationRecords
 {

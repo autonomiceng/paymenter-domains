@@ -6,7 +6,8 @@ require __DIR__.'/Support/observation-records.php';
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment,ManagementRequest,RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationProjection,ObservationRecords,ObservationSchema,ObservationWork,OwnerRecords,ReadDeferred};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationProjection,ObservationSchema,ObservationWork,OwnerRecords,ReadDeferred};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 // History alone can overflow while partial child-host history stays below its separate cap.
 $observation->years=1;
 [$d,$driver]=$holding('history-placeholder.com');

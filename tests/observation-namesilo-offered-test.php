@@ -5,7 +5,7 @@ declare(strict_types=1);
 // reads them, and a DNS reply NameSilo refuses can no longer stop the glue and contact reads or raise a sync alert.
 require __DIR__.'/Support/management-namesilo.php';
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\ObservationReader;
-use Paymenter\Extensions\Servers\Domains\Services\ObservationRecords;
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 [$d,$driver,$original]=$holding('offered');$ms->route='apibatch';
 $asked=[];
 $exchange=static function($origin,$cmd,$p,$timeout)use($managementExchange,&$asked):string {

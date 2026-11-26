@@ -7,7 +7,8 @@ use App\Helpers\ExtensionHelper;
 use App\Models\{BillingAgreement, Gateway, Invoice};
 use Illuminate\Support\Facades\{DB, Mail, Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, DomainBilling, DomainObservation, HoldingLocks, HolderPricing, NativeDomainGuard, ObligationAlerts, ObservationRecords, ObservationSchema, ReminderSchema, RenewalAutoPay};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, DomainBilling, DomainObservation, HoldingLocks, HolderPricing, NativeDomainGuard, ObligationAlerts, ObservationSchema, ReminderSchema, RenewalAutoPay};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 
 class TransferFenceGateway
 {

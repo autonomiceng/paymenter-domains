@@ -5,6 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Data\{DomainSnapshot, NameserverEvidence, TransferStatus};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Management\Changes\CorrectionProgress;
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 /** Encrypted facts only. No anchor, operation state, correction closure or financial writer. */
 final class ObservationProjection
 {

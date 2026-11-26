@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 $free=isset($ms);[$d,$driver]=$holding($free?'owner-management':'owner-management-placeholder.com');
 // These input checks use an existing domain whose first registrar read has finished.
 $readAt=$clock->now()->format(DATE_ATOM);
-$d->update(['observation'=>[...($d->observation??[]),'records'=>['identity'=>\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d),
+$d->update(['observation'=>[...($d->observation??[]),'records'=>['identity'=>\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::identity($d),
     'at'=>$readAt,'last_complete_at'=>$readAt,'sequence'=>0,'families'=>[]]]]);
 storefrontViews();
 $ports=new OwnerPorts(fn($b)=>$driver);$owners=new OwnedDomains($clock,$ports,$management);

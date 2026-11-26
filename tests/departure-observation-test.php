@@ -11,7 +11,8 @@ use Paymenter\Extensions\Servers\Domains\Contracts\DnsReader;
 use Paymenter\Extensions\Servers\Domains\Dns\{DnsAnswer,DnsContext,DnsQuery};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DsState,OwnedDomain,Plain};
 use Paymenter\Extensions\Servers\Domains\Storefront\Search\PublicDnsQuota;
-use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,DomainStates,HoldingObservationWork,HoldingReadRetry,ObservationRecords,PublicRegistryReader,RenewalOwnership};
+use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,DomainStates,HoldingObservationWork,HoldingReadRetry,PublicRegistryReader,RenewalOwnership};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 // Every case starts from the same registered holding with a complete initial inventory. Cases read departure
 // evidence through different projections and at different read clocks; each pins its own clock first.
 // The staff panel routes are registered once, before the checkpoint, so no case adds routes the reset cannot remove.

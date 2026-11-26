@@ -15,7 +15,7 @@ same(true,$nsSection['defaults'],'Either registrar offers a usable site default'
 $registrar=$free?'NameSilo':'Enom';
 // An existing domain whose first registrar read finished: its rows are not Checking, so the editor opens.
 $readAt=$clock->now()->format(DATE_ATOM);
-\Paymenter\Extensions\Servers\Domains\Models\Domain::withoutEvents(static fn()=>$d->fresh()->update(['observation'=>[...($d->fresh()->observation??[]),'records'=>['identity'=>\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d->fresh()),'at'=>$readAt,'last_complete_at'=>$readAt,'sequence'=>0,'families'=>[]]]]));
+\Paymenter\Extensions\Servers\Domains\Models\Domain::withoutEvents(static fn()=>$d->fresh()->update(['observation'=>[...($d->fresh()->observation??[]),'records'=>['identity'=>\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::identity($d->fresh()),'at'=>$readAt,'last_complete_at'=>$readAt,'sequence'=>0,'families'=>[]]]]));
 $editor=storefrontDom((new \Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController($owners))->show($r,$d->id)->render());
 // Customers never see which registrar holds the domain (glossary rule), in the editor or its confirmation.
 expect(!str_contains($editor->query('//dialog[@id="edit-nameservers"]')->item(0)->textContent,$registrar),'Editor names no registrar');

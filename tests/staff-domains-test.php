@@ -97,7 +97,7 @@ DB::table('domains_operations')->where('id',$acquisition->id)->update(['state'=>
 
 
 // Current record holds are safe review alerts; stale identities and arbitrary reasons never leak.
-$recordService=\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::class;
+$recordService=\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::class;
 $requestId=$active->operations()->sole()->id;$requestUrl=\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl('view',['record'=>$requestId]);
 foreach (['history_limit'=>'Missing: saved record history needs a fresh read. Use Sync now to refresh DNS records.','ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
     'glue_unavailable'=>"Couldn't read glue records. Other domain facts were saved.",

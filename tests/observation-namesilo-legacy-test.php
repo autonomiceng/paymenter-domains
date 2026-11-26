@@ -58,26 +58,26 @@ same([$expiry->format('Y-m-d'),$anchor,$revision],[$d->fresh()->provider_expires
 same(true,$d->fresh()->observation['facts']['owned'],'Verified legacy read stores ownership facts');
 // A confirmed readback from the explicitly supplied DNS adapter upgrades a legacy row; unproven families stay unknown.
 $glue=['ns1.legacy-observed-placeholder.com'=>['192.0.2.53']];$fresh=$d->fresh();$p=$fresh->observation??[];
-$p['records']=['identity'=>\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($fresh),'at'=>$clock->now()->format(DATE_ATOM),'sequence'=>0,
+$p['records']=['identity'=>\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::identity($fresh),'at'=>$clock->now()->format(DATE_ATOM),'sequence'=>0,
     'families'=>['dns'=>['state'=>'complete','records'=>[['name'=>'@','type'=>'A','address'=>'192.0.2.9','mx_pref'=>10]]],
         'srv'=>['state'=>'complete','records'=>[]],'ds'=>['state'=>'complete','records'=>[]],'glue'=>['state'=>'complete','records'=>$glue]]];
 $fresh->update(['observation'=>$p]);
-same('unknown',\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::current($d->fresh(),$clock->now())['families']['dns']['state'],'Legacy NameSilo rows prove glue only');
+same('unknown',\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::current($d->fresh(),$clock->now())['families']['dns']['state'],'Legacy NameSilo rows prove glue only');
 $noWire=static fn()=>throw new LogicException('No wire');
 $installed=(new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Management($binding,$noWire))->observationCapabilities();
 $adapter=(new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsManagement($binding,$noWire))->observationCapabilities();
 $readback=['state'=>'complete','records'=>[['name'=>'@','type'=>'A','address'=>'192.0.2.1','mx_pref'=>10,'record_id'=>'made1','ttl'=>300]]];
 $before=$d->fresh()->observation['records'];
-\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::saveDnsReadback($d->fresh(),['sequence_preimage'=>$readback],$clock->now(),$installed);
+\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::saveDnsReadback($d->fresh(),['sequence_preimage'=>$readback],$clock->now(),$installed);
 same($before,$d->fresh()->observation['records'],'The installed adapter saves no DNS readback');
-\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::saveDnsReadback($d->fresh(),['sequence_preimage'=>$readback],$clock->now(),$adapter);
-$saved=\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::current($d->fresh(),$clock->now());
+\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::saveDnsReadback($d->fresh(),['sequence_preimage'=>$readback],$clock->now(),$adapter);
+$saved=\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::current($d->fresh(),$clock->now());
 same(['complete',$readback['records']],[$saved['families']['dns']['state']??null,$saved['families']['dns']['records']??null],'Confirmed DNS readback survives a fresh read of the upgraded row');
 same($adapter['families'],$saved['expected_families']??null,'The upgraded row records the adapter capabilities');
 same(['unknown','unknown'],[$saved['families']['srv']['state'],$saved['families']['ds']['state']],'Unproven SRV and DS stay unknown');
 same(['complete',$glue],[$saved['families']['glue']['state'],$saved['families']['glue']['records']],'Legacy glue evidence is kept');
 // A versioned row saved before DNS was supported takes a confirmed DNS readback and keeps it on the next read.
-$records=\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::class;
+$records=\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::class;
 $p=$d->fresh()->observation;unset($p['records']);$p['management_sequence']=2;$d->fresh()->update(['observation'=>$p]);
 $t0=$clock->now();$records::save($d->fresh(),['glue'=>['state'=>'complete','records'=>['ns1.legacy-observed-placeholder.com'=>'8.8.8.8']]],$t0,$installed);
 $versioned=$records::current($d->fresh(),$t0);

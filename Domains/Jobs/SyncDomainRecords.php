@@ -12,7 +12,8 @@ use Illuminate\Support\Facades\{Cache,DB,Route};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Services\{DomainObservation,HoldingObservationWork,HoldingReadRetry,ObservationRecords,ReadDeferred,ReadFailure};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainObservation,HoldingObservationWork,HoldingReadRetry,ReadDeferred,ReadFailure};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 /** Registrar reads can outlive a web request, so manual sync uses the existing queue worker. */
 final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
 {

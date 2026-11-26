@@ -8,7 +8,8 @@ use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
-use Paymenter\Extensions\Servers\Domains\Services\{ObservationRecords,ObservationWork,StaffOperationReview,StaffSyncReview};
+use Paymenter\Extensions\Servers\Domains\Services\{ObservationWork,StaffOperationReview,StaffSyncReview};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 \Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
 // Recreate the original completed request through the same audited staff writer.
 [$check]=$prepare(placeholderComFixtureName('staff-recheck-placeholder.com'));

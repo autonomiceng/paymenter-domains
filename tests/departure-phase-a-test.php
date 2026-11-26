@@ -3,7 +3,8 @@
 declare(strict_types=1);
 require __DIR__.'/Support/observation-records-ready.php';
 use Illuminate\Support\Facades\{Auth,DB};
-use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,DomainStates,HoldingObservationWork,HoldingReadRetry,ObservationRecords,ObligationAlerts,PublicRegistryReader,RenewalOwnership};
+use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,DomainStates,HoldingObservationWork,HoldingReadRetry,ObligationAlerts,PublicRegistryReader,RenewalOwnership};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains,ViewDomain};

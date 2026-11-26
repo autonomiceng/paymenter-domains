@@ -7,7 +7,8 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\Vi
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ObservationReader;
-use Paymenter\Extensions\Servers\Domains\Services\{DomainObservation,HoldingObservationWork,HoldingReadRetry,ObservationRecords};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainObservation,HoldingObservationWork,HoldingReadRetry};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 
 staffPanel();$actor=staffUser([Staff::VIEW,'admin.domains.manage']);Auth::setUser($actor);
 $wired=new DomainObservation($readBindings,$clock,$budget,$ports,null,static fn($binding)=>new ObservationReader($binding,$exchange));

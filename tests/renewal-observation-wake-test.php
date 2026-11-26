@@ -18,7 +18,7 @@ foreach (['expiry','hard-stop','foreign-facts','other-drift','record-hold','fore
         new DateEvidence('2028-10-18',ExpiryPrecision::Date,'synthetic'),$case==='other-drift'),TransferStatus::Unknown,$clock->now());
     $p=$d->observation;
     if($case==='foreign-facts'){$p['facts']['generation']++;}
-    if($case==='record-hold'){$p['record_hold']=['identity'=>\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d),'reason'=>'records_unavailable'];}
+    if($case==='record-hold'){$p['record_hold']=['identity'=>\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::identity($d),'reason'=>'records_unavailable'];}
     $d->update(['observation'=>$p]);
     HoldingObservationWork::queueInitial($d,$clock->now());
     $q=HoldingObservationWork::current($d);

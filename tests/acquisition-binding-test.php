@@ -24,18 +24,18 @@ foreach(['operation'=>Operation::class,'domain'=>Domain::class] as $kind=>$model
     });
 }
 $legacy=$new(reservedFixtureName('retained-binding.example.com'));$d=$legacy->domain;
-$identity=\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d);$identity['server_id']=(string)$binding->serverId;
+$identity=\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::identity($d);$identity['server_id']=(string)$binding->serverId;
 // Match the retained writer's legacy payload, including its observation age and sequence.
 $inventory=['identity'=>$identity,'at'=>$clock->now()->format(DATE_ATOM),'sequence'=>0,'families'=>['glue'=>['state'=>'partial','records'=>['ns.retained-binding.example.com'=>'192.0.2.1']]]];
 $d->update(['observation'=>['record_hold'=>['identity'=>$identity],'record_failure'=>['identity'=>$identity],'records'=>$inventory]]);
 $numeric=true;$retained=Domain::findOrFail($d->id);
-expect(\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::held($retained),'Legacy numeric-string observation hold survives acquisition normalization');
-expect(\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::stopped($retained),'Legacy record discovery remains stopped');
-same($inventory,\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::current($retained),'Legacy inventory and partial glue history remain current');
-same($identity,\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($retained),'Legacy primary-failure identity remains recognizable');
+expect(\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::held($retained),'Legacy numeric-string observation hold survives acquisition normalization');
+expect(\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::stopped($retained),'Legacy record discovery remains stopped');
+same($inventory,\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::current($retained),'Legacy inventory and partial glue history remain current');
+same($identity,\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::identity($retained),'Legacy primary-failure identity remains recognizable');
 $retained->server_id=(string)($binding->serverId+999);
-same(false,\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::held($retained),'Different legacy server never inherits a hold');
-same(null,\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::current($retained),'Different legacy server never inherits inventory');$numeric=false;
+same(false,\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::held($retained),'Different legacy server never inherits a hold');
+same(null,\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::current($retained),'Different legacy server never inherits inventory');$numeric=false;
 foreach($ports as $action=>$port){
     $op=$new(reservedFixtureName($action.'-binding.example.com'),action:$action);
     $registration->query=OperationClaims::query($op,$op->domain);$before=$writes;$seen=['operation'=>0,'domain'=>0];

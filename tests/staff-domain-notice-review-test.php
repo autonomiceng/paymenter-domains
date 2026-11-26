@@ -48,7 +48,7 @@ same('reviewed',DB::table('domains_reminder_deliveries')->where('delivery_key',h
 $money=staffUser([Staff::VIEW,'admin.invoices.update']);
 $late=\App\Models\Invoice::withoutEvents(fn()=>\App\Models\Invoice::create(['user_id'=>$money->id,'currency_code'=>'USD','status'=>'paid','due_at'=>now()]));
 $order=$long->fresh()->latestAcquisition;DB::table('domains_operations')->where('id',$order->id)->update(['invoice_id'=>$late->id]);
-$observed=$long->fresh()->observation;$observed['record_failure']=['identity'=>\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($long->fresh()),'code'=>'domain_not_in_account','at'=>time()];
+$observed=$long->fresh()->observation;$observed['record_failure']=['identity'=>\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::identity($long->fresh()),'code'=>'domain_not_in_account','at'=>time()];
 $long->update(['observation'=>$observed]);
 $invoiceUrl=\App\Admin\Resources\InvoiceResource::getUrl('edit',['record'=>$late->id]);
 $accountUrl=RegistrarAccount::getUrl(['account'=>$long->server_id]);
@@ -68,7 +68,7 @@ $replacement=$order->replicate();$replacement->fill(['operation_key'=>'notice-re
 $head('Payment received after credit. Check the invoice.','Replacement invoice');
 // A stopped record read names its request beside the invoice link: staff need both.
 $observed=$long->fresh()->observation;unset($observed['record_failure']);$long->update(['observation'=>$observed]);
-\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::hold($long->fresh(),'glue_unavailable',new DateTimeImmutable('@'.time()));
+\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::hold($long->fresh(),'glue_unavailable',new DateTimeImmutable('@'.time()));
 Illuminate\Support\Facades\Auth::setUser($money);$stopped=DomainFacts::notice($long->fresh());
 expect(($stopped['resume']??false)===true&&str_contains((string)$stopped['body'],'Payment received after credit.'),'The stopped read leads and the payment stays beside it');
 expect(!DomainDecisions::syncNow($long->fresh()),'This viewer cannot sync the held domain');

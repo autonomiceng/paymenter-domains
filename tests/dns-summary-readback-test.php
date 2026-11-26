@@ -3,7 +3,8 @@
 declare(strict_types=1);
 require __DIR__.'/Support/owner-records.php';
 use Illuminate\Support\Facades\Cache;
-use Paymenter\Extensions\Servers\Domains\Services\{ObservationRecords,ObservationSchema};
+use Paymenter\Extensions\Servers\Domains\Services\ObservationSchema;
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 ObservationSchema::install();
 [$d,$driver]=$holding(placeholderComFixtureName('dns-summary-placeholder.com'));
 storefrontViews();

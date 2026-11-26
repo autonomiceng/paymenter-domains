@@ -10,6 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
 use Paymenter\Extensions\Servers\Domains\Holding\Adoption\AdoptionRenewalEligibility;
 use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementCorrections;
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 /** Safe durable staff inbox; expiry/account/generation/obligation distinguish once-only alerts. */
 final class ObligationAlerts
 {

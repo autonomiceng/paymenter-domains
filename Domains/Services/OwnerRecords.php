@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{DnsForm,DnsSequence};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 /** Whitelist proven records; DNS/SRV/DS unknown stays absent. Glue is explicitly partial history. No I/O. */
 final class OwnerRecords
 {

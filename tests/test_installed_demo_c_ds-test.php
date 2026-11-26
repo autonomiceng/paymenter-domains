@@ -60,7 +60,7 @@ $html=view('domains::partials.owner-management',['domain'=>$unknown,'caps'=>['ds
 $check(str_contains($html,'data-ds-state>Waiting</strong>')&&str_contains($html,'Nothing was sent'),'Real stored pre-send operation renders Unknown in the customer row');
 $tuple=['key_tag'=>12345,'algorithm'=>13,'digest_type'=>2,'digest'=>str_repeat('A',64)];
 $inventory=clone $held;$inventory->registrar_key='namesilo';$inventory->user_id=10;
-$inventory->observation=['records'=>['identity'=>Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($inventory),'at'=>now()->toIso8601String(),'sequence'=>0,'format'=>1,'capability_revision'=>'namesilo-records-1','expected_families'=>['dns'=>'supported','srv'=>'unsupported','ds'=>'supported','glue'=>'supported'],'families'=>['ds'=>['state'=>'complete','records'=>[$tuple]]]]];
+$inventory->observation=['records'=>['identity'=>Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::identity($inventory),'at'=>now()->toIso8601String(),'sequence'=>0,'format'=>1,'capability_revision'=>'namesilo-records-1','expected_families'=>['dns'=>'supported','srv'=>'unsupported','ds'=>'supported','glue'=>'supported'],'families'=>['ds'=>['state'=>'complete','records'=>[$tuple]]]]];
 $observed=DsState::owner($base,$inventory,true);
 $html=view('domains::partials.owner-management',['domain'=>$observed,'caps'=>['ds']])->render();
 $check(str_contains($html,'12345')&&str_contains($html,str_repeat('A',64))&&!str_contains($html,'<form'),'Policy Off keeps observed DS tuples read-only');

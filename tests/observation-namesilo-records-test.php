@@ -22,20 +22,20 @@ $discovered=$ns15->discover($request,$ctx());
 same('complete',$discovered['dns']['state'],'NameSilo canonical DNS inventory complete');
 same('complete',$discovered['settings']['contacts']['state'],'Bounded contacts read resolves all exact role IDs');
 same(1,count(array_filter($ms->calls,fn($r)=>$r[0]==='contactList')),'Shared contact IDs consume one read');
-\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::save($d,$discovered,$clock->now(),$ns15->observationCapabilities());
+\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::save($d,$discovered,$clock->now(),$ns15->observationCapabilities());
 $good=$d->fresh()->observation['records'];
 // Real encrypted inventory must retain readable fields without certifying a blank required contact.
 $ms->profiles['900001']['first_name']='   ';$clock->instant=$clock->now()->modify('+1 minute');
 $partialContact=$ns15->discover($request,$ctx());
 same('partial',$partialContact['settings']['contacts']['state'],'Blank required NameSilo contact stays partial');
 same('Person',$partialContact['settings']['contacts']['facts']['contacts']['registrant']['last_name'],'Readable contact fields survive incomplete evidence');
-\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::save($d->fresh(),$partialContact,$clock->now(),$ns15->observationCapabilities());
-expect(\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::incomplete($d->fresh()),'Blank required contact cannot certify the encrypted refresh');
+\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::save($d->fresh(),$partialContact,$clock->now(),$ns15->observationCapabilities());
+expect(\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::incomplete($d->fresh()),'Blank required contact cannot certify the encrypted refresh');
 same($good['last_complete_at'],$d->fresh()->observation['records']['last_complete_at'],'Partial contacts retain the last complete refresh time');
 $ms->profiles['900001']['first_name']='Synthetic';$clock->instant=$clock->now()->modify('+1 minute');
-\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::save($d->fresh(),$ns15->discover($request,$ctx()),$clock->now(),$ns15->observationCapabilities());
+\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::save($d->fresh(),$ns15->discover($request,$ctx()),$clock->now(),$ns15->observationCapabilities());
 $good=$d->fresh()->observation['records'];
-same(false,\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::incomplete($d->fresh()),'DS mutation Off / supported read is not a perpetual failure');
+same(false,\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::incomplete($d->fresh()),'DS mutation Off / supported read is not a perpetual failure');
 $inventory=\Paymenter\Extensions\Servers\Domains\Services\OwnerRecords::nameSilo($d->fresh());
 same($discovered['dns']['records'],$inventory['records'],'Encrypted CAA, TTL, provider IDs and opaque SRV survive projection');
 $view=\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsForm::view($inventory);
@@ -46,7 +46,7 @@ $steps=\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsSequence::pl
 same(1,count($steps),'Editing A leaves CAA/SRV siblings untouched');same(300,$steps[0]['after']['ttl'],'Existing TTL retained');
 $clock->instant=$clock->now()->modify('+1 minute');$dnsRows[]=['record_id'=>'bad','type'=>'A','host'=>$d->domain,'value'=>'invalid','ttl'=>'300','distance'=>'0'];
 $partial=$ns15->discover($request,$ctx());
-\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::save($d->fresh(),$partial,$clock->now(),$ns15->observationCapabilities());
+\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::save($d->fresh(),$partial,$clock->now(),$ns15->observationCapabilities());
 same('partial',$d->fresh()->observation['records']['families']['dns']['state'],'Malformed sibling withdraws whole-list completeness');
 same(3,count($d->fresh()->observation['records']['families']['dns']['records']),'Valid partial siblings retained');
 same(null,\Paymenter\Extensions\Servers\Domains\Services\OwnerRecords::nameSilo($d->fresh()),'Partial DNS cannot authorize whole-list editing');
@@ -55,7 +55,7 @@ same('supported',$status['families']['ds']['expectation'],'DS read and mutation 
 same('unknown',$status['families']['ds']['state'],'Unattempted DS after partial DNS remains unknown');
 same(true,$status['stale'],'Daily stale state is explicit');same($good['at'],$status['families']['dns']['last_good_at'],'Last-good DNS time retained');
 $before=$d->fresh()->observation;$dnsFault=true;
-\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::failPrimary($d->fresh(),$clock->now());
+\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::failPrimary($d->fresh(),$clock->now());
 same($before['records'],$d->fresh()->observation['records'],'Failed primary preserves exact prior encrypted inventory/time');
 
 $nativeSuccessful=true;echo "NameSilo fair pending window and durable follow-up passed\n";

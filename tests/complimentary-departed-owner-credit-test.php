@@ -7,7 +7,8 @@ use App\Models\{Credit, Invoice, InvoiceTransaction, Role, Service};
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts, ComplimentaryInvoices, DepartureProof, HolderPricing, HoldingDeparture, HoldingLocks, MoneyOutcome, NativeDomainGuard, ObservationRecords, PricingRule, Refunds, StaffHoldingReview};
+use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts, ComplimentaryInvoices, DepartureProof, HolderPricing, HoldingDeparture, HoldingLocks, MoneyOutcome, NativeDomainGuard, PricingRule, Refunds, StaffHoldingReview};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 
 (new NativeDomainGuard(new HolderPricing($prices), $clock))->boot();
 app()->instance(Clock::class, $clock); app()->instance(Refunds::class, new Refunds($clock));

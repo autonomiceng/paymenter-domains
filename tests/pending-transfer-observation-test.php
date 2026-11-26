@@ -3,7 +3,8 @@
 declare(strict_types=1);
 $fixtureTransferRegistrars=['enom'];
 require __DIR__.'/Support/transfer-completion-enom-fixture.php';
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationRecords};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation};
+use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 $op=$prepare(placeholderComFixtureName('pending-observation-placeholder.com'));$d=$op->domain()->firstOrFail();
 $observe->fault='pending';$observe->unowned=true;$before=$op->fresh()->getRawOriginal();$writes=$state->calls;
 $expiry=$d->provider_expires_at;$observer=new DomainObservation($readBindings,$clock,new AccountReadBudget($clock));
