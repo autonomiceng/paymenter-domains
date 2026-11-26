@@ -132,7 +132,14 @@ final class SchemaVerifier
     private static function columns(string $table): array
     {
         $columns = Schema::getColumns($table);
-        foreach ($columns as &$column) { unset($column['comment']); }
+        // Laravel's portable columns drop MySQL/MariaDB EXTRA, so a drifted ON UPDATE would compare equal; it is read here.
+        $extra = [];
+        $connection = DB::connection();
+        if (in_array($connection->getDriverName(), ['mysql', 'mariadb'], true)) {
+            foreach ($connection->select('SELECT COLUMN_NAME AS name, EXTRA AS extra FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+                [$connection->getDatabaseName(), $connection->getTablePrefix().$table]) as $row) { $extra[$row->name] = strtolower((string) $row->extra); }
+        }
+        foreach ($columns as &$column) { unset($column['comment']); $column['extra'] = $extra[$column['name']] ?? ''; }
         unset($column);
         return $columns;
     }

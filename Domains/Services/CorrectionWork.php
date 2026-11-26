@@ -2,11 +2,13 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol;
 use Paymenter\Extensions\Servers\Domains\Data\PrivacyMode;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Management\Changes\{ManagementCorrections, ManagementDeferred};
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 /** Deterministic, nonfinancial corrections to frozen details. Sealed requests are only observed. */
 final class CorrectionWork
 {
@@ -15,16 +17,22 @@ final class CorrectionWork
         $desired=$op->action==='transfer'?($op->attempt['transfer_admission']['privacy']??null):($op->payload['privacy']??false);
         return $desired===false?[['privacy_disable',[]]]:($desired===true&&$driver->capabilities()->privacy===PrivacyMode::Free?[['privacy_enable',[]]]:[]);
     }
+    /** Corrections a renewal's read proof observed. Unreadable evidence proves none; the safe code still triggers its own. */
+    private static function renewalCorrections(\Paymenter\Extensions\Servers\Domains\Models\Operation $renewal): array
+    {
+        try{return RenewalAttempt::of($renewal)->readProof()['observed_corrections']??[];}catch(DecryptException){return [];}
+    }
     public static function produce(Domain $seed,DomainManagement $engine,ManagementProtocol $driver): ?\Paymenter\Extensions\Servers\Domains\Models\Operation
     {
         OperationClaims::outside();$plan=FreshTransaction::run(function()use($seed,$driver):?array{
             $l=HoldingLocks::take($seed);$d=$l['domain'];
             foreach($l['operations'] as $original){
-                $required=array_unique([...array_keys($original->attempt['corrections']??[]),
+                $required=array_unique([...($original->safe_code==='provider_auto_renew_unconfirmed'?['auto_renew']:[]),
+                    ...array_keys($original->attempt['corrections']??[]),
                     ...($original->attempt['evidence']['registration']['corrections']??[]),
                     ...($original->policy['reconciliation']['observed_corrections']??[]),
-                    ...($original->attempt['reconciliation']['observed_corrections']??[]),
-                    ...($original->safe_code==='provider_auto_renew_unconfirmed'?['auto_renew']:[])]);
+                    ...($original->action==='renew'?self::renewalCorrections($original)
+                        :($original->attempt['reconciliation']['observed_corrections']??[]))]);
                 foreach($required as $section){
                     $inputs=match($section){
                         'auto_renew'=>[['auto_renew_off',[]]],

@@ -44,6 +44,8 @@ $views=static function()use($d,$user,$clock,$owners,$listInvoice,$pageInvoice):a
 $reset=static function()use($d,$op,$cycle,$invoice,$rows,$clock,$start,$requests):void {
     $requests(true);
     DB::table('domains_domains')->where('id',$d->id)->update($rows['domain']);DB::table('domains_operations')->where('id',$op->id)->update($rows['op']);
+    // A retirement case leaves terminal proof on the renewal; the restored row starts without it.
+    DB::table(Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema::EVIDENCE)->where('operation_id',$cycle->id)->delete();
     DB::table('domains_operations')->where('id',$cycle->id)->update($rows['cycle']);DB::table('invoices')->where('id',$invoice->id)->update($rows['invoice']);DB::table('invoices')->where('id',$op->invoice_id)->update($rows['order']);
     DB::table('invoice_transactions')->where('invoice_id',$invoice->id)->delete();DB::table('domains_adoptions')->where('domain_id',$d->id)->delete();$clock->instant=$start;
 };

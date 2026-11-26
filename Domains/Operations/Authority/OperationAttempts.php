@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Operations\Authority;
 
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\{Crypt, DB};
 use Paymenter\Extensions\Servers\Domains\Data\SendState;
 
@@ -11,6 +12,9 @@ final class OperationAttempts
 {
     /** The json_decode depth of stored evidence. The writer refuses deeper evidence before it is stored. */
     public const EVIDENCE_DEPTH = 32;
+
+    /** What evidenceMany() gives for a row that no longer decrypts. */
+    public const UNREADABLE = ['unreadable' => true];
 
     public static function step(int $operationId, StepKey $key, bool $lock = false): ?object
     {
@@ -96,14 +100,17 @@ final class OperationAttempts
 
     /**
      * The first evidence of each kind for the given operations in one read, keyed by operation id, then attempt id
-     * (0 for operation-level evidence), then kind.
+     * (0 for operation-level evidence), then kind. A row that no longer decrypts reads as UNREADABLE, so it never
+     * hides the evidence of another operation.
      */
     public static function evidenceMany(array $operationIds, array $kinds): array
     {
         if (!$operationIds || !$kinds) { return []; }
         $found = [];
         foreach (DB::table(OperationSchema::EVIDENCE)->whereIn('operation_id', $operationIds)->whereIn('kind', $kinds)->orderBy('id')->get() as $row) {
-            $found[(int) $row->operation_id][(int) ($row->attempt_id ?? 0)][$row->kind] ??= self::decoded($row);
+            $slot = &$found[(int) $row->operation_id][(int) ($row->attempt_id ?? 0)][$row->kind];
+            if ($slot === null) { try { $slot = self::decoded($row); } catch (DecryptException|\JsonException) { $slot = self::UNREADABLE; } }
+            unset($slot);
         }
         return $found;
     }

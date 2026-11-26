@@ -5,7 +5,7 @@ require __DIR__.'/Support/namesilo-no-id-registered.php';
 // The installed catalogue scheduler is shared by billing and staff release in this explicit fixture composition.
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock,48));
-require_once __DIR__.'/Support/namesilo-account-guard.php';
+require_once __DIR__.'/Support/namesilo-account-guard.php';require_once __DIR__.'/Support/renewal-attempts.php';
 nameSiloGuardExpected($binding,'expected@example.com');
 use Illuminate\Support\Facades\{Cache, Queue};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
@@ -36,6 +36,26 @@ $observeRenewal = static function () use ($clock,$ports,$binding): void {
     $cost=new Paymenter\Extensions\Servers\Domains\Catalogue\Cost('renew',1,true,'8.9500',Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+30 days'));
     $ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',[$cost]),$ports->readOffers($q,Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
 };
+// Management for the holding's automatic corrections, over a registrar whose auto-renew starts on.
+$autoRenew='Yes';$managementCalls=[];
+$managementDriver=new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Management($binding,static function($origin,$command,$params,$timeout)use(&$autoRenew,&$managementCalls):string{
+    same(0,Illuminate\Support\Facades\DB::transactionLevel(),'Correction wire outside locks');$managementCalls[]=$command;
+    if($command==='removeAutoRenewal'){$autoRenew='No';}
+    $reply=match($command){
+        'getDomainInfo'=>['created'=>'2026-10-18','expires'=>'2028-10-18','status'=>'Active','locked'=>'Yes','private'=>'No','auto_renew'=>$autoRenew,
+            'nameservers'=>[['nameserver'=>'ns1.example.com'],['nameserver'=>'ns2.example.com']],'contact_ids'=>[]],
+        'removeAutoRenewal'=>[],
+        default=>throw new LogicException('Unexpected correction exchange'),
+    };
+    return json_encode(['request'=>['operation'=>$command],'reply'=>['code'=>300,'detail'=>'synthetic']+$reply]);
+});
+$managementEngine=new Paymenter\Extensions\Servers\Domains\Services\DomainManagement($renewBindings,$clock,new WriteFeatures(management:true),true);
+$produceCorrection=static fn()=>Paymenter\Extensions\Servers\Domains\Services\CorrectionWork::produce($holding->fresh(),$managementEngine,$managementDriver);
+// The registration's own auto-renew correction, from its purchase evidence, ran before the first renewal.
+$registrationCorrection=$produceCorrection();
+same(['auto_renew_off',$result->operation_key],[$registrationCorrection?->action,$registrationCorrection?->policy['management']['correction']??null],'The registration schedules its own auto-renew correction');
+same('succeeded',$managementEngine->run($registrationCorrection->id,$managementDriver,Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background)->state,'The registration correction completes before the renewal');
+same(null,$produceCorrection(),'No correction is due before the renewal');
 for ($cycle=0;$cycle<2;$cycle++) {
     $year = 2027+$cycle; $clock->instant = new DateTimeImmutable($year.'-09-27T12:00:00Z');
     $observeRenewal();
@@ -53,7 +73,7 @@ for ($cycle=0;$cycle<2;$cycle++) {
         Illuminate\Support\Facades\Auth::login($staff);$wire->auto='Yes';Cache::flush();
         same('held',$engine->run($renewal->id,$writer)->state,'NameSilo auto-renew refusal is held before dispatch');
         same('provider_auto_renew_unconfirmed',$renewal->fresh()->safe_code,'NameSilo included admission code');
-        same([],($renewal->fresh()->attempt??[]),'NameSilo refusal has no attempt');same(0,$writes,'No premature NameSilo send');
+        same(null,renewalAttempt($renewal),'NameSilo refusal has no attempt');same(0,$writes,'No premature NameSilo send');
         $heldReads=$wire->calls;$heldFinance=nativeFinancialSnapshot($renewal);$heldBytes=$renewal->fresh()->getRawOriginal();
         same('held',$engine->run($renewal->id,$writer)->state,'Held renewal is not retried automatically');
         same([$heldReads,0],[$wire->calls,$writes],'Held renewal sends neither another read nor a paid request');
@@ -73,7 +93,7 @@ for ($cycle=0;$cycle<2;$cycle++) {
     if($cycle===0){require __DIR__.'/Support/namesilo-account-guard-renewal.php';}
     $sentRenewal=$cycle===0?withNameSiloGuardLimiter(4,static function($limiter)use($binding,$engine,$writer,$renewal,$accountGuard,&$writes,$clock,$wire) {
         Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
-        $reads=$accountGuard->reads;$paid=$writes;$attempt=$renewal->fresh()->attempt;
+        $reads=$accountGuard->reads;$paid=$writes;
         $settings=App\Models\Server::findOrFail($binding->serverId)->settings();
         $pin=$settings->where('key','domains_namesilo_default_contact_fingerprint')->first()?->getRawOriginal();
         $deferred=$engine->run($renewal->id,$writer);
@@ -82,7 +102,7 @@ for ($cycle=0;$cycle<2;$cycle++) {
         same('renewal_rate_limited',$deferred->safe_code,'NameSilo refresh preserves the local request-limit reason');
         same(4,count($wire->commands),'Limited fifth read makes no provider exchange after the four admission reads');
         expect(Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationAttempts::current((int)$deferred->id,Paymenter\Extensions\Servers\Domains\Operations\Authority\StepKey::renew())===null,'Renewal limiter refusal removes admission');
-        same($attempt,$deferred->attempt,'Renewal limiter refusal creates no dispatch seal');
+        same(null,renewalAttempt($deferred),'Renewal limiter refusal creates no dispatch seal');
         same($reads,$accountGuard->reads,'Local enrollment limiter refusal sends no default-contact exchange');same($paid,$writes,'Renewal limiter refusal sends no paid request');
         same($pin,$settings->where('key','domains_namesilo_default_contact_fingerprint')->first()?->getRawOriginal(),'Local enrollment never creates or changes a default-contact fingerprint');
         $limiter->remaining=100;$clock->instant=$clock->now()->modify('+26 seconds');$wire->commands=[];
@@ -99,7 +119,7 @@ for ($cycle=0;$cycle<2;$cycle++) {
     if($cycle===0){ require __DIR__.'/Support/namesilo-renewal-readback.php'; }
     same('succeeded',$completion->run($renewal->id)->state,'Accepted renewal history and owned expiry complete no-ID renewal');
     same(null,$holding->fresh()->provider_domain_id,'No invented provider domain ID');
-    same(false,array_key_exists('registration_admission',$renewal->fresh()->attempt),'Original nonpremium evidence remains on registration only');
+    same(null,$renewal->fresh()->getRawOriginal('attempt'),'Original nonpremium evidence remains on registration only');
 }
 same(2,$writes,'Repeated cycles send once each');
 $clock->instant=new DateTimeImmutable('2029-09-27T12:00:00Z'); $observeRenewal(); $bill=$billing->invoice($holding->id,$user);

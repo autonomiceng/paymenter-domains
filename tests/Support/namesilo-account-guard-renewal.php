@@ -43,7 +43,7 @@ foreach(['domains_credentials','domains_verified_credentials',Paymenter\Extensio
         expect(Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationAttempts::current((int)$held->id,Paymenter\Extensions\Servers\Domains\Operations\Authority\StepKey::renew())===null,'Unavailable local configuration creates no renewal admission');
         same($sent,$writes,'Local configuration refusal sends no paid request');same($reads,$wire->calls,'Local configuration refusal performs no provider reads');
         same(0,$accountGuard->reads,'Local configuration refusal never reads default contacts');
-        expect(!isset($held->attempt['dispatch_attempted_at']),'Local configuration refusal creates no possible-send seal');
+        expect(\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($held)->unsealed(),'Local configuration refusal creates no possible-send seal');
         same($financial,nativeFinancialSnapshot($renewal),'Local configuration refusal preserves native finance and holding state');
     }finally{Illuminate\Support\Facades\DB::table('settings')->where('id',$saved['id'])->update($saved);}
 }

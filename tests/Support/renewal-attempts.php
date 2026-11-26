@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AttemptToken, Ope
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAttempt, RenewalProof};
 
 // Renewal attempt fixtures. Tests seal and read a renewal only through these functions and the RenewalAttempt reader.
-// A seal goes through the operation writer, with the JSON attempt copy the renewal seal still writes.
+// A seal goes through the operation writer; the renewal writes no JSON attempt copy.
 
 if (!class_exists('RenewalReply', false)) {
     /** Test value: what one sealed renewal's wire call proved. A missing reply is unknown, never unsent. */
@@ -53,8 +53,8 @@ if (!class_exists('RenewalReply', false)) {
 
 if (!function_exists('sealRenewal')) {
     /**
-     * Fixture: a renewal sealed at $at for $amount USD in $mode through the operation writer, with the JSON copy the seal
-     * still writes. $attempt adds or replaces JSON members and $columns sets other operation columns in the same save.
+     * Fixture: a renewal sealed at $at for $amount USD in $mode through the operation writer. A non-empty $attempt is
+     * saved as a misleading JSON envelope that no reader may trust, and $columns sets other operation columns in the same save.
      * A $reply is recorded on the sealed attempt; a registrar reply first spends the wire grant, a local refusal does not.
      */
     function sealRenewal(Operation $op, array $attempt = [], array $columns = [], ?RenewalReply $reply = null,
@@ -85,31 +85,38 @@ if (!function_exists('sealRenewal')) {
                 if ($reply->kind === 'reply') { $writer->consumeGrant($token); }
                 expect($writer->recordReply($token, $reply->outcome()) === Transition::Applied, 'The renewal fixture records its reply');
             }
-            $sealed = ['claim_key' => $token->claimKey, 'seal' => 'sealed', 'dispatch_attempted_at' => $at->format(DATE_ATOM),
-                'send_state' => SendState::PossiblySent->value, 'authorized_cost' => ['amount' => $cost->amount, 'currency' => 'USD'], 'renewal_mode' => $mode];
-            if ($reply !== null) { $sealed['execution'] = $reply->record(); }
+            $columns = $attempt ? [...$columns, 'attempt' => $attempt] : $columns;
             // One quiet write with the model's casts, as saveQuietly writes it, without reading the model first.
-            Operation::whereKey($op->id)->update((new Operation)->forceFill([...$columns, 'attempt' => [...$sealed, ...$attempt]])->getAttributes());
+            if ($columns) { Operation::whereKey($op->id)->update((new Operation)->forceFill($columns)->getAttributes()); }
         });
         return $op->refresh();
     }
 
-    /** Runs $check against a temporarily sealed renewal with an optional $reply, then puts the operation row and its step rows back as they were. */
+    /**
+     * Runs $check against a temporarily sealed renewal with an optional $reply, then puts the operation row and every step,
+     * attempt and evidence row back as they were, including earlier rows the seal replaced.
+     */
     function withSealedRenewal(Operation $op, Closure $check, array $attempt = [], ?DateTimeImmutable $at = null, ?RenewalReply $reply = null): mixed
     {
         $raw = (array) DB::table('domains_operations')->where('id', $op->id)->first();
         $steps = DB::table(OperationSchema::STEPS)->where('operation_id', $op->id)->get();
         $attempts = DB::table(OperationSchema::ATTEMPTS)->whereIn('step_id', $steps->pluck('id'))->get();
-        $evidence = (int) DB::table(OperationSchema::EVIDENCE)->where('operation_id', $op->id)->max('id');
+        $evidence = DB::table(OperationSchema::EVIDENCE)->where('operation_id', $op->id)->get();
         try { return $check(sealRenewal($op, $attempt, reply: $reply, at: $at)); }
         finally {
-            DB::table(OperationSchema::EVIDENCE)->where('operation_id', $op->id)->where('id', '>', $evidence)->delete();
+            // Remove what the seal added, children first, then put each earlier row back parents first.
+            DB::table(OperationSchema::EVIDENCE)->where('operation_id', $op->id)->whereNotIn('id', $evidence->pluck('id'))->delete();
             $now = DB::table(OperationSchema::STEPS)->where('operation_id', $op->id)->pluck('id');
             DB::table(OperationSchema::STEPS)->whereIn('id', $now)->update(['current_attempt_id' => null]);
             DB::table(OperationSchema::ATTEMPTS)->whereIn('step_id', $now)->whereNotIn('id', $attempts->pluck('id'))->delete();
-            foreach ($attempts as $row) { DB::table(OperationSchema::ATTEMPTS)->where('id', $row->id)->update((array) $row); }
             DB::table(OperationSchema::STEPS)->whereIn('id', $now)->whereNotIn('id', $steps->pluck('id'))->delete();
-            foreach ($steps as $row) { DB::table(OperationSchema::STEPS)->where('id', $row->id)->update((array) $row); }
+            $put = static function (string $table, object $row): void {
+                DB::table($table)->where('id', $row->id)->exists() ? DB::table($table)->where('id', $row->id)->update((array) $row) : DB::table($table)->insert((array) $row);
+            };
+            foreach ($steps as $row) { $put(OperationSchema::STEPS, (object) [...(array) $row, 'current_attempt_id' => null]); }
+            foreach ($attempts as $row) { $put(OperationSchema::ATTEMPTS, $row); }
+            foreach ($evidence as $row) { $put(OperationSchema::EVIDENCE, $row); }
+            foreach ($steps as $row) { DB::table(OperationSchema::STEPS)->where('id', $row->id)->update(['current_attempt_id' => $row->current_attempt_id]); }
             DB::table('domains_operations')->where('id', $op->id)->update($raw);
             $op->refresh();
         }
@@ -118,6 +125,13 @@ if (!function_exists('sealRenewal')) {
     /** The renewal's sealed attempt as the production reader reads it now; null before the seal. */
     function renewalAttempt(Operation $op): ?RenewalAttempt
     { $facts = RenewalAttempt::of(Operation::findOrFail($op->id)); return $facts->sealed() ? $facts : null; }
+
+    /**
+     * The renewal's retained attempt record as the reader reads it: the sealed attempt and its terms, its reply, terminal
+     * proof and read proof. Retention checks compare it before and after; an unsealed renewal has a null attempt.
+     */
+    function renewalRecord(Operation $op): array
+    { return RenewalAttempt::of(Operation::findOrFail($op->id))->identity(true); }
 
     /** The sealed attempt's recorded wire outcome: a registrar disposition, unsent or unknown; null when no reply is recorded. */
     function renewalReply(Operation $op): ?array

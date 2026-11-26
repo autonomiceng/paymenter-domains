@@ -108,7 +108,7 @@ final readonly class RenewalCompletion
             // Proof that needs charge review is kept on the attempt the same way, without settling it.
             if (!($confirmed ? $saved->settleLocked($op, $proof) : $saved->holdLocked($op, $proof))) { return $op; }
             $op->update(['state' => $decision['state'], 'safe_code' => $decision['safe_code'], 'policy' => $policy,
-                'attempt' => [...$op->attempt, 'reconciliation' => $proof], 'cost' => ['actual' => $cost],
+                'cost' => ['actual' => $cost],
                 'lease_expires_at' => null, ...($confirmed ? ['provider_order_id' => $proof['order_reference'],
                     'confirmed_expires_at' => $proof['expiry'], 'completed_at' => $this->clock->now()] : [])]);
             if (!$confirmed) {

@@ -125,11 +125,19 @@ foreach ($operationTables as $table) {
         if ($column['type_name'] === 'datetime') { $timeColumns[$table.'.'.$column['name']] = [$column['nullable'], $column['default']]; }
     }
 }
-same(array_fill_keys(['domains_operations.renewal_admission_until', 'domains_operations.started_at', 'domains_operations.lease_expires_at',
+same(array_fill_keys(['domains_operations.started_at', 'domains_operations.lease_expires_at',
     'domains_operations.completed_at', 'domains_operations.created_at', 'domains_operations.updated_at', 'domains_operation_attempts.claimed_at', 'domains_operation_attempts.claim_until', 'domains_operation_attempts.released_at',
     'domains_operation_attempts.sealed_at', 'domains_operation_attempts.dispatch_until', 'domains_operation_attempts.grant_consumed_at',
     'domains_operation_attempts.read_until', 'domains_operation_evidence.observed_at', 'domains_operation_evidence.recorded_at'], [true, null]),
     $timeColumns, 'Operation time columns are nullable with no default');
+// The retired renewal columns are gone, and a retained database that still has one is the old inventory and is refused.
+$retired = ['renewal_admission_until', 'renewal_reserved_revision', 'renewal_proof', 'renewal_check'];
+same([], array_values(array_filter($retired, static fn (string $c): bool => Schema::hasColumn('domains_operations', $c))), 'The four retired renewal columns are not installed');
+Schema::table('domains_operations', static fn (Blueprint $t) => $t->longText('renewal_check')->nullable());
+try { OperationSchema::verify(); $oldAccepted = true; } catch (RuntimeException) { $oldAccepted = false; }
+Schema::table('domains_operations', static fn (Blueprint $t) => $t->dropColumn('renewal_check'));
+expect(!$oldAccepted, 'A retained operation table with a retired renewal column is refused');
+OperationSchema::verify();
 // Attempts and evidence cannot outlive their operation, and verification compares each reference's columns, target and actions.
 $ownedRows = static fn (): array => [DB::table(OperationSchema::STEPS)->count(), DB::table(OperationSchema::EVIDENCE)->count()];
 try { DB::table(OperationSchema::STEPS)->insert(['operation_id' => 999999, 'step_type' => 'renew', 'sequence' => 1]); expect(false, 'Step without operation accepted'); }

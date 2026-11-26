@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Management\Changes;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, StepKey};
 /** Frozen link on a separately authorized operation; progress never edits original requirements. */
 final class CorrectionProgress
 {
@@ -14,8 +15,14 @@ final class CorrectionProgress
             'privacy_enable','privacy_disable'=>'privacy','auto_renew_off'=>'auto_renew',
             default=>throw new \DomainException('Unsupported correction section.'),
         };
-        if (!$op || ($op->attempt['seal']??null)!=='sealed') { throw new \DomainException('No frozen original attempt.'); }
+        if (!$op || !self::sealed($op)) { throw new \DomainException('No frozen original attempt.'); }
         return ['operation_key'=>$key,'section'=>$section,'generation'=>$op->authority_generation];
+    }
+    /** The original's attempt is sealed: a renewal's on its attempt rows, an acquisition's in its attempt envelope. */
+    public static function sealed(Operation $op): bool
+    {
+        return $op->action === 'renew' ? OperationAttempts::sealed((int) $op->id, StepKey::renew()) !== null
+            : ($op->attempt['seal'] ?? null) === 'sealed';
     }
     public static function matches(Operation $op, Operation $original, Domain $d): bool
     {

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/departure-credit.php';
 require_once __DIR__.'/Support/fixture-checkpoint.php';
+require_once __DIR__.'/Support/renewal-attempts.php';
 use Illuminate\Support\Facades\{Cache,Crypt,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts;
 use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainQueries;
@@ -50,13 +51,13 @@ $restoreCredit();
 Cache::flush();
 expect(!in_array((int)$d->id,$ids(),true),'The departed fixture starts settled');
 // Retained renewal evidence is frozen on the model; model a finished renewal whose registrar charge was saved
-// under renewal_execution, the only place RenewalCompletion keeps its review.
-$base=$renewal->fresh();$authorized=number_format((float)$base->amount+5,2,'.','');
+// under renewal_execution, the only place RenewalCompletion keeps its review. Its seal holds the authorized charge.
+$authorized=number_format((float)$renewal->amount+5,2,'.','');
+$base=sealRenewal($renewal->fresh(),amount:$authorized);
 $renewed=static function(string $reason,string $amount)use($renewal,$base,$authorized):void{
     $json=static fn(array $value)=>Crypt::encryptString(json_encode($value));
     DB::table('domains_operations')->where('id',$renewal->id)->update(['state'=>'succeeded','safe_code'=>null,
         'policy'=>$json([...$base->policy,'renewal_execution'=>['staff_alert'=>true,'reason'=>$reason,'refundable_later'=>false]]),
-        'attempt'=>$json([...$base->attempt,'authorized_cost'=>['amount'=>$authorized,'currency'=>'USD']]),
         'cost'=>$json([...($base->cost??[]),'actual'=>['amount'=>$amount,'currency'=>'USD']])]);
 };
 // The registrar charged more than the authorized cap. Staff never reviewed it; the departure does not settle it.
@@ -72,6 +73,10 @@ same([true,'operation_review',(int)$renewal->id],[$status['act'],$status['alert'
 $renewed('below_cost',$authorized);
 Cache::flush();
 expect(!in_array((int)$d->id,$ids(),true),'A pure below-cost renewal review leaves the departed domain settled');
+// A renewal charged less than its sealed authorization is booked margin, and the departure leaves nothing to reprice.
+$renewed('actual_charge_changed',number_format((float)$authorized-1,2,'.',''));
+Cache::flush();
+expect(!in_array((int)$d->id,$ids(),true),'A renewal charged below its authorization leaves the departed domain settled');
 
 $restoreCredit();
 // The synthetic registration was charged a different amount. Staff reviewed that charge here, so the departure leaves

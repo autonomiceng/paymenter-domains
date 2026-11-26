@@ -27,7 +27,7 @@ foreach (['capture', 'record'] as $phase) {
     $completion->run($op->id);
     same('pending', $op->fresh()->state, 'The registrar has not confirmed another year');
     same('checked', RegistrarCheck::status($op->fresh())['outcome'], 'The original pending renewal has an earlier checked result');
-    $before = [$op->fresh()->attempt, $op->fresh()->funding, $op->fresh()->policy['renewal_polls']];
+    $before = [renewalRecord($op), $op->fresh()->funding, $op->fresh()->policy['renewal_polls']];
     $reads = count($state->calls); $target = $domain->id; $attempts = 0;
     if ($phase === 'capture') { $failures = 2; }
     else { $state->during = static function () use (&$failures): void { $failures = 2; }; }
@@ -36,7 +36,7 @@ foreach (['capture', 'record'] as $phase) {
     same(2, $attempts, 'The staff read exhausts the one fresh retry');
     $history = $op->fresh()->policy['staff_actions'];
     same(['read_requested', 'read_failed'], array_column($history, 'phase'), 'A deferred staff read is never audited as finished');
-    same($before, [$op->fresh()->attempt, $op->fresh()->funding, $op->fresh()->policy['renewal_polls']], 'The failed decision preserves send, money and read-count evidence');
+    same($before, [renewalRecord($op), $op->fresh()->funding, $op->fresh()->policy['renewal_polls']], 'The failed decision preserves send, money and read-count evidence');
     same(0, Illuminate\Support\Facades\DB::table(MoneyWorkSchema::TABLE)->count(), 'Interactive contention queues no automatic work');
     $page->assertNotified(Notification::make()->danger()->persistent()->title(OperationActions::FAILED)->body(MoneyDecisions::BUSY))
         ->assertNotNotified(RegistrarCheck::for($op->fresh())['title']);

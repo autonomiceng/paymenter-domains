@@ -63,7 +63,7 @@ foreach (['changed' => ['20.00', 'actual_charge_changed'], 'overrun' => ['16.00'
     config(['domains.enom_identity.environment' => 'test']);
     [$compEngine, $compWriter, $compCompletion] = $compose($compBinding);
     same('pending', $compEngine->run($comp->id, $compWriter)->state, 'Staff two-year cap admits the same quote');
-    same('16.0000', $comp->fresh()->attempt['authorized_cost']['amount'], 'Two-year authorized send freezes the full quote');
+    same('16.0000', \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($comp)->authorizedCost()?->amount, 'Two-year authorized send freezes the full quote');
     same(2, $state->lastWrite[1]['NumYears'], 'Ordinary Extend sends exactly two years');
     $state->expiry = '2029-10-18'; $state->charge = '16.01';
     $held = $compCompletion->run($comp->id);

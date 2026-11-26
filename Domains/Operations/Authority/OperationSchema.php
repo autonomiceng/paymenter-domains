@@ -51,10 +51,6 @@ final class OperationSchema extends TableSchema
                 $t->string('request_fingerprint', 64)->nullable();
                 $t->string('safe_code', 64)->nullable();
                 $t->unsignedBigInteger('transition_revision')->default(0);
-                $t->timestamp('renewal_admission_until')->nullable();
-                $t->unsignedBigInteger('renewal_reserved_revision')->nullable();
-                $t->longText('renewal_proof')->nullable();
-                $t->longText('renewal_check')->nullable();
                 $t->longText('attempt')->nullable();
                 $t->longText('funding')->nullable();
                 $t->string('provider_order_id', 128)->nullable();

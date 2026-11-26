@@ -66,7 +66,7 @@ same([1,26,51,76],array_column(array_column(array_values(array_filter($scenario-
 same(3,count(array_filter($scenario->forms,fn($r)=>$r[0]===ReadCommand::Order)),'Recent same-domain registration and older renewal are validated alongside the matching renewal');
 same(11,count($scenario->forms),'Four holding reads and seven history reads stay within the 25-read budget');
 same(['amount'=>'8.00','currency'=>'USD'],$op->fresh()->cost['actual'],'Confirmed actual charge retained');
-same('accepted_history',$op->fresh()->attempt['reconciliation']['source'],'Lost reply settles from accepted history');
+same('accepted_history',\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($op)->settlement()['evidence']['source'],'Lost reply settles from accepted history');
 same('2028-10-18',$d->fresh()->provider_expires_at->format('Y-m-d'),'Confirmed renewal advances expiry');
 
 // A renewal stuck before 30-day TEST history: five used reads, the saved 24-hour contract, and a receipt day too dense for one turn.
@@ -113,7 +113,7 @@ same(['uncertain',[]],[$again->state,$dense->forms],'Checks stop at the read lim
 $again->update(['policy'=>[...$again->policy,'renewal_polls'=>4]]); Cache::flush();
 same('succeeded',$recover->run($stuck->id)->state,'A turn within the limit finishes the scan and completes the renewal');
 same(14,count($dense->forms),'Both pages, the 11 remaining orders and the saved match by its ID');
-same('accepted_history',$stuck->fresh()->attempt['reconciliation']['source'],'Completion comes from accepted history');
+same('accepted_history',\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($stuck)->settlement()['evidence']['source'],'Completion comes from accepted history');
 same([$writes+1,$money],[$state->writes,$nativeMoney()],'Only the original lost Extend was sent; invoices, payments and credits are unchanged');
 // A stalled scan: one order detail stays unsupported. Every completed read counts, progressing or not, and reads then stop.
 config(['domains.enom_identity.environment'=>null]);
@@ -129,7 +129,7 @@ foreach (range(1,11) as $n) { $dense->forms=[]; Cache::flush(); $op=$recover->ru
 // The stalled scan never completes, so reads stop at the limit.
 same([[1,21],[2,14],[3,3],[4,3],[5,3],[5,0],[5,0],[5,0],[5,0],[5,0],[5,0]],$turns,'Every completed turn counts once, progressing or not; reads stop at the limit');
 $op=$stall->fresh();
-same(['uncertain',5,'poll_limit_reached',false],[$op->state,$op->policy['history_resumption']['prior_polls'],$op->policy['renewal_execution']['reason'],isset($op->attempt['reconciliation'])],'The resumption revision is used up without completing the renewal');
+same(['uncertain',5,'poll_limit_reached',false],[$op->state,$op->policy['history_resumption']['prior_polls'],$op->policy['renewal_execution']['reason'],\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($op)->settlement()!==null],'The resumption revision is used up without completing the renewal');
 same(5,$op->policy['history_scan']['state']['refusal_totals']['detail_unsupported'] ?? null,'Every read of the unsupported order is recorded, one per counted turn');
 same([$writes,$money,null],[$state->writes,$nativeMoney(),$op->funding['refund'] ?? null],'No Extend, refund or money change while the scan is stalled');
 // A history read that returns past the 250-second deadline is used up once, like a stalled read; its facts are not acted on.
@@ -142,7 +142,7 @@ config(['domains.enom_identity.environment'=>'test']); $clock->instant=$dense->s
 \Paymenter\Extensions\Servers\Domains\Registrars\Enom\TestOrderHistory::upgrade(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$b4->serverId)->sole());
 $dense->forms=[]; Cache::flush(); $dense->during=function () use ($clock) { $clock->instant=$clock->now()->modify('+300 seconds'); };
 $op=$recover->run($late->id)->fresh();
-same(['uncertain',1,false],[$op->state,$op->policy['renewal_polls'] ?? 0,isset($op->attempt['reconciliation'])],'A read past its deadline counts once toward the read limit and completes nothing');
+same(['uncertain',1,false],[$op->state,$op->policy['renewal_polls'] ?? 0,\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($op)->settlement()!==null],'A read past its deadline counts once toward the read limit and completes nothing');
 expect(count($dense->forms)>0,'The late turn did read history');
 $turns=[];
 foreach (range(1,2) as $n) { $dense->forms=[]; Cache::flush(); $clock->instant=$clock->now()->modify('+120 seconds'); $op=$recover->run($late->id)->fresh(); $turns[]=[$op->state,$op->policy['renewal_polls'] ?? 0]; }

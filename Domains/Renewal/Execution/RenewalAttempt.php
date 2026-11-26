@@ -3,10 +3,12 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Renewal\Execution;
 
+use Illuminate\Contracts\Encryption\DecryptException;
 use Paymenter\Extensions\Servers\Domains\Data\{ExecutionRecord, Money, SendState};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AttemptFacts, OperationAttempts, StepKey};
+use Paymenter\Extensions\Servers\Domains\Services\FundsWaits;
 
 /**
  * The attempt facts of one renewal, read from its sealed attempt row and evidence rows. Read-only: it never grants a
@@ -22,23 +24,33 @@ final readonly class RenewalAttempt
     private function __construct(private ?AttemptFacts $sealed = null, private array $evidence = [], private ?array $terminalRow = null,
         private ?\DateTimeImmutable $startedAt = null) {}
 
-    /** The renewal's attempt facts, in two reads. A renewal that was never sealed has no send facts but may have terminal proof. */
+    /**
+     * The renewal's attempt facts, in two reads. A renewal that was never sealed has no send facts but may have terminal proof.
+     * @throws DecryptException when its attempt evidence or terminal proof no longer decrypts
+     */
     public static function of(Operation $op): self
-    { return $op->action === 'renew' ? self::loaded([$op])[(int) $op->id] : new self; }
+    {
+        if ($op->action !== 'renew') { return new self; }
+        return self::loaded([$op])[(int) $op->id] ?? throw new DecryptException('The renewal attempt evidence cannot be read.');
+    }
 
-    /** Attempt facts of many renewals, keyed by every given operation id. Other actions and missing rows read as never sealed. */
+    /**
+     * Attempt facts of many renewals, keyed by given operation id. Other actions and missing rows read as never sealed.
+     * A renewal whose evidence no longer decrypts is left out, as in loaded().
+     */
     public static function many(array $operationIds): array
     {
         $ids = array_values(array_unique(array_map('intval', $operationIds)));
         $rows = $ids ? Operation::whereKey($ids)->where('action', 'renew')->get(['id', 'action', 'started_at'])->keyBy('id') : collect();
         $loaded = self::loaded($rows); $facts = [];
-        foreach ($ids as $id) { $facts[$id] = $loaded[$id] ?? new self; }
+        foreach ($ids as $id) { if (isset($loaded[$id]) || !$rows->has($id)) { $facts[$id] = $loaded[$id] ?? new self; } }
         return $facts;
     }
 
     /**
      * Attempt facts of these loaded renewals in two reads, keyed by operation id: their sealed attempts, then the evidence
-     * of those attempts and the operations' terminal proof. Other actions are left out.
+     * of those attempts and the operations' terminal proof. Other actions are left out, and so is a renewal whose
+     * evidence no longer decrypts: of() then throws for that renewal alone, under its caller's unreadable-data boundary.
      */
     public static function loaded(iterable $ops): array
     {
@@ -51,7 +63,9 @@ final readonly class RenewalAttempt
         $facts = [];
         foreach ($renewals as $id => $op) {
             $attempt = isset($sealed[$id]) ? ($evidence[$id][$sealed[$id]->token->attemptId] ?? []) : [];
-            $facts[$id] = new self($sealed[$id] ?? null, $attempt, $evidence[$id][0]['terminal'] ?? null, $op->started_at);
+            $terminal = $evidence[$id][0]['terminal'] ?? null;
+            if (in_array(OperationAttempts::UNREADABLE, [...array_values($attempt), $terminal], true)) { continue; }
+            $facts[$id] = new self($sealed[$id] ?? null, $attempt, $terminal, $op->started_at);
         }
         return $facts;
     }
@@ -61,6 +75,15 @@ final readonly class RenewalAttempt
 
     /** Local closure proof: the renewal stopped before any seal and its terminal proof was recorded. */
     public function closedUnsent(): bool { return $this->sealed === null && $this->terminalRow !== null; }
+
+    /** An unpaid or funds-deadline closure of $op, recorded before any seal for its operation key, generation and invoice. */
+    public function closedBeforeSeal(Operation $op): bool
+    {
+        $t = $this->terminalRow['evidence'] ?? [];
+        return $this->closedUnsent() && in_array($op->safe_code, ['renewal_cancelled_unpaid', FundsWaits::RENEWAL_CLOSED], true)
+            && ($t['operation_key'] ?? null) === $op->operation_key && ($t['generation'] ?? null) === $op->authority_generation
+            && ($t['invoice_id'] ?? null) === $op->invoice_id;
+    }
 
     /** True when the renewal closed before any seal and its terminal evidence is exactly $evidence. */
     public function closedOnlyWith(array $evidence): bool

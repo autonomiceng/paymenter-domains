@@ -32,8 +32,10 @@ expect(str_contains($notice->getAttribute('class'),'domains-notice--info'),'Wait
 // A renewal waiting on the registrar's answer is called a renewal, not a registration (renewal-uncertain R1).
 require_once __DIR__.'/Support/renewal-attempts.php';$action=$result->action;
 // The same request as a renewal sealed at the same moment; its attempt rows and action are put back afterwards.
+// A renewal's attempt JSON reads as empty, so the registration's send time is read first.
+$sentAt=new DateTimeImmutable($result->attempt['dispatch_attempted_at']);
 Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$result->id)->update(['action'=>'renew']);
-try{$said=withSealedRenewal($result->refresh(),static fn($renewal)=>Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::forCustomer($renewal),at:new DateTimeImmutable($result->attempt['dispatch_attempted_at']));}
+try{$said=withSealedRenewal($result->refresh(),static fn($renewal)=>Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::forCustomer($renewal),at:$sentAt);}
 finally{Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$result->id)->update(['action'=>$action]);$result->refresh();}
 expect(str_contains($said['body'],'renewal')&&!str_contains($said['title'].$said['body'],'registration')&&$hasDeadline($said['body']),'A waiting renewal says renewal, with the same deadline');
 same('uncertain',$result->state,'No fabricated completion');same(null,$result->attempt['execution'],'Attempt remains unchanged');

@@ -10,7 +10,7 @@ $all[]=Staff::COSTS;$staff->role->update(['permissions'=>$all]);$staff->update([
 $held=static function(string $name)use($makeRenewal,$run):array{
     [$op,,,$invoice]=$makeRenewal(placeholderComFixtureName($name));
     same('paid',$invoice->status,'The renewal invoice is paid');$run($op,'hold');$op=$op->fresh();
-    same(['held','paid_invoice','renew',[]],[$op->state,$op->funding_basis,$op->action,$op->attempt??[]],'A paid renewal is held before any send');
+    same(['held','paid_invoice','renew',false],[$op->state,$op->funding_basis,$op->action,\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($op)->sealed()],'A paid renewal is held before any send');
     return ['id'=>(int)$op->id,'invoice'=>(int)$invoice->id,'amount'=>(string)$op->amount];
 };
 // Each browser scenario gets its own copy of this database and acts on its own cases only.

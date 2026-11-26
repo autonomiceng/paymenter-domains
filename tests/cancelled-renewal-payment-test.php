@@ -157,9 +157,9 @@ foreach (['after-cancel', 'before-cancel', 'late-observation', 'full-after-closu
     }
     $sweep->creditRetired($account);
     $sweep->creditRetired($account);
-    $closed = $early->fresh();
+    $closed = $early->fresh(); $closedRecord = renewalRecord($closed);
     $terminal = [
-        $original->fresh()->status, $closed->state, $closed->attempt['terminal']['transactions'],
+        $original->fresh()->status, $closed->state, \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($closed)->terminal()['evidence']['transactions'],
     ];
     if ($terminal !== ['cancelled', 'rejected', [(int) $receipt->id]]) {
         $replacementFailures[$case] = 'Closure lost its cancellation or payment identity: '.json_encode($terminal);
@@ -192,7 +192,7 @@ foreach (['after-cancel', 'before-cancel', 'late-observation', 'full-after-closu
         $replacement = $billing->invoice($holding->id, $case === 'after-cancel' ? $user : null);
         same($replacement->id, $billing->invoice($holding->id, $user)->id, 'Replay keeps one replacement invoice');
         same(2, $holding->operations()->where('action', 'renew')->count(), 'Exactly one new renewal request');
-        same($closed->attempt, $early->fresh()->attempt, 'Issuance preserves the closed request');
+        same($closedRecord, renewalRecord($early), 'Issuance preserves the closed request');
         ExtensionHelper::addPayment($replacement, null, $replacement->total);
         DB::transaction(function () use ($replacement, $holding): void {
             $locks = HoldingLocks::take($holding);

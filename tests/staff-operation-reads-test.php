@@ -14,8 +14,10 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{CataloguePreview,EnomTestReconciliationReader};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationSchema,ObservationWork,OperationReconciliation,ReconciliationEvidence,RegistrarAnswers,RegistrarCheck,Refunds,RenewalReplacements,StaffOperationReview,StaffOperations,StaffSettingsReview,StaffSyncReview};
-use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion;
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,EnomTestRegistration,DomainObservation,ObservationSchema,ObservationWork,OperationReconciliation,ReconciliationEvidence,RegistrarAnswers,RegistrarCheck,Refunds,RenewalReplacements,StaffOperationReview,StaffOperations,StaffSettingsReview,StaffSyncReview};
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAttempt,RenewalCompletion};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
+use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory;
 use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 \Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
 // Rows that differ only in a decision input read the page's own action objects instead of mounting the page again.
@@ -210,11 +212,11 @@ foreach([4,5] as $polls){
     same([$polls===4,$polls===5],[$shown($readRenew,'recheck'),$shown($readRenew,'resume_reads')],'Renewal read limit at '.$polls.' polls');
 }
 
-$before=[$readRenew->fresh()->attempt,$readRenew->fresh()->funding,$readRenew->domain->fresh()->reservation_name];
+$before=[renewalRecord($readRenew),$readRenew->fresh()->funding,$readRenew->domain->fresh()->reservation_name];
 $renewPage=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$readRenew->id])->callAction('resume_reads')->assertNotified('Status checks restarted')
     ->assertActionHidden('resume_reads')->assertActionVisible('recheck')->assertSee('Status checks restarted');
 same(0,$readRenew->fresh()->policy['renewal_polls'],'Renewal read budget explicitly resumed');
-same($before,[$readRenew->fresh()->attempt,$readRenew->fresh()->funding,$readRenew->domain->fresh()->reservation_name],'Renewal resume preserves financial/send evidence');
+same($before,[renewalRecord($readRenew),$readRenew->fresh()->funding,$readRenew->domain->fresh()->reservation_name],'Renewal resume preserves financial/send evidence');
 $renewPage->callAction('recheck')->assertNotified('Registrar checked')->assertSee('Completed')->assertDontSee('More')->assertDontSee('has not confirmed');
 same('succeeded',$readRenew->fresh()->state,'Renewal readback completes original attempt');
 commerceReject(fn()=>$run($readRenew->fresh(),'disposition'));
@@ -304,11 +306,11 @@ $state->during=static function(){throw new \Paymenter\Extensions\Servers\Domains
 (new RenewalCompletion($renewBindings,$clock))->run($lostRenew->id);$state->during=null;$state->calls=[];
 same(false,$lostRenew->fresh()->policy['status_check']['read_attempted'],'A renewal read refused before sending is not a read of this attempt');
 $unread($lostRenew,'A renewal read refused before sending');
-$before=[$lostRenew->attempt,$lostRenew->funding,$lostDomain->fresh()->provider_expires_at->format('Y-m-d'),$credit(),$state->writes];
+$before=[renewalRecord($lostRenew),$lostRenew->funding,$lostDomain->fresh()->provider_expires_at->format('Y-m-d'),$credit(),$state->writes];
 (new RenewalCompletion($renewBindings,$clock))->run($lostRenew->id);
 expect(in_array(ReadCommand::Info,$state->calls,true),'Automatic renewal recovery reads before staff ask for a case');
 same(false,$lostRenew->fresh()->policy['status_check']['facts']['charge_confirmed'],'A later expiry is not proof of this renewal charge');
-same($before,[$lostRenew->fresh()->attempt,$lostRenew->fresh()->funding,$lostDomain->fresh()->provider_expires_at->format('Y-m-d'),$credit(),$state->writes],'Unknown renewal cost keeps its original authority and money');
+same($before,[renewalRecord($lostRenew),$lostRenew->fresh()->funding,$lostDomain->fresh()->provider_expires_at->format('Y-m-d'),$credit(),$state->writes],'Unknown renewal cost keeps its original authority and money');
 // When the answer leads, Check status stays on the page: staff can read again before answering.
 same('enom_answer',RequestFacts::notice($lostRenew->fresh())['primary']??null,'An unconfirmed renewal past the answer wait leads with the answer');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lostRenew->id])->assertActionVisible('recheck')->assertActionVisible('enom_answer')
@@ -324,13 +326,27 @@ $copied=array_map(fn(DOMElement $e)=>$e->getAttribute('data-copy'),iterator_to_a
 same([\Paymenter\Extensions\Servers\Domains\Admin\Support\SupportDetails::text($lostRenew->fresh())],$copied,'The copy button carries the full details text unchanged');
 expect(str_contains($copied[0]??'','Account: Enom "Primary" &amp; <b>main</b>'),'The account name is copied as typed');
 \App\Models\Server::whereKey($lostRenew->server_id)->update(['name'=>$serverName]);
-// Unreadable saved attempt data renders the request page without an answer form or a send.
-$storedAttempt=$lostRenew->fresh()->getRawOriginal('attempt');$writes=$state->writes;
-DB::table('domains_operations')->where('id',$lostRenew->id)->update(['attempt'=>'d29-explicit-unreadable-fixture']);
+// An unreadable saved reply renders the request page without an answer form or a send.
+// A TEST catalogue account with every write off still recovers its sealed requests.
+$recovers=static function()use($binding):bool{
+    $set=['domains.enom_catalogue.enabled'=>true,'domains.enom_identity.environment'=>'test'];
+    $kept=array_combine(array_keys($set),array_map(static fn(string $key)=>config($key),array_keys($set)));
+    config($set);
+    try{return EnomTestRegistration::recoveryEnabled($binding);}finally{config($kept);}
+};
+same(true,$recovers(),'The account recovers its sealed requests');
+$reply=DB::table(OperationSchema::EVIDENCE)->where(['operation_id'=>$lostRenew->id,'kind'=>'reply'])->orderBy('id')->first();
+expect($reply!==null,'The lost renewal keeps its reply row');$writes=$state->writes;
+DB::table(OperationSchema::EVIDENCE)->where('id',$reply->id)->update(['evidence'=>'d29-explicit-unreadable-fixture']);
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lostRenew->id])->assertSuccessful()->assertActionHidden('enom_answer')->assertSee($lostDomain->domain)
     ->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::UNREADABLE);
-same([false,$writes],[RegistrarAnswers::ready($lostRenew->fresh(),$clock->now()),$state->writes],'Unreadable attempt is never ready for an answer and sends nothing');
-DB::table('domains_operations')->where('id',$lostRenew->id)->update(['attempt'=>$storedAttempt]);
+same([false,$writes],[RegistrarAnswers::ready($lostRenew->fresh(),$clock->now()),$state->writes],'An unreadable reply is never ready for an answer and sends nothing');
+// One unreadable reply hides only its own request: a batch read keeps the other renewal's facts, and the domain history still reads.
+$batch=RenewalAttempt::loaded([$lostRenew->fresh(),$limitRenew->fresh()]);
+same([false,true],[isset($batch[$lostRenew->id]),$batch[$limitRenew->id]?->sealed()],'A batch read keeps the readable renewal and leaves out the unreadable one');
+expect(DomainHistory::entries($lostDomain->fresh())!==[],'The domain history still reads beside an unreadable reply');
+same(true,$recovers(),'An unreadable reply never turns off recovery for the account');
+DB::table(OperationSchema::EVIDENCE)->where('id',$reply->id)->update(['evidence'=>$reply->evidence]);
 echo "Native staff actions: permissions, confirmations, reasons, audit, stale/replay/binding, read-only reconciliation, credit and cycle replacement passed.\n";
 }catch(Throwable $error){throw new RuntimeException($error->getMessage().' at '.implode(' > ',array_map(static fn($frame)=>($frame['file']??'').':'.($frame['line']??0),$error->getTrace())),0,$error);}
 

@@ -47,11 +47,12 @@ final class FundsWaits
             $receipts=$rows->pluck('id')->all();
         }
         if(!$complimentary){if($receipts===null){RefundPayment::requireCurrent($op,$l);}else{RefundPayment::requireLine($op,$l);}}
-        $attempt=OperationTerminalProof::rejectedAttempt($op,$l['domain']);$attempt['terminal']['invoice_id']=$op->invoice_id;
+        // The closure proof is the terminal row alone.
+        $terminal=['operation_key'=>$op->operation_key,'generation'=>$op->authority_generation,'invoice_id'=>$op->invoice_id];
         // These are retained receipt identities, never the empty zero-money retirement proof.
-        if($receipts!==null){$attempt['terminal']['transactions']=$receipts;}
-        $op->update(['state'=>'rejected','safe_code'=>self::RENEWAL_CLOSED,'completed_at'=>$now,'attempt'=>$attempt]);
-        if(OperationWriter::at($now)->recordTerminal((int)$op->id,self::RENEWAL_CLOSED,$attempt['terminal'])
+        if($receipts!==null){$terminal['transactions']=$receipts;}
+        $op->update(['state'=>'rejected','safe_code'=>self::RENEWAL_CLOSED,'completed_at'=>$now]);
+        if(OperationWriter::at($now)->recordTerminal((int)$op->id,self::RENEWAL_CLOSED,$terminal)
             !==Transition::Applied){throw new \DomainException('Renewal already has terminal proof.');}
         if(!$complimentary){$l['invoices']->firstWhere('id',$op->invoice_id)->update(['status'=>'cancelled']);}
     }

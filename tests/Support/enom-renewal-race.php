@@ -47,7 +47,7 @@ if($phase==='enom-test-renewal-race-issue'){
         };
     }else{$wait($receipt.'.admission-ready');}
     (new RuntimeWork($clock,new RuntimePorts))->operation($op->id);
-    if($worker===2){same([],$GLOBALS['enomWire']['forms'],'Competing admission sees retained claim before any send');same([],(array)$op->fresh()->attempt,'Competition occurs before the seal');file_put_contents($receipt.'.admission-competed','done');}
+    if($worker===2){same([],$GLOBALS['enomWire']['forms'],'Competing admission sees retained claim before any send');same(false,\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($op->fresh())->sealed(),'Competition occurs before the seal');file_put_contents($receipt.'.admission-competed','done');}
     file_put_contents($receipt.'.admit-'.$worker,json_encode(array_column($GLOBALS['enomWire']['forms'],'Command'),JSON_THROW_ON_ERROR));
 }else{
     same(file_get_contents($receipt.'.issue-1'),file_get_contents($receipt.'.issue-2'),'Overlapping issuance workers return the same debt');

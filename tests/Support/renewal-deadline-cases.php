@@ -25,7 +25,7 @@ return static function ($op, $domain, $binding, Closure $compose, $clock, $state
     };
     $noSend = static function ($result, array $money) use ($nativeMoney, $state): void {
         expect(in_array($result->state, ['held','queued'], true), 'Deadline refusal keeps unsent renewal');
-        same([], $result->attempt ?? [], 'Deadline refusal creates no execution/seal proof');
+        same(null, renewalAttempt($result), 'Deadline refusal creates no execution/seal proof');
         same(null, $result->provider_order_id, 'Deadline refusal creates no order proof');
         expect(RenewalFundingLedger::entries($result) === ['item' => [], 'payment' => []] && !isset($result->funding['seal']), 'Deadline refusal never seals funding');
         same(0, $state->writes, 'Deadline refusal sends no renewal');

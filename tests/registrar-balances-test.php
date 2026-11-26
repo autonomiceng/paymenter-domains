@@ -276,6 +276,15 @@ $first=$make(placeholderComFixtureName('forecast-refusal-0-placeholder.com'));$r
 for($i=1;$i<6;$i++){$renew($make(placeholderComFixtureName('forecast-refusal-'.$i.'-placeholder.com')),'held',$validProof);}
 same($oneRefusal,$queryCount(),'Valid prewire refusals add no forecast reads');same(6,$forecast()['count'],'Each valid prewire refusal stays an open obligation');
 DB::rollBack();
+// An unreadable reply counts its renewal as possibly spent in both paths; the account's readable renewals still forecast.
+DB::beginTransaction();
+$renew($make(placeholderComFixtureName('forecast-readable-due-placeholder.com')));
+$damaged=$renew($make(placeholderComFixtureName('forecast-damaged-reply-placeholder.com')),'held',$validProof);
+same([2,'16.000000'],[$forecast()['count'],$forecast()['total']],'A readable refusal and a due renewal both forecast');
+DB::table(\Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema::EVIDENCE)->where(['operation_id'=>$damaged->id,'kind'=>'reply'])->update(['evidence'=>'forecast-unreadable-fixture']);
+same([1,'8.000000',0],[$forecast()['count'],$forecast()['total'],$forecast()['unknown']],'An unreadable reply is possibly spent and the due renewal still forecasts');
+same('$8.00',RegistrarBalances::facts($a,$clock->now())['total'],'Staff balance still reads the account forecast');
+DB::rollBack();
 // Daily and manual reads use the same provider-login limiter, without requiring write activation.
 $readState=(object)['calls'=>0,'fail'=>false,'readers'=>[]];$registry=new RegistrarRegistry;
 $verify=new class implements AccountVerifier {public function verify(Environment $e,array $c):string{return $c['token'];}};
