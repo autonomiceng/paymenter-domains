@@ -24,7 +24,7 @@ BASE = 'Paymenter\\Extensions\\Servers\\Domains\\'
 REVERSE = ROOT/'tests/registrar-reverse-imports.json'
 PROVIDERS = ('Registrars/Enom/', 'Registrars/NameSilo/')
 # Dispatch files that build provider objects or classify their refusals. Other Dispatch files stay provider neutral.
-COMPOSITION = {'Registrars/Dispatch/Offers.php', 'Registrars/Dispatch/RegistrarFactories.php',
+COMPOSITION = {'Registrars/Dispatch/Accounts.php', 'Registrars/Dispatch/Offers.php', 'Registrars/Dispatch/RegistrarFactories.php',
                'Registrars/Dispatch/RegistrarRegistry.php', 'Registrars/Dispatch/RenewalWriter.php'}
 SHARED_CONTRACT = {'Registrars\\Contract\\CanonicalName', 'Registrars\\Contract\\LiveReservationLimit'}
 
@@ -37,11 +37,6 @@ ALLOWED = {
     'Enom/Api/ProtocolResult.php': ['Data\\RegistrarReply', 'Data\\RegistrationRefusal'],
     'Enom/Api/ResponseParser.php': ['Data\\RegistrarReply'],
     'Enom/Api/Transport.php': ['Data\\Environment'],
-    'NameSilo/Api/CurlTransport.php': ['Services\\ProviderSendGuard'],
-    'NameSilo/Api/DnsMapping.php': ['Registrars\\NameSilo\\Dns'],
-    'NameSilo/Api/DsMapping.php': ['Registrars\\NameSilo\\Ds',
-                                   'Registrars\\NameSilo\\DsRegistryPolicy'],
-    'NameSilo/Api/ResponseParser.php': ['Registrars\\NameSilo\\DefaultContact'],
 }
 
 # Any PHP identifier segment, whatever its initial case: \Vendor\protocol\Client is a qualified name.
@@ -230,6 +225,7 @@ class RegistrarApiImports(unittest.TestCase):
             (root/'Enom/Api/Protocol').mkdir(parents=True)
             (root/'Enom/Api/Client.php').write_text(
                 f'<?php\nnamespace {api};\nuse {BASE}Data\\Environment;\n'
+                f'use {BASE}Registrars\\Contract\\CanonicalName;\n'
                 'final class Client\n{\n    use Protocol\\EncodesParameters;\n}\n')
             (root/'Enom/Api/Protocol/Request.php').write_text(
                 f'<?php\nnamespace {api}\\Protocol;\nuse {api}\\Client;\nuse {BASE}Services\\OperationClaims;\n'

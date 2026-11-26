@@ -68,7 +68,7 @@ D owns longest-suffix selection, tuple rules, policy version freezing and exact 
 | Lane | Owns and consumes | Must not edit |
 | --- | --- | --- |
 | T / NS17 | `Catalogue/{Facts,OfferState,ExpansionFacts,Capabilities,Evaluator}`, provider Driver/OfferFeed/TestCatalogueFacts; named renewal/billing services; term tests | Shared protocol/runtime, schema/manifests, D/O/X services, staff/UI |
-| D / NS14 | NameSilo `DsFacts`, DS helpers/policy/config, Api/DsMapping, new DsManagement; DS tests | ManagementProtocol, Management/DnsManagement, runtime factories, schema/manifests, O observation services |
+| D / NS14 | NameSilo `DsFacts`, DS helpers/policy/config, DsMapping, new DsManagement; DS tests | ManagementProtocol, Management/DnsManagement, runtime factories, schema/manifests, O observation services |
 | O / NS15 | RecordFormat, ObservationRecords/projections/record services, provider ObservationReader helpers and observation/CAA tests | ManagementProtocol, provider Management/DnsManagement, runtime factories, D DS helpers, schema/manifests |
 | X / B9 | LiveActivation/EnomLiveActivation, Enom ActivationEvidence, LiveActivationAction, transfer tests | Shared protocol/runtime, catalogue/DS/observation services, AccountChecklist and other UI |
 | C1 | Shared protocol, provider Management/DnsManagement, RuntimePorts/RuntimeComposition/factories, manifests, all schema/install/verifier files | Apply bounded D/O wiring patches serially; do not independently change lane algorithms |

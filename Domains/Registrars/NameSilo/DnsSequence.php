@@ -2,7 +2,6 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
-use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\DnsMapping;
 /** Pure provider deltas and unique independent readback. No grants, queue or sender. */
 final class DnsSequence
 {

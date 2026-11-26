@@ -4,7 +4,8 @@ declare(strict_types=1);
 // Registered paired protocol harness supplies bootstrap.
 
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Ds, DsRegistryPolicy};
-use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DsMapping, Outcome};
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DsMapping;
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Outcome;
 
 expect(method_exists(Ds::class, 'readback'), 'independent DS tuple readback exists');
 expect(method_exists(Ds::class, 'acknowledgement'), 'DS acknowledgement separate from readback');

@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 
-use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DsMapping, Outcome, RegistrarResult};
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Outcome, RegistrarResult};
 
 /** Pure, dormant DS parsing. Recognized wire formats do not establish registry support. */
 final class Ds

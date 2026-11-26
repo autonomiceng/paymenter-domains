@@ -7,6 +7,9 @@ final class CurlTransport implements DeadlineTransport
 {
     public const BODY_LIMIT = 1048576;
 
+    /** @param \Closure(Environment, string): void $beforeSend */
+    public function __construct(private readonly \Closure $beforeSend) {}
+
     public function send(Environment $environment, RequestContext $context, RegistrarRequest $request,
         #[\SensitiveParameter] string $apiKey): TransportResponse
     {
@@ -58,7 +61,7 @@ final class CurlTransport implements DeadlineTransport
                 },
             ];
             if (!curl_setopt_array($handle,$options)) { throw new \RuntimeException('Registrar transport incomplete.'); }
-            \Paymenter\Extensions\Servers\Domains\Services\ProviderSendGuard::beforeSend('namesilo',$environment===Environment::Live?'live':'test',$request->command);
+            ($this->beforeSend)($environment, $request->command);
             $remaining=intdiv($deadline-hrtime(true),1000000);
             if ($remaining<1) { throw new \RuntimeException('Registrar transport incomplete.'); }
             $options[CURLOPT_CONNECTTIMEOUT_MS]=min(8000,$remaining);$options[CURLOPT_TIMEOUT_MS]=$remaining;

@@ -1,10 +1,9 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api;
+namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 
 use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
-use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Dns;
 
 /** Offline descriptors only. Deliberately not a RegistrarRequest: no sender accepts these writes. */
 final class DnsMapping implements \JsonSerializable
