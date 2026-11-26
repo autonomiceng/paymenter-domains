@@ -82,5 +82,6 @@ if ($snapshot !== '') {
 $pdo=Illuminate\Support\Facades\DB::connection()->getPdo();
 $GLOBALS['nativeFixtureDatabase']=['pdo'=>$pdo,'changes'=>(int)$pdo->query('SELECT total_changes()')->fetchColumn(),
     'schema'=>(int)$pdo->query('PRAGMA schema_version')->fetchColumn()];
-nativeFixtureClockFollow();
+// A file that compares exact case effects across processes and binds no FakeClock keeps the boot instant throughout.
+if (!($nativeFixedClock ?? false)) { nativeFixtureClockFollow(); }
 unset($nativeSetup);
