@@ -36,8 +36,8 @@ $result = $op->fresh();
 $payments = $invoice->transactions()->orderBy('id')->get()->mapWithKeys(static fn ($row) => [(int) $row->id => PricingRule::minor($row->amount)])->all();
 same(2, count($payments), 'Both native receipts survive the lost reply');
 same($payments, RenewalFundingLedger::entries($result)['payment'], 'The original reservation records each payment once');
-same(['uncertain', 'renewal_confirmation_required', null, 1],
-    [$result->state, $result->safe_code, $result->attempt['execution'], $state->writes], 'Lost paid renewal stays uncertain after one send');
+same(['uncertain', 'renewal_confirmation_required', 'unknown', 1],
+    [$result->state, $result->safe_code, renewalReply($result)['outcome'], $state->writes], 'Lost paid renewal stays uncertain after one send');
 same(['category' => 'timeout', 'timeout_ms' => 24993], $result->attempt['send_failure'], 'Attempt retains safe failure metadata');
 same([['warning', ['operation_id' => $op->id, 'exception_class' => SendFailure::class, 'category' => 'timeout', 'timeout_ms' => 24993]]],
     $logged, 'Lost reply logs safe facts only');
@@ -51,13 +51,13 @@ $reads = count($state->calls);
 $writes = $state->writes;
 // A pre-existing lost reply exposes the existing wait/support step before any worker creates status_check.
 $beforeCheck=RegistrarCheck::forCustomer($op->fresh());
-$deadline = (new DateTimeImmutable($attempt['dispatch_attempted_at']))->modify('+24 hours')->setTimezone(new DateTimeZone('America/Los_Angeles'));
+$deadline = renewalSentAt($op)->modify('+24 hours')->setTimezone(new DateTimeZone('America/Los_Angeles'));
 expect(preg_match('/(?<!\d)'.$deadline->format('j').'(?!\d)/', $beforeCheck['body']) && empty($beforeCheck['asks']),
     'Before the first check the customer sees the original local deadline and has no action');
 $result = $completion->run($op->id);
 same('awaiting_answer', $result->policy['status_check']['outcome'], 'Unrecoverable renewal names the staff registrar-answer action');
 same('Enom', $result->policy['status_check']['registrar'], 'Staff action names the bound registrar');
-same((new DateTimeImmutable($attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp(),
+same(renewalSentAt($op)->modify('+24 hours')->getTimestamp(),
     $result->policy['status_check']['answer_after'], 'Answer timing is tied to the original dispatch');
 same('uncertain', $result->state, 'Missing reply is not a failure proof');
 same($attempt, $result->attempt, 'Read checks preserve original attempt evidence');
@@ -73,7 +73,7 @@ $cataloguePorts=$ports;require __DIR__.'/Support/owner-pages.php';
 $owner=\App\Models\User::findOrFail($d->user_id);\Illuminate\Support\Facades\Auth::setUser($owner);
 $request=\Illuminate\Http\Request::create('/domains/'.$d->id,'GET');$request->setUserResolver(fn()=>$owner);$request->setLaravelSession(app('request')->session());
 $html=(new \Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController($owners))->show($request,$d->id)->render();
-$deadline=(new DateTimeImmutable($attempt['dispatch_attempted_at']))->modify('+24 hours')->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('j'); // The deadline day, whatever the date format.
+$deadline=renewalSentAt($op)->modify('+24 hours')->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('j'); // The deadline day, whatever the date format.
 $ownerPage = storefrontDom($html);
 $notices = array_map(static fn ($node) => $node->textContent, iterator_to_array($ownerPage->query('//*[@role="status"]')));
 expect((bool) preg_match('/(?<!\d)'.$deadline.'(?!\d)/', implode(' ', $notices)), 'Owner status shows the original dispatch deadline');

@@ -15,8 +15,9 @@ foreach (['register', 'renew', 'transfer', 'privacy_purchase', 'privacy_renew'] 
         'authority_generation' => $d->authority_generation, 'action' => $action, 'term' => 1,
         'operation_key' => 'unresolved-financial:'.$d->id, 'funding_basis' => 'paid_invoice',
         'state' => 'uncertain', 'amount' => '8.95', 'currency' => 'USD', 'payload' => [], 'policy' => [],
-        'attempt' => ['seal' => 'sealed', 'send_state' => 'possibly_sent'],
+        'attempt' => $action === 'renew' ? [] : ['seal' => 'sealed', 'send_state' => 'possibly_sent'],
     ]);
+    if ($action === 'renew') { sealRenewal($peer); }
     DB::transaction(static function () use ($op, $d, $bindings): void {
         $l = HoldingLocks::take($d);
         commerceReject(fn () => RenewalFunding::requireCurrent($op, $l));
