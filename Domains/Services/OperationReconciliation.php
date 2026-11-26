@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{NameserverEvidence, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, OperationWriter, ReadToken, Transition};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter, ReadToken, RetainedAcquisition, Transition};
 use Paymenter\Extensions\Servers\Domains\Registrars\{Enom, NameSilo};
 use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementCorrections;
 /** Observation never replays a write. No rejection/refund can be inferred from an empty read. */
@@ -63,7 +63,7 @@ final class OperationReconciliation
                 $until = $now + self::READ_SECONDS;
                 if ($watch && !$manual) { $until = min($until, TransferPolling::cutoff($op)); }
                 $read = null;
-                if ($sealed = AcquisitionAttempt::of((int) $op->id, $op->action, true)) {
+                if ($sealed = RetainedAcquisition::adopt($op, $this->attempts, $this->clock->now())) {
                     if (!$sealed->sealed() || $until <= $now) { return null; }
                     $read = $this->attempts->openRead($sealed->facts->token, new \DateTimeImmutable('@'.$until));
                     if (!$read instanceof ReadToken) { $check->discard(); return null; }

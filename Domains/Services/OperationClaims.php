@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AdmittedOperation
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionAuthority, AcquisitionDispatch,
-    AcquisitionRetryProof, AttemptToken, OperationWriter, Transition, WireOutcome};
+    AcquisitionRetryProof, AttemptToken, OperationWriter, RetainedAcquisition, Transition, WireOutcome};
 
 /** All financial checks run twice: claim and final seal. No provider callback runs under these locks. */
 final class OperationClaims
@@ -146,6 +146,7 @@ final class OperationClaims
         array $paid, \DateTimeImmutable $now): bool
     {
         $system = BalanceRetry::from($op);
+        $policy = $op->policy;
         $lease = $now->modify('+'.ExecuteOperation::LEASE_SECONDS.' seconds');
         $prior = AcquisitionAttempt::of((int) $op->id, $op->action, true);
         $origin = ['started_at' => $start->format(DATE_ATOM), 'digest' => $digest, 'funding' => $paid];
@@ -159,26 +160,15 @@ final class OperationClaims
                 $origin['identity'] = $op->attempt['claim_key'];
                 $origin['started_at'] = $op->started_at->format(DATE_ATOM);
             }
-            self::retireLegacyClaim($op);
+            RetainedAcquisition::clear($op);
         }
         $token = $this->attempts->claim((int) $op->id, AcquisitionAttempt::key($op->action), $lease, $origin);
         if (!$token instanceof AttemptToken) { throw new \DomainException('Acquisition claim changed.'); }
         $op->reloadAcquisitionAttempt();
-        $policy = $op->policy;
         if ($system && $system->record['claim_key'] === null) { $policy['balance_retry'] = $system->claimed($op)->record; }
         $op->acquisitionWorker = $token;
         $op->update(['state' => 'running', 'safe_code' => null, 'policy' => $policy]);
         return true;
-    }
-
-    /** Called only for an unsealed legacy retry after current funding, identity and negative evidence were checked. */
-    private static function retireLegacyClaim(Operation $op): void
-    {
-        $funding = array_diff_key($op->funding ?? [], ['claim' => true]);
-        $op->fill(['funding' => $funding ?: null]);
-        DB::table('domains_operations')->where('id', $op->id)->update(['attempt' => null,
-            'started_at' => null, 'request_fingerprint' => null, 'lease_expires_at' => null, 'funding' => ($op->getAttributes()['funding'] ?? null)]);
-        $op->refresh();
     }
 
     /** Post-read/write bookkeeping needs only domain -> ordered operations, never financial authority again. */

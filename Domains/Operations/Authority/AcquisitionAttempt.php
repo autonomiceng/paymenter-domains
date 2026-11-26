@@ -58,12 +58,15 @@ final readonly class AcquisitionAttempt
     public function funding(): array
     {
         if (!$this->hasOriginalClaim()) { return []; }
+        if (isset($this->origin['legacy_funding'])) { return $this->origin['legacy_funding']; }
         return ['claim' => $this->origin['funding'], ...($this->sealed() ? ['seal' => $this->rows['admission']['evidence']['funding']] : [])];
     }
 
     public function attempt(string $action): array
     {
         if (!$this->hasOriginalClaim()) { return $this->history; }
+        $settlement = array_intersect_key($this->rows['settlement']['evidence'] ?? [], ['reconciliation' => true]);
+        if (isset($this->origin['legacy_attempt'])) { return [...$this->origin['legacy_attempt'], ...$settlement]; }
         $attempt = ['claim_key' => $this->origin['identity'], 'seal' => $this->sealed() ? 'sealed' : 'absent',
             'send_state' => $this->sealed() ? $this->facts->sendState->value : 'definitely_unsent'];
         if (!$this->sealed()) { return [...$attempt, ...$this->history]; }
@@ -73,7 +76,7 @@ final readonly class AcquisitionAttempt
             'authorized_cost' => ['amount' => $this->facts->authorizedAmount, 'currency' => $this->facts->authorizedCurrency],
             $admissionKey => $admission[$admissionKey], ...array_diff_key($this->rows['reply']['evidence'] ?? [], ['reason' => true]),
             ...($this->rows['decision']['evidence'] ?? []),
-            ...($this->rows['settlement']['evidence'] ?? [])];
+            ...$settlement];
     }
 
     /** An older code path may save the projection with new, separately owned operation facts. */

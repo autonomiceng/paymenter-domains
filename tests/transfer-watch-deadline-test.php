@@ -2,11 +2,11 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering. Native final-check settlement, no registrar calls.
 declare(strict_types=1);
 require __DIR__.'/Support/transfer-completion-namesilo-fixture.php';
-use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\{Crypt, DB, Queue};
 use Paymenter\Extensions\Servers\Domains\Data\{HistoryAcceptance,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Services\{HistoryAcceptances,TransferPolling,AccountReadBudget,RuntimeSchema,RuntimeDispatch};
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, StepKey};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationSchema, StepKey};
 RuntimeSchema::install();
 $op=$prepare('finished-before-deadline');$start=$op->started_at;$sent=$state->calls;
 HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,8*86400,'namesilo_transfer_v1'));
@@ -20,6 +20,32 @@ same('succeeded', $settlement['outcome'] ?? null, 'The original attempt retains 
 same(null, $attempt->readToken, 'The final check closed its read claim');
 same(null, $op->fresh()->getRawOriginal('attempt'), 'Settlement leaves no copy on the obligation');
 same($sent,$state->calls,'Final check never sends another transfer');same($start->getTimestamp(),$op->fresh()->started_at->getTimestamp(),'Original deadline unchanged');
+// Restore the envelope format an installed transfer recorded before the attempt tables owned acquisition.
+$op = $prepare('retained-transfer');
+$started = $op->started_at;
+$old = $op->attempt;
+$old['send_state'] = 'possibly_sent';
+$step = OperationAttempts::step((int) $op->id, new StepKey('transfer', 1));
+$operationId = (int) $op->id;
+DB::transaction(function () use ($op, $old, $started, $step, $operationId): void {
+    DB::table('domains_operations')->where('id', $operationId)->update([
+        'attempt' => Crypt::encryptString(json_encode($old, JSON_THROW_ON_ERROR)),
+        'funding' => Crypt::encryptString(json_encode($op->funding, JSON_THROW_ON_ERROR)),
+        'request_fingerprint' => $op->request_fingerprint, 'started_at' => $started->format('Y-m-d H:i:s'),
+    ]);
+    DB::table(OperationSchema::EVIDENCE)->where('operation_id', $operationId)->delete();
+    DB::table(OperationSchema::ATTEMPTS)->where('step_id', $step->id)->delete();
+    DB::table(OperationSchema::STEPS)->where('id', $step->id)->delete();
+});
+$identity = \Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers::identity($op->fresh());
+$legacy = $reconcile->run($operationId);
+same('succeeded', $legacy->state, 'A retained transfer completes through its original sealed attempt');
+same($identity, \Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers::identity($legacy), 'Import retains the exact evidence identity');
+$imported = OperationAttempts::sealed($operationId, new StepKey('transfer', 1));
+expect($imported !== null && $imported->grantConsumedAt === null, 'The retained seal was adopted without inferring grant consumption');
+same('succeeded', OperationAttempts::evidence($operationId, $imported->token->attemptId, 'settlement')['outcome'] ?? null,
+    'Read settlement is retained with the imported seal');
+same(null, $legacy->getRawOriginal('attempt'), 'Import leaves one owner for the retained envelope');
 $op=$prepare('final-capacity');$start=$op->started_at;
 HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,8*86400,'namesilo_transfer_v1'));
 $clock->instant=new DateTimeImmutable('@'.TransferPolling::deadline($op));$budget=new AccountReadBudget($clock);

@@ -21,24 +21,48 @@ final readonly class OperationWriter
     public function claim(int $operationId, StepKey $key, \DateTimeImmutable $until, ?array $acquisition = null): AttemptToken|Transition
     {
         self::requireTransaction(); $now = $this->clock->now();
-        $step = OperationAttempts::step($operationId, $key, true);
-        if (!$step) {
-            DB::table(OperationSchema::STEPS)->insert(['operation_id' => $operationId, 'step_type' => $key->type, 'sequence' => $key->sequence]);
-            $step = OperationAttempts::step($operationId, $key, true);
-        }
+        $stepId = $this->stepId($operationId, $key);
         $latest = OperationAttempts::latest($operationId, $key, true);
         if ($latest?->sealed() && !$latest->released) { return Transition::Stale; }
         if ($latest?->claiming($now)) { return Transition::Busy; }
         // An expired pre-seal claim never held a grant: it stays as history and loses the step.
         if ($latest?->current) { $this->archive($latest, $now); }
         $claim = bin2hex(random_bytes(16)); $ordinal = ($latest?->token->ordinal ?? 0) + 1;
-        $id = (int) DB::table(OperationSchema::ATTEMPTS)->insertGetId(['step_id' => $step->id, 'ordinal' => $ordinal, 'claim_key' => $claim,
+        $id = (int) DB::table(OperationSchema::ATTEMPTS)->insertGetId(['step_id' => $stepId, 'ordinal' => $ordinal, 'claim_key' => $claim,
             'claimed_at' => OperationAttempts::at($now), 'claim_until' => OperationAttempts::at($until), 'send_state' => SendState::DefinitelyUnsent->value]);
-        $this->point((int) $step->id, $id);
+        $this->point($stepId, $id);
         if ($acquisition !== null) {
             $this->append($operationId, $id, 'claim', 'local', 'claimed', $acquisition + ['identity' => $claim], 'claim');
         }
-        return new AttemptToken($operationId, (int) $step->id, $id, $ordinal, $claim);
+        return new AttemptToken($operationId, $stepId, $id, $ordinal, $claim);
+    }
+
+    /** Preserve a historical seal. Its dispatch window is closed and no send permission can be issued. */
+    public function adoptAcquisition(int $id, int $revision, RetainedAcquisition $record): void
+    {
+        self::requireTransaction();
+        if (OperationAttempts::latest($id, $record->step, true)) { throw new \DomainException('Acquisition attempt already exists.'); }
+        $stepId = $this->stepId($id, $record->step);
+        $sealed = OperationAttempts::at($record->sealedAt);
+        $cost = $record->envelope['authorized_cost'] ?? [];
+        $attemptId = (int) DB::table(OperationSchema::ATTEMPTS)->insertGetId([
+            'step_id' => $stepId, 'ordinal' => 1, 'claim_key' => $record->claimKey,
+            'claimed_at' => OperationAttempts::at($record->startedAt), 'claim_until' => $sealed,
+            'sealed_at' => $sealed, 'dispatch_until' => $sealed, 'operation_revision' => $revision,
+            'request_digest' => $record->digest, 'send_state' => $record->sendState->value,
+            'authorized_amount' => $cost['amount'] ?? null, 'authorized_currency' => $cost['currency'] ?? null, 'mode' => $record->step->type,
+        ]);
+        $this->append($id, $attemptId, 'claim', 'retained', 'sealed', [
+            'started_at' => $record->startedAt->format(DATE_ATOM), 'digest' => $record->digest,
+            'legacy_attempt' => $record->envelope, 'legacy_funding' => $record->funding,
+        ], 'claim');
+        $this->point($stepId, $attemptId);
+    }
+
+    private function stepId(int $operationId, StepKey $key): int
+    {
+        return (int) (OperationAttempts::step($operationId, $key, true)?->id
+            ?? DB::table(OperationSchema::STEPS)->insertGetId(['operation_id' => $operationId, 'step_type' => $key->type, 'sequence' => $key->sequence]));
     }
 
     /** Ends a current pre-seal claim. A sealed or replaced attempt is stale and keeps its state. */
