@@ -1,14 +1,15 @@
 <?php
-// MIT, Copyright (c) 2026 Autonomic Engineering.
+// Operation columns adapted from Enom d2c55e2; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Operations\Authority;
 
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Installation\TableSchema;
+use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementProgress;
 
 /**
- * Operation steps, keyed attempts and append-only evidence. FoundationSchema owns domains_operations.
- * Registry does not list this schema yet, so no install creates these tables until the writer becomes authority.
+ * Operations, their steps, keyed attempts and append-only evidence.
  * A step's current attempt is a logical reference checked by the writer under the operation lock, so the
  * tables have no circular reference. Child rows reference their parent and cannot outlive it.
  * Every time column is nullable, so MariaDB gives none of them an implicit default or ON UPDATE, even with
@@ -23,6 +24,53 @@ final class OperationSchema extends TableSchema
     protected static function definitions(): array
     {
         return [
+            'domains_operations' => static function (Blueprint $t): void {
+                $t->id();
+                $t->unsignedBigInteger('server_id');
+                $t->string('registrar_key', 32);
+                $t->string('account_fingerprint', 64)->nullable();
+                $t->unsignedBigInteger('authority_generation')->nullable();
+                $t->unsignedBigInteger('domain_id')->index();
+                $t->unsignedBigInteger('service_id')->index();
+                $t->unsignedBigInteger('invoice_id')->nullable()->index();
+                $t->unsignedBigInteger('invoice_item_id')->nullable();
+                $t->string('operation_key', 191)->unique();
+                $t->string('action', 32);
+                $t->unsignedSmallInteger('term')->default(1);
+                $t->string('funding_basis', 32)->default('paid_invoice');
+                $t->string('state', 32)->index();
+                $t->decimal('amount', 12, 2)->default(0);
+                $t->string('currency', 3);
+                $t->date('base_expires_at')->nullable();
+                $t->date('expected_expires_at')->nullable();
+                $t->date('confirmed_expires_at')->nullable();
+                $t->longText('payload')->nullable();
+                $t->longText('policy')->nullable();
+                $t->longText('cost')->nullable();
+                $t->string('request_fingerprint', 64)->nullable();
+                $t->string('safe_code', 64)->nullable();
+                $t->unsignedBigInteger('transition_revision')->default(0);
+                $t->timestamp('renewal_admission_until')->nullable();
+                $t->unsignedBigInteger('renewal_reserved_revision')->nullable();
+                $t->longText('renewal_proof')->nullable();
+                $t->longText('renewal_check')->nullable();
+                $t->longText('attempt')->nullable();
+                $t->longText('funding')->nullable();
+                $t->string('provider_order_id', 128)->nullable();
+                $t->unsignedBigInteger('authorized_by')->nullable();
+                $t->string('funding_reason', 500)->nullable();
+                $t->timestamp('started_at')->nullable();
+                $t->timestamp('lease_expires_at')->nullable();
+                $t->timestamp('completed_at')->nullable();
+                $t->timestamp('created_at')->nullable();
+                $t->timestamp('updated_at')->nullable();
+                $t->boolean('management_pending')->nullable();
+                $t->unsignedTinyInteger('retry_number')->default(0);
+                $t->char('renewal_previous_proof', 64)->nullable();
+                $t->index(['server_id', 'account_fingerprint', 'id']);
+                $t->index(['domain_id', 'authority_generation', 'account_fingerprint', 'action', 'management_pending', 'id'], $t->getTable().'_management_progress_i');
+                $t->unique(['invoice_item_id', 'action', 'retry_number'], $t->getTable().'_debt_retry_u');
+            },
             self::STEPS => static function (Blueprint $t): void {
                 $t->id();
                 $t->unsignedBigInteger('operation_id');
@@ -82,4 +130,12 @@ final class OperationSchema extends TableSchema
     /** Constraint names are unique per database on MariaDB, so they carry the connection prefix. */
     private static function name(Blueprint $t, string $suffix): string
     { return $t->getPrefix().$t->getTable().'_'.$suffix; }
+
+    public static function verify(): void
+    {
+        parent::verify();
+        if (DB::table('domains_operations')->whereIn('action', ManagementProgress::ACTIONS)->whereNull('management_pending')->exists()) {
+            throw new \RuntimeException('Retained management operation has no progress state.');
+        }
+    }
 }

@@ -6,6 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Installation;
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Catalogue\Pricing\PriceSchema;
 use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferSchema;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
 use Paymenter\Extensions\Servers\Domains\Services\{AdoptionSchema,BalanceAlertSchema,BalanceSchema,BusinessSettingsSchema,
     ComplimentaryAccountSchema,ContactProfileSchema,DnsTemplateClaimsSchema,DnsTemplatesSchema,DomainAuditSchema,
     EnomLiveCallSchema,EnomTestSendLimitSchema,FoundationSchema,HistoryLinkSchema,MoneyWorkSchema,NativeIntentSchema,ObservationSchema,
@@ -20,6 +21,7 @@ final class Registry
     /** Install order. Each feature owns its definition; this list owns order and the complete table inventory. */
     public const SCHEMAS = [
         FoundationSchema::class,
+        OperationSchema::class,
         OfferSchema::class,
         PriceSchema::class,
         ContactProfileSchema::class,
