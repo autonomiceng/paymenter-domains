@@ -23,9 +23,12 @@ config(['domains.enom_test_sends_per_day'=>(int)(getenv('LIMIT_DAY')?:3),'domain
 if($phase==='seed'){
     (new Installation)->install();
 }elseif($phase==='admit'){
-    // All workers admit at one shared moment; a late one would admit alone and hide a missing lock.
-    expect(microtime(true)<(float)getenv('LIMIT_START'),'Worker was ready before the shared start');
-    while(microtime(true)<(float)getenv('LIMIT_START')){usleep(1000);}
+    // Each worker reports ready here, then blocks until the parent, having seen every worker ready, closes the release
+    // pipe for all of them at once; a late worker would admit alone and hide a missing lock.
+    $ready=fopen('php://fd/'.(int)getenv('LIMIT_READY_FD'),'wb');$release=fopen('php://fd/'.(int)getenv('LIMIT_RELEASE_FD'),'rb');
+    expect($ready!==false&&$release!==false,'Barrier pipes required');
+    same(1,fwrite($ready,(string)getenv('LIMIT_WORKER')),'Worker reported ready');fclose($ready);
+    same('',fread($release,1),'Worker released only by the closed barrier');fclose($release);
     try{EnomTestSendLimit::admit(Environment::Test,getenv('LIMIT_UID')?:'Synthetic-UID','GetBalance');$outcome='admitted';}catch(EnomTestCallLimit){$outcome='refused';}
     echo json_encode(['outcome'=>$outcome])."\n";
 }elseif($phase==='verify'){
