@@ -250,9 +250,13 @@ class ViewOperation extends RecordDetailPage
         return ($op->started_at || in_array($op->state,['running','pending','uncertain','succeeded'],true))
             && StaffReviewHistory::sendEvent($op,$renewal)===StaffReviewHistory::SENT ? StaffReviewHistory::sentAt($op,$renewal) : null;
     }
-    /** A renewal's attempt facts, read once by each part of the page that shows them: head, sections, rail and answer. */
+    /** A renewal's attempt facts, read once by each part of the page that shows them: head, sections, rail and answer.
+     * Null when the record no longer decrypts, so each part reads it again under its own unreadable-data boundary. */
     private static function renewal(Operation $op): ?RenewalAttempt
-    { return $op->action==='renew' ? RenewalAttempt::of($op) : null; }
+    {
+        if ($op->action!=='renew') { return null; }
+        try { return RenewalAttempt::of($op); } catch (\Throwable) { return null; }
+    }
     /** The rail: what happened, newest first. Each step shows its own outcome; the request's state is in the page head. */
     protected function rail(): array
     {
