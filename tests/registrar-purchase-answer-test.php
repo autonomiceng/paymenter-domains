@@ -21,14 +21,14 @@ $wire=new class($wireState) implements DeadlineTransport {
     public function send($e,$c,$r,#[SensitiveParameter] string $key):TransportResponse{throw new LogicException;}
     public function sendWithin($e,$c,$r,#[SensitiveParameter] string $key,int $ms):TransportResponse{
         same(0,Illuminate\Support\Facades\DB::transactionLevel(),'Readback stays outside financial locks');$s=$this->s;$s->calls[]=$r->command;
-        $reply=['code'=>300,'detail'=>'synthetic']+match($r->command){
+        $reply=match($r->command){
             'orderDetails'=>['order_number'=>$s->fault==='id'?'9002':'9001','order_date'=>$s->fault==='time'?'2026-10-18 05:00:02':'2026-10-18 05:00:01','total'=>'99.00',
                 'order_details'=>[['description'=>($s->fault==='name'?'other.example.com':$s->name).' - registration','years_qty'=>$s->fault==='term'?'2':'1',
                     'status'=>$s->fault==='status'?'Credited':'Processed','subtotal'=>'99.00']]],
             'listOrders'=>['order'=>[]],
-            'getDomainInfo'=>['created'=>'2026-10-18','expires'=>$s->fault==='expiry'?'2026-10-18':'2027-10-18','status'=>'Active','auto_renew'=>'No','private'=>'No','locked'=>'Yes'],
+            'getDomainInfo'=>$s->fault==='unowned' ? ['code'=>280] : ['created'=>'2026-10-18','expires'=>$s->fault==='expiry'?'2026-10-18':'2027-10-18','status'=>'Active','auto_renew'=>'No','private'=>'No','locked'=>'Yes'],
             default=>throw new LogicException('Exact support order must not enumerate history'),
-        };
+        }+['code'=>300,'detail'=>'synthetic'];
         return new TransportResponse(200,json_encode(['request'=>['operation'=>$r->command],'reply'=>$reply]));
     }
 };
@@ -39,7 +39,7 @@ foreach(['accepted','not_processed'] as $outcome){
     $clock->instant=new DateTimeImmutable('2026-10-18T12:00:00Z');$makeEngine($binding,$exchange);
     $registration->mode=$outcome==='accepted'?'300':'unknown';
     $op=$runRegistration($nsNew(placeholderComFixtureName('support-'.str_replace('_','-',$outcome).'-placeholder.com')));$attempt=$op->attempt;$calls=$registration->calls;
-    $wireState->name=$op->domain->domain;$wireState->calls=[];
+    $wireState->name=$op->domain->domain;$wireState->calls=[];$wireState->fault=$outcome==='not_processed'?'unowned':'';
     commerceReject(fn()=>$settings->run($review($op),$input($op,$outcome),$clock->now()));
     $clock->instant=$clock->now()->modify('+25 hours');
     // Support is the fallback when the order history cannot confirm the purchase.

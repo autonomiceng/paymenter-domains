@@ -268,6 +268,21 @@ $lost->fresh()->update(['policy'=>$readPolicy]);
 same('uncertain',$lost->state,'A found domain cannot settle a lost purchase');
 same(null,$lost->cost['actual']??null,'Unknown charge stays unknown');
 same($before,[$lost->attempt,$lost->funding,$lost->domain->fresh()->reservation_name,$credit()],'Reads keep the original attempt, reservation and payment');
+// A matching domain read cannot prove the charge, but it rules out a negative answer and refund.
+$answerReview=new StaffSettingsReview($staff->id,$lost->server_id,null,'enom_answer',
+    StaffSettingsReview::ticket($staff->id,$lost->server_id,null,'enom_answer',StaffSettingsReview::stamp($lost->server_id,null)),'Record final synthetic Enom answer');
+$beforeAnswer=[$lost->fresh()->getRawOriginal(),$lost->domain->fresh()->getRawOriginal(),$lost->domain->service->fresh()->status,$credit()];
+$refused=false;
+try {
+    RegistrarAnswers::record($answerReview,['operation_id'=>$lost->id,'attempt_hash'=>RegistrarAnswers::identity($lost),
+        'outcome'=>'not_processed','order_reference'=>'','case_reference'=>'synthetic-case-123',
+        'evidence'=>'Enom checked the exact account, domain and attempt time.','confirmed'=>true],$clock->now());
+} catch (DomainException $error) {
+    $refused=true;
+}
+expect($refused,'Matching ownership and expiry refuse a staff not-processed answer');
+same($beforeAnswer,[$lost->fresh()->getRawOriginal(),$lost->domain->fresh()->getRawOriginal(),$lost->domain->service->fresh()->status,$credit()],
+    'Conflicting answer leaves the attempt, holding, native service and payment unchanged');
 // The installed reader allows the same sealed-attempt read while its history gate stays closed.
 $driver=$readBindings->reader($lost->server_id);
 $reader=new EnomTestReconciliationReader(new CataloguePreview($driver),$driver);
