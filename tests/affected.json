@@ -97,6 +97,7 @@
     "tests/Support/enom-registration-cap-cases.php": ["tests/test_installed_package.py"],
     "tests/Support/enom-transfer-cases-fixture.php": ["tests/test_installed_package_enom_transfer.py"],
     "tests/Support/runtime-enom-*.php": ["tests/test_installed_package_enom_exchange.py"],
+    "Domains/Operations/Authority/*.php": ["tests/operation-writer-test.php", "tests/schema-test.php"],
     "Domains/Installation/SchemaVerifier.php": ["tests/test_schema_foreign_keys_mariadb.py"],
     "tests/Support/mariadb-schema-foreign-keys.php": ["tests/test_schema_foreign_keys_mariadb.py"],
     "Domains/database/migrations/*": [
