@@ -108,10 +108,11 @@ Domains install, uninstall/reinstall, upgrade, every retained table, data/metada
 and reference cleanup after success and schema drift run on `mariadb:11.4.5`, with empty and
 `p` connection prefixes (one character fits the existing 63-character balance index). Upstream's invoice migration contains literal unprefixed SQL, so the
 prefixed fixture migrates native tables first, renames them, then runs the Domains lifecycle. Use `TMPDIR=/private/scratch PAYMENTER_TEST_APP=/pristine/paymenter
-CONVERSION_MARIADB_PHP=/path/to/php-with-pdo_mysql python3 tests/test_schema_mariadb.py`.
+CONVERSION_MARIADB_PHP=/path/to/php-with-pdo_mysql python3 scripts/test.py --only tests/test_schema_mariadb.py`.
+The runner admits one Docker daemon, from `DOCKER_HOST` or the current Docker context (an absolute `unix://` socket), and records it; running the harness directly without `DOCKER_HOST` skips.
 It uses only an existing image and its own randomly named `dom-schema-*` container, with
 `--network none`, a Unix socket, a temporary data filesystem and network-isolated PHP.
 The receipt records runtime and confirms container removal and pristine dependency preservation.
-The measured two-case run took 45 seconds, with a 512 MiB container and a 1.5 GiB
-available-memory preflight. It is omitted from default runs; no provider calls, ZIP-uploader, checkout/worker race or live
+The measured two-case run took 45 seconds, with a 512 MiB container; the suite slot,
+not a host-memory wait, admits it. It is omitted from default runs; no provider calls, ZIP-uploader, checkout/worker race or live
 acceptance is claimed. Its cost is one container startup and two fresh native lifecycle runs.

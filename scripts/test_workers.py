@@ -63,6 +63,8 @@ def docker_daemon(environ):
             return {'host': None, 'source': 'context', 'refused': 'Current Docker context unreadable.'}
     if not isinstance(host, str) or not host.startswith('unix://'):
         raise ValueError('Only a local Unix-socket Docker daemon is supported ('+source+').')
+    if not os.path.isabs(host.removeprefix('unix://')):
+        raise ValueError('The Docker socket path must be absolute ('+source+'): '+host)
     try:
         socket = stat.S_ISSOCK(os.stat(host.removeprefix('unix://')).st_mode)
     except OSError:

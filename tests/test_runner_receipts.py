@@ -167,6 +167,17 @@ fi
         self.assertEqual(run.call_args.kwargs['docker_daemon'],
                          {'host': 'unix://'+str(socket), 'source': 'context rootless', 'refused': None})
 
+    def test_mariadb_daemon_refuses_a_relative_socket_path(self):
+        # A relative path checked in the caller's directory could name another socket once the harness runs elsewhere.
+        for caller in ({'DOCKER_HOST': 'unix://run/docker.sock'}, {'PATH': '/usr/bin:/bin'}):
+            endpoint = [{'Name': 'relative', 'Endpoints': {'docker': {'Host': 'unix://run/docker.sock'}}}]
+            inspect = subprocess.CompletedProcess(['docker'], 0, json.dumps(endpoint).encode(), b'')
+            with mock.patch.object(runner.test_workers.shutil, 'which', return_value='/usr/bin/docker'), \
+                 mock.patch.object(runner.test_workers.subprocess, 'run', return_value=inspect), \
+                 mock.patch('stat.S_ISSOCK', return_value=True), mock.patch.object(os, 'stat'):
+                with self.assertRaisesRegex(ValueError, 'must be absolute'):
+                    runner.test_workers.docker_daemon(caller)
+
     def test_hosted_bundle_uses_the_selected_runtime_even_with_a_different_runc_on_path(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

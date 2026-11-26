@@ -25,7 +25,7 @@ Keep credentials, contact data, transfer codes and raw provider replies out of t
    `tests/test_installed_package.py` and `tests/test_installed_package_fresh.py` exercise
    the native uploader, default-held registration and preservation of records across reinstalls.
    `tests/runtime-install-test.php` covers refusal of damaged retained storage.
-   Also run `tests/test_schema_mariadb.py` with the prerequisites in
+   Also run `python3 scripts/test.py --only tests/test_schema_mariadb.py` with the prerequisites in
    [coverage notes](testing-coverage/native-lifecycle.md#mysqlmariadb-schema-identifiers-and-native-lifecycle).
    This opt-in rehearsal proves fresh install and retained reinstall/upgrade on real
    MariaDB, including reference cleanup, with empty and prefixed table names. Retain its

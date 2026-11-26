@@ -82,6 +82,8 @@ def run(*, exercise=None):
             receipt['skipped'] = 'No admitted Docker daemon; run through scripts/test.py.'; return receipt
         if not daemon.startswith('unix://'):
             raise ValueError('Only a local Unix-socket Docker daemon is supported.')
+        if not os.path.isabs(daemon.removeprefix('unix://')):
+            raise ValueError('The admitted Docker socket path must be absolute.')
         try:
             admitted = stat.S_ISSOCK(os.stat(daemon.removeprefix('unix://')).st_mode)
         except OSError:
