@@ -37,6 +37,9 @@ final class SchemaVerifier
                 $sql[]="SELECT $kind AS kind,TABLE_NAME AS tbl,$item AS item,$shape AS shape FROM information_schema.$source WHERE TABLE_SCHEMA=? AND LEFT(TABLE_NAME,?)=?";
                 array_push($bindings,$connection->getDatabaseName(),strlen($prefix),$prefix);
             }
+            // Referential actions live in their own view, keyed by constraint schema.
+            $sql[]="SELECT 'reference' AS kind,TABLE_NAME AS tbl,CONSTRAINT_NAME AS item,JSON_ARRAY(REFERENCED_TABLE_NAME,UNIQUE_CONSTRAINT_NAME,MATCH_OPTION,UPDATE_RULE,DELETE_RULE) AS shape FROM information_schema.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_SCHEMA=? AND LEFT(TABLE_NAME,?)=?";
+            array_push($bindings,$connection->getDatabaseName(),strlen($prefix),$prefix);
             $rows=$connection->select(implode(' UNION ALL ',$sql).' ORDER BY kind,tbl,item',$bindings);
         }
         return hash('sha256',json_encode($rows,JSON_THROW_ON_ERROR));
@@ -56,8 +59,8 @@ final class SchemaVerifier
         // Fresh-install recovery may add missing indexes and still needs its physical reference.
         $reuse = self::$references !== null && !Installer::recovering();
         if ($reuse && isset(self::$references[$key])) {
-            [$columns, $indexes] = self::$references[$key];
-            if (self::columns($table) !== $columns || self::indexes($table) !== $indexes || Schema::getForeignKeys($table) !== []) {
+            [$columns, $indexes, $references] = self::$references[$key];
+            if (self::columns($table) !== $columns || self::indexes($table) !== $indexes || self::references($table) !== $references) {
                 throw new \RuntimeException('Retained Domains schema mismatch: '.$table);
             }
             return;
@@ -71,24 +74,25 @@ final class SchemaVerifier
                 $connection->statement($statement);
                 $created = true;
             }
-            if (self::columns($table) === self::columns($reference) && Schema::getForeignKeys($table) === []
-                && str_starts_with($table, 'domains_') && Installer::recovering()) {
+            if (self::columns($table) === self::columns($reference) && str_starts_with($table, 'domains_') && Installer::recovering()) {
                 self::resumeIndexes($table, $reference);
             }
             if (self::columns($table) !== self::columns($reference)
                 || self::indexes($table) !== self::indexes($reference)
-                || Schema::getForeignKeys($table) !== []) {
+                || self::references($table) !== self::references($reference)) {
                 throw new \RuntimeException('Retained Domains schema mismatch: '.$table);
             }
-            if ($reuse) { self::$references[$key] = [self::columns($reference), self::indexes($reference)]; }
+            if ($reuse) { self::$references[$key] = [self::columns($reference), self::indexes($reference), self::references($reference)]; }
         } finally { if ($created) { Schema::dropIfExists($reference); } }
     }
 
-    /** CREATE may commit before its indexes. Only an owned, still-empty new install may add missing indexes. */
+    /** CREATE may commit before its indexes and references. Only an owned, still-empty new install may add missing ones. */
     private static function resumeIndexes(string $table, string $reference): void
     {
         $actual = self::indexes($table); $expected = self::indexes($reference);
         foreach ($actual as $index) { if (!in_array($index, $expected, true)) { return; } }
+        $actualReferences = self::references($table); $expectedReferences = self::references($reference);
+        foreach ($actualReferences as $key) { if (!in_array($key, $expectedReferences, true)) { return; } }
         foreach (Schema::getIndexes($reference) as $index) {
             $shape = $index; unset($shape['name']);
             if (in_array($shape, $actual, true)) { continue; }
@@ -98,6 +102,31 @@ final class SchemaVerifier
                 $blueprint->$method($index['columns'], str_replace($reference, $table, $index['name']));
             });
         }
+        $prefix = DB::connection()->getTablePrefix();
+        foreach (Schema::getForeignKeys($reference) as $key) {
+            if (in_array(self::reference($key), $actualReferences, true)) { continue; }
+            Schema::table($table, static function (Blueprint $blueprint) use ($key, $table, $reference, $prefix): void {
+                $blueprint->foreign($key['columns'], str_replace($reference, $table, $key['name']))
+                    ->references($key['foreign_columns'])->on(substr($key['foreign_table'], strlen($prefix)))
+                    ->onUpdate($key['on_update'])->onDelete($key['on_delete']);
+            });
+        }
+    }
+
+    /** References by columns, schema-qualified target and actions. Names differ between a table and its reference copy. */
+    private static function references(string $table): array
+    {
+        $references = array_map(self::reference(...), Schema::getForeignKeys($table));
+        sort($references);
+        return $references;
+    }
+
+    private static function reference(array $key): string
+    {
+        // A restored database can point a key at a same-named table in another schema, so the schema is part of the target.
+        // Identifiers keep the server's case: with case-sensitive names, a differently cased schema or table is another target.
+        return json_encode([$key['columns'], (string) ($key['foreign_schema'] ?? ''), (string) $key['foreign_table'], $key['foreign_columns'],
+            strtolower((string) $key['on_update']), strtolower((string) $key['on_delete'])], JSON_THROW_ON_ERROR);
     }
 
     private static function columns(string $table): array

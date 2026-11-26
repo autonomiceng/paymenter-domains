@@ -82,6 +82,28 @@ namespace {
     $start = count($builder->references); SchemaVerifier::verify('domains_reference_test', $definition);
     expect(count($builder->references) > $start, 'A failed batch retains no reference cache');
     $after = Schema::getTableListing(); sort($after); same($before, $after, 'Batched references leave no tables behind');
+    // Foreign keys compare by columns, target and actions: the healthy key passes, a missing or changed one is refused.
+    Schema::create('domains_reference_parent', static fn (Blueprint $t) => $t->id());
+    $child = static fn (?string $onDelete): \Closure => static function (Blueprint $t) use ($onDelete): void {
+        $t->id(); $t->unsignedBigInteger('parent_id');
+        if ($onDelete !== null) {
+            $t->foreign('parent_id', $t->getTable().'_parent_f')->references('id')->on('domains_reference_parent')->onDelete($onDelete)->restrictOnUpdate();
+        }
+    };
+    Schema::create('domains_reference_child', $child('restrict'));
+    SchemaVerifier::verify('domains_reference_child', $child('restrict'));
+    foreach (['missing key' => null, 'changed action' => 'cascade'] as $case => $actual) {
+        Schema::drop('domains_reference_child'); Schema::create('domains_reference_child', $child($actual));
+        try { SchemaVerifier::verify('domains_reference_child', $child('restrict')); throw new \LogicException($case.' accepted'); }
+        catch (\RuntimeException $error) { same('Retained Domains schema mismatch: domains_reference_child', $error->getMessage(), $case.' refused'); }
+    }
+    // A same-named target in another schema, or one cased differently, is another reference. MariaDB proves it physically.
+    $reference = new \ReflectionMethod(SchemaVerifier::class, 'reference');
+    $key = Schema::getForeignKeys('domains_reference_child')[0];
+    expect($reference->invoke(null, $key) !== $reference->invoke(null, ['foreign_schema' => 'restored_copy'] + $key), 'Reference target includes its schema');
+    expect($reference->invoke(null, ['foreign_schema' => 'paymenter'] + $key) !== $reference->invoke(null, ['foreign_schema' => 'Paymenter'] + $key), 'A case-distinct schema is another target');
+    expect($reference->invoke(null, $key) !== $reference->invoke(null, ['foreign_table' => strtoupper($key['foreign_table'])] + $key), 'A case-distinct table is another target');
+    Schema::drop('domains_reference_child'); Schema::drop('domains_reference_parent');
     echo "Reference collision preserves the other owner; independent names and partial-DDL cleanup passed.\n";
     $nativeSuccessful = true;
 }

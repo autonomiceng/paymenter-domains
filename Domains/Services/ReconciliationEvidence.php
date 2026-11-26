@@ -5,20 +5,25 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AttemptEvidence, DispatchSeal, DateEvidence, Disposition, Evidence, ExecutionRecord, ExpiryPrecision, Money, PersistedExecution, SendState};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 final class ReconciliationEvidence
 {
     /** $server: the binding's server with settings loaded, for read-only callers that batch it. */
     public static function attempt(Operation $op, Domain $domain, AccountBinding $binding, ?\App\Models\Server $server = null): AttemptEvidence
     {
         $a = $op->attempt ?? []; $query = OperationClaims::query($op, $domain);
-        if (!$op->started_at || !$op->request_fingerprint || !isset($a['claim_key'], $a['dispatch_attempted_at'])
-            || ($a['seal'] ?? null) !== 'sealed') { throw new \DomainException('No sealed original attempt.'); }
+        // A renewal's attempt facts come from its reader. The proof saves the window start as recorded, in its stored zone.
+        $renewal = $op->action === 'renew' ? RenewalAttempt::of($op) : null;
+        if (!$op->started_at || !$op->request_fingerprint || ($renewal ? $renewal->claimKey() === null || $renewal->windowStart() === null
+            : !isset($a['claim_key'], $a['dispatch_attempted_at']) || ($a['seal'] ?? null) !== 'sealed')) { throw new \DomainException('No sealed original attempt.'); }
         $start = ExecutionWindow::start($op)??throw new \DomainException('Missing execution window.');
-        $end = $start->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds');
-        $dispatch = new \DateTimeImmutable($a['dispatch_attempted_at']);
+        $end = $renewal?->windowEnd() ?? $start->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds');
+        $dispatch = $renewal?->windowStart() ?? new \DateTimeImmutable($a['dispatch_attempted_at']);
         if ($dispatch < $start || $dispatch > $end) { throw new \DomainException('Invalid original window.'); }
-        $record = !array_key_exists('execution', $a) ? ExecutionRecord::Absent : ($a['execution'] === null ? ExecutionRecord::RecordedNull : ExecutionRecord::Recorded);
-        $registration = $op->action === 'renew' ? ($a['renewal'] ?? null) : ($a['registration'] ?? null);
+        $record = $renewal?->replyRecord() ?? (!array_key_exists('execution', $a) ? ExecutionRecord::Absent : ($a['execution'] === null ? ExecutionRecord::RecordedNull : ExecutionRecord::Recorded));
+        $reply = $renewal ? $renewal->reply() : $a['execution'] ?? null;
+        $mode = $renewal?->mode();
+        $registration = $renewal ? $renewal->acceptance() : ($a['registration'] ?? null);
         $raw = $op->action === 'renew' ? $registration : ($a['evidence']['registration'] ?? null);
         $ref = $registration['order_reference'] ?? $raw['orderReference'] ?? null;
         foreach ([$registration, $raw] as $facts) {
@@ -30,21 +35,21 @@ final class ReconciliationEvidence
         if ($op->action !== 'transfer' && $op->provider_order_id !== null && $op->provider_order_id !== $ref && $op->provider_order_id !== (EnomAnswers::answer($op,$domain)['order_reference']??null)) { throw new \DomainException('Order reference changed.'); }
         $execution = null;
         if ($record === ExecutionRecord::Recorded && $raw !== null) {
-            $disposition = Disposition::from($a['execution']['disposition']); $send = SendState::from($a['execution']['send_state']);
+            $disposition = Disposition::from($reply['disposition']); $send = SendState::from($reply['send_state']);
             if ($send === SendState::Sent && (in_array($disposition, [Disposition::Accepted, Disposition::AcceptedWithDiscrepancy], true)
                 || ($disposition === Disposition::Unknown && $binding->registrarKey === 'enom' && $op->action === 'register' && $ref !== null && ($raw['query']['action'] ?? null) === 'register'))) {
-                $execution = new PersistedExecution($binding, $query, $op->operation_key, $disposition, $send, $ref, $op->action === 'renew' ? ($a['renewal_mode'] ?? null) : null);
+                $execution = new PersistedExecution($binding, $query, $op->operation_key, $disposition, $send, $ref, $mode);
             }
         }
         $answer=EnomAnswers::answer($op,$domain);
         if(($answer['outcome']??null)==='accepted'&&$op->action!=='transfer'&&!$execution?->capturedUnknown()){
             if($ref!==null&&$ref!==$answer['order_reference']){throw new \DomainException('Support answer conflicts with original order.');}
             $ref=$answer['order_reference'];$record=ExecutionRecord::StaffAnswer;
-            $execution=new PersistedExecution($binding,$query,$op->operation_key,Disposition::Accepted,SendState::Sent,$ref,$op->action==='renew'?($a['renewal_mode']??null):null);
+            $execution=new PersistedExecution($binding,$query,$op->operation_key,Disposition::Accepted,SendState::Sent,$ref,$mode);
         }
-        $cost = $a['authorized_cost'] ?? null;
+        $cost = $renewal ? $renewal->authorizedCost() : (($cost = $a['authorized_cost'] ?? null) ? new Money($cost['amount'], $cost['currency']) : null);
         return new AttemptEvidence($binding, $query, $op->operation_key, $op->authority_generation, $record, $execution ? SendState::Sent : SendState::PossiblySent,
-            $dispatch, $end, expectedCharge: $cost ? new Money($cost['amount'], $cost['currency']) : null,
+            $dispatch, $end, expectedCharge: $cost,
             seal: DispatchSeal::Sealed, providerReference: $ref, expectedExpiry: $op->expected_expires_at ? new DateEvidence($op->expected_expires_at->format('Y-m-d'), ExpiryPrecision::Date, 'original_expected') : null,
             beforeExpiry: in_array($op->action, ['renew', 'transfer'], true) && ($op->base_expires_at || ($a['transfer_admission']['base_expiry'] ?? null)) ? new DateEvidence($op->action === 'transfer' ? $a['transfer_admission']['base_expiry'] : $op->base_expires_at->format('Y-m-d'), ExpiryPrecision::Date, 'acquisition_base') : null, executionFacts: $execution, historyAcceptance: $execution && $ref !== null ? null : HistoryAcceptances::load($binding, $query->action, $server), transferReference: $op->action === 'transfer' ? ($a['evidence']['transferReference'] ?? null) : null,
             expectedPrivacy: $op->action === 'transfer' && is_bool($a['transfer_admission']['privacy'] ?? null) ? $a['transfer_admission']['privacy'] : null,

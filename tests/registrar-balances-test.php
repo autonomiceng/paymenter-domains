@@ -197,7 +197,7 @@ same(0,$forecast()['count'],'Sent obligation excluded');
 $far->update(['billing_managed'=>false]);$proven=$make(placeholderComFixtureName('balance-prewire-placeholder.com'),'2027-06-01');
 $proof=['safe_code'=>'renewal_definitely_unsent','lease_expires_at'=>null,'started_at'=>$clock->now(),'request_fingerprint'=>str_repeat('a',64),
     'attempt'=>['claim_key'=>str_repeat('b',32),'seal'=>'sealed','dispatch_attempted_at'=>$clock->now()->format(DATE_ATOM),
-        'send_state'=>'possibly_sent','authorized_cost'=>'8.00','renewal_mode'=>'ordinary',
+        'send_state'=>'possibly_sent','authorized_cost'=>['amount'=>'8.00','currency'=>'USD'],'renewal_mode'=>'ordinary',
         'execution'=>['disposition'=>'rejected','send_state'=>'definitely_unsent','reason'=>'unsent','discrepancies'=>[]]],
     'renewal_reserved_revision'=>2,'transition_revision'=>3,'cost'=>['estimated'=>'8.00','currency'=>'USD','unit'=>'term_total']];
 $validProof = $proof;
@@ -254,6 +254,12 @@ for($i=25;$i<101;$i++){$h=$make(placeholderComFixtureName('forecast-bounded-'.$i
 expect($queryCount()<=2*$manyChunk+2,'Forecast read count grows by chunks across the 100-domain boundary');
 same(88,$forecast()['count'],'The next chunk includes every additional open obligation exactly once');
 DB::rollBack();same(0,$forecast()['count'],'Forecast fixture rollback preserves prior holdings');
+// Several valid prewire refusals in one chunk read their attempt facts from the loaded rows, with no reads of their own.
+DB::beginTransaction();
+$first=$make(placeholderComFixtureName('forecast-refusal-0-placeholder.com'));$renew($first,'held',$validProof);$oneRefusal=$queryCount();
+for($i=1;$i<6;$i++){$renew($make(placeholderComFixtureName('forecast-refusal-'.$i.'-placeholder.com')),'held',$validProof);}
+same($oneRefusal,$queryCount(),'Valid prewire refusals add no forecast reads');same(6,$forecast()['count'],'Each valid prewire refusal stays an open obligation');
+DB::rollBack();
 // Daily and manual reads use the same provider-login limiter, without requiring write activation.
 $readState=(object)['calls'=>0,'fail'=>false,'readers'=>[]];$registry=new RegistrarRegistry;
 $verify=new class implements AccountVerifier {public function verify(Environment $e,array $c):string{return $c['token'];}};
