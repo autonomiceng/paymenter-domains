@@ -118,6 +118,17 @@ same(Transition::Stale, $in(fn () => $writer->settle($spentRead, OperationWriter
 same(null, OperationAttempts::evidence($spentId, $spent->attemptId, 'settlement'), 'The refused settlement writes nothing');
 same(Transition::Applied, $in(fn () => $writer->recordTerminal($unsentId, 'never_sent_unpaid', ['reason' => 'closed'])), 'Terminal proof');
 same(Transition::Stale, $in(fn () => $writer->recordTerminal($unsentId, 'never_sent_unpaid', [])), 'Terminal proof is recorded once');
+// Another writer's row lands after the plain read missed it, as an older snapshot would; the unique key decides.
+$racedId = $operation('writer-raced'); $racedKey = hash('sha256', "$racedId|-|terminal"); $armed = true;
+DB::connection()->beforeExecuting(static function (string $sql, array $bindings, $db) use (&$armed, $racedId, $racedKey): void {
+    if (!$armed || !str_starts_with($sql, 'insert into "'.OperationSchema::EVIDENCE.'"')) { return; }
+    $armed = false;
+    $db->table(OperationSchema::EVIDENCE)->insert(['operation_id' => $racedId, 'source' => 'local', 'kind' => 'terminal',
+        'outcome' => 'other_writer', 'authority_key' => $racedKey, 'evidence' => 'x']);
+});
+same(Transition::Stale, $in(fn () => $writer->recordTerminal($racedId, 'never_sent_unpaid', [])), 'A duplicate authority key the read missed is stale');
+same(['other_writer'], DB::table(OperationSchema::EVIDENCE)->where('authority_key', $racedKey)->pluck('outcome')->all(), 'The first writer\'s row is kept');
+$armed = false;
 // Evidence is written only as deep as the reader decodes it.
 $nest = static function (int $levels): array { $value = []; for ($i = 1; $i < $levels; $i++) { $value = [$value]; } return $value; };
 $deepId = $operation('writer-deep');
