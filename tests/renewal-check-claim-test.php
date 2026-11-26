@@ -107,11 +107,11 @@ App\Models\User::retrieved(static function ($owner) use ($user, &$remaining, &$c
 $state->duringCommand = ReadCommand::Expiry;
 $state->during = static function () use (&$remaining): void { $remaining = 2; };
 Cache::flush();
-$busy = $staffCheck($op, $completion); $afterBusy = $op->fresh();
+$busy = $staffCheck($op, $completion); $afterBusy = $op->fresh(); $claimAfterBusy = renewalRead($afterBusy);
 $state->duringCommand = null; $clock->instant = $clock->now()->modify('+10 minutes');
 $before = $credit(); $writes = $state->writes; $check($op, $completion);
 $refused = $record($op); $replay = $record($op);
-$actual = [$busy, $conflicts, renewalRead($afterBusy) === null, $afterBusy->policy['renewal_polls'],
+$actual = [$busy, $conflicts, $claimAfterBusy === null, $afterBusy->policy['renewal_polls'],
     $refused, $replay, $credit() - $before, $state->writes - $writes];
 same([true, 2, true, OperationReconciliation::POLL_LIMIT - 1, false, true, PricingRule::minor($op->amount), 0], $actual,
     'A clean read followed by contention leaves the last poll available and permits a later credit once: '.json_encode($actual));
