@@ -24,10 +24,11 @@ final class OperationQueries
         if (!$keys) { return $q; }
         $in=fn(string $state)=>in_array(RequestStatus::key($state),$keys,true);
         $automatic=[];$delayed=[];
-        (clone $q)->reorder()->where(fn($q)=>$q
+        (clone $q)->reorder()->withAcquisitionStep()->where(fn($q)=>$q
             ->where(fn($q)=>$q->where('action','transfer')->whereIn('state',['pending','uncertain','running','held']))
             ->orWhere(fn($q)=>$q->whereIn('action',['register','renew'])->where('state','uncertain')))
             ->chunkById(200,function($rows)use(&$automatic,&$delayed):void{
+                Operation::loadAcquisitionAttempts($rows);
                 foreach ($rows as $op) {
                     $check=RequestFacts::checkState($op);
                     if ($check===State::Delayed || RequestFacts::delayedTransfer($op)) { $delayed[]=(int)$op->id; }

@@ -213,7 +213,9 @@ final readonly class AcquisitionRetirement
         $cancelled=ServiceCancellation::where('service_id',$seed->service_id)->exists()
             ||(Schema::hasTable('domains_native_intents')&&DB::table('domains_native_intents')->where('service_id',$seed->service_id)->exists());
         // Quiet closed history never locks the owner's unrelated hosting/money rows.
-        $ops=$seed->operations()->whereIn('action',['register','transfer'])->get();
+        $ops=$seed->operations()->when(DB::transactionLevel() === 0, fn ($q) => $q->withAcquisitionStep())
+            ->whereIn('action',['register','transfer'])->get();
+        if (DB::transactionLevel() === 0) { Operation::loadAcquisitionAttempts($ops); }
         // Batch the preliminary history reads only outside transactions. The authoritative path below
         // still takes the native prefix and rereads each operation before recording any alert.
         $observed=DB::transactionLevel()===0;

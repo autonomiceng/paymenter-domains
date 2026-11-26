@@ -37,7 +37,10 @@ final class HoldingLocks
         $prices = Price::where(['server_id' => $seed->server_id, 'tld' => $seed->tld, 'action' => 'renew'])->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $offer = $catalogue?->holding(AccountBindings::binding($account), $tld, $prices);
         $domain = Domain::whereKey($seed->id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
-        $operations = Operation::where('domain_id', $seed->id)->when($advisory,fn($q)=>$q->whereIn('id',$opIds)->limit(100))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        // Domains writers at READ COMMITTED already hold the holding row, which serializes creation of acquisition steps.
+        // A transaction inherited from core may still have an older read view, so leave its step lookup separate.
+        $operations = Operation::where('domain_id', $seed->id)->when($advisory || FreshTransaction::active(), fn ($q) => $q->withAcquisitionStep())
+            ->when($advisory,fn($q)=>$q->whereIn('id',$opIds)->limit(100))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $adoption = $domain->adoption_id === null ? null : Adoption::whereKey($domain->adoption_id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->first();
         // Payment rows of the locked invoices, last (HoldingNativeLocks::transactions).
         $transactions = HoldingNativeLocks::transactions($invoices->pluck('id'), $advisory);

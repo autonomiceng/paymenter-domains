@@ -21,12 +21,13 @@ class Operation extends Model
     private ?array $acquisitionRow = null;
     private AcquisitionAttempt|\Throwable|null $acquisitionAttempt = null;
     private bool $acquisitionLoaded = false;
+    private bool $noAcquisitionStep = false;
 
     protected $table = 'domains_operations';
     protected $guarded = [];
     // Keep the first attempt's schema default on the model returned by create().
     protected $attributes = ['retry_number' => 0];
-    protected $hidden = ['account_fingerprint', 'payload', 'policy', 'cost', 'attempt', 'renewal_previous_proof', 'transition_revision', 'funding', 'funding_reason', 'authorized_by', 'request_fingerprint', 'management_pending', 'has_acquisition_step'];
+    protected $hidden = ['account_fingerprint', 'payload', 'policy', 'cost', 'attempt', 'renewal_previous_proof', 'transition_revision', 'funding', 'funding_reason', 'authorized_by', 'request_fingerprint', 'management_pending'];
     protected $casts = ['transition_revision' => 'integer', 'retry_number'=>'integer', 'attempt' => 'encrypted:array', 'funding' => 'encrypted:array', 'authority_generation' => 'integer', 'payload' => 'encrypted:array', 'policy' => 'encrypted:array', 'cost' => 'encrypted:array', 'amount' => 'decimal:2', 'base_expires_at' => 'immutable_date', 'expected_expires_at' => 'immutable_date', 'confirmed_expires_at' => 'immutable_date', 'lease_expires_at' => 'immutable_datetime', 'started_at' => 'immutable_datetime', 'completed_at' => 'immutable_datetime'];
 
     /**
@@ -108,7 +109,7 @@ class Operation extends Model
 
     private function acquisitionRow(array $row): array
     {
-        if ((array_key_exists('has_acquisition_step', $row) && $row['has_acquisition_step'] === null)
+        if ($this->noAcquisitionStep
             || !isset($row['id'], $row['action'], $row['transition_revision'])
             || AcquisitionAttempt::key($this->getRawOriginal('action') ?? $row['action']) === null) { return []; }
         $id = (int) $row['id'];
@@ -132,7 +133,7 @@ class Operation extends Model
     {
         $pending = [];
         foreach ($operations as $op) {
-            if (array_key_exists('has_acquisition_step', $op->attributes) && $op->attributes['has_acquisition_step'] === null) { continue; }
+            if ($op->noAcquisitionStep) { continue; }
             if (!$op->acquisitionLoaded && $op->getRawOriginal('id') !== null
                 && AcquisitionAttempt::key((string) $op->getRawOriginal('action')) !== null) {
                 $pending[(int) $op->id][] = $op;
@@ -155,11 +156,14 @@ class Operation extends Model
         $this->acquisitionRow = null;
         $this->acquisitionAttempt = null;
         $this->acquisitionLoaded = false;
+        $this->noAcquisitionStep = false;
     }
 
     public function setRawAttributes(array $attributes, $sync = false)
     {
         $this->reloadAcquisitionAttempt();
+        $this->noAcquisitionStep = array_key_exists('has_acquisition_step', $attributes) && $attributes['has_acquisition_step'] === null;
+        unset($attributes['has_acquisition_step']);
         return parent::setRawAttributes($attributes, $sync);
     }
 

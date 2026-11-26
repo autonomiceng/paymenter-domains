@@ -113,7 +113,7 @@ final class InvoiceMoney
             }
         }
         $funding = collect($peers)->map(function($op) use ($exclude): array {
-            $f = $op->funding ?? [];
+            $f = $op->receiptFunding();
             if ($exclude !== null) { $f['receipt_return_results'][$exclude] = ['state'=>'released', 'credit_minor'=>0]; }
             return ['funding'=>$f];
         })->all();
