@@ -158,6 +158,15 @@ final readonly class OperationWriter
             ? Transition::Applied : Transition::Stale;
     }
 
+    /** Positive proof a read captured that waits for charge review. Only the read that found it may record it, once. */
+    public function hold(ReadToken $read, array $proof): Transition
+    {
+        self::requireTransaction();
+        if (!$this->readHeld($read)) { return Transition::Stale; }
+        return $this->append($read->attempt->operationId, $read->attempt->attemptId, 'held', 'registrar_read', 'review', $proof, 'held')
+            ? Transition::Applied : Transition::Stale;
+    }
+
     /** Operation-level local terminal proof, such as a never-sent unpaid closure. Recorded once. */
     public function recordTerminal(int $operationId, string $outcome, array $proof): Transition
     {

@@ -39,11 +39,11 @@ foreach(RenewalCode::cases() as $code){
     else{$refuse($code->value);}
 }
 // A sealed attempt whose reply was lost, sealed through the renewal fixture builder.
-$lostReply=['reply'=>'lost'];
+$lostReply=['reply'=>'lost'];$sealedOnly=['seal'=>'sealed'];$closed=['terminal'=>'local'];
 foreach([
-    ['attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent']],
+    $closed,
     $lostReply,
-    ['attempt'=>['send_state'=>'possibly_sent']],
+    $sealedOnly,
     ['started_at'=>$clock->now()],['request_fingerprint'=>str_repeat('a',64)],
     ['lease_expires_at'=>$clock->now()->modify('+60 seconds')],['completed_at'=>$clock->now()],
     ['cost'=>['estimated'=>'8.00','currency'=>'USD']],['provider_order_id'=>'9002'],
@@ -52,7 +52,13 @@ foreach([
     $check=static function()use($op,$refuse,$evidence):void{$refuse('non-virgin '.implode(',',array_keys($evidence)));
         if(!Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::virgin($op->fresh())){expect(!isset(Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::for($op->fresh())['admission']),'Non-virgin request has no release instruction');}};
     // The temporary seal is removed with the rest of the row, so no later case runs on a leftover seal.
-    if($evidence===$lostReply){withSealedRenewal($op,static function()use($op,$check):void{same(Paymenter\Extensions\Servers\Domains\Data\ExecutionRecord::RecordedNull,renewalAttempt($op)?->replyRecord(),'The sealed renewal records its lost reply');$check();},at:$clock->now(),reply:RenewalReply::unknown());}else{$set($evidence);$check();}}
+    if($evidence===$lostReply){withSealedRenewal($op,static function()use($op,$check):void{same(Paymenter\Extensions\Servers\Domains\Data\ExecutionRecord::RecordedNull,renewalAttempt($op)?->replyRecord(),'The sealed renewal records its lost reply');$check();},at:$clock->now(),reply:RenewalReply::unknown());}
+    // A sealed attempt with no reply yet is possibly sent.
+    elseif($evidence===$sealedOnly){withSealedRenewal($op,static fn()=>$check(),at:$clock->now());}
+    // Local terminal proof recorded before any seal.
+    elseif($evidence===$closed){DB::transaction(fn()=>Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationWriter::at($clock->now())->recordTerminal((int)$op->id,'renewal_cancelled_unpaid',['operation_key'=>$op->operation_key]));
+        try{$check();}finally{DB::table('domains_operation_evidence')->where(['operation_id'=>$op->id,'kind'=>'terminal'])->delete();}}
+    else{$set($evidence);$check();}}
 $restore();$payment=DB::table('invoice_transactions')->where('invoice_id',$invoice->id)->sole();
 DB::table('invoice_transactions')->where('id',$payment->id)->update(['amount'=>'0.00']);$refuse('stale payment despite paid label');
 DB::table('invoice_transactions')->where('id',$payment->id)->update(['amount'=>$payment->amount]);

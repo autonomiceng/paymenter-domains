@@ -176,7 +176,14 @@ final class RegistrarCheck
     public static function status(Operation $op, ?array $known = null, ?RenewalAttempt $renewal = null): ?array
     {
         $check = $op->policy['status_check'] ?? null;
-        if (isset($check['attempt_identity']) && !hash_equals(RegistrarAnswers::identity($op),(string)$check['attempt_identity'])) { $check=null; }
+        // A check bound to an attempt that no longer reads is not trusted; a check of a settled renewal needs no attempt read.
+        if (isset($check['attempt_identity'])) {
+            try {
+                if ($op->action === 'renew') { $renewal ??= RenewalAttempt::of($op); }
+                $same = hash_equals(RegistrarAnswers::identity($op, $renewal), (string) $check['attempt_identity']);
+            } catch (\Illuminate\Contracts\Encryption\DecryptException) { $same = false; }
+            if (!$same) { $check = null; }
+        }
         // An Enom lost reply is read before staff ask Enom for a case.
         if ($op->action==='register'&&$op->registrar_key==='enom'&&in_array($op->state,['running','pending','uncertain'],true)
             &&RegistrarAnswers::eligible($op,app(Clock::class)->now())&&!self::attempted($op)) { return ['outcome'=>'not_checked']; }
@@ -189,7 +196,7 @@ final class RegistrarCheck
             $domain = $op->domain;
             if ($op->account_fingerprint !== $account->account_fingerprint || $op->account_fingerprint !== $domain->account_fingerprint
                 || $op->authority_generation !== $domain->authority_generation) { return $check; }
-            $attempt = ReconciliationEvidence::attempt($op, $domain, AccountBindings::binding($account), $known['server'] ?? null);
+            $attempt = ReconciliationEvidence::attempt($op, $domain, AccountBindings::binding($account), $known['server'] ?? null, $renewal);
             if (self::lostReply($op, $attempt, $now)) {
                 if ($op->registrar_key==='enom'&&!self::attempted($op)) { return ['outcome'=>'not_checked']; }
                 return [...($check??[]),'outcome'=>'awaiting_answer', 'registrar'=>$attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo',

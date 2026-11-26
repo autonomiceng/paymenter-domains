@@ -72,16 +72,19 @@ Operation::updated(static function($row)use($op,$d){
 same('held',$engine->run($op->id,$writer)->state,'Real local prewire refusal'); same($beforeWrites,$state->writes,'Typed refusal before exchange');
 same('definitely_unsent',renewalAttempt($op)->sendState()->value,'Retained typed summary');
 $attempt=$op->fresh()->attempt; $original=$op->fresh()->getRawOriginal();
-foreach(['execution_null','fallback','possible_send','extra_null_fact'] as $case){
-    $bad=$attempt;
-    if($case==='execution_null'){$bad['execution']=null;}
-    elseif($case==='fallback'){$bad['execution']['reason']='fallback';}
-    elseif($case==='possible_send'){$bad['execution']['send_state']='possibly_sent';}
-    else{$bad['provider_reference']=null;}
-    // Privileged fixture corruption probes independent interpretation of retained typed evidence.
-    Operation::withoutEvents(fn()=>$op->fresh()->update(['attempt'=>$bad]));
+$sealedRow=(array)DB::table('domains_operation_attempts')->where('id',renewalAttempt($op)->attempt()->token->attemptId)->first();
+$replyRow=(array)DB::table('domains_operation_evidence')->where(['attempt_id'=>$sealedRow['id'],'kind'=>'reply'])->first();
+$replyEvidence=json_decode(Illuminate\Support\Facades\Crypt::decryptString($replyRow['evidence']),true);
+foreach(['reply_lost','fallback','possible_send','extra_null_fact'] as $case){
+    // Privileged fixture corruption probes independent interpretation of the sealed attempt and its reply rows.
+    $reply=$replyEvidence;
+    if($case==='reply_lost'){DB::table('domains_operation_evidence')->where('id',$replyRow['id'])->update(['source'=>'unknown_reply','outcome'=>'unknown','evidence'=>Illuminate\Support\Facades\Crypt::encryptString('[]')]);}
+    elseif($case==='fallback'){$reply['result']['reason']='fallback';DB::table('domains_operation_evidence')->where('id',$replyRow['id'])->update(['evidence'=>Illuminate\Support\Facades\Crypt::encryptString(json_encode($reply))]);}
+    elseif($case==='possible_send'){DB::table('domains_operation_attempts')->where('id',$sealedRow['id'])->update(['send_state'=>'possibly_sent']);}
+    else{Operation::withoutEvents(fn()=>$op->fresh()->update(['attempt'=>[...$attempt,'provider_reference'=>null]]));}
     commerceReject(fn()=>$refunds->refundHeld($staff,$op->id,'service_cancelled'));
     DB::table('domains_operations')->where('id',$op->id)->update($original);
+    DB::table('domains_operation_attempts')->where('id',$sealedRow['id'])->update($sealedRow);DB::table('domains_operation_evidence')->where('id',$replyRow['id'])->update($replyRow);
 }
 $before=$credit(); $refunds->refundHeld($staff,$op->id,'service_cancelled');
 same($before+PricingRule::minor($op->amount),$credit(),'Proven prewire refusal credited'); same($attempt,$op->fresh()->attempt,'Sealed audit untouched');

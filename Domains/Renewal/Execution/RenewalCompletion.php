@@ -35,7 +35,7 @@ final readonly class RenewalCompletion
                 HistoryResumption::apply($op, $attempt, $this->clock->now());
                 if (RegistrarCheck::lostReply($op, $attempt, $this->clock->now())) {
                     $check->awaitingAnswer = $attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo';
-                    $check->answerAfter = (new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp();
+                    $check->answerAfter = $attempt->windowStart->modify('+24 hours')->getTimestamp();
                     // No read can find a captured charge that history no longer covers: the audited read is used up as unavailable.
                     if ($financial) { CapturedChargeReview::retain($op, CapturedChargeReview::reserve($op, $this->clock), null, $this->clock); return null; }
                     // Enom can still read the domain before staff ask for a case; NameSilo waits for its answer.
@@ -105,7 +105,8 @@ final readonly class RenewalCompletion
             $policy['renewal_execution'] = $decision['renewal_execution'];
             $confirmed = $decision['state'] === 'succeeded';
             // Completion is settled on the sealed attempt through the read that proved it, in the same transaction.
-            if ($confirmed && !$saved->settleLocked($op, $proof)) { return $op; }
+            // Proof that needs charge review is kept on the attempt the same way, without settling it.
+            if (!($confirmed ? $saved->settleLocked($op, $proof) : $saved->holdLocked($op, $proof))) { return $op; }
             $op->update(['state' => $decision['state'], 'safe_code' => $decision['safe_code'], 'policy' => $policy,
                 'attempt' => [...$op->attempt, 'reconciliation' => $proof], 'cost' => ['actual' => $cost],
                 'lease_expires_at' => null, ...($confirmed ? ['provider_order_id' => $proof['order_reference'],
@@ -160,12 +161,12 @@ final readonly class RenewalCompletion
     public static function capturedChargeHeld(Operation $op): bool
     {
         return in_array($op->safe_code, ['actual_charge_changed', 'actual_cost_overrun'], true)
-            && is_array($op->attempt['reconciliation'] ?? null)
-            && ($op->policy['renewal_execution']['reason'] ?? null) !== 'resumed';
+            && ($op->policy['renewal_execution']['reason'] ?? null) !== 'resumed'
+            && RenewalAttempt::of($op)->readProof() !== null;
     }
     private function eligible(Operation $op): bool
     {
         return $op->action === 'renew' && (($op->state === 'running' && (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now()))
-            || in_array($op->state, ['pending', 'uncertain'], true)) && ($op->attempt['seal'] ?? null) === 'sealed';
+            || in_array($op->state, ['pending', 'uncertain'], true)) && RenewalAttempt::of($op)->sealed();
     }
 }

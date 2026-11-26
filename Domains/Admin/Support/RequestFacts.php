@@ -67,7 +67,7 @@ final class RequestFacts
                 &&($blocked=ContactProfileHold::releaseBlocked($op))!==null){
                 $out['contact_recovery']=$blocked;
             }
-            if ($grants->metadata && ($failure=\Paymenter\Extensions\Servers\Domains\Data\SendFailure::words($a['send_failure']??null))) { $out['send_failure']=$failure; }
+            if ($grants->metadata && ($failure=\Paymenter\Extensions\Servers\Domains\Data\SendFailure::words($r?$r->sendFailure():$a['send_failure']??null))) { $out['send_failure']=$failure; }
             if ($grants->metadata && ($reply=\Paymenter\Extensions\Servers\Domains\Data\RegistrarReply::fromArray($a['evidence']['registrarReply']??null))) { $out['registrar_reply']=$reply->words(); }
             $paid=$op->invoice_id||in_array($op->action,self::PAID_ACTIONS,true);$reversals=[];
             if ($paid) {

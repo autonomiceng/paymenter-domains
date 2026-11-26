@@ -123,7 +123,7 @@ final class RenewalExecution
             $this->hold($op, $l, 'renewal_cost_overrun'); return null;
         }
         if ($until < $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+25 seconds')) { throw new \DomainException('Renewal admission expired.'); }
-        $reservedContext->requireReservedCapacity();$claim = bin2hex(random_bytes(16)); $digest = hash('sha256', json_encode([$op->operation_key, $op->policy['renewal'], $op->payload], JSON_THROW_ON_ERROR));
+        $reservedContext->requireReservedCapacity();$claim = $token->claimKey; $digest = hash('sha256', json_encode([$op->operation_key, $op->policy['renewal'], $op->payload], JSON_THROW_ON_ERROR));
         $now = $this->clock->now();
         $attempt = ['claim_key' => $claim, 'seal' => 'sealed', 'dispatch_attempted_at' => $now->format(DATE_ATOM),
             'send_state' => 'possibly_sent', 'authorized_cost' => ['amount' => $ready->cost->amount, 'currency' => 'USD'],
@@ -164,7 +164,7 @@ final class RenewalExecution
     }
     private function dispatch($seed,int $id,AdmittedOperation $descriptor,RequestContext $context,RenewalWriter $writer): Operation
     {
-        $result = null; $failure = null;
+        $result = null; $failure = null; $token = $this->grants[$descriptor]['attempt'] ?? null;
         try { $result = $writer->renew($descriptor, $context); }
         catch (\Throwable $error) {
             // Enom may already have renewed, so the reason is kept for staff, never the raw error.
@@ -173,12 +173,12 @@ final class RenewalExecution
         }
         finally { unset($this->grants[$descriptor]); }
         // A deferred reply record leaves the claim running; its lease ends and completion reads the registrar.
-        return $this->decide($seed, $id, function (array $l) use ($id, $descriptor, $result, $failure, $context) {
+        return $this->decide($seed, $id, function (array $l) use ($id, $descriptor, $token, $result, $failure, $context) {
             $op = $l['operations']->firstWhere('id', $id);
-            if ($op->state === 'succeeded' || ($op->attempt['claim_key'] ?? null) !== $descriptor->claimKey || array_key_exists('execution', $op->attempt)) { return $op; }
+            if (!$token instanceof AttemptToken || $op->state === 'succeeded') { return $op; }
             try { $result?->binding->requireMatch($descriptor->binding); } catch (\Throwable) { $result = null; }
-            $sealed = OperationAttempts::sealed($id, StepKey::renew(), true);
-            if ($sealed) { $this->attempts->recordReply($sealed->token, self::outcome($result, $failure)); }
+            // The reply belongs to the exact attempt this grant sealed. A replaced attempt or an earlier reply projects nothing.
+            if ($this->attempts->recordReply($token, self::outcome($result, $failure, $descriptor)) !== Transition::Applied) { return $op; }
             $a = $op->attempt; $a['execution'] = $result?->jsonSerialize();
             if ($failure && !$result) { $a['send_failure'] = $failure->facts(); }
             $facts = $result?->evidence()->renewalExecution;
@@ -242,11 +242,14 @@ final class RenewalExecution
             'policy' => [...$op->policy, 'renewal_execution' => [...$hold['renewal_execution'], ...$facts]]]);
     }
     /** The sealed attempt's wire outcome. Only the typed local refusal proves no send; no reply stays unknown. */
-    private static function outcome(?\Paymenter\Extensions\Servers\Domains\Data\DriverResult $result, ?SendFailure $failure): WireOutcome
+    /** The acceptance is kept only for the sealed query, so its order reference binds this attempt. */
+    private static function outcome(?\Paymenter\Extensions\Servers\Domains\Data\DriverResult $result, ?SendFailure $failure, AdmittedOperation $descriptor): WireOutcome
     {
         if (!$result) { return WireOutcome::unknown($failure ? ['send_failure' => $failure->facts()] : []); }
-        if ($result->sendState === SendState::DefinitelyUnsent) { return WireOutcome::localRefusal($result->reason->value); }
+        if ($result->sendState === SendState::DefinitelyUnsent) { return WireOutcome::localRefusal($result->reason->value, ['result' => $result->jsonSerialize()]); }
         $facts = $result->evidence()->renewalExecution;
-        return WireOutcome::reply($result->sendState, $result->disposition->value, ['result' => $result->jsonSerialize(), 'order_reference' => $facts?->orderReference]);
+        $acceptance = $facts && $facts->query->matches($descriptor->query)
+            ? ['query' => ['name' => $facts->query->name, 'years' => $facts->query->years], 'order_reference' => $facts->orderReference] : null;
+        return WireOutcome::reply($result->sendState, $result->disposition->value, ['result' => $result->jsonSerialize(), 'acceptance' => $acceptance]);
     }
 }

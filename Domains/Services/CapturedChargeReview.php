@@ -7,15 +7,15 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence,Environment};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
-/** Review of an incurred charge. No new send, charge, refund or replacement of the original proof. The proof is read through
- * the renewal attempt reader; the review identity still hashes the retained record, as its writer does. */
+/** Review of an incurred charge. No new send, charge, refund or replacement of the original proof. The proof and the review
+ * identity are read through the renewal attempt reader. */
 final class CapturedChargeReview
 {
     private static ?int $writing=null;
     private static ?int $completing=null;
     private const KEYS=['captured_charge_reads','captured_charge_observations','captured_charge_approval'];
     public static function hasProof(Operation $op):bool
-    {try{return $op->action==='renew'&&$op->registrar_key==='enom'&&$op->term>1&&in_array($op->safe_code,['actual_charge_changed','actual_cost_overrun'],true)&&RenewalAttempt::of($op)->readProof()!==null;}catch(\Throwable){return false;}}
+    {try{return $op->action==='renew'&&$op->registrar_key==='enom'&&$op->term>1&&in_array($op->safe_code,['actual_charge_changed','actual_cost_overrun'],true)&&RenewalAttempt::of($op)->readProof()!==null;}catch(\PDOException $e){throw $e;}catch(\Throwable){return false;}}
     public static function guard(Operation $op):void
     {
         $old=$op->getOriginal('policy')??[];$new=$op->policy??[];
@@ -29,8 +29,9 @@ final class CapturedChargeReview
         self::$writing=spl_object_id($op);self::$completing=$complete?self::$writing:null;
         try{$op->update($attributes);}finally{self::$writing=self::$completing=null;}
     }
+    /** The reviewed attempt: its sealed rows with the captured proof, and the recorded cost. */
     private static function identity(Operation $op):string
-    {return hash('sha256',json_encode([$op->operation_key,$op->authority_generation,$op->account_fingerprint,$op->attempt,$op->cost],JSON_THROW_ON_ERROR));}
+    {return hash('sha256',json_encode([$op->operation_key,$op->authority_generation,$op->account_fingerprint,RenewalAttempt::of($op)->identity(true),$op->cost],JSON_THROW_ON_ERROR));}
     /** Consume the last audited resume before I/O, so another worker cannot reuse it. */
     public static function reserve(Operation $op,Clock $clock):array
     {

@@ -82,14 +82,14 @@ foreach (['changed' => ['20.00', 'actual_charge_changed'], 'overrun' => ['16.00'
     same(1, $fresh->policy['renewal_polls'], 'Captured financial hold is below the normal read limit');
     app()->instance(\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion::class, $compCompletion);
     \Illuminate\Support\Facades\Auth::setUser($staff);
-    // Reproduce damaged encrypted storage without changing the issued operation or its financial proof.
-    $storedAttempt = $fresh->getRawOriginal('attempt');
-    DB::table('domains_operations')->where('id', $held->id)->update(['attempt' => 'synthetic-unreadable-renewal-attempt']);
+    // Reproduce damaged encrypted storage of the captured proof row without changing the issued operation.
+    $heldRow = DB::table('domains_operation_evidence')->where(['operation_id' => $held->id, 'kind' => 'held'])->first();
+    DB::table('domains_operation_evidence')->where('id', $heldRow->id)->update(['evidence' => 'synthetic-unreadable-renewal-proof']);
     try {
         same(false, \Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions::relevant('resume_reads', $held->fresh()),
-            'Unreadable encrypted attempt has no eligible read-resume action');
+            'Unreadable encrypted proof has no eligible read-resume action');
     } catch (\Illuminate\Contracts\Encryption\DecryptException) { $unreadable[] = $reason; }
-    finally { DB::table('domains_operations')->where('id', $held->id)->update(['attempt' => $storedAttempt]); }
+    finally { DB::table('domains_operation_evidence')->where('id', $heldRow->id)->update(['evidence' => $heldRow->evidence]); }
     $page = Livewire::actingAs($staff)->test(ViewOperation::class, ['record' => $held->id]);
     // Keep both native cases running on red so the visibility failure names each financial reason.
     if (!$page->instance()->getAction('resume_reads')->isVisible() || $page->instance()->getAction('recheck')->isVisible()) {

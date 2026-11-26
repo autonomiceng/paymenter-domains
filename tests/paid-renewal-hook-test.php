@@ -42,7 +42,7 @@ same(['uncertain', 'renewal_confirmation_required', 'unknown', 1],
     [$result->state, $result->safe_code, renewalReply($result)['outcome'], $state->writes], 'Lost paid renewal stays uncertain after one send');
 same(ExecutionRecord::RecordedNull, renewalAttempt($result)?->replyRecord(), 'The lost reply is saved as an explicit null reply');
 same($dispatchedAt->getTimestamp(), renewalSentAt($result)->getTimestamp(), 'The seal records the dispatch time');
-same(['category' => 'timeout', 'timeout_ms' => 24993], $result->attempt['send_failure'], 'Attempt retains safe failure metadata');
+same(['category' => 'timeout', 'timeout_ms' => 24993], renewalAttempt($result)?->sendFailure(), 'Attempt retains safe failure metadata');
 same([['warning', ['operation_id' => $op->id, 'exception_class' => SendFailure::class, 'category' => 'timeout', 'timeout_ms' => 24993]]],
     $logged, 'Lost reply logs safe facts only');
 require __DIR__.'/Support/staff-panel.php';
