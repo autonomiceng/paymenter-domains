@@ -22,7 +22,6 @@ def exercise(command, php_args, env, scratch):
     proofs = []
     for case in ('other', 'checkout'):
         cell = dict(env, RECEIPT_CASE=case, RECEIPT_NAME=case)
-        command('receipt-reset-'+case, php_args+[script], env=dict(cell, RECEIPT_PHASE='reset'))
         with (barriers/(case+'.stdout')).open('wb') as stdout, (barriers/(case+'.stderr')).open('wb') as stderr:
             receipt = subprocess.Popen(php_args+[script], cwd=ROOT, env=dict(cell, RECEIPT_PHASE='receipt'), stdout=stdout, stderr=stderr)
             try:

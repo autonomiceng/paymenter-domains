@@ -13,7 +13,8 @@ use App\Models\{Credit,Invoice,InvoiceTransaction,User};
 use Illuminate\Support\Facades\{Artisan,DB,Queue,Schema};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
-use Paymenter\Extensions\Servers\Domains\Services\{FreshTransaction,HoldingLocks,MoneyDecisions,PricingRule};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
+use Paymenter\Extensions\Servers\Domains\Services\{FreshTransaction,FundsWaits,HoldingLocks,MoneyDecisions,PricingRule};
 $root=(string)getenv('RECEIPT_BARRIERS');expect(is_dir($root),'Private barriers required');
 $phase=getenv('RECEIPT_PHASE');$case=(string)getenv('RECEIPT_CASE');$name=(string)getenv('RECEIPT_NAME');$prefix=(string)getenv('SCHEMA_PREFIX');
 $signal=static fn(string $step)=>file_put_contents($root.'/'.$name.'-'.$step,'ready');
@@ -30,29 +31,22 @@ Queue::fake();
 if($phase==='seed'){
     extract(commerceFixture(true,registrars:['enom']));$ids=[];
     require $runtime.'/tests/Support/mariadb-commerce.php';
-    // A retained unpaid renewal per customer; their invoices neighbour each other.
-    foreach(['receipt'=>commerceUser(),'other'=>commerceUser()]as$kind=>$customer){
+    // The other-customer invoices are adjacent. Each race has a fresh renewal with no terminal history.
+    require $runtime.'/tests/Support/receipt-renewal-seed.php';
+    foreach(['other-receipt','other-peer','checkout-receipt']as$kind){
+        $customer=commerceUser();
         $cart=commerceCart($customer);commerceAdd($cart,$native->product($tlds[0],'register'),placeholderComFixtureName('receipt-'.$kind.'-placeholder.com'));
         commerceCheckout($customer,$cart)->assertHasNoErrors();
         $op=Domain::where('domain',placeholderComFixtureName('receipt-'.$kind.'-placeholder.com'))->sole()->operations()->sole();
-        require_once $runtime.'/tests/Support/receipt-renewal-seed.php';receiptRenewalSeed($op);
+        receiptRenewalSeed($op);
+        if($kind!=='other-peer'){DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'cancelled']);}
         $ids[$kind]=(int)$op->id;
     }
     file_put_contents($root.'/ids.json',json_encode($ids,JSON_THROW_ON_ERROR));
     echo "Seeded receipt lock fixtures.\n";$nativeSuccessful=true;return;
 }
 $ids=json_decode(file_get_contents($root.'/ids.json'),true,512,JSON_THROW_ON_ERROR);
-$op=Operation::findOrFail($ids['receipt']);$seed=$op->domain()->firstOrFail();
-if($phase==='reset'){
-    foreach($ids as $id){
-        $row=Operation::findOrFail($id);
-        DB::table('invoice_transactions')->where('invoice_id',$row->invoice_id)->delete();
-        DB::table('invoices')->where('id',$row->invoice_id)->update(['status'=>'cancelled']);
-        // The renewal route and calendar stay: closing and crediting the renewal validate them.
-        DB::table('domains_operations')->where('id',$id)->update(['state'=>'awaiting_payment','safe_code'=>null,'attempt'=>null,'cost'=>null,'funding'=>null,'completed_at'=>null]);
-    }
-    echo "Reset retained unpaid renewals.\n";$nativeSuccessful=true;return;
-}
+$op=Operation::findOrFail($ids[$case.'-receipt']);$seed=$op->domain()->firstOrFail();
 require $runtime.'/tests/Support/mariadb-commerce.php';
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class,new Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock));
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
@@ -75,9 +69,14 @@ $contention=static function(Throwable $e):int {
 };
 if($phase==='receipt'){
     $cash=static fn()=>PricingRule::minor((string)(Credit::where('user_id',$seed->user_id)->where('currency_code','USD')->value('amount')??'0.00'));$before=$cash();
-    $inCore=false;$ownerLocks=0;$armed=true;$waited=false;
-    DB::listen(static function($q)use(&$inCore,&$ownerLocks,&$armed,&$waited,$prefix,$signal,$wait,$root,$name,$blocks):void{
-        if($inCore&&str_contains($q->sql,'from `'.$prefix.'users`')&&str_contains($q->sql,'for update')){$ownerLocks++;}
+    $inCore=false;$ownerLocks=0;$domainsLocks=0;$armed=true;$waited=false;
+    DB::listen(static function($q)use(&$inCore,&$ownerLocks,&$domainsLocks,&$armed,&$waited,$prefix,$signal,$wait,$root,$name,$blocks):void{
+        if($inCore&&preg_match('/\b(?:for update|lock in share mode|for share)\b/i',$q->sql)){
+            if(str_contains($q->sql,'from `'.$prefix.'users`')){$ownerLocks++;}
+            foreach(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS)as$frame){
+                if(str_starts_with($frame['class']??'','Paymenter\\Extensions\\Servers\\Domains\\')){$domainsLocks++;break;}
+            }
+        }
         if(!$armed||!str_starts_with($q->sql,'insert into `'.$prefix.'invoice_transactions`')){return;}
         // Core holds the invoice and its new payment row. Pause until the other writer waits on us or finishes.
         $armed=false;DB::afterCommit(static function()use(&$inCore):void {$inCore=false;});
@@ -93,8 +92,21 @@ if($phase==='receipt'){
     try{ExtensionHelper::addPayment((int)$op->invoice_id,null,'1.00','0.00','receipt-lock-'.$name);}catch(Throwable $e){$error=$contention($e);}
     $receipts=InvoiceTransaction::where('invoice_id',$op->invoice_id)->where('status','succeeded')->count();
     $closed=$op->fresh()->state==='rejected';$cancelled=Invoice::whereKey($op->invoice_id)->value('status')==='cancelled';$credited=$cash()-$before;
-    $complete=!$armed&&$error===null&&$receipts===1&&$cancelled&&$closed&&$credited===100&&$ownerLocks===0&&DB::transactionLevel()===0;
-    echo json_encode(['complete'=>$complete,'case'=>$case,'phase'=>$phase,'error'=>$error,'owner_locks'=>$ownerLocks,'receipts'=>$receipts,'cancelled'=>$cancelled,'closed'=>$closed,'credited'=>$credited,'runner_waited'=>$waited,'transaction_level'=>DB::transactionLevel()])."\n";
+    $repeatRefused=false;
+    if($closed){
+        try{
+            FreshTransaction::run(static function()use($seed,$op,$clock):void{
+                $locks=HoldingLocks::take($seed);
+                FundsWaits::closeRenewal($locks['operations']->firstWhere('id',$op->id),$locks,$clock->now());
+            });
+        }catch(DomainException){$repeatRefused=true;}
+    }
+    $terminalRows=DB::table(OperationSchema::EVIDENCE)->where(['operation_id'=>$op->id,'kind'=>'terminal'])->count();
+    $complete=!$armed&&$error===null&&$receipts===1&&$cancelled&&$closed&&$credited===100&&$repeatRefused&&$terminalRows===1
+        &&$ownerLocks===0&&$domainsLocks===0&&DB::transactionLevel()===0;
+    echo json_encode(['complete'=>$complete,'case'=>$case,'phase'=>$phase,'error'=>$error,'owner_locks'=>$ownerLocks,'domains_locks'=>$domainsLocks,
+        'receipts'=>$receipts,'cancelled'=>$cancelled,'closed'=>$closed,'credited'=>$credited,'terminal_rows'=>$terminalRows,
+        'repeat_closure_refused'=>$repeatRefused,'runner_waited'=>$waited,'transaction_level'=>DB::transactionLevel()])."\n";
     expect($complete,'The receipt is recorded, stays cancelled and returns once as account credit');$nativeSuccessful=true;return;
 }
 expect($phase==='runner','Known fixture phase');$wait('receipt-inserted');
@@ -103,7 +115,7 @@ $signal('runner-started');$error=null;$value=false;
 try{
     if($case==='other'){
         // A full decision for another customer on the same registrar server, in a Domains writer transaction.
-        $otherSeed=Operation::findOrFail($ids['other'])->domain()->firstOrFail();
+        $otherSeed=Operation::findOrFail($ids['other-peer'])->domain()->firstOrFail();
         expect((int)$otherSeed->user_id!==(int)$seed->user_id&&(int)$otherSeed->server_id===(int)$seed->server_id,'Another customer on the same server');
         $value=FreshTransaction::run(static fn():bool=>HoldingLocks::take($otherSeed)['domain']->id===$otherSeed->id);
     }else{
