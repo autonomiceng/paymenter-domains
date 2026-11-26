@@ -80,7 +80,12 @@ final readonly class AcquisitionAttempt
     {
         if (!$this->hasOriginalClaim()) { return []; }
         if (isset($this->origin['legacy_funding'])) { return $this->origin['legacy_funding']; }
-        return ['claim' => $this->origin['funding'], ...($this->sealed() ? ['seal' => $this->rows['admission']['evidence']['funding']] : [])];
+        $funding = [];
+        if (array_key_exists('funding', $this->origin)) { $funding['claim'] = $this->origin['funding']; }
+        if ($this->sealed() && array_key_exists('funding', $this->rows['admission']['evidence'] ?? [])) {
+            $funding['seal'] = $this->rows['admission']['evidence']['funding'];
+        }
+        return $funding;
     }
 
     public function attempt(): array
@@ -95,7 +100,7 @@ final readonly class AcquisitionAttempt
         $admissionKey = $this->action === 'transfer' ? 'transfer_admission' : 'registration_admission';
         return [...$attempt, ...$this->history, 'dispatch_attempted_at' => $this->facts->sealedAt->format(DATE_ATOM),
             'authorized_cost' => ['amount' => $this->facts->authorizedAmount, 'currency' => $this->facts->authorizedCurrency],
-            $admissionKey => $admission[$admissionKey], ...array_diff_key($this->rows['reply']['evidence'] ?? [], ['reason' => true]),
+            ...array_intersect_key($admission, [$admissionKey => true]), ...array_diff_key($this->rows['reply']['evidence'] ?? [], ['reason' => true]),
             ...($this->rows['decision']['evidence'] ?? []),
             ...$settlement];
     }
