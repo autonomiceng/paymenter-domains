@@ -9,6 +9,9 @@ use Paymenter\Extensions\Servers\Domains\Data\SendState;
 /** Reads steps, attempts and evidence. Callers that act on a result hold the operation lock. */
 final class OperationAttempts
 {
+    /** The json_decode depth of stored evidence. The writer refuses deeper evidence before it is stored. */
+    public const EVIDENCE_DEPTH = 32;
+
     public static function step(int $operationId, StepKey $key, bool $lock = false): ?object
     {
         return DB::table(OperationSchema::STEPS)->where(['operation_id' => $operationId, 'step_type' => $key->type, 'sequence' => $key->sequence])
@@ -108,7 +111,7 @@ final class OperationAttempts
     private static function decoded(object $row): array
     {
         return ['source' => $row->source, 'outcome' => $row->outcome, 'observed_at' => $row->observed_at,
-            'recorded_at' => $row->recorded_at, 'evidence' => json_decode(Crypt::decryptString($row->evidence), true, 32, JSON_THROW_ON_ERROR)];
+            'recorded_at' => $row->recorded_at, 'evidence' => json_decode(Crypt::decryptString($row->evidence), true, self::EVIDENCE_DEPTH, JSON_THROW_ON_ERROR)];
     }
 
     /** The first evidence of one kind on the step's sealed attempt, in one read. */

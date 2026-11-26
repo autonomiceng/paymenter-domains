@@ -70,13 +70,19 @@ final readonly class OperationWriter
         return Transition::Applied;
     }
 
-    /** Spends the sealed attempt's one wire permission. A second consumption is stale. */
+    /**
+     * Spends the sealed attempt's one wire permission before its dispatch deadline. A second consumption is stale,
+     * and so is one after a not-sent settlement, which the locking read sees even past an earlier snapshot.
+     */
     public function consumeGrant(AttemptToken $token): Transition
     {
         self::requireTransaction(); $facts = OperationAttempts::attempt($token, true);
         if (!$facts?->current || !$facts->sealed() || $facts->grantConsumedAt !== null || $facts->sendState !== SendState::PossiblySent) { return Transition::Stale; }
+        if (DB::table(OperationSchema::EVIDENCE)->where(['attempt_id' => $token->attemptId, 'kind' => 'settlement', 'outcome' => self::NOT_SENT])
+            ->lockForUpdate()->first(['id'])) { return Transition::Stale; }
+        $now = OperationAttempts::at($this->clock->now());
         $updated = DB::table(OperationSchema::ATTEMPTS)->where('id', $token->attemptId)->whereNull('grant_consumed_at')
-            ->update(['grant_consumed_at' => OperationAttempts::at($this->clock->now())]);
+            ->where('dispatch_until', '>', $now)->update(['grant_consumed_at' => $now]);
         return $updated === 1 ? Transition::Applied : Transition::Stale;
     }
 
@@ -184,11 +190,13 @@ final readonly class OperationWriter
     {
         $key = hash('sha256', implode('|', [$operationId, $attemptId ?? '-', $identity]));
         if (DB::table(OperationSchema::EVIDENCE)->where('authority_key', $key)->exists()) { return false; }
+        // json_decode counts one level more than json_encode, so this is the deepest evidence the reader accepts.
+        $encoded = json_encode($evidence, JSON_THROW_ON_ERROR, OperationAttempts::EVIDENCE_DEPTH - 1);
         $now = $this->clock->now();
         DB::table(OperationSchema::EVIDENCE)->insert(['operation_id' => $operationId, 'attempt_id' => $attemptId, 'source' => $source,
             'kind' => $kind, 'outcome' => $outcome, 'observed_at' => $observedAt ? OperationAttempts::at($observedAt) : null,
             'recorded_at' => OperationAttempts::at($now), 'authority_key' => $key,
-            'evidence' => Crypt::encryptString(json_encode($evidence, JSON_THROW_ON_ERROR))]);
+            'evidence' => Crypt::encryptString($encoded)]);
         return true;
     }
 

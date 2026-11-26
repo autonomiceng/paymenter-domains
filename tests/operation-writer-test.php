@@ -69,6 +69,13 @@ same(SendState::DefinitelyUnsent, OperationAttempts::attempt($unsent)->sendState
 same(Transition::Stale, $in(fn () => $writer->consumeGrant($unsent)), 'A refused attempt has no grant to spend');
 same(true, OperationAttempts::attempt($unsent)->sealed(), 'The seal survives the refusal');
 
+// The grant is spendable only before the sealed dispatch deadline.
+$lateId = $operation('writer-late');
+$late = $in(fn () => $writer->claim($lateId, $step, $later(60))); $in(fn () => $writer->seal($late, $terms()));
+$clock->instant = $later(300);
+same(Transition::Stale, $in(fn () => $writer->consumeGrant($late)), 'A grant at its dispatch deadline is not spent');
+same(null, OperationAttempts::attempt($late)->grantConsumedAt, 'A late consumption writes nothing');
+
 // Reads: one live reader, a successor inherits uncertainty, a stale finisher cannot clear or settle.
 same(Transition::Stale, $in(fn () => $writer->openRead($second, $later(60))), 'An unsealed attempt has no read');
 $read = $in(fn () => $writer->openRead($third, $later(60)));
@@ -96,8 +103,17 @@ $clean = $in(fn () => $writer->claim($cleanId, $step, $later(60))); $in(fn () =>
 $owner = $in(fn () => $writer->openRead($clean, $later(60)));
 same(Transition::Applied, $in(fn () => $writer->settle($owner, OperationWriter::NOT_SENT, ['answer' => 'not_processed'])), 'A current read with no inherited uncertainty settles as not sent');
 same(Transition::Stale, $in(fn () => $writer->settle($owner, 'succeeded', ['order' => '43'])), 'Settlement is recorded once');
+same(Transition::Stale, $in(fn () => $writer->consumeGrant($clean)), 'A not-sent settlement leaves no grant to spend');
+same(null, OperationAttempts::attempt($clean)->grantConsumedAt, 'The refused consumption writes nothing');
 same(Transition::Applied, $in(fn () => $writer->recordTerminal($unsentId, 'never_sent_unpaid', ['reason' => 'closed'])), 'Terminal proof');
 same(Transition::Stale, $in(fn () => $writer->recordTerminal($unsentId, 'never_sent_unpaid', [])), 'Terminal proof is recorded once');
+// Evidence is written only as deep as the reader decodes it.
+$nest = static function (int $levels): array { $value = []; for ($i = 1; $i < $levels; $i++) { $value = [$value]; } return $value; };
+$deepId = $operation('writer-deep');
+$deep = false; try { $in(fn () => $writer->recordTerminal($deepId, 'never_sent_unpaid', $nest(OperationAttempts::EVIDENCE_DEPTH))); } catch (JsonException) { $deep = true; }
+expect($deep && OperationAttempts::evidence($deepId, null, 'terminal') === null, 'Evidence deeper than the reader accepts is refused before insert');
+same(Transition::Applied, $in(fn () => $writer->recordTerminal($deepId, 'never_sent_unpaid', $nest(OperationAttempts::EVIDENCE_DEPTH - 1))), 'The deepest readable evidence is written');
+same($nest(OperationAttempts::EVIDENCE_DEPTH - 1), OperationAttempts::evidence($deepId, null, 'terminal')['evidence'], 'The deepest written evidence reads back');
 
 // Database keys hold across independent sessions, and child rows keep their operation.
 $file = tempnam((string) getenv('TMPDIR'), 'operation-writer-');
