@@ -9,6 +9,7 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,NativeIntentSchema,ObservationSchema,ObservationWork,Refunds,RenewalReplacements,StaffOperationReview,StaffOperations};
 staffPanel(); ObservationSchema::install(); NativeIntentSchema::install();
 app()->instance(Clock::class,$clock); app()->instance(Refunds::class,new Refunds($clock));
@@ -20,6 +21,16 @@ foreach(array_keys(StaffOperationReview::ACTIONS) as $action){$all[]=StaffOperat
 $staff=staffUser($all); Auth::setUser($staff); $service=new StaffOperations($clock);
 $ticket=fn($op,$action)=>StaffOperationReview::ticket($staff->id,$op->domain_id,$op->id,$action,StaffOperationReview::stamp($op->fresh(),$op->domain->fresh()),$clock);
 $run=fn($op,$action,$key=null)=>$service->run($staff,$op->domain_id,$op->id,$action,$key??$ticket($op,$action),'Reviewed current evidence');
+// These isolated tests first complete a real purchase to set up the holding's read facts.
+$removeFixtureRequest = static function (int $id): void {
+    DB::transaction(static function () use ($id): void {
+        $steps = DB::table(OperationSchema::STEPS)->where('operation_id', $id);
+        DB::table(OperationSchema::EVIDENCE)->where('operation_id', $id)->delete();
+        DB::table(OperationSchema::ATTEMPTS)->whereIn('step_id', (clone $steps)->select('id'))->delete();
+        $steps->delete();
+        DB::table('domains_operations')->where('id', $id)->delete();
+    });
+};
 $held=static function($name)use($new,$tlds){
     // The real paid order predates its later processing pause; current checkout refuses paused accounts.
     $account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole();$processing=$account->processing_enabled;
