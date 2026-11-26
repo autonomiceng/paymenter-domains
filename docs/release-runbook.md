@@ -161,6 +161,29 @@ Uninstall and migration `down()` retain evidence; they do not undo purchases, re
 invoices or reservations. A seller change changes future offers only.
 It cannot migrate holdings, restore legacy authority or settle an unknown operation.
 
+### Operation authority release: one demo fresh install
+
+The release that moves renewal attempts to the operation step, attempt and evidence
+tables registers a 45-table baseline without the four retired renewal columns. A retained
+database from the earlier JSON-backed release has 42 tables, so the installer refuses it
+with its history intact. The installer does not convert it. The demo crosses this
+boundary once, by a fresh install:
+
+1. Pause sales, renewals and processing, then drain workers until no claim, send or
+   registrar read is running.
+2. Keep the matching database dump, package archive and encryption keys from before the
+   swap. Rehearse that restore before replacing anything.
+3. List every money, provider and audit fact that must carry forward: paid invoices,
+   credits, refunds, registrar orders and charges, sealed or uncertain attempts and staff
+   reviews. Verify each against the provider and the ledger, and record it privately.
+4. Replace the demo with a fresh install of the new package. Recreate only the reviewed
+   facts from step 3, and resolve any uncertain attempt before reopening.
+5. Confirm the full check records a fresh verification receipt. A reinstall of the same
+   package must keep every attempt and evidence row.
+
+Never point the new package at the old database. After this boundary, a retained
+database changes only by a release that ships its own conversion.
+
 ## Support decisions
 
 Capture the safe operation/domain IDs, original registrar account and environment,
