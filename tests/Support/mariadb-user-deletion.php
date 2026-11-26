@@ -15,7 +15,7 @@ $root=getenv('USERDEL_BARRIERS');expect(is_dir($root),'Private barriers required
 $phase=getenv('USERDEL_PHASE');$case=getenv('USERDEL_CASE');$prefix=(string)getenv('SCHEMA_PREFIX');
 $signal=static fn(string $name)=>file_put_contents($root.'/'.$case.'-'.$name,'ready');
 $wait=static function(string $name)use($root,$case):void {
-    $end=microtime(true)+25;while(!is_file($root.'/'.$case.'-'.$name)){if(microtime(true)>$end){throw new RuntimeException('Barrier timeout: '.$name);}usleep(10000);}
+    $end=mariadbClock()+25;while(!is_file($root.'/'.$case.'-'.$name)){if(mariadbClock()>$end){throw new RuntimeException('Barrier timeout: '.$name);}usleep(10000);}
 };
 if($phase==='seed'){
     Artisan::call('migrate',['--force'=>true]);
@@ -59,7 +59,7 @@ if($phase==='checkout'){
     if($case==='snapshot'){$wait('snapshot');}
     if($case==='checkout'){
         Event::listen(\App\Events\Order\Creating::class,static function()use($signal,$wait,$root,$case):void {
-            $signal('admitted');$wait('delete-start');$end=microtime(true)+25;
+            $signal('admitted');$wait('delete-start');$end=mariadbClock()+25;
             // Only the deletion connection waiting on this checkout's native users row counts.
             $users='`'.DB::getDatabaseName().'`.`'.DB::getTablePrefix().(new User)->getTable().'`';$deleter=(int)file_get_contents($root.'/'.$case.'-delete-connection');
             $waits=static fn():int=>(int)DB::selectOne('SELECT COUNT(*) AS n FROM information_schema.INNODB_LOCK_WAITS w'
@@ -69,7 +69,7 @@ if($phase==='checkout'){
             same(0,$waits(),'No lock wait before deletion starts');$signal('baseline');
             // InnoDB rebuilds these tables only after 0.1 s without a read; faster polls keep re-reading the empty baseline.
             do{
-                if(microtime(true)>$end){throw new RuntimeException('Native deletion did not wait on the checkout user lock.');}usleep(200000);
+                if(mariadbClock()>$end){throw new RuntimeException('Native deletion did not wait on the checkout user lock.');}usleep(200000);
             }while($waits()===0);
             file_put_contents($root.'/'.$case.'-lock-wait','proved');
         });
@@ -79,13 +79,13 @@ if($phase==='checkout'){
         // A native receipt holds the customer's invoice. It locks no customer row, so deletion waits on the invoice and then decides.
         $invoice=(int)Domain::where('domain',$name)->sole()->operations()->sole()->invoice_id;
         DB::beginTransaction();\App\Models\Invoice::whereKey($invoice)->lockForUpdate()->firstOrFail();$signal('invoice-locked');$wait('delete-start');
-        $deleter=(int)file_get_contents($root.'/'.$case.'-delete-connection');$end=microtime(true)+25;
+        $deleter=(int)file_get_contents($root.'/'.$case.'-delete-connection');$end=mariadbClock()+25;
         $invoices='`'.DB::getDatabaseName().'`.`'.DB::getTablePrefix().'invoices`';
         while((int)DB::selectOne('SELECT COUNT(*) AS n FROM information_schema.INNODB_LOCK_WAITS w'
             .' JOIN information_schema.INNODB_TRX r ON r.trx_id=w.requesting_trx_id JOIN information_schema.INNODB_TRX b ON b.trx_id=w.blocking_trx_id'
             .' JOIN information_schema.INNODB_LOCKS l ON l.lock_id=w.requested_lock_id'
             .' WHERE r.trx_mysql_thread_id=? AND b.trx_mysql_thread_id=CONNECTION_ID() AND l.lock_table=?',[$deleter,$invoices])->n===0){
-            if(microtime(true)>$end){throw new RuntimeException('Native deletion did not wait on the receipt invoice.');}usleep(200000);
+            if(mariadbClock()>$end){throw new RuntimeException('Native deletion did not wait on the receipt invoice.');}usleep(200000);
         }
         file_put_contents($root.'/'.$case.'-lock-wait','proved');
         \App\Helpers\ExtensionHelper::addPayment($invoice,null,'1.00','0.00','userdel-receipt-'.$prefix);
