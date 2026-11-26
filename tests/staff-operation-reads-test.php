@@ -289,34 +289,44 @@ $refusesAnswer = static function ($op, string $scenario) use ($staff, $clock, $n
 };
 $refusesAnswer($lost, 'A matching registrar read');
 
-// Restore the pre-upgrade storage of the sealed purchase and its last check before the next staff answer.
+// Restore the pre-upgrade storage of the sealed purchase and its last check.
 $step = new StepKey('register', 1);
-$sealed = OperationAttempts::sealed((int) $lost->id, $step);
+$policy = $lost->policy;
+$policy['reconciliation']['polls'] = OperationReconciliation::POLL_LIMIT;
+$lost->update(['policy' => $policy]);
 $legacy = [
     'attempt' => Crypt::encryptString(json_encode($lost->attempt, JSON_THROW_ON_ERROR)),
     'funding' => Crypt::encryptString(json_encode($lost->funding, JSON_THROW_ON_ERROR)),
     'started_at' => OperationAttempts::at($lost->started_at),
     'request_fingerprint' => $lost->request_fingerprint,
+    'policy' => $lost->getRawOriginal('policy'),
 ];
-DB::transaction(static function () use ($lost, $sealed, $legacy): void {
-    DB::table(OperationSchema::EVIDENCE)->where('operation_id', $lost->id)->delete();
-    DB::table(OperationSchema::ATTEMPTS)->where('step_id', $sealed->token->stepId)->delete();
-    DB::table(OperationSchema::STEPS)->where('id', $sealed->token->stepId)->delete();
-    DB::table('domains_operations')->where('id', $lost->id)->update($legacy);
-});
-$lost->refresh();
-same(null, OperationAttempts::sealed((int) $lost->id, $step), 'The legacy purchase has no attempt row');
-expect(RegistrarCheck::attempted($lost), 'The saved pre-upgrade check names the exact sealed purchase');
-$refusesAnswer($lost, 'A matching pre-upgrade registrar read');
+$restoreLegacy = static function () use ($lost, $step, $legacy): void {
+    DB::transaction(static function () use ($lost, $step, $legacy): void {
+        $sealed = OperationAttempts::sealed((int) $lost->id, $step);
+        DB::table(OperationSchema::EVIDENCE)->where('operation_id', $lost->id)->delete();
+        DB::table(OperationSchema::ATTEMPTS)->where('step_id', $sealed->token->stepId)->delete();
+        DB::table(OperationSchema::STEPS)->where('id', $sealed->token->stepId)->delete();
+        DB::table('domains_operations')->where('id', $lost->id)->update($legacy);
+    });
+    $lost->refresh();
+    same(null, OperationAttempts::sealed((int) $lost->id, $step), 'The legacy purchase has no attempt row');
+    expect(RegistrarCheck::attempted($lost), 'The saved pre-upgrade check names the exact sealed purchase');
+};
 // The installed reader allows the same sealed-attempt read while its history gate stays closed.
 $driver=$readBindings->reader($lost->server_id);
 $reader=new EnomTestReconciliationReader(new CataloguePreview($driver),$driver);
 $context=new RequestContext($binding,RequestOrigin::Background,$clock->now()->modify('+250 seconds'),new RequestBudget(25),$clock);
 same(true,$reader->reconcile(ReconciliationEvidence::attempt($lost,$lost->domain->fresh(),$binding),$context)->result()->evidence()->domain?->owned,'Installed reader reads a sealed lost attempt through a paid-changes hold');
-// A failed read records no ownership or charge.
-$observation->fault='transport';$reconcile->run($lost->id);
+$restoreLegacy();
+$clock->instant = $clock->now()->modify('+1 minute');
+$run($lost, 'resume_reads');
+same(0, $lost->fresh()->policy['reconciliation']['polls'], 'The first staff action restarts the exhausted legacy checks');
+$observation->fault = 'transport';
+$run($lost->fresh(), 'recheck');
 same([],$lost->fresh()->policy['status_check']['facts'],'A failed read cannot repeat earlier facts as current');
 same(null,$lost->fresh()->cost['actual']??null,'A failed read cannot settle the fee');
+$refusesAnswer($lost->fresh(), 'A matching pre-upgrade registrar read followed by restart and a failed check');
 $adopted = OperationAttempts::sealed((int) $lost->id, $step);
 $proof = OperationAttempts::evidence((int) $lost->id, $adopted->token->attemptId, 'observation');
 same(true, $proof['evidence']['owned'] ?? null, 'The adopted attempt retains ownership after a later check fails');
@@ -332,6 +342,8 @@ same(true,$lost->fresh()->policy['status_check']['read_attempted'],'A refused re
 $policy=$lost->fresh()->policy;$policy['reconciliation']['polls']=OperationReconciliation::POLL_LIMIT;$lost->fresh()->update(['policy'=>$policy]);
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lost->id])->callAction('resume_reads')->assertNotified('Status checks restarted')->assertActionHidden('enom_answer');
 same(true,$lost->fresh()->policy['status_check']['read_attempted'],'A resume keeps the earlier read of this attempt');
+$restoreLegacy();
+$refusesAnswer($lost, 'A matching pre-upgrade registrar read');
 // A lost renewal reply outside its history window can still read the domain.
 DB::table('domains_accounts')->where('server_id',$lost->server_id)->update(['processing_enabled'=>true]);
 [$lostRenew,$lostDomain,$binding]=$makeRenewal(placeholderComFixtureName('staff-lost-renewal-placeholder.com'));
