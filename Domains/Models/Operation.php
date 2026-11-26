@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Models;
 
 use Illuminate\Database\Eloquent\Casts\Attribute;
-use Illuminate\Database\Eloquent\Model;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AttemptFacts, AttemptToken, OperationAttempts};
+use Illuminate\Database\Eloquent\{Builder, Model};
+use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AttemptFacts, AttemptToken, OperationAttempts, OperationSchema};
 
 class Operation extends Model
 {
@@ -25,7 +26,7 @@ class Operation extends Model
     protected $guarded = [];
     // Keep the first attempt's schema default on the model returned by create().
     protected $attributes = ['retry_number' => 0];
-    protected $hidden = ['account_fingerprint', 'payload', 'policy', 'cost', 'attempt', 'renewal_previous_proof', 'transition_revision', 'funding', 'funding_reason', 'authorized_by', 'request_fingerprint', 'management_pending'];
+    protected $hidden = ['account_fingerprint', 'payload', 'policy', 'cost', 'attempt', 'renewal_previous_proof', 'transition_revision', 'funding', 'funding_reason', 'authorized_by', 'request_fingerprint', 'management_pending', 'has_acquisition_step'];
     protected $casts = ['transition_revision' => 'integer', 'retry_number'=>'integer', 'attempt' => 'encrypted:array', 'funding' => 'encrypted:array', 'authority_generation' => 'integer', 'payload' => 'encrypted:array', 'policy' => 'encrypted:array', 'cost' => 'encrypted:array', 'amount' => 'decimal:2', 'base_expires_at' => 'immutable_date', 'expected_expires_at' => 'immutable_date', 'confirmed_expires_at' => 'immutable_date', 'lease_expires_at' => 'immutable_datetime', 'started_at' => 'immutable_datetime', 'completed_at' => 'immutable_datetime'];
 
     /**
@@ -46,10 +47,7 @@ class Operation extends Model
     {
         return Attribute::make(
             get: function (?string $value, array $row) use ($field): ?array {
-                if ($field === 'attempt' && ($row['action'] ?? null) === 'renew') { return []; }
-                $stored = $value === null ? null : $this->fromJson($this->fromEncryptedString($value));
-                $projection = $this->acquisitionEvidence($field, $row);
-                return $projection ? array_replace($stored ?? [], $projection) : $stored;
+                return $this->projectEvidence($field, $value, $row);
             },
             set: function (?array $value, array $row) use ($field): ?string {
                 if ($attempt = $this->acquisition($row)) {
@@ -58,6 +56,43 @@ class Operation extends Model
                 return $value === null ? null : $this->castAttributeAsEncryptedString($field, $this->asJson($value));
             },
         );
+    }
+
+    private function projectEvidence(string $field, ?string $value, array $row): ?array
+    {
+        if ($field === 'attempt' && ($row['action'] ?? null) === 'renew') { return []; }
+        $stored = $this->decodeEvidence($value);
+        $projection = $this->acquisitionEvidence($field, $row);
+        return $projection ? array_replace($stored ?? [], $projection) : $stored;
+    }
+
+    private function decodeEvidence(?string $value): ?array
+    {
+        return $value === null ? null : $this->fromJson($this->fromEncryptedString($value));
+    }
+
+    /** Receipt returns are owned by the operation, independently of claim and seal funding. */
+    public function receiptFunding(): array
+    {
+        return $this->decodeEvidence($this->attributes['funding'] ?? null) ?? [];
+    }
+
+    public function getOriginal($key = null, $default = null)
+    {
+        if (in_array($key, ['attempt', 'funding', 'policy'], true)) {
+            // Both versions use the same retained attempt. Eloquent otherwise constructs a fresh model on every call.
+            return $this->projectEvidence($key, $this->original[$key] ?? $default, $this->original);
+        }
+        return parent::getOriginal($key, $default);
+    }
+
+    /** Advisory list queries can rule out step evidence in the same read as the operation. */
+    public function scopeWithAcquisitionStep(Builder $query): Builder
+    {
+        return $query->addSelect(['has_acquisition_step' => DB::table(OperationSchema::STEPS)
+            ->select('id')->whereColumn('operation_id', 'domains_operations.id')
+            ->whereIn('step_type', ['register', 'transfer'])->where('sequence', 1)
+            ->whereColumn('step_type', 'domains_operations.action')->limit(1)]);
     }
 
     private function acquisitionEvidence(string $field, array $row): array
@@ -73,7 +108,8 @@ class Operation extends Model
 
     private function acquisitionRow(array $row): array
     {
-        if (!isset($row['id'], $row['action'], $row['transition_revision'])
+        if ((array_key_exists('has_acquisition_step', $row) && $row['has_acquisition_step'] === null)
+            || !isset($row['id'], $row['action'], $row['transition_revision'])
             || AcquisitionAttempt::key($this->getRawOriginal('action') ?? $row['action']) === null) { return []; }
         $id = (int) $row['id'];
         return $this->acquisitionRow ??= OperationAttempts::latestAcquisitions([$id])[$id] ?? [];
@@ -96,6 +132,7 @@ class Operation extends Model
     {
         $pending = [];
         foreach ($operations as $op) {
+            if (array_key_exists('has_acquisition_step', $op->attributes) && $op->attributes['has_acquisition_step'] === null) { continue; }
             if (!$op->acquisitionLoaded && $op->getRawOriginal('id') !== null
                 && AcquisitionAttempt::key((string) $op->getRawOriginal('action')) !== null) {
                 $pending[(int) $op->id][] = $op;

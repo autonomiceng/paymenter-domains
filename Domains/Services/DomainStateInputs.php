@@ -31,6 +31,7 @@ final class DomainStateInputs
         $in->acquisitions = $ids ? Operation::whereIn('id', Operation::selectRaw('max(domains_operations.id)')->tap($current)
             ->whereColumn('d.account_fingerprint', 'domains_operations.account_fingerprint')->whereIn('action', ['register', 'transfer'])->groupBy('domain_id'))
             ->limit(250)->get()->keyBy('domain_id') : collect();
+        Operation::loadAcquisitionAttempts($in->acquisitions);
         // The current cycle: the newest request under this expiry's renewal key or one of its replacements.
         $keys = array_map(fn ($d) => RenewalCycles::key($d), array_filter($domains, fn ($d) => $d->provider_expires_at !== null));
         // Groups of 25 domains keep the condition shallow: SQLite refuses one flat chain of 500 terms.

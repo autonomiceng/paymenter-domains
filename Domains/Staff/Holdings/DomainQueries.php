@@ -35,7 +35,7 @@ final class DomainQueries
     private static function rows(Builder $q, \Closure $keep, ?array $ordersOff=null, bool $release=false): Builder
     {
         $ids=[];
-        (clone $q)->reorder()->with('latestAcquisition')->chunkById(200,function ($page) use (&$ids,$keep,$ordersOff,$release): void {
+        (clone $q)->reorder()->with(['latestAcquisition' => fn ($q) => $q->withAcquisitionStep()])->chunkById(200,function ($page) use (&$ids,$keep,$ordersOff,$release): void {
             $inputs=StaffDomainInputs::for($page,$ordersOff,$release);
             $stopped=$release?\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::stoppedIds($page):[];
             foreach ($page as $d) {
