@@ -5,6 +5,7 @@ require __DIR__.'/native-app.php';
 
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\SupportDetails;
 use Paymenter\Extensions\Servers\Domains\Data\{ExecutionRecord, Money, SendState};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
@@ -130,6 +131,15 @@ same([2, [$settled, $unpaid]], [$count, array_keys($page)], 'Only the unreadable
 try { RenewalAttempt::of(Operation::findOrFail($lost)); $refused = false; } catch (DecryptException) { $refused = true; }
 DB::table(OperationSchema::EVIDENCE)->where('id', $reply->id)->update(['evidence' => $reply->evidence]);
 expect($refused, 'The unreadable renewal alone refuses its read');
+
+$observation = DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $settled, 'kind' => 'observation'])->first();
+DB::table(OperationSchema::EVIDENCE)->where('id', $observation->id)->update(['evidence' => 'unreadable-fixture']);
+$sealedDetails = SupportDetails::text(Operation::findOrFail($settled));
+$unsealedDetails = SupportDetails::text(Operation::findOrFail($never));
+DB::table(OperationSchema::EVIDENCE)->where('id', $observation->id)->update(['evidence' => $observation->evidence]);
+same([true, true], [str_contains($sealedDetails, 'Request time (UTC): 2026-11-25 12:00:00 UTC'),
+    str_contains($unsealedDetails, 'Request time (UTC): Not recorded')], 'Support details retain the seal time despite an unreadable observation and show a missing seal as unrecorded');
+
 // The sealed attempt row freezes the renewal's desired state, start and request digest without any attempt JSON.
 foreach (['payload' => ['changed' => true], 'started_at' => $done, 'request_fingerprint' => str_repeat('e', 64)] as $column => $value) {
     try { Operation::findOrFail($open)->update([$column => $value]); throw new RuntimeException($column.' changed after the seal'); }

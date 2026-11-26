@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Filament\Actions\Action;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts,StepKey};
 use Paymenter\Extensions\Servers\Domains\Staff\Requests\RequestReads;
 use Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers;
 /** The facts registrar support needs to find one request, as plain text for a support ticket. It reads only; nothing is sent. */
@@ -16,8 +16,11 @@ final class SupportDetails
         $account=RequestReads::account($op);
         // A renewal's send time is its sealed attempt row; other actions keep it in the retained record.
         $attempt=$op->action!=='renew'&&RegistrarAnswers::readable($op)?($op->attempt??[]):[];
-        try { $at=$op->action==='renew'?RenewalAttempt::of($op)->sentAt():(isset($attempt['dispatch_attempted_at'])?new \DateTimeImmutable((string)$attempt['dispatch_attempted_at']):null);
-            $sent=$at?->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s').' UTC'; }
+        try {
+            $at=$op->action==='renew' ? OperationAttempts::sealed((int)$op->id,StepKey::renew())?->sealedAt
+                : (isset($attempt['dispatch_attempted_at'])?new \DateTimeImmutable((string)$attempt['dispatch_attempted_at']):null);
+            $sent=$at===null ? null : $at->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s').' UTC';
+        }
         catch (\Throwable) { $sent=null; }
         $order=$op->provider_order_id??($op->action==='transfer'?($attempt['evidence']['transferReference']??null):RegistrarAnswers::capturedReference($op));
         $ask=$op->action==='transfer'?'Please confirm the final status of this transfer and any charge or refund on our account.'
