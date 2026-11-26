@@ -2,6 +2,7 @@
 // Enom d1392a8 DomainBilling::complimentary/retireUnpaidRenewals; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Money\Native\MoneyLockContext;
 use App\Enums\InvoiceTransactionStatus;
 use App\Models\{Invoice, User};
 use Illuminate\Support\Facades\DB;
@@ -200,7 +201,7 @@ final readonly class RenewalCycles
     /** Departure confirmation only: the caller's money decision already holds the full locks. */
     public static function retireDeparted(Operation $op, array $l, string $reason, Clock $clock): Operation
     {
-        if (!MoneyDecisions::running() || ($l['advisory'] ?? true) || !$l['operations']->contains(static fn ($row) => $row === $op) || !self::canRetireUnpaid($op, $l)) {
+        if (!MoneyLockContext::ownsFullHolding($l) || ($l['advisory'] ?? true) || !$l['operations']->contains(static fn ($row) => $row === $op) || !self::canRetireUnpaid($op, $l)) {
             throw new \DomainException('Unpaid terminal proof unavailable.');
         }
         return self::retireLocked($op, $l, $reason, $clock);

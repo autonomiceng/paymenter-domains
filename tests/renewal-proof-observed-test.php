@@ -5,7 +5,7 @@ require __DIR__.'/Support/renewal-execution.php';
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, MoneyDecisions, MoneyWorkSchema, OperationReconciliation, PricingRule, RegistrarAnswers, StaffOperationReview, StaffOperations, StaffSettingsReview as Review, StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, MoneyWorkSchema, OperationReconciliation, PricingRule, RegistrarAnswers, StaffOperationReview, StaffOperations, StaffSettingsReview as Review, StaffSettingsWrites};
 app()->instance(Clock::class, $clock);
 $staff = commerceUser();
 $staff->update(['role_id' => App\Models\Role::create(['name' => 'Renewal proof observed', 'permissions' => [
@@ -36,8 +36,8 @@ $polls = static fn ($op) => $op->fresh()->policy['renewal_polls'] ?? 0;
 $check = static function ($op, $completion) use ($clock): void { Cache::flush(); $completion->run($op->id); $clock->instant = $clock->now()->modify('+10 minutes'); };
 // Fixture: while armed, each money decision meets a lock wait timeout (MariaDB 1205), so a check's locked save retries once and defers.
 $contend = 0;
-DB::listen(static function () use (&$contend): void {
-    if ($contend > 0 && MoneyDecisions::running() && DB::transactionLevel() === 1) {
+DB::listen(static function ($query) use (&$contend): void {
+    if ($contend > 0 && DB::transactionLevel() === 1 && str_contains($query->sql, 'from "users"')) {
         $contend--; $e = new PDOException('Lock wait timeout exceeded'); $e->errorInfo = ['HY000', 1205, 'Lock wait timeout exceeded']; throw $e;
     }
 });

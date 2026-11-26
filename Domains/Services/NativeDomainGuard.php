@@ -3,6 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
+use Paymenter\Extensions\Servers\Domains\Money\Native\InvoiceFunding;
+use Paymenter\Extensions\Servers\Domains\Money\Native\MoneyLockContext;
 use App\Models\{Invoice, InvoiceItem, InvoiceTransaction, Order, Plan, Product, Service, ServiceConfig, User};
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\DB;
@@ -227,7 +229,7 @@ final class NativeDomainGuard
     public static function departed(array $locked): void
     {
         $d = $locked['domain'];
-        if (($locked['advisory'] ?? true) || !MoneyDecisions::running() || $d->status !== 'departed' || !DepartureProof::matches($d)
+        if (($locked['advisory'] ?? true) || !MoneyLockContext::ownsFullHolding($locked) || $d->status !== 'departed' || !DepartureProof::matches($d)
             || (int) $locked['service']->id !== (int) $d->service_id) { throw new \DomainException('No retained departure.'); }
         self::persist($locked['service'], ['status' => Service::STATUS_CANCELLED, 'expires_at' => null]);
     }

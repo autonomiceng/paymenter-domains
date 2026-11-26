@@ -7,7 +7,7 @@ use App\Models\{Credit, Gateway, Invoice, InvoiceTransaction, Role};
 use Illuminate\Database\{DeadlockException, QueryException};
 use Illuminate\Support\Facades\{Cache, DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement, HoldingLocks, InvoiceMoney, InvoiceScope, MoneyDecisions, MoneyOutcome, MoneyRequest, MoneyScope, MoneyScopeChanged, MoneyWorkSchema, MoneyWorkUnqueued, NativeIntentSchema, PricingRule, Refunds, StaffOperationReview, StaffReviewRefused};
+use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement, HoldingLocks, InvoiceMoney, MoneyDecisions, MoneyOutcome, MoneyRequest, MoneyScope, MoneyScopeChanged, MoneyWorkSchema, MoneyWorkUnqueued, NativeIntentSchema, PricingRule, Refunds, StaffOperationReview, StaffReviewRefused};
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 
 class ContentionCreditGateway extends \App\Classes\Extension\Gateway
@@ -141,15 +141,14 @@ same(0, DB::transactionLevel(), 'No transaction is left open');
 $after = null;
 $outer = MoneyDecisions::run(new MoneyRequest($op->domain, released: true), static function() use ($op, &$after): bool {
     DB::afterCommit(static function() use ($op, &$after): void {
-        same([0, false], [DB::transactionLevel(), MoneyDecisions::running()], 'After-commit dispatch is outside the active decision');
+        same(0, DB::transactionLevel(), 'After-commit dispatch is outside the active decision');
         $after = MoneyDecisions::run(new MoneyRequest($op->domain, released: true), static fn() => true);
     });
     return true;
 });
 same([MoneyOutcome::Applied, MoneyOutcome::Applied, true], [$outer->outcome, $after?->outcome, $after?->value], 'After-commit dispatch can run another money decision');
-same(false, MoneyDecisions::running(), 'The runner clears its active state after commit');
 $thrown = MoneyDecisions::run(new MoneyRequest($op->domain, released: true), static fn() => throw new RuntimeException('Synthetic decision failure'));
-same([MoneyOutcome::Failed, false, 0], [$thrown->outcome, MoneyDecisions::running(), DB::transactionLevel()], 'A failed decision clears its active state after rollback');
+same([MoneyOutcome::Failed, 0], [$thrown->outcome, DB::transactionLevel()], 'A failed decision clears its active state after rollback');
 
 // Invoice scope: native receipt invoice-first order, with only the request's invoice, its items and payments. Reuses the closed order above.
 $other = Operation::where('invoice_id', '!=', $op->invoice_id)->whereNotNull('invoice_id')->orderBy('id')->firstOrFail();
@@ -177,11 +176,13 @@ $at = static fn(string $t) => array_search($t, $tables, true);
 same([1, true, true], [count(array_keys($tables, 'invoices', true)), $at('users') < $at('credits') && $at('credits') < $at('invoices'), $at('invoices') < $at('services')], 'Scoped locks take the owner and credit, then the invoice, then services');
 same(false, in_array('invoices', array_slice($tables, (int)$at('services')), true), 'No invoice is locked after services');
 // The context ends with its transaction.
-try { DB::transaction(fn() => InvoiceMoney::load($narrow[5], (int)$op->invoice_id)); throw new RuntimeException('Expected an ended scope'); } catch (MoneyScopeChanged) {}
+foreach ([$narrow, $wide] as $ended) {
+    try { DB::transaction(fn() => InvoiceMoney::load($ended[5], (int)$op->invoice_id)); throw new RuntimeException('A later transaction accepted ended money locks.'); } catch (MoneyScopeChanged) {}
+}
 // Reading another invoice or owner-wide billing reruns the decision once on the full scope, never as missing debt.
 foreach ([fn(array $l) => InvoiceMoney::load($l, (int)$other->invoice_id)['settled'], fn(array $l) => UnpaidAcquisitionProof::paid($l)] as $read) {
     $scopes = []; $tables = []; $attempts = []; $tracing = true;
-    $result = MoneyDecisions::run($scoped((int)$op->invoice_id), function(array $l) use (&$scopes, $read) { $scopes[] = $l['scope']?->invoiceId; return [$read($l)]; });
+    $result = MoneyDecisions::run($scoped((int)$op->invoice_id), function(array $l) use (&$scopes, $read) { $scopes[] = $l['money']->invoiceId(); return [$read($l)]; });
     $tracing = false;
     $ownerFirst = static fn(array $t): bool => ($owner = array_search('users', $t, true)) !== false && in_array('invoices', $t, true)
         && array_filter(array_keys($t, 'invoices', true), static fn(int $i) => $i < $owner) === [];
@@ -191,7 +192,7 @@ foreach ([fn(array $l) => InvoiceMoney::load($l, (int)$other->invoice_id)['settl
 }
 // An invoice that is not the owner's ends the scoped attempt before any later lock; the full attempt decides.
 $scopes = [];
-$result = MoneyDecisions::run($scoped(DB::table('invoices')->insertGetId([...array_diff_key((array)DB::table('invoices')->find($op->invoice_id), ['id'=>0]), 'user_id'=>$staff->id, 'number'=>null])), function(array $l) use (&$scopes) { $scopes[] = $l['scope']; return true; });
+$result = MoneyDecisions::run($scoped(DB::table('invoices')->insertGetId([...array_diff_key((array)DB::table('invoices')->find($op->invoice_id), ['id'=>0]), 'user_id'=>$staff->id, 'number'=>null])), function(array $l) use (&$scopes) { $scopes[] = $l['money']->invoiceId(); return true; });
 same([MoneyOutcome::Applied, [null]], [$result->outcome, $scopes], 'A changed invoice owner runs only the full attempt');
 // A closed order whose discovery named another of the owner's invoices reruns on the full scope and is credited once.
 $miss = $closed('contention-scope-miss-placeholder.com'); $before = $balance();
@@ -203,8 +204,7 @@ same([null, 'dispute_recovery'], [$declared->kind, $declared->retryRecord], 'An 
 foreach ([fn() => new MoneyRequest($op->domain, retryRecord: '', scope: MoneyScope::Invoice, invoiceId: (int)$op->invoice_id),
     fn() => new MoneyRequest($op->domain, staffId: (int)$staff->id, retryRecord: 'dispute_recovery', scope: MoneyScope::Invoice, invoiceId: (int)$op->invoice_id),
     fn() => new MoneyRequest($op->domain, scope: MoneyScope::Invoice), fn() => new MoneyRequest($op->domain, staffId: (int)$staff->id, scope: MoneyScope::Invoice, invoiceId: (int)$op->invoice_id),
-    fn() => new MoneyRequest($op->domain, scope: MoneyScope::Invoice, invoiceId: (int)$op->invoice_id),
-    fn() => DB::transaction(fn() => HoldingLocks::take($op->domain, released: true, scope: new InvoiceScope((int)$op->invoice_id)))] as $refused) {
+    fn() => new MoneyRequest($op->domain, scope: MoneyScope::Invoice, invoiceId: (int)$op->invoice_id)] as $refused) {
     try { $refused(); throw new RuntimeException('Expected a refused scope'); } catch (LogicException $e) { same(false, $e instanceof MoneyScopeChanged, 'A malformed scope request is refused'); }
 }
 same(0, DB::transactionLevel(), 'No transaction is left open');

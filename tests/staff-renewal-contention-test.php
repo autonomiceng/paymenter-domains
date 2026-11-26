@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion;
 MoneyWorkSchema::install();
 $target = null; $failures = 0; $attempts = 0;
 Domain::retrieved(static function (Domain $domain) use (&$target, &$failures, &$attempts): void {
-    if ($domain->id !== $target || !MoneyDecisions::running() || $failures < 1) { return; }
+    if ($domain->id !== $target || \Illuminate\Support\Facades\DB::transactionLevel() !== 1 || $failures < 1) { return; }
     $attempts++; $failures--;
     $cause = new PDOException('Synthetic renewal lock wait'); $cause->errorInfo = ['HY000', 1205, 'Synthetic'];
     throw new QueryException('sqlite', 'synthetic staff renewal lock', [], $cause);

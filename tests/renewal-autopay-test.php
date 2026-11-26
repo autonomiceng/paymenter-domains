@@ -322,7 +322,7 @@ same(false, RenewalAutoPay::account(null), 'No owner: account Off');
 \Paymenter\Extensions\Servers\Domains\Services\MoneyWorkSchema::install(); DomainRenewalGateway::$mode = 'paid';
 $busy = $holder('busy'); $count = count(DomainRenewalGateway::$calls); $fails = 2;
 BillingAgreement::retrieved(static function () use (&$fails, $busy): void {
-    if ($fails < 1 || !\Paymenter\Extensions\Servers\Domains\Services\MoneyDecisions::running()
+    if ($fails < 1 || DB::transactionLevel() !== 1
         || !isset(Operation::where('domain_id', $busy->id)->where('action', 'renew')->first()?->funding['auto_pay'])) { return; }
     $fails--; $cause = new PDOException('Synthetic deadlock'); $cause->errorInfo = ['40001', 1213, 'Synthetic'];
     throw new Illuminate\Database\QueryException('sqlite', 'synthetic charge check', [], $cause);

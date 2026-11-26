@@ -2,10 +2,11 @@
 // Enom d1392a8 renewal completion; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Renewal\Execution;
+use Paymenter\Extensions\Servers\Domains\Money\Native\{MoneyDecisions, MoneyLockContext};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CapturedChargeReview, ComplimentaryCosts, ComplimentaryInvoices, EnomBillZones, EnomTestCallLimit, EntryDeadline, FreshTransaction, HistoryResumption, HoldingLocks, HoldingObservationWork, MoneyDecisions, MoneyOutcome, MoneyRequest, ObservationProjection, OperationClaims, OperationReconciliation, ReadDeferred, ReconciliationEvidence, RegistrarCheck, RenewalBusy, RenewalFunding, Runtime, StaffOperationReview, StaffReviewRefused};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CapturedChargeReview, ComplimentaryCosts, ComplimentaryInvoices, EnomBillZones, EnomTestCallLimit, EntryDeadline, FreshTransaction, HistoryResumption, HoldingLocks, HoldingObservationWork, MoneyOutcome, MoneyRequest, ObservationProjection, OperationClaims, OperationReconciliation, ReadDeferred, ReconciliationEvidence, RegistrarCheck, RenewalBusy, RenewalFunding, Runtime, StaffOperationReview, StaffReviewRefused};
 /** Bounded observation of the original sealed renewal. Never retries, refunds or invents expiry. */
 final readonly class RenewalCompletion
 {
@@ -136,7 +137,7 @@ final readonly class RenewalCompletion
     /** Contention queues automatic work; interactive checks refuse so staff never see an unsaved read as finished. */
     private function decide($seed, int $id, \Closure $step, bool $staff): mixed
     {
-        $decision = MoneyDecisions::run(new MoneyRequest($seed, $staff ? null : RenewalExecution::KIND, $id), $step);
+        $decision = MoneyDecisions::run(new MoneyRequest($seed, $staff ? null : RenewalExecution::KIND, $id), static fn (MoneyLockContext $locks) => $step($locks->facts()));
         if ($decision->error) { throw $decision->error; }
         if ($staff && $decision->outcome === MoneyOutcome::Deferred) { throw new StaffReviewRefused(MoneyDecisions::BUSY); }
         return $decision->value;

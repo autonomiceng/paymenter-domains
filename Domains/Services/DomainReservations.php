@@ -4,6 +4,7 @@ declare(strict_types=1);
 // Terminal-history policy adapted from Enom d2c55e2 Services/DomainReservations.php.
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
+use Paymenter\Extensions\Servers\Domains\Money\Native\MoneyLockContext;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
@@ -40,7 +41,7 @@ final class DomainReservations
     public static function releaseDeparted(array $locks): void
     {
         $d=$locks['domain'];
-        if(!MoneyDecisions::running()||DB::transactionLevel()!==1||($locks['advisory']??true)||$d->status!=='departed'||!DepartureProof::matches($d)
+        if(!MoneyLockContext::ownsFullHolding($locks)||DB::transactionLevel()!==1||($locks['advisory']??true)||$d->status!=='departed'||!DepartureProof::matches($d)
             ||$d->reservation_name!==$d->domain){throw new \DomainException('No retained departure.');}
         Domain::whereKey($d->id)->where('reservation_name',$d->domain)->update(['reservation_name'=>null]);
         $d->setRawAttributes([...$d->getAttributes(),'reservation_name'=>null],true);
