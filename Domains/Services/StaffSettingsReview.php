@@ -51,7 +51,7 @@ final class StaffSettingsReview
     }
 
     public static function ticket(int $actor,int $server,?int $tld,string $action,string $stamp): string
-    {return Crypt::encryptString(json_encode(['actor'=>$actor,'server'=>$server,'tld'=>$tld,'action'=>$action,'stamp'=>$stamp,'ready'=>$action==='activate'?EnomLiveActivation::stamp(Account::where('server_id',$server)->sole(),true):null,'key'=>bin2hex(random_bytes(16)),'until'=>time()+900],JSON_THROW_ON_ERROR));}
+    {return Crypt::encryptString(json_encode(['actor'=>$actor,'server'=>$server,'tld'=>$tld,'action'=>$action,'stamp'=>$stamp,'ready'=>$action==='activate'?EnomLiveActivation::stamp(Account::where('server_id',$server)->sole(),true):null,'key'=>bin2hex(random_bytes(16)),'until'=>now()->getTimestamp()+900],JSON_THROW_ON_ERROR));}
     public function lockActor(): void
     {
         $u=User::whereKey($this->actorId)->lockForUpdate()->firstOrFail();
@@ -82,7 +82,7 @@ final class StaffSettingsReview
         }
         try{$t=json_decode(Crypt::decryptString($this->ticket),true,8,JSON_THROW_ON_ERROR);}catch(\Throwable){throw new \DomainException('Invalid review key.');}
         if(($t['actor']??null)!==$this->actorId||($t['server']??null)!==$this->serverId||($t['tld']??null)!==$this->tldId||($t['action']??null)!==$this->action
-            ||!is_int($t['until']??null)||$t['until']<=time()||!is_string($t['key']??null)||!preg_match('/^[a-f0-9]{32}$/D',$t['key'])||!is_string($t['stamp']??null)
+            ||!is_int($t['until']??null)||$t['until']<=now()->getTimestamp()||!is_string($t['key']??null)||!preg_match('/^[a-f0-9]{32}$/D',$t['key'])||!is_string($t['stamp']??null)
             ||($this->action==='activate'&&EnomLiveActivation::enabling(Account::where('server_id',$this->serverId)->sole(),$this->input)&&($t['ready']??null)!==EnomLiveActivation::stamp(Account::where('server_id',$this->serverId)->sole(),true))
             ||!hash_equals($this->synced??$t['stamp'],($catalogueStamp!==null?$catalogueStamp():self::stamp($this->serverId,$this->tldId,true)))){throw new \DomainException('Settings changed. Reload this page.');}
         // The account mutex serializes checks; the primary key also prevents duplicate claims.
@@ -108,19 +108,19 @@ final class StaffSettingsReview
     /** Independent recent windows: bulk syncs cannot evict staff saves. Never replay authority. */
     public static function historyRows(Server $s,bool $lock=false): array
     {
-        $global=AuditEvents::recent(0,'staff_settings',self::HISTORY_LIMIT,$lock);
-        $rows=[...$global,...self::historyWindow($s,self::KEY,'staff_settings',$lock),...self::historyWindow($s,self::SYNC_KEY,'catalogue_sync',$lock)];
-        usort($rows,static fn(array $a,array $b)=>strtotime($a['at'])<=>strtotime($b['at']));
-        return $rows;
+        $rows=AuditEvents::recentById(0,'staff_settings',self::HISTORY_LIMIT,$lock)+self::historyWindow($s,'staff_settings',$lock)+self::historyWindow($s,'catalogue_sync',$lock);
+        // Saves in the same second keep their write order.
+        uksort($rows,static fn(int $a,int $b)=>[strtotime($rows[$a]['at']),$a]<=>[strtotime($rows[$b]['at']),$b]);
+        return array_values($rows);
     }
-    private static function historyWindow(Server $s,string $key,string $family,bool $lock): array
+    private static function historyWindow(Server $s,string $family,bool $lock): array
     {
-        return AuditEvents::recent((int)$s->id,$family,self::HISTORY_LIMIT,$lock);
+        return AuditEvents::recentById((int)$s->id,$family,self::HISTORY_LIMIT,$lock);
     }
     public function record(string $phase='completed',?array $outcome=null,array $outgoing=[]): void
     {
         if(!$this->verified||DB::transactionLevel()!==1){throw new \LogicException('Locked review required.');}
-        $entry=['key'=>$this->verified['key'],'actor_id'=>$this->actorId,'at'=>gmdate(DATE_ATOM),'action'=>self::ACTIONS[$this->action],
+        $entry=['key'=>$this->verified['key'],'actor_id'=>$this->actorId,'at'=>now()->utc()->format(DATE_ATOM),'action'=>self::ACTIONS[$this->action],
             'reason'=>$this->reason,'phase'=>$phase,...($outcome===null?[]:['outcome'=>$outcome]),'input'=>$this->input,'tld_id'=>$this->tldId,'before'=>$this->before,'after'=>$this->catalogueStamp!==null&&$this->action!=='default_pricing'?['snapshot'=>($this->catalogueStamp)()]:$this->state($this->serverId,$this->tldId)];
         // History is read per account, so a business-wide change is written to each one, disabled accounts too.
         foreach($this->serverId===self::ALL_ACCOUNTS?self::domainServers():[$this->serverId] as $id){self::append(Server::whereKey($id)->lockForUpdate()->firstOrFail(),$entry);}
