@@ -14,14 +14,9 @@ final class SupportDetails
     public static function text(Operation $op): string
     {
         $account=RequestReads::account($op);
-        // A renewal's send time is its sealed attempt row; other actions keep it in the retained record.
-        $attempt=$op->action!=='renew'&&RegistrarAnswers::readable($op)?($op->attempt??[]):[];
-        try {
-            $at=$op->action==='renew' ? OperationAttempts::sealed((int)$op->id,StepKey::renew())?->sealedAt
-                : (isset($attempt['dispatch_attempted_at'])?new \DateTimeImmutable((string)$attempt['dispatch_attempted_at']):null);
-            $sent=$at===null ? null : $at->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s').' UTC';
-        }
-        catch (\Throwable) { $sent=null; }
+        $attempt=self::retained($op);
+        $at=self::requestTime($op);
+        $sent=$at===null?null:$at->format('Y-m-d H:i:s').' UTC';
         $order=$op->provider_order_id??($op->action==='transfer'?($attempt['evidence']['transferReference']??null):RegistrarAnswers::capturedReference($op));
         $ask=$op->action==='transfer'?'Please confirm the final status of this transfer and any charge or refund on our account.'
             :'Please confirm whether this request created an order or charged our account.';
@@ -33,6 +28,23 @@ final class SupportDetails
             'Our reference: Request #'.$op->id,
             ...(is_string($order)&&$order!==''?['Order number: '.$order]:[])];
         return implode("\n",$lines);
+    }
+    /** When the request went to the registrar, in UTC, or null when it was not recorded or cannot be read.
+     * A renewal's send time is its sealed attempt row; other actions keep it in the retained record. */
+    public static function requestTime(Operation $op): ?\DateTimeImmutable
+    {
+        try {
+            $attempt=self::retained($op);
+            $at=$op->action==='renew' ? OperationAttempts::sealed((int)$op->id,StepKey::renew())?->sealedAt
+                : (isset($attempt['dispatch_attempted_at'])?new \DateTimeImmutable((string)$attempt['dispatch_attempted_at']):null);
+            return $at?->setTimezone(new \DateTimeZone('UTC'));
+        }
+        catch (\Throwable) { return null; }
+    }
+    /** @return array<string,mixed> the retained record of a non-renewal request, empty when unreadable. */
+    private static function retained(Operation $op): array
+    {
+        return $op->action!=='renew'&&RegistrarAnswers::readable($op)?($op->attempt??[]):[];
     }
     /** Copies in the browser. The text rides in a data attribute, so no request data enters the click script.
      * Filament prints extra attributes unescaped, so the text is escaped here and the browser reads it back unchanged. */

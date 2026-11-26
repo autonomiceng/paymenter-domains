@@ -134,11 +134,11 @@ expect($refused, 'The unreadable renewal alone refuses its read');
 
 $observation = DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $settled, 'kind' => 'observation'])->first();
 DB::table(OperationSchema::EVIDENCE)->where('id', $observation->id)->update(['evidence' => 'unreadable-fixture']);
-$sealedDetails = SupportDetails::text(Operation::findOrFail($settled));
-$unsealedDetails = SupportDetails::text(Operation::findOrFail($never));
+$sealedAt = SupportDetails::requestTime(Operation::findOrFail($settled));
+$unsealedAt = SupportDetails::requestTime(Operation::findOrFail($never));
 DB::table(OperationSchema::EVIDENCE)->where('id', $observation->id)->update(['evidence' => $observation->evidence]);
-same([true, true], [str_contains($sealedDetails, 'Request time (UTC): 2026-11-25 12:00:00 UTC'),
-    str_contains($unsealedDetails, 'Request time (UTC): Not recorded')], 'Support details retain the seal time despite an unreadable observation and show a missing seal as unrecorded');
+same([$start->getTimestamp(), 0, null], [$sealedAt?->getTimestamp(), $sealedAt?->getOffset(), $unsealedAt],
+    'Support details retain the UTC seal time despite an unreadable observation and leave a missing seal unrecorded');
 
 // The sealed attempt row freezes the renewal's desired state, start and request digest without any attempt JSON.
 foreach (['payload' => ['changed' => true], 'started_at' => $done, 'request_fingerprint' => str_repeat('e', 64)] as $column => $value) {
