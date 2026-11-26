@@ -155,11 +155,12 @@ final readonly class OperationWriter
             && !$facts->readUnresolved && $facts->reading($now);
     }
 
-    /** True while this read still owns the attempt and is inside its deadline, inherited uncertainty or not. */
-    private function readHeld(ReadToken $read): bool
+    /** A stale finisher cannot change the schedule or use its evidence once a successor owns the read. */
+    public function ownsRead(ReadToken $read, bool $allowExpired = false): bool
     {
         $facts = OperationAttempts::attempt($read->attempt, true);
-        return $facts !== null && $facts->readToken !== null && hash_equals($facts->readToken, $read->token) && $facts->reading($this->clock->now());
+        return $facts?->current && $facts->readToken !== null && hash_equals($facts->readToken, $read->token)
+            && ($allowExpired || $facts->reading($this->clock->now()));
     }
 
     /** Releases this read. A stale finisher cannot clear a successor; inherited uncertainty stays. */
@@ -200,7 +201,7 @@ final readonly class OperationWriter
         self::requireTransaction();
         $owned = $outcome === self::NOT_SENT
             ? $this->readCurrent($read) && OperationAttempts::attempt($read->attempt, true)?->grantConsumedAt === null
-            : $this->readHeld($read);
+            : $this->ownsRead($read);
         if (!$owned) { return Transition::Stale; }
         return $this->append($read->attempt->operationId, $read->attempt->attemptId, 'settlement', 'registrar_read', $outcome, $settlement, 'settlement')
             ? Transition::Applied : Transition::Stale;
@@ -210,7 +211,7 @@ final readonly class OperationWriter
     public function hold(ReadToken $read, array $proof): Transition
     {
         self::requireTransaction();
-        if (!$this->readHeld($read)) { return Transition::Stale; }
+        if (!$this->ownsRead($read)) { return Transition::Stale; }
         return $this->append($read->attempt->operationId, $read->attempt->attemptId, 'held', 'registrar_read', 'review', $proof, 'held')
             ? Transition::Applied : Transition::Stale;
     }
