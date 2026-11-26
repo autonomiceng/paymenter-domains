@@ -4,9 +4,11 @@ from collections import Counter
 import contextlib
 import io
 import itertools
+import json
 import os
 import signal
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -57,14 +59,36 @@ class MariaGuardTests(unittest.TestCase):
                 finally:
                     for sig, handler in handlers.items(): signal.signal(sig, handler)
 
-    def test_schema_fixture_overrides_inherited_database_url(self):
+    def test_schema_fixture_gets_only_its_own_database_and_paths(self):
         with mock.patch.dict(os.environ, {'DB_URL': 'mysql://operator:synthetic@localhost/host_database?unix_socket=/host/mysql.sock',
-                                          'DB_DATABASE': 'host_database', 'DB_SOCKET': '/host/mysql.sock'}):
-            env = schema_harness.php_environment('/owned/app', '/owned/socket', 'owned_database', 'synthetic', 'p_')
-        self.assertEqual(env['DB_URL'], '')
+                                          'DB_DATABASE': 'host_database', 'DB_SOCKET': '/host/mysql.sock', 'PHPRC': '/host/php.ini'}):
+            env = schema_harness.php_environment(Path('/owned/scratch'), '/owned/app', '/owned/socket', 'owned_database', 'synthetic', 'p_')
+        self.assertNotIn('DB_URL', env)
         self.assertEqual(env['DB_SOCKET'], '/owned/socket')
         self.assertEqual(env['DB_DATABASE'], 'owned_database')
         self.assertEqual(env['SCHEMA_PREFIX'], 'p_')
+        self.assertEqual((env['PHPRC'], env['HOME']), ('', '/owned/scratch/home'))
+
+    def test_caller_home_and_docker_config_never_reach_docker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = Path(directory)/'docker.sock'
+            daemon.touch()
+            caller = self.environment(directory, DOCKER_HOST='unix://'+str(daemon), DOCKER_CONTEXT='caller-context',
+                                      DOCKER_CONFIG='/caller/docker', HOME='/caller/home', XDG_RUNTIME_DIR='/caller/run')
+            seen = []
+            def docker(argv, *, env=None, **options):
+                seen.append(dict(os.environ) if env is None else env)
+                if argv[1] == 'context':
+                    return subprocess.CompletedProcess(argv, 0, json.dumps([{'Endpoints': {'docker': {'Host': caller['DOCKER_HOST']}}}]).encode(), b'')
+                return subprocess.CompletedProcess(argv, 1, b'', b'')
+            with mock.patch.dict(os.environ, caller, clear=True), mock.patch('stat.S_ISSOCK', return_value=True), \
+                 mock.patch.object(schema_harness.shutil, 'which', return_value='/usr/bin/docker'), \
+                 mock.patch.object(schema_harness.subprocess, 'run', side_effect=docker), contextlib.redirect_stdout(io.StringIO()):
+                self.assertIn('skipped', schema_harness.run())
+        self.assertTrue(seen)
+        for env in seen:
+            self.assertEqual({name: value for name, value in env.items() if 'caller' in value}, {})
+            self.assertEqual(env['DOCKER_HOST'], caller['DOCKER_HOST'])
 
     def test_schema_remote_host_refuses_without_any_docker_call(self):
         with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, self.environment(directory, DOCKER_HOST='tcp://remote.test'), clear=True), \

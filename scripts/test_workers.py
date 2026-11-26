@@ -21,9 +21,11 @@ TEST_OPTIONS = {'DOMAINS_TEST_MONEY_SCALE_FULL_MATRIX': 'tests/money-lock-scale-
 # Runner controls and named test options that reach commands; other DOMAINS_TEST_ values stay with the caller.
 RUNNER_ENV = ['DOMAINS_TEST_CGROUP', 'DOMAINS_TEST_BUDGET', 'DOMAINS_TEST_LIMITS',
               'DOMAINS_TEST_JOBS', 'DOMAINS_TEST_FIXTURE_COSTS', *TEST_OPTIONS]
-# The MariaDB launcher reaches the caller's Docker client, and keeps its short socket scratch path, through
-# these, and runs unconfined, until it gets its own isolated home.
-MARIADB_HOST_PATHS = frozenset({'HOME', 'XDG_RUNTIME_DIR', 'TMPDIR'})
+# The only caller inputs a MariaDB command gets: the suite's scratch root, which keeps its socket path short, the
+# pinned PHP and app, and the admitted local Docker socket. Its home and runtime paths are private, and it seals its
+# own Docker and PHP environments; it still runs unconfined.
+MARIADB_INPUTS = ('TMPDIR', 'CONVERSION_MARIADB_PHP', 'PAYMENTER_TEST_APP', 'DOCKER_HOST')
+MARIADB_HOST_PATHS = frozenset({'TMPDIR'})
 # Writable per-user locations and nested resource receipts, each inside the command's own root.
 PRIVATE_PATHS = {'HOME': 'home', 'XDG_CONFIG_HOME': 'home/.config', 'XDG_DATA_HOME': 'home/.local/share',
                  'XDG_STATE_HOME': 'home/.local/state', 'XDG_CACHE_HOME': 'cache', 'XDG_RUNTIME_DIR': 'run',
