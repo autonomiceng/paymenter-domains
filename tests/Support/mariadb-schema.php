@@ -81,8 +81,8 @@ $claimedAt(' ON UPDATE CURRENT_TIMESTAMP');
 expect(!Verification::current(), 'Drift makes the receipt stale');
 try { Verification::run(); throw new LogicException('ON UPDATE drift accepted by the full check'); }
 catch (RuntimeException $error) { same('Retained Domains schema mismatch: '.OperationSchema::ATTEMPTS, $error->getMessage(), 'Full check refuses ON UPDATE drift'); }
-expect(!Verification::current(), 'A refused check records no receipt');
 $claimedAt('');
+expect(!Verification::current(), 'A refused check invalidates the old receipt even after the schema is restored');
 Verification::run(); expect(Verification::current(), 'The restored definition verifies again');
 // A dropped or weakened reference refuses retained verification; restoring the exact reference passes again.
 $evidenceKeys = Schema::getForeignKeys(OperationSchema::EVIDENCE);

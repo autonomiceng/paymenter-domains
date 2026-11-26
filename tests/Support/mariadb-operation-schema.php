@@ -79,8 +79,10 @@ same(Transition::Busy, $on('second', static fn () => DB::transaction(static fn (
 $later = OperationWriter::at($claimedAt->modify('+120 seconds'));
 $second = $on('second', static fn () => DB::transaction(static fn () => $later->claim($keyed, StepKey::renew(), $claimedAt->modify('+180 seconds'))));
 expect($second instanceof AttemptToken && $second->ordinal === 2 && $second->claimKey !== $first->claimKey, 'An expired claim passes to the other connection under a new key');
-same(Transition::Stale, DB::transaction(static fn () => $later->seal($first, new SealTerms(1, str_repeat('b', 64), new Money('8.120000', 'USD'),
-    'ordinary', $claimedAt->modify('+300 seconds')))), 'The replaced claim cannot seal');
+$insideFirstLease = OperationWriter::at($claimedAt->modify('+30 seconds'));
+same(Transition::Stale, DB::transaction(static fn () => $insideFirstLease->seal($first, new SealTerms(1, str_repeat('b', 64), new Money('8.120000', 'USD'),
+    'ordinary', $claimedAt->modify('+300 seconds')))), 'Replacement fences the first claim even inside its original lease');
+same($second->attemptId, (int) DB::table(OperationSchema::STEPS)->where('id', $first->stepId)->value('current_attempt_id'), 'The step points to the second claim');
 $stepIds = DB::table(OperationSchema::STEPS)->where('operation_id', $keyed)->pluck('id');
 same([1, 2], [count($stepIds), DB::table(OperationSchema::ATTEMPTS)->whereIn('step_id', $stepIds)->count()], 'One step with both claims as history');
 DB::purge('second');
