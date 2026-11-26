@@ -100,8 +100,7 @@ foreach(['success','unsent','timeout','cap','off'] as $mode){
         commerceReject(fn () => $result->fresh()->update(['attempt' => $malformed]));
         $bad = clone $result; unset($bad->id); $bad->attempt = $malformed;
         $bad->started_at = $result->started_at; $bad->request_fingerprint = $result->request_fingerprint;
-        try{RefundProof::requireUnsent($bad,$result->domain);expect(false,'Malformed sealed deferral must fail');}
-        catch(\DomainException $error){same('Unknown capacity deferral.',$error->getMessage(),'Sealed deferrals retain timestamp validation');}
+        commerceReject(fn () => RefundProof::requireUnsent($bad, $result->domain));
         commerceReject(fn()=>$result->update(['attempt'=>array_replace($result->attempt,['execution'=>null]) ]));$result->refresh();
         $staff=commerceUser();$role=Role::create(['name'=>'Acquisition refunds','permissions'=>['admin.domains.manage','admin.invoices.update']]);$staff->update(['role_id'=>$role->id]);
         $credit=static fn()=>PricingRule::minor((string)(Credit::where('user_id',$user->id)->where('currency_code','USD')->value('amount')??'0.00'));

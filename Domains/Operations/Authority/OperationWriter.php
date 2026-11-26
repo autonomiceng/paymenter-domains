@@ -134,11 +134,22 @@ final readonly class OperationWriter
         return Transition::Applied;
     }
 
+    /** A registrar's immediate acquisition outcome after it has been correlated to the holding. */
+    public function recordAcquisitionDecision(AttemptToken $token, string $state, array $proof): Transition
+    {
+        self::requireTransaction();
+        $facts = OperationAttempts::attempt($token, true);
+        if (!$facts?->sealed() || !$facts->current
+            || !OperationAttempts::evidence($token->operationId, $token->attemptId, 'reply')) { return Transition::Stale; }
+        return $this->append($token->operationId, $token->attemptId, 'decision', 'reply', $state, $proof, 'decision')
+            ? Transition::Applied : Transition::Stale;
+    }
+
     /** A new read claim on the sealed attempt. A live read is busy. An earlier claim that was never closed leaves uncertainty. */
     public function openRead(AttemptToken $token, \DateTimeImmutable $until): ReadToken|Transition
     {
         self::requireTransaction(); $now = $this->clock->now(); $facts = OperationAttempts::attempt($token, true);
-        if (!$facts?->sealed()) { return Transition::Stale; }
+        if (!$facts?->sealed() || !$facts->current || $until <= $now) { return Transition::Stale; }
         if ($facts->reading($now)) { return Transition::Busy; }
         $inherited = $facts->readUnresolved || $facts->readToken !== null; $read = bin2hex(random_bytes(16));
         DB::table(OperationSchema::ATTEMPTS)->where('id', $token->attemptId)->update(['read_token' => $read,

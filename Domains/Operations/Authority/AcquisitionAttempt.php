@@ -21,7 +21,7 @@ final readonly class AcquisitionAttempt
         $key = self::key($action);
         $facts = $key ? OperationAttempts::latest($id, $key, $lock) : null;
         if (!$facts) { return null; }
-        $rows = OperationAttempts::evidenceMany([$id], ['claim', 'admission', 'reply', 'test_capacity', 'capacity', 'settlement'])[$id] ?? [];
+        $rows = OperationAttempts::evidenceMany([$id], ['claim', 'admission', 'reply', 'decision', 'test_capacity', 'capacity', 'settlement'])[$id] ?? [];
         foreach ($rows as $evidence) {
             if (in_array(OperationAttempts::UNREADABLE, $evidence, true)) { throw new DecryptException('Acquisition attempt evidence is unreadable.'); }
         }
@@ -72,6 +72,7 @@ final readonly class AcquisitionAttempt
         return [...$attempt, ...$this->history, 'dispatch_attempted_at' => $this->facts->sealedAt->format(DATE_ATOM),
             'authorized_cost' => ['amount' => $this->facts->authorizedAmount, 'currency' => $this->facts->authorizedCurrency],
             $admissionKey => $admission[$admissionKey], ...array_diff_key($this->rows['reply']['evidence'] ?? [], ['reason' => true]),
+            ...($this->rows['decision']['evidence'] ?? []),
             ...($this->rows['settlement']['evidence'] ?? [])];
     }
 
@@ -97,5 +98,16 @@ final readonly class AcquisitionAttempt
         if (!($raw = $op->getRawOriginal('attempt'))) { return false; }
         $stored = json_decode(\Illuminate\Support\Facades\Crypt::decryptString($raw), true, 32, JSON_THROW_ON_ERROR);
         return (bool) array_intersect_key($stored, array_flip(['claim_key', 'seal', 'dispatch_attempted_at', 'execution']));
+    }
+    public static function sameClaim(Operation $a, Operation $b): bool
+    {
+        return $a->state === 'running' && $b->state === 'running' && $a->transition_revision === $b->transition_revision
+            && self::sameWorker($a, $b);
+    }
+    public static function sameWorker(Operation $a, Operation $b): bool
+    {
+        if (!($token = $b->acquisitionWorker) || $token->operationId !== (int) $a->id) { return false; }
+        $facts = OperationAttempts::attempt($token, true);
+        return $facts?->current && !$facts->released && !self::conflicts($a);
     }
 }

@@ -16,6 +16,8 @@ class Operation extends Model
     public ?Tld $catalogueTld = null;
     /** Exact worker authority, set by the claim or seal transaction and never persisted. */
     public ?AttemptToken $acquisitionWorker = null;
+    private ?AcquisitionAttempt $acquisitionAttempt = null;
+    private bool $acquisitionLoaded = false;
 
     protected $table = 'domains_operations';
     protected $guarded = [];
@@ -55,32 +57,49 @@ class Operation extends Model
 
     private function acquisitionEvidence(string $field, array $row): array
     {
-        $attempt = self::acquisition($row);
+        $attempt = $this->acquisition($row);
         return $attempt ? ($field === 'attempt' ? $attempt->attempt($row['action']) : $attempt->funding()) : [];
     }
 
-    private static function acquisition(array $row): ?AcquisitionAttempt
+    private function acquisition(array $row): ?AcquisitionAttempt
     {
-        return isset($row['id'], $row['action'], $row['transition_revision'])
-            ? AcquisitionAttempt::of((int) $row['id'], $row['action']) : null;
+        if (!isset($row['id'], $row['action'], $row['transition_revision'])) { return null; }
+        if (!$this->acquisitionLoaded) {
+            $this->acquisitionAttempt = AcquisitionAttempt::of((int) $row['id'], $row['action']);
+            $this->acquisitionLoaded = true;
+        }
+        return $this->acquisitionAttempt;
+    }
+
+    /** Called after a writer transition on this model's locked operation. */
+    public function reloadAcquisitionAttempt(): void
+    {
+        $this->acquisitionAttempt = null;
+        $this->acquisitionLoaded = false;
+    }
+
+    public function setRawAttributes(array $attributes, $sync = false)
+    {
+        $this->reloadAcquisitionAttempt();
+        return parent::setRawAttributes($attributes, $sync);
     }
 
     protected function startedAt(): Attribute
     {
-        return Attribute::get(fn ($value, array $row) => ($attempt = self::acquisition($row))
+        return Attribute::get(fn ($value, array $row) => ($attempt = $this->acquisition($row))
             ? ($attempt->start() ? $this->asDateTime($attempt->start())->toImmutable() : null)
             : ($value === null ? null : $this->asDateTime($value)->toImmutable()));
     }
 
     protected function requestFingerprint(): Attribute
     {
-        return Attribute::get(fn ($value, array $row) => ($attempt = self::acquisition($row)) ? $attempt->digest() : $value);
+        return Attribute::get(fn ($value, array $row) => ($attempt = $this->acquisition($row)) ? $attempt->digest() : $value);
     }
 
     protected function leaseExpiresAt(): Attribute
     {
         return Attribute::get(function ($value, array $row) {
-            $attempt = self::acquisition($row);
+            $attempt = $this->acquisition($row);
             if (!$attempt) { return $value === null ? null : $this->asDateTime($value)->toImmutable(); }
             return ($row['state'] ?? null) === 'running' && $attempt->facts->current
                 ? $this->asDateTime($attempt->facts->claimUntil)->toImmutable() : null;
@@ -100,9 +119,16 @@ class Operation extends Model
         static::updating(static function (self $operation): void {
             $dirty = array_keys($operation->getDirty());
             if (array_intersect($dirty, ['payload', 'started_at', 'request_fingerprint', 'lease_expires_at'])
-                && ($attempt = self::acquisition($operation->attributes))) {
+                && ($attempt = $operation->acquisition($operation->attributes))) {
                 if ($attempt->sealed() || array_intersect($dirty, ['started_at', 'request_fingerprint', 'lease_expires_at'])) {
                     throw new \DomainException('Acquisition authority belongs to its operation attempt.');
+                }
+            }
+            if (AcquisitionAttempt::key($operation->action) && $operation->acquisition($operation->attributes)) {
+                $next = (int) $operation->getRawOriginal('transition_revision') + 1;
+                if (in_array('state', $dirty, true)) { $operation->transition_revision = $next; }
+                elseif (in_array('transition_revision', $dirty, true) && $operation->transition_revision !== $next) {
+                    throw new \DomainException('Acquisition revision must advance by one.');
                 }
             }
             if ($operation->action === 'renew') {
