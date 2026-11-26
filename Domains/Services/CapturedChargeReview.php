@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence,Environment};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter,Transition};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 /** Review of an incurred charge. No new send, charge, refund or replacement of the original proof. The proof and the review
  * identity are read through the renewal attempt reader. */
@@ -101,6 +102,10 @@ final class CapturedChargeReview
         $policy=$op->policy;$observations=$policy['captured_charge_observations'];$seen=end($observations);
         $policy['captured_charge_approval']=['actor_id'=>(int)$l['staff']->id,'at'=>$clock->now()->format(DATE_ATOM),'read'=>$seen['key'],
             'proof_hash'=>hash('sha256',json_encode($proof,JSON_THROW_ON_ERROR)),'charge'=>$charge];
+        // The exact held proof becomes the attempt's settlement, with the staff approval and the read it rests on, before the holding advances.
+        $token=RenewalAttempt::of($op)->attempt()?->token;
+        if(!$token||(new OperationWriter($clock))->approveHeld($token,['identity'=>RegistrarAnswers::identity($op),'settlement'=>$proof,
+            'approval'=>$policy['captured_charge_approval'],'read'=>$seen])!==Transition::Applied){throw new StaffReviewRefused('Captured charge identity changed.');}
         $policy['renewal_execution']=['staff_alert'=>true,'reason'=>'captured_charge_approved','refundable_later'=>false];
         self::save($op,['state'=>'succeeded','policy'=>$policy,'provider_order_id'=>$proof['order_reference'],'confirmed_expires_at'=>$proof['expiry'],
             'completed_at'=>$clock->now(),'lease_expires_at'=>null],true);

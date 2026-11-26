@@ -212,7 +212,17 @@ same('8.000000',$forecast()['total'],'Validated sealed prewire refusal remains o
 $proven->update(['billing_managed'=>false]);$unproven=$make(placeholderComFixtureName('balance-unproven-placeholder.com'),'2027-06-01');
 $proof['attempt']['execution']['discrepancies']=['unknown'];$renew($unproven,'held',$proof);
 same(0,$forecast()['count'],'Unvalidated sealed refusal cannot borrow definitely-unsent proof');
-$unproven->update(['billing_managed'=>false]);
+$unproven->update(['billing_managed'=>false]);$split=$make(placeholderComFixtureName('balance-split-placeholder.com'),'2027-06-01');
+$renew($split,'held',[...$validProof,'refused'=>false]);
+same(0,$forecast()['count'],'An unsent JSON copy cannot outweigh a sealed attempt still possibly sent');
+$split->update(['billing_managed'=>false]);
+// The attempt row, not its JSON copy, classifies a sealed send.
+foreach(['empty'=>[],'unsealed'=>['seal'=>'absent','send_state'=>'definitely_unsent']] as $case=>$copy){
+    $rowOnly=$make(placeholderComFixtureName('balance-row-'.$case.'-placeholder.com'),'2027-06-01');$sent=$renew($rowOnly,'held',[...$validProof,'refused'=>false]);
+    Operation::withoutEvents(fn()=>$sent->update(['attempt'=>$copy]));
+    same(0,$forecast()['count'],'A row-sealed send with an '.$case.' JSON copy is not an open obligation');
+    $rowOnly->update(['billing_managed'=>false]);
+}
 $ownerOff=$make(placeholderComFixtureName('balance-owner-off-placeholder.com'));$ownerOff->update(['renewal_policy'=>['owner_auto_renew'=>false]]);
 same(0,$forecast()['count'],'Owner Off excludes unissued renewals');$ownerDebt=$renew($ownerOff);
 same(1,$forecast()['count'],'Owner Off preserves issued unsent debt forecast');$ownerOff->update(['billing_managed'=>false]);
@@ -232,14 +242,14 @@ $cancel->update(['type'=>'immediate']);same(0,$forecast()['count'],'Immediate ca
 $off->update(['status'=>'retired']);same(0,$forecast()['count'],'Retired holding excluded');
 $off->update(['status'=>'active']);$off->service->update(['status'=>'cancelled']);same(0,$forecast()['count'],'Cancelled service excluded');
 $otherDomain=$make(placeholderComFixtureName('balance-other-placeholder.com'),'2026-11-01',$b);same(0,$forecast()['count'],'Forecast respects second server');$otherDomain->update(['billing_managed'=>false]);
-// One bounded forecast chunk batches cancellation and invoice reads for both obligation paths.
+// One bounded forecast chunk batches cancellation, invoice and attempt reads for both obligation paths, with several valid refusals.
 $queryCount=static function()use($forecast):int{DB::enableQueryLog();DB::flushQueryLog();$forecast();$n=count(DB::getQueryLog());DB::disableQueryLog();return $n;};
 DB::beginTransaction();
 $bounded=[];$bounded[]=$make(placeholderComFixtureName('forecast-bounded-first-placeholder.com'));$renew($bounded[0],'held',$validProof);
 $oneChunk=$queryCount();
-for($i=1;$i<25;$i++){$h=$make(placeholderComFixtureName('forecast-bounded-'.$i.'-placeholder.com'));$bounded[]=$h;$renew($h,$i%2?'awaiting_payment':'held',$i%2?[]:$proof);}
+for($i=1;$i<25;$i++){$h=$make(placeholderComFixtureName('forecast-bounded-'.$i.'-placeholder.com'));$bounded[]=$h;$renew($h,$i%2?'awaiting_payment':'held',$i%2?[]:($i%4?$proof:$validProof));}
 $manyChunk=$queryCount();same($oneChunk,$manyChunk,'Forecast read count stays bounded across one chunk of obligations');
-same(13,$forecast()['count'],'Issued and unproven sent obligations retain their distinct forecast semantics');
+same(19,$forecast()['count'],'Issued, refused and unproven sent obligations retain their distinct forecast semantics');
 // Retained adoption stops are loaded once for the same bounded chunk.
 Paymenter\Extensions\Servers\Domains\Services\AdoptionSchema::install();
 
@@ -255,10 +265,10 @@ $adoptStop=static function(Domain $h,bool $stop)use($clock,$user):void{
 };
 $adoptStop($bounded[0],false);$oneAdoption=$queryCount();
 foreach(array_slice($bounded,1) as $i=>$h){$adoptStop($h,$i===0);}
-same($oneAdoption,$queryCount(),'One chunk batches original adoption stops');same(12,$forecast()['count'],'Original adopted renewal stop blocks its issued obligation');
+same($oneAdoption,$queryCount(),'One chunk batches original adoption stops');same(18,$forecast()['count'],'Original adopted renewal stop blocks its issued obligation');
 for($i=25;$i<101;$i++){$h=$make(placeholderComFixtureName('forecast-bounded-'.$i.'-placeholder.com'));$bounded[]=$h;$renew($h);}
 expect($queryCount()<=2*$manyChunk+2,'Forecast read count grows by chunks across the 100-domain boundary');
-same(88,$forecast()['count'],'The next chunk includes every additional open obligation exactly once');
+same(94,$forecast()['count'],'The next chunk includes every additional open obligation exactly once');
 DB::rollBack();same(0,$forecast()['count'],'Forecast fixture rollback preserves prior holdings');
 // Several valid prewire refusals in one chunk read their attempt facts from the loaded rows, with no reads of their own.
 DB::beginTransaction();

@@ -167,6 +167,34 @@ final readonly class OperationWriter
             ? Transition::Applied : Transition::Stale;
     }
 
+    /**
+     * Settles the exact proof a read held for charge review, through its staff approval. The approval carries the
+     * staff and read evidence and becomes the attempt's one settlement.
+     */
+    public function approveHeld(AttemptToken $token, array $approval): Transition
+    {
+        self::requireTransaction(); $facts = OperationAttempts::attempt($token, true);
+        if (!$facts?->sealed()) { return Transition::Stale; }
+        $held = OperationAttempts::evidence($token->operationId, $token->attemptId, 'held')['evidence']['settlement'] ?? null;
+        if ($held === null || $held !== ($approval['settlement'] ?? null)) { return Transition::Stale; }
+        return $this->append($token->operationId, $token->attemptId, 'settlement', 'staff_review', 'succeeded', $approval, 'settlement')
+            ? Transition::Applied : Transition::Stale;
+    }
+
+    /**
+     * Audited negative proof: staff recorded the registrar's answer that the sealed send was not processed. Only a
+     * current read that inherited no uncertainty may record it, while the attempt retains no positive proof. It takes
+     * the attempt's one settlement, so no later settlement can follow it.
+     */
+    public function recordUnprocessed(ReadToken $read, array $answer): Transition
+    {
+        self::requireTransaction(); $a = $read->attempt;
+        if (!$this->readCurrent($read)) { return Transition::Stale; }
+        if (OperationAttempts::evidenceMany([$a->operationId], ['observation', 'held', 'settlement'])[$a->operationId][$a->attemptId] ?? []) { return Transition::Stale; }
+        return $this->append($a->operationId, $a->attemptId, 'answer', 'staff_answer', 'not_processed', $answer, 'settlement')
+            ? Transition::Applied : Transition::Stale;
+    }
+
     /** Operation-level local terminal proof, such as a never-sent unpaid closure. Recorded once. */
     public function recordTerminal(int $operationId, string $outcome, array $proof): Transition
     {
