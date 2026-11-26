@@ -64,6 +64,13 @@ final class RenewalProof
             ['identity' => $this->identity, 'settlement' => $settlement]) === Transition::Applied;
     }
 
+    /** Retains captured proof for charge review through this read, under the caller's holding locks. False when the read lost the attempt. */
+    public function holdLocked(Operation $op, array $proof): bool
+    {
+        return $this->matches($op) && (new OperationWriter($this->clock))->hold($this->read,
+            ['identity' => $this->identity, 'settlement' => $proof]) === Transition::Applied;
+    }
+
     /** The sealed attempt's retained settlement, or null before one is recorded. */
     public static function settlement(Operation $op): ?array
     { return OperationAttempts::sealedEvidence((int) $op->id, StepKey::renew(), 'settlement'); }

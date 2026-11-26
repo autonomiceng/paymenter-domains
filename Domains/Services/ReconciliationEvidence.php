@@ -8,12 +8,12 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 final class ReconciliationEvidence
 {
-    /** $server: the binding's server with settings loaded, for read-only callers that batch it. */
-    public static function attempt(Operation $op, Domain $domain, AccountBinding $binding, ?\App\Models\Server $server = null): AttemptEvidence
+    /** $server and $renewal: the binding's server with settings loaded and the renewal's attempt facts, for read-only callers that batch them. */
+    public static function attempt(Operation $op, Domain $domain, AccountBinding $binding, ?\App\Models\Server $server = null, ?RenewalAttempt $renewal = null): AttemptEvidence
     {
         $a = $op->attempt ?? []; $query = OperationClaims::query($op, $domain);
         // A renewal's attempt facts come from its reader. The proof saves the window start as recorded, in its stored zone.
-        $renewal = $op->action === 'renew' ? RenewalAttempt::of($op) : null;
+        $renewal = $op->action === 'renew' ? $renewal ?? RenewalAttempt::of($op) : null;
         if ($renewal ? $renewal->claimedAt() === null || $renewal->requestDigest() === null || $renewal->claimKey() === null || $renewal->windowStart() === null
             : !$op->started_at || !$op->request_fingerprint || !isset($a['claim_key'], $a['dispatch_attempted_at']) || ($a['seal'] ?? null) !== 'sealed') { throw new \DomainException('No sealed original attempt.'); }
         $start = ExecutionWindow::start($op)??throw new \DomainException('Missing execution window.');

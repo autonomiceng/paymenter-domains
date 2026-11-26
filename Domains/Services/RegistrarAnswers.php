@@ -22,8 +22,10 @@ class RegistrarAnswers
     /** Unreadable saved attempt data is never eligible, answered or offered for an answer. */
     public static function readable(Operation $op): bool
     {try{$op->attempt;return true;}catch(\Illuminate\Contracts\Encryption\DecryptException){return false;}}
-    public static function identity(Operation $op): string
-    {$attempt=$op->attempt??[];unset($attempt['reconciliation']);return hash('sha256',json_encode([$op->operation_key,$op->account_fingerprint,$op->authority_generation,$attempt,$op->request_fingerprint],JSON_THROW_ON_ERROR));}
+    /** The answered attempt: a renewal's sealed attempt rows, otherwise the retained record. Read proof is left out.
+     * $renewal: the renewal's attempt facts when the caller already read them. */
+    public static function identity(Operation $op, ?RenewalAttempt $renewal = null): string
+    {if($op->action==='renew'){$attempt=($renewal??RenewalAttempt::of($op))->identity();}else{$attempt=$op->attempt??[];unset($attempt['reconciliation']);}return hash('sha256',json_encode([$op->operation_key,$op->account_fingerprint,$op->authority_generation,$attempt,$op->request_fingerprint],JSON_THROW_ON_ERROR));}
     public static function capturedReference(Operation $op): ?string
     {
         if (!self::readable($op)) { return null; }

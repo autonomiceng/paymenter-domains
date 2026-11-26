@@ -4,6 +4,7 @@ declare(strict_types=1);
 // The affected boundary is the persisted request's staff label and native Filament page.
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-panel.php';
+require_once __DIR__.'/Support/renewal-attempts.php';
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Labels,RequestFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
@@ -28,6 +29,8 @@ foreach(['register'=>'acquisition_definitely_unsent','nameservers'=>'management_
         'safe_code'=>$code,'attempt'=>['seal'=>'sealed','execution'=>null,'send_state'=>'possibly_sent']]);
     $id=\Illuminate\Support\Facades\DB::table('domains_operations')->insertGetId($retained->getAttributes());
     $current=Operation::findOrFail($id);
+    // A renewal is sealed on its attempt rows, not in the retained JSON.
+    if($action==='renew'){$current=sealRenewal($current);}
     $words=Labels::reason($code);$unknown=\Paymenter\Extensions\Servers\Domains\Admin\Support\PaidUncertainty::title($current);
     same(null,RequestFacts::for($current)['outcome'],'Established unsent '.$action.' evidence is not an unknown outcome');
     Livewire\Livewire::actingAs($actor)->test(ViewOperation::class,['record'=>$id])->assertSee($words)->assertDontSee($unknown);

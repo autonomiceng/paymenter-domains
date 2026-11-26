@@ -69,7 +69,7 @@ return static function ($op, $domain, $binding, Closure $compose, $clock, $state
     $result = $engine->run($op->id, $writer); $waiting = false;
     same('pending', $result->state, 'Timely admitted last request remains pending');
     same($state->order, $result->provider_order_id, 'Timely last response ID retained');
-    same($state->order, $result->attempt['renewal']['order_reference'], 'Original response reference retained in execution');
+    same($state->order, renewalAttempt($result)?->orderReference(), 'Original response reference retained in execution');
     same(1, $state->writes, 'One final admitted wire'); same($money, $nativeMoney(), 'Response persistence retains finance');
     $engine->run($op->id, $writer); same(1, $state->writes, 'Saved response never grants replay');
     // Read-only completion also charges capture waits to its stricter 250-second budget.

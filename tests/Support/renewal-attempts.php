@@ -31,12 +31,12 @@ if (!class_exists('RenewalReply', false)) {
         public static function unknown(array $evidence = []): self
         { return new self('unknown_reply', SendState::PossiblySent, 'unknown', $evidence); }
 
-        /** The writer's outcome for this reply. */
+        /** The writer's outcome for this reply, carrying the driver result as the renewal writer records it. */
         public function outcome(): WireOutcome
         {
             return match ($this->kind) {
-                'reply' => WireOutcome::reply($this->sendState, $this->outcome, $this->evidence),
-                'local_refusal' => WireOutcome::localRefusal($this->evidence['reason']),
+                'reply' => WireOutcome::reply($this->sendState, $this->outcome, ['result' => $this->record(), 'acceptance' => $this->evidence['acceptance'] ?? null]),
+                'local_refusal' => WireOutcome::localRefusal($this->evidence['reason'], ['result' => $this->record()]),
                 default => WireOutcome::unknown($this->evidence),
             };
         }
