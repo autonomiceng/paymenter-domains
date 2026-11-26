@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence,Evidence,RequestContext};
@@ -181,14 +182,17 @@ final class RegistrarCheck
             try {
                 if ($op->action === 'renew') { $renewal ??= RenewalAttempt::of($op); }
                 $same = hash_equals(RegistrarAnswers::identity($op, $renewal), (string) $check['attempt_identity']);
-            } catch (\Illuminate\Contracts\Encryption\DecryptException) { $same = false; }
+            } catch (DecryptException) { return null; }
             if (!$same) { $check = null; }
         }
         // An Enom lost reply is read before staff ask Enom for a case.
         if ($op->action==='register'&&$op->registrar_key==='enom'&&in_array($op->state,['running','pending','uncertain'],true)
             &&RegistrarAnswers::eligible($op,app(Clock::class)->now())&&!self::attempted($op)) { return ['outcome'=>'not_checked']; }
         if ($op->action !== 'renew' || !in_array($op->state, ['running', 'pending', 'uncertain'], true)
-            || isset($op->policy['enom_answer']) || ($renewal ??= RenewalAttempt::of($op))->readProof() !== null) { return $check; }
+            || isset($op->policy['enom_answer'])) { return $check; }
+        try { $renewal ??= RenewalAttempt::of($op); }
+        catch (DecryptException) { return null; }
+        if ($renewal->readProof() !== null) { return $check; }
         try {
             $now = app(Clock::class)->now();
             if ($op->state === 'running' && $op->lease_expires_at !== null && $op->lease_expires_at > $now) { return $check; }

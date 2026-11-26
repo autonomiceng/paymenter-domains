@@ -338,6 +338,8 @@ same(true,$recovers(),'The account recovers its sealed requests');
 $reply=DB::table(OperationSchema::EVIDENCE)->where(['operation_id'=>$lostRenew->id,'kind'=>'reply'])->orderBy('id')->first();
 expect($reply!==null,'The lost renewal keeps its reply row');$writes=$state->writes;
 DB::table(OperationSchema::EVIDENCE)->where('id',$reply->id)->update(['evidence'=>'d29-explicit-unreadable-fixture']);
+$unchecked=$lostRenew->fresh();$policy=$unchecked->policy;unset($policy['status_check']);$unchecked->policy=$policy;
+same(null,RegistrarCheck::status($unchecked),'Unreadable evidence cannot report a lost reply before the first check');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lostRenew->id])->assertSuccessful()->assertActionHidden('enom_answer')->assertSee($lostDomain->domain)
     ->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::UNREADABLE);
 same([false,$writes],[RegistrarAnswers::ready($lostRenew->fresh(),$clock->now()),$state->writes],'An unreadable reply is never ready for an answer and sends nothing');
