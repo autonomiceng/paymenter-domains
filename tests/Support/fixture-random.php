@@ -24,45 +24,47 @@ namespace Illuminate\Support {
     if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length); } }
 }
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support {
-    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length); } }
+    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length, 'domains'); } }
 }
 namespace Paymenter\Extensions\Servers\Domains\Catalogue\Feed {
-    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length); } }
+    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length, 'domains'); } }
 }
 namespace Paymenter\Extensions\Servers\Domains\Catalogue\Publication {
-    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length); } }
+    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length, 'domains'); } }
 }
 namespace Paymenter\Extensions\Servers\Domains\Holding\Adoption {
-    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length); } }
+    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length, 'domains'); } }
 }
 namespace Paymenter\Extensions\Servers\Domains\Http {
-    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length); } }
+    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length, 'domains'); } }
 }
 namespace Paymenter\Extensions\Servers\Domains\Installation {
-    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length); } }
+    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length, 'domains'); } }
 }
 namespace Paymenter\Extensions\Servers\Domains\Management\Contacts {
-    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length); } }
+    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length, 'domains'); } }
 }
 namespace Paymenter\Extensions\Servers\Domains\Renewal\Execution {
-    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length); } }
+    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length, 'domains'); } }
 }
 namespace Paymenter\Extensions\Servers\Domains\Services {
-    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length); } }
+    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length, 'domains'); } }
 }
 namespace Paymenter\Extensions\Servers\Domains\Storefront\Search {
-    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length); } }
+    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length, 'domains'); } }
 }
 namespace {
     final class NativeFixtureRandom
     {
         private static string $seed = 'boot';
-        private static int $draws = 0;
+        /** Draws taken per stream. Domains keys have their own stream, so a framework draw that only some case orders
+         * make, such as one a cold cache takes once per process, cannot shift the keys a later case writes. */
+        private static array $draws = [];
 
         /** Start a new stream, such as one per independent case, so its keys do not depend on earlier cases. */
-        public static function reseed(string $seed): void { self::$seed = $seed; self::$draws = 0; }
+        public static function reseed(string $seed): void { self::$seed = $seed; self::$draws = []; }
 
-        /** The stream and the number of draws taken from it. @return array{string,int} */
+        /** The seed and the draws taken from each stream. @return array{string,array<string,int>} */
         public static function position(): array { return [self::$seed, self::$draws]; }
 
         /** Continue the stream a loaded database snapshot was exported at, so new keys never repeat its stored ones. */
@@ -73,10 +75,11 @@ namespace {
             }
         }
 
-        public static function bytes(int $length): string
+        public static function bytes(int $length, string $stream = 'framework'): string
         {
             if ($length < 1) { throw new ValueError('random_bytes(): Argument #1 ($length) must be greater than 0'); }
-            for ($bytes = ''; strlen($bytes) < $length;) { $bytes .= hash('sha256', self::$seed."\0".++self::$draws, true); }
+            self::$draws[$stream] ??= 0;
+            for ($bytes = ''; strlen($bytes) < $length;) { $bytes .= hash('sha256', self::$seed."\0".$stream."\0".++self::$draws[$stream], true); }
             return substr($bytes, 0, $length);
         }
     }
