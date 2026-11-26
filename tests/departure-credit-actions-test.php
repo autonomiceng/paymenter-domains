@@ -203,6 +203,8 @@ $cases['zero-credit']=static function()use($fixed,$fixture):void {extract($fixed
     $pin();
     // The mail shell and fakes belong to this case only; the reset restores the container, config and schema after it.
     require __DIR__.'/Support/reminder-mail.php';
+    // Keep the prepared exception handler: the mail shell's own handler is for whole files, not one case.
+    restore_exception_handler();
     $before=$cash($owner);
     // The renewal was paid while under review, then the payment was refunded in full outside Domains: nothing is left to credit.
     App\Helpers\ExtensionHelper::addPayment($invoice->fresh(),null,$renewal->amount,'0.00','departure-zero-paid');

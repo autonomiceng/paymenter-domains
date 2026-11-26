@@ -28,7 +28,7 @@ function nativeFixtureCases(array $cases, array $state = []): void
     // Process CPU spent on the shared reset, reported so cohort growth can be priced.
     $cpu = static function (): float { $u = getrusage(); return $u['ru_utime.tv_sec'] + $u['ru_stime.tv_sec'] + ($u['ru_utime.tv_usec'] + $u['ru_stime.tv_usec']) / 1e6; };
     $start = $cpu();
-    $restore = nativeCaseCheckpoint($state);
+    $restore = nativeCaseCheckpoint($state, $cases);
     $prepared = nativeCaseRows();
     $reset = [$cpu() - $start, 0.0, 0.0];
     foreach ($names as $name) {
@@ -192,7 +192,7 @@ function nativeSchema(): array
  * Capture committed rows, sequences, schema, container, events, config (with the objects it holds), auth, session,
  * request, clocks, locale, timezone, statics, globals, fake ports, queue fakes and storage files; the closure restores them all.
  */
-function nativeCaseCheckpoint(array $state = []): Closure
+function nativeCaseCheckpoint(array $state = [], array $cases = []): Closure
 {
     $restoreRows = nativeFixtureCheckpoint();
     $store = nativeArrayStore();
@@ -213,18 +213,21 @@ function nativeCaseCheckpoint(array $state = []): Closure
     foreach ($container['instances'] as $instance) {
         if (is_object($instance) && str_starts_with($instance::class, 'Illuminate\\Support\\Testing\\Fakes\\')) { $objects[] = nativeObjectState($instance); }
     }
-    // Every object the fixture state and config reach, however deep: a port held by a service or a closure is restored too.
-    // Paymenter keeps its settings in config as an object, and issuing an invoice advances its invoice number in place.
+    // Every object the fixture state, the cases and config reach, however deep: a port held by a service or a closure is
+    // restored too. Paymenter keeps its settings in config as an object, and issuing an invoice advances its invoice number in place.
     $captured = [];
-    foreach (nativeStateObjects([$state, app('config')->all()]) as $object) {
+    foreach (nativeStateObjects([$state, $cases, app('config')->all()]) as $object) {
         if ($object instanceof Closure) { $captured[] = $object; } else { $objects[] = nativeObjectState($object); }
     }
     $statics = nativeStatics();
-    $globals = $GLOBALS;
+    // By value: a global a closure captures by reference, such as a request key counter, is a reference in $GLOBALS,
+    // and a plain copy of the array would follow it instead of keeping the prepared value.
+    $globals = [];
+    foreach ($GLOBALS as $name => $value) { $globals[$name] = $value; }
     $clock = [date_default_timezone_get(), setlocale(LC_ALL, 0), app()->getLocale(), Carbon\Carbon::getLocale(),
         Carbon\Carbon::getTestNow(), Carbon\CarbonImmutable::getTestNow()];
     $files = nativeStorageFiles();
-    $process = [getcwd(), getenv(), nativeHandlers()];
+    $process = [getcwd(), getenv()];
     // Handlers, bindings and listeners by identity, so a replacement with the same count is seen; a closure's captured
     // variables by value, since the reset cannot rewrite them.
     $witness = static fn (): array => array_map(static fn (mixed $part): string => hash('sha256', (string) json_encode($part,
@@ -270,16 +273,15 @@ function nativeCaseCheckpoint(array $state = []): Closure
         date_default_timezone_set($zone); setlocale(LC_ALL, $locale); app()->setLocale($appLocale); Carbon\Carbon::setLocale($carbonLocale);
         Carbon\Carbon::setTestNow($nativeNow); Carbon\CarbonImmutable::setTestNow($immutableNow);
         nativeRestoreStorage($files);
-        [$cwd, $env, [$error, $exception]] = $process; chdir($cwd);
-        // A case may install its own handler, such as a mail shell's exception handler: put the prepared ones back on top.
-        if (nativeHandlers() !== [$error, $exception]) { set_error_handler($error); set_exception_handler($exception); }
+        // Handlers are a stack with an error mask PHP cannot read back: a case restores any handler it sets, and the witness checks it.
+        [$cwd, $env] = $process; chdir($cwd);
         foreach (array_diff_key(getenv(), $env) as $name => $_) { putenv($name); }
         foreach ($env as $name => $value) { if (getenv($name) !== $value) { putenv($name.'='.$value); } }
         // Laravel remembers each compiled string view, such as a mail subject, by the file the storage restore removes.
         Illuminate\View\Component::flushCache();
         $changed = array_keys(array_diff_assoc($witness(), $prepared));
-        same([], $changed, 'Case reset restores schema, bindings, listeners, handlers, config, locale, globals, environment, directory, '
-            .'captured closure variables and files; run a case that changes what it cannot rewind in its own process. Changed: '.implode(', ', $changed));
+        same([], $changed, 'Case reset restores schema, bindings, listeners, config, locale, globals, environment, directory, '
+            .'captured closure variables and files; a case restores the handlers it sets, and runs what it cannot rewind in its own process. Changed: '.implode(', ', $changed));
     };
 }
 
