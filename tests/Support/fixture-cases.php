@@ -33,6 +33,7 @@ function nativeFixtureCases(array $cases, array $state = []): void
     $reset = [$cpu() - $start, 0.0, 0.0];
     foreach ($names as $name) {
         try {
+            NativeFixtureRandom::reseed('case:'.$name);
             $cases[$name]();
             $start = $cpu();
             echo 'Case '.$name.' passed; effects '.nativeCaseEffects($prepared, $state)."\n";
@@ -94,6 +95,56 @@ function nativeRestoreObjectState(array $saved): void
     }
 }
 
+/** Objects reachable from a value through arrays, properties and closures, each once. @return list<object> */
+function nativeStateObjects(mixed $root): array
+{
+    $found = []; $pending = [$root];
+    while ($pending !== []) {
+        $value = array_pop($pending);
+        if (is_array($value)) { array_push($pending, ...array_values($value)); continue; }
+        if (!is_object($value) || isset($found[spl_object_id($value)]) || nativeStateBoundary($value)) { continue; }
+        if ($value instanceof Closure) {
+            $found[spl_object_id($value)] = $value;
+            $function = new ReflectionFunction($value);
+            $pending[] = $function->getStaticVariables(); $pending[] = $function->getClosureThis();
+            continue;
+        }
+        $found[spl_object_id($value)] = $value;
+        foreach (nativeObjectState($value)[1] as $properties) { $pending[] = $properties; }
+    }
+    return array_values($found);
+}
+
+/** Objects with their own restore, or with no properties to copy: internal classes other than stdClass. */
+function nativeStateBoundary(object $value): bool
+{
+    if ($value instanceof UnitEnum || $value instanceof Illuminate\Contracts\Container\Container || $value instanceof Illuminate\Database\ConnectionInterface
+        || $value instanceof Illuminate\Contracts\Events\Dispatcher || $value instanceof Illuminate\Contracts\Cache\Repository
+        || $value instanceof Illuminate\Contracts\Cache\Store) { return true; }
+    if ($value instanceof stdClass || $value instanceof Closure) { return false; }
+    for ($class = new ReflectionObject($value); $class->getParentClass(); $class = $class->getParentClass()) {}
+    return $class->isInternal();
+}
+
+/** A value with every object replaced by its identity, for a witness that sees a replaced handler or service. */
+function nativeIdentities(mixed $value): mixed
+{
+    return match (true) {
+        is_array($value) => array_map(nativeIdentities(...), $value),
+        $value instanceof UnitEnum => $value,
+        is_object($value) => '#'.spl_object_id($value),
+        default => $value,
+    };
+}
+
+/** The current error and exception handlers, left in place. */
+function nativeHandlers(): array
+{
+    $error = set_error_handler(null); restore_error_handler();
+    $exception = set_exception_handler(null); restore_exception_handler();
+    return [$error, $exception];
+}
+
 /** Static properties declared by fixture, Domains and Paymenter classes, with Eloquent boot state. */
 function nativeStatics(): array
 {
@@ -144,7 +195,8 @@ function nativeSchema(): array
 function nativeCaseCheckpoint(array $state = []): Closure
 {
     $restoreRows = nativeFixtureCheckpoint();
-    $locks = nativeArrayStore()?->locks;
+    $store = nativeArrayStore();
+    $cache = $store === null ? null : [(fn () => $this->storage)->call($store), $store->locks];
     $schema = nativeSchema();
     $app = app();
     $container = [];
@@ -161,26 +213,29 @@ function nativeCaseCheckpoint(array $state = []): Closure
     foreach ($container['instances'] as $instance) {
         if (is_object($instance) && str_starts_with($instance::class, 'Illuminate\\Support\\Testing\\Fakes\\')) { $objects[] = nativeObjectState($instance); }
     }
-    $walk = static function (mixed $value) use (&$walk, &$objects): void {
-        if (is_array($value)) { array_map($walk, $value); return; }
-        if (!is_object($value) || $value instanceof Closure || $value instanceof UnitEnum) { return; }
-        $objects[] = nativeObjectState($value);
-        if ($value instanceof Illuminate\Support\Collection) { $value->each($walk); }
-    };
-    $walk($state);
+    // Every object the fixture state and config reach, however deep: a port held by a service or a closure is restored too.
     // Paymenter keeps its settings in config as an object, and issuing an invoice advances its invoice number in place.
-    $walk(app('config')->all());
+    $captured = [];
+    foreach (nativeStateObjects([$state, app('config')->all()]) as $object) {
+        if ($object instanceof Closure) { $captured[] = $object; } else { $objects[] = nativeObjectState($object); }
+    }
     $statics = nativeStatics();
     $globals = $GLOBALS;
     $clock = [date_default_timezone_get(), setlocale(LC_ALL, 0), app()->getLocale(), Carbon\Carbon::getLocale(),
         Carbon\Carbon::getTestNow(), Carbon\CarbonImmutable::getTestNow()];
     $files = nativeStorageFiles();
-    $witness = static fn (): string => hash('sha256', (string) json_encode([nativeSchema(), array_keys(app()->getBindings()),
-        array_map(count(...), (fn () => $this->listeners)->call(app('events'))), app('config')->all(),
-        date_default_timezone_get(), setlocale(LC_ALL, 0), app()->getLocale(), array_keys($GLOBALS),
-        array_map(sha1(...), nativeStorageFiles())], JSON_PARTIAL_OUTPUT_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
+    $process = [getcwd(), getenv(), nativeHandlers()];
+    // Handlers, bindings and listeners by identity, so a replacement with the same count is seen; a closure's captured
+    // variables by value, since the reset cannot rewrite them.
+    $witness = static fn (): array => array_map(static fn (mixed $part): string => hash('sha256', (string) json_encode($part,
+        JSON_PARTIAL_OUTPUT_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE)), ['schema' => nativeSchema(), 'bindings' => nativeIdentities(app()->getBindings()),
+        'listeners' => nativeIdentities((fn () => [$this->listeners, $this->wildcards])->call(app('events'))), 'config' => app('config')->all(),
+        'locale' => [date_default_timezone_get(), setlocale(LC_ALL, 0), app()->getLocale()], 'globals' => array_keys($GLOBALS),
+        'process' => [getcwd(), getenv()], 'handlers' => nativeIdentities(nativeHandlers()),
+        'captured' => array_map(static fn (Closure $c) => nativeIdentities((new ReflectionFunction($c))->getStaticVariables()), $captured),
+        'files' => array_map(sha1(...), nativeStorageFiles())]);
     $prepared = $witness();
-    return static function () use ($restoreRows, $locks, $schema, $app, $container, $objects, $statics, $globals, $clock, $files, $witness, $prepared): void {
+    return static function () use ($restoreRows, $cache, $schema, $app, $container, $objects, $statics, $globals, $clock, $files, $process, $witness, $prepared): void {
         while (DB::transactionLevel() > 0) { DB::rollBack(); }
         $pdo = DB::connection()->getPdo();
         $kept = array_map(serialize(...), $schema);
@@ -190,8 +245,11 @@ function nativeCaseCheckpoint(array $state = []): Closure
         foreach ($added as $object) { $pdo->exec('DROP '.strtoupper($object['type']).' IF EXISTS "'.str_replace('"', '""', $object['name']).'"'); }
         same($schema, nativeSchema(), 'Case reset restores the prepared schema; a case never alters or drops a fixture table');
         $restoreRows();
-        // Cache::flush() keeps lock owners, such as a unique job's lock; operation ids repeat after the row restore.
-        if (($store = nativeArrayStore()) !== null) { $store->locks = $locks ?? []; }
+        // The prepared cache entries and lock owners, such as a unique job's lock, come back after Cache::flush(): the first
+        // case must not see entries a later case would have to rebuild.
+        if (($store = nativeArrayStore()) !== null && $cache !== null) {
+            [$entries, $store->locks] = $cache; (fn () => $this->storage = $entries)->call($store);
+        }
         foreach ($container as $name => $value) { (new ReflectionProperty(Illuminate\Container\Container::class, $name))->setValue($app, $value); }
         Facade::clearResolvedInstances();
         array_map(nativeRestoreObjectState(...), $objects);
@@ -212,9 +270,16 @@ function nativeCaseCheckpoint(array $state = []): Closure
         date_default_timezone_set($zone); setlocale(LC_ALL, $locale); app()->setLocale($appLocale); Carbon\Carbon::setLocale($carbonLocale);
         Carbon\Carbon::setTestNow($nativeNow); Carbon\CarbonImmutable::setTestNow($immutableNow);
         nativeRestoreStorage($files);
+        [$cwd, $env, [$error, $exception]] = $process; chdir($cwd);
+        // A case may install its own handler, such as a mail shell's exception handler: put the prepared ones back on top.
+        if (nativeHandlers() !== [$error, $exception]) { set_error_handler($error); set_exception_handler($exception); }
+        foreach (array_diff_key(getenv(), $env) as $name => $_) { putenv($name); }
+        foreach ($env as $name => $value) { if (getenv($name) !== $value) { putenv($name.'='.$value); } }
         // Laravel remembers each compiled string view, such as a mail subject, by the file the storage restore removes.
         Illuminate\View\Component::flushCache();
-        same($prepared, $witness(), 'Case reset restores schema, bindings, listeners, config, timezone, locale, globals and files');
+        $changed = array_keys(array_diff_assoc($witness(), $prepared));
+        same([], $changed, 'Case reset restores schema, bindings, listeners, handlers, config, locale, globals, environment, directory, '
+            .'captured closure variables and files; run a case that changes what it cannot rewind in its own process. Changed: '.implode(', ', $changed));
     };
 }
 
@@ -256,18 +321,14 @@ function nativeRestoreStorage(array $files): void
     }
 }
 
-/** Integer columns stamped from the real clock with time(); every other integer stays in the digest. Staff review
- * keys expire 15 minutes after the real issue time of their signed ticket. */
-const NATIVE_CASE_WALL_CLOCK_INTEGERS = ['domains_retention_marks' => ['recorded_at'], 'domains_staff_review_keys' => ['expires_at']];
-
-/** Committed rows by table and rowid, decrypted, with password hashes, real-clock times and real-clock stamps masked. */
+/** Committed rows by table and rowid, decrypted and with password hashes masked; times stay exact under the fixed clock. */
 function nativeCaseRows(): array
 {
     $pdo = DB::connection()->getPdo();
     $normal = static function (mixed $value): mixed {
         if (!is_string($value)) { return $value; }
         if (str_starts_with($value, '$2y$')) { return 'password-hash'; }
-        return nativeWallClockMask(nativeDecrypted($value));
+        return nativeDecrypted($value);
     };
     $rows = [];
     foreach ($pdo->query("SELECT name FROM main.sqlite_master WHERE type = 'table' ORDER BY name")->fetchAll(PDO::FETCH_COLUMN) as $table) {
@@ -275,9 +336,6 @@ function nativeCaseRows(): array
         $rowid = $table === 'sqlite_sequence' ? 'name' : 'rowid';
         foreach ($pdo->query('SELECT '.$rowid.' AS fixture_rowid, * FROM main.'.$quoted.' ORDER BY 1')->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $key = $row['fixture_rowid']; unset($row['fixture_rowid']);
-            foreach (NATIVE_CASE_WALL_CLOCK_INTEGERS[$table] ?? [] as $column) {
-                if (is_int($row[$column] ?? null) && abs($row[$column] - time()) < 86400) { $row[$column] = 'wall-clock'; }
-            }
             $rows[$table][$key] = serialize(array_map($normal, $row));
         }
     }
@@ -297,13 +355,6 @@ function nativeDecrypted(string $value): string
     }, $value) ?? throw new RuntimeException('Case digest decryption failed: '.preg_last_error_msg());
 }
 
-/** Times written by the real clock, which differ by run; the synthetic clocks are months away from it. */
-function nativeWallClockMask(string $text): string
-{
-    return preg_replace_callback('/\d{4}-\d\d-\d\d[ T]\d\d:\d\d:\d\d(?:\.\d+)?(?:[+-]\d\d:\d\d|Z)?/', static fn (array $match): string =>
-        abs((int) strtotime($match[0]) - time()) < 86400 ? 'wall-clock' : $match[0], $text);
-}
-
 /** Digest of the rows a case added, changed or removed against the prepared fixture, and the fake port state it leaves. */
 function nativeCaseEffects(array $prepared, array $state): string
 {
@@ -321,21 +372,22 @@ function nativeCaseEffects(array $prepared, array $state): string
         $class = new ReflectionClass($value);
         return $class->isAnonymous() ? 'anonymous@'.basename((string) $class->getFileName()).':'.$class->getStartLine() : $value::class;
     };
-    $ports = static function (mixed $value, int $depth = 0) use (&$ports, $class): mixed {
+    // Fake port state at every depth, by class and property; an object met again is named by its first visit.
+    $seen = [];
+    $ports = static function (mixed $value) use (&$ports, &$seen, $class): mixed {
+        if (is_array($value)) { return array_map($ports, $value); }
+        if (!is_object($value)) { return $value; }
         return match (true) {
-            is_array($value) => array_map(static fn ($item) => $ports($item, $depth), $value),
-            $value instanceof DateTimeInterface => $value->format(DATE_ATOM),
+            $value instanceof UnitEnum => $value::class.'::'.$value->name,
+            $value instanceof DateTimeInterface => $value->format('Y-m-d\\TH:i:s.uP'),
             $value instanceof Illuminate\Database\Eloquent\Model => [$value::class, $value->getKey()],
-            $value instanceof Closure, $value instanceof UnitEnum => is_object($value) ? $value::class : $value,
-            is_object($value) => $depth > 2 ? $class($value) : [$class($value), $ports(get_object_vars($value), $depth + 1)],
-            default => $value,
+            $value instanceof Closure => Closure::class,
+            isset($seen[spl_object_id($value)]) => 'object-'.$seen[spl_object_id($value)],
+            nativeStateBoundary($value) => $class($value),
+            // Property groups by class depth: an anonymous class's name holds its file path.
+            default => [$class($value), ($seen[spl_object_id($value)] = count($seen) + 1) ? $ports(array_values(nativeObjectState($value)[1])) : null],
         };
     };
-    // Request keys, account fingerprints and digests built from them are random per process: number them by first use.
-    $tokens = [];
-    $effects = preg_replace_callback('/[0-9a-f]{32,}/', static function (array $match) use (&$tokens): string {
-        return 'token-'.($tokens[$match[0]] ??= count($tokens) + 1);
-    }, serialize([$changes, $ports($state)]));
-    $effects = nativeWallClockMask($effects);
-    return substr(hash('sha256', $effects), 0, 16);
+    // Keys and digests are exact: the native fixture seeds the random bytes Domains draws.
+    return substr(hash('sha256', serialize([$changes, $ports($state)])), 0, 16);
 }

@@ -22,6 +22,9 @@ foreach (['APP_ENV' => 'testing', 'APP_KEY' => 'base64:'.base64_encode(str_repea
     putenv($key.'='.$value); $_ENV[$key] = $_SERVER[$key] = $value;
 }
 $loader = require $fixture.'/vendor/autoload.php';
+require_once __DIR__.'/Support/fixture-clock.php';
+require_once __DIR__.'/Support/fixture-random.php';
+nativeFixtureClock();
 // A shared optimized vendor class map wins over PSR-4. Rebind only verified App classes
 // in memory so native closures and models originate in this fixture, without mutating vendor.
 $fixtureClasses = [];
