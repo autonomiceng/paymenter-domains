@@ -127,9 +127,10 @@ final readonly class AcquisitionDispatch
                 || ($op->attempt['authorized_cost'] ?? null) !== ['amount' => $admitted->authorizedCost->amount, 'currency' => $admitted->authorizedCost->currency]) {
                 throw new \DomainException('Sealed dispatch authority changed.');
             }
-            if (($token = $sealed->acquisitionWorker)
-                && (OperationAttempts::attempt($token, true)?->operationRevision !== $op->transition_revision
-                    || $this->attempts->consumeGrant($token) !== Transition::Applied)) {
+            $token = $sealed->acquisitionWorker;
+            $proof = $token ? OperationAttempts::attempt($token, true) : null;
+            if (!$proof || $proof->operationRevision !== $op->transition_revision || $proof->requestDigest !== $op->request_fingerprint
+                || $this->attempts->consumeGrant($token) !== Transition::Applied) {
                 throw new \DomainException('Acquisition grant changed.');
             }
             return $op->payload;

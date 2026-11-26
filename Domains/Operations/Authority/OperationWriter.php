@@ -23,7 +23,7 @@ final readonly class OperationWriter
         self::requireTransaction(); $now = $this->clock->now();
         $stepId = $this->stepId($operationId, $key);
         $latest = OperationAttempts::latest($operationId, $key, true);
-        if ($latest?->sealed() && !$latest->released) { return Transition::Stale; }
+        if ($latest?->sealed() && (!$latest->released || $latest->sendState !== SendState::DefinitelyUnsent)) { return Transition::Stale; }
         if ($latest?->claiming($now)) { return Transition::Busy; }
         // An expired pre-seal claim never held a grant: it stays as history and loses the step.
         if ($latest?->current) { $this->archive($latest, $now); }

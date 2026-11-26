@@ -25,7 +25,7 @@ final class OperationReconciliation
         $op = Operation::findOrFail($id);
         if (!$this->eligible($op)) { return $op; }
         $check = new RegistrarCheck($this->clock);
-        return $check->finish($this->read($id, $check));
+        return $this->read($id, $check);
     }
     private function capture(int $id, RegistrarCheck $check): ?AcquisitionRead
     {
@@ -85,10 +85,10 @@ final class OperationReconciliation
     private function read(int $id, RegistrarCheck $check): Operation
     {
         $capture = $this->capture($id, $check);
-        if (!$capture) { return Operation::findOrFail($id); }
+        if (!$capture) { return $check->finish(Operation::findOrFail($id)); }
         $read = $capture->token;
         try {
-            return $this->readCaptured($id, $check, $capture);
+            return $check->finish($this->readCaptured($id, $check, $capture), $read);
         } finally {
             if ($read !== null) {
                 FreshTransaction::run(function () use ($id, $read): void {

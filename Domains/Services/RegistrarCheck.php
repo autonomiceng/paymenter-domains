@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence,Evidence,RequestContext};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter,ReadToken};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAttempt, RenewalCompletion};
 /** One bounded read result, shared by background work, staff feedback and customer notices. */
 final class RegistrarCheck
@@ -47,12 +48,13 @@ final class RegistrarCheck
     /** A replacement read owns this attempt's status now. */
     public function discard(): void { $this->identity = null; }
 
-    public function finish(Operation $result): Operation
+    public function finish(Operation $result, ?ReadToken $read = null): Operation
     {
-        return DB::transaction(function () use ($result): Operation {
+        return DB::transaction(function () use ($result, $read): Operation {
             Domain::whereKey($result->domain_id)->lockForUpdate()->firstOrFail();
             $op = Operation::whereKey($result->id)->lockForUpdate()->firstOrFail();
             if ($this->identity===null || !hash_equals($this->identity,RegistrarAnswers::identity($op))) { return $op; }
+            if ($read && !(new OperationWriter($this->clock))->ownsRead($read, allowExpired: true)) { return $op; }
             // A check, resume or answer saved after this check began is newer. This result must not replace it.
             $stored=$op->policy['status_check']??null;
             if ($stored!==$this->seen && $this->newer($stored)) { return $op; }
