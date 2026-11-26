@@ -72,13 +72,13 @@ final readonly class OperationWriter
 
     /**
      * Spends the sealed attempt's one wire permission before its dispatch deadline. A second consumption is stale,
-     * and so is one after a not-sent settlement, which the locking read sees even past an earlier snapshot.
+     * and so is one after any settlement, which the locking read sees even past an earlier snapshot.
      */
     public function consumeGrant(AttemptToken $token): Transition
     {
         self::requireTransaction(); $facts = OperationAttempts::attempt($token, true);
         if (!$facts?->current || !$facts->sealed() || $facts->grantConsumedAt !== null || $facts->sendState !== SendState::PossiblySent) { return Transition::Stale; }
-        if (DB::table(OperationSchema::EVIDENCE)->where(['attempt_id' => $token->attemptId, 'kind' => 'settlement', 'outcome' => self::NOT_SENT])
+        if (DB::table(OperationSchema::EVIDENCE)->where(['attempt_id' => $token->attemptId, 'kind' => 'settlement'])
             ->lockForUpdate()->first(['id'])) { return Transition::Stale; }
         $now = OperationAttempts::at($this->clock->now());
         $updated = DB::table(OperationSchema::ATTEMPTS)->where('id', $token->attemptId)->whereNull('grant_consumed_at')

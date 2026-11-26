@@ -105,6 +105,11 @@ same(Transition::Applied, $in(fn () => $writer->settle($owner, OperationWriter::
 same(Transition::Stale, $in(fn () => $writer->settle($owner, 'succeeded', ['order' => '43'])), 'Settlement is recorded once');
 same(Transition::Stale, $in(fn () => $writer->consumeGrant($clean)), 'A not-sent settlement leaves no grant to spend');
 same(null, OperationAttempts::attempt($clean)->grantConsumedAt, 'The refused consumption writes nothing');
+$doneId = $operation('writer-settled');
+$done = $in(fn () => $writer->claim($doneId, $step, $later(60))); $in(fn () => $writer->seal($done, $terms()));
+$doneRead = $in(fn () => $writer->openRead($done, $later(60)));
+same(Transition::Applied, $in(fn () => $writer->settle($doneRead, 'succeeded', ['order' => '44'])), 'Positive proof settles an unspent grant');
+same(Transition::Stale, $in(fn () => $writer->consumeGrant($done)), 'A settled attempt has no grant to spend, so a proven renewal is not sent again');
 same(Transition::Applied, $in(fn () => $writer->recordTerminal($unsentId, 'never_sent_unpaid', ['reason' => 'closed'])), 'Terminal proof');
 same(Transition::Stale, $in(fn () => $writer->recordTerminal($unsentId, 'never_sent_unpaid', [])), 'Terminal proof is recorded once');
 // Evidence is written only as deep as the reader decodes it.
