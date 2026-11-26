@@ -96,6 +96,14 @@ try{(new \ReflectionMethod(\Paymenter\Extensions\Servers\Domains\Services\Accoun
     throw new LogicException('Prefixed retained Domains table passed the fresh-server guard');
 }catch(DomainException $error){same('Account enrollment requires a fresh server.',$error->getMessage(),'Prefixed retained table blocks account enrollment');}
 Schema::drop('domains_freshness_guard');$guardServer->newQuery()->whereKey($guardServer->id)->delete();
+// The writer treats a duplicate authority key as already recorded; it relies on MariaDB naming that key in the error.
+DB::statement('SET FOREIGN_KEY_CHECKS = 0');
+$evidenceRow = ['operation_id' => 1, 'source' => 'local', 'kind' => 'terminal', 'outcome' => 'x', 'authority_key' => str_repeat('a', 64), 'evidence' => 'x'];
+DB::table(OperationSchema::EVIDENCE)->insert($evidenceRow);
+try { DB::table(OperationSchema::EVIDENCE)->insert($evidenceRow); throw new LogicException('Duplicate authority key accepted'); }
+catch (\Illuminate\Database\UniqueConstraintViolationException $error) { expect(str_contains((string) ($error->errorInfo[2] ?? ''), 'authority_key'), 'A duplicate authority key names its key'); }
+DB::table(OperationSchema::EVIDENCE)->where('authority_key', $evidenceRow['authority_key'])->delete();
+DB::statement('SET FOREIGN_KEY_CHECKS = 1');
 $version = DB::selectOne('SELECT VERSION() AS version')->version;
 expect(str_starts_with($version, '11.4.5-MariaDB'), 'Pinned real MariaDB version');
 echo json_encode(['complete' => true, 'server_version' => $version, 'prefix' => $prefix,
