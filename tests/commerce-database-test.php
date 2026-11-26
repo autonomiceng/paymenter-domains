@@ -54,5 +54,13 @@ try {
     InstalledCommerceFixture::prepare()->consume();
     same('retained@example.test',App\Models\User::sole()->email,'Dirty fixture uses installation without replacing customer data');
     (new Installation)->verify();
+    // A snapshot builder writes an audit event and exports; a later process starts the seeded stream again and loads that
+    // snapshot. Its next audit key must not repeat the stored one.
+    $audit=static fn(string $note)=>DB::transaction(fn()=>Paymenter\Extensions\Servers\Domains\Services\AuditEvents::append(1,'staff_settings',['note'=>$note]));
+    NativeFixtureRandom::reseed('boot');$reset();expect(restoreCommerceDatabase(),'Builder restores the installation');$audit('builder');
+    exportCoreDatabase(DB::connection()->getPdo(),$installed,$booted());putenv('PAYMENTER_TEST_COMMERCE_SHA256='.hash_file('sha256',$installed));
+    NativeFixtureRandom::reseed('boot');$reset();expect(restoreCommerceDatabase(),'Later process restores the builder snapshot');
+    $audit('later');
+    same(2,DB::table(Paymenter\Extensions\Servers\Domains\Services\AuditArchives::TABLE)->distinct()->count('event_key'),'Keys drawn after a snapshot restore never repeat its stored keys');
 } finally {unlink($core);unlink($installed);}
 $nativeSuccessful=true;

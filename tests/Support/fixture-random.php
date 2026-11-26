@@ -3,8 +3,9 @@
 declare(strict_types=1);
 // Domains code draws claim, review and audit keys from random_bytes(), and Laravel draws encryption IVs and random
 // strings and bcrypt salts the same way. In a booted native fixture each of those namespaces resolves it to a seeded stream instead, so
-// the same case writes the same keys, ciphertexts and the digests built from them in any process. A native fixture is
-// one process over an in-memory database, so seeded keys cannot collide.
+// the same case writes the same keys, ciphertexts and the digests built from them in any process. A database snapshot
+// records the stream position it was exported at, and a process that loads it continues from there, so its keys never
+// repeat one the snapshot already holds.
 namespace Illuminate\Encryption {
     if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length); } }
 }
@@ -60,6 +61,17 @@ namespace {
 
         /** Start a new stream, such as one per independent case, so its keys do not depend on earlier cases. */
         public static function reseed(string $seed): void { self::$seed = $seed; self::$draws = 0; }
+
+        /** The stream and the number of draws taken from it. @return array{string,int} */
+        public static function position(): array { return [self::$seed, self::$draws]; }
+
+        /** Continue the stream a loaded database snapshot was exported at, so new keys never repeat its stored ones. */
+        public static function resumeSnapshot(string $sql): void
+        {
+            if (preg_match('/^-- random-stream: (.+)$/m', $sql, $position) === 1) {
+                [self::$seed, self::$draws] = json_decode($position[1], true, 4, JSON_THROW_ON_ERROR);
+            }
+        }
 
         public static function bytes(int $length): string
         {
