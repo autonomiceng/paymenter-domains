@@ -55,7 +55,9 @@ if (!function_exists('sealRenewal')) {
             'dispatch_attempted_at' => $at->format(DATE_ATOM), 'send_state' => SendState::PossiblySent->value,
             'authorized_cost' => ['amount' => (new Money($amount, 'USD'))->amount, 'currency' => 'USD'], 'renewal_mode' => $mode];
         if ($reply !== null) { $sealed['execution'] = $reply->record(); }
-        Operation::whereKey($op->id)->firstOrFail()->forceFill([...$columns, 'attempt' => [...$sealed, ...$attempt]])->saveQuietly();
+        // One quiet write with the model's casts, as saveQuietly writes it, without reading the row first.
+        $saved = Operation::whereKey($op->id)->update((new Operation)->forceFill([...$columns, 'attempt' => [...$sealed, ...$attempt]])->getAttributes());
+        expect($saved === 1, 'The sealed renewal row exists');
         return $op->refresh();
     }
 

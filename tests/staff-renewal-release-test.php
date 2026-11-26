@@ -38,15 +38,17 @@ foreach(RenewalCode::cases() as $code){
     if(in_array($code,$included,true)){$release($op);same('queued',$op->fresh()->state,'Correctable refusal releases: '.$code->value);same(null,$op->fresh()->safe_code,'Refusal cleared');}
     else{$refuse($code->value);}
 }
+// A sealed attempt whose reply was lost, sealed through the renewal fixture builder.
+$lostReply=['attempt'=>['execution'=>null]];
 foreach([
     ['attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent']],
-    ['attempt'=>['seal'=>'sealed','send_state'=>'possibly_sent','execution'=>null]],
+    $lostReply,
     ['attempt'=>['send_state'=>'possibly_sent']],
     ['started_at'=>$clock->now()],['request_fingerprint'=>str_repeat('a',64)],
     ['lease_expires_at'=>$clock->now()->modify('+60 seconds')],['completed_at'=>$clock->now()],
     ['cost'=>['estimated'=>'8.00','currency'=>'USD']],['provider_order_id'=>'9002'],
     ['confirmed_expires_at'=>'2028-10-18'],['policy'=>[...$op->fresh()->policy,'dispatch_attempted_at'=>$clock->now()->format(DATE_ATOM)]],
-] as $evidence){$restore();$set($evidence);$refuse('non-virgin '.implode(',',array_keys($evidence)));
+] as $evidence){$restore();if($evidence===$lostReply){sealRenewal($op,$evidence['attempt'],at:$clock->now());}else{$set($evidence);}$refuse('non-virgin '.implode(',',array_keys($evidence)));
     if(!Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::virgin($op->fresh())){expect(!isset(Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::for($op->fresh())['admission']),'Non-virgin request has no release instruction');}}
 $restore();$payment=DB::table('invoice_transactions')->where('invoice_id',$invoice->id)->sole();
 DB::table('invoice_transactions')->where('id',$payment->id)->update(['amount'=>'0.00']);$refuse('stale payment despite paid label');
