@@ -61,11 +61,11 @@ if (!function_exists('sealRenewal')) {
         return $op->refresh();
     }
 
-    /** Runs $check against a temporarily sealed renewal, then puts the operation row back as it was. */
-    function withSealedRenewal(Operation $op, Closure $check, array $attempt = [], ?DateTimeImmutable $at = null): mixed
+    /** Runs $check against a temporarily sealed renewal with an optional $reply, then puts the operation row back as it was. */
+    function withSealedRenewal(Operation $op, Closure $check, array $attempt = [], ?DateTimeImmutable $at = null, ?RenewalReply $reply = null): mixed
     {
         $raw = (array) DB::table('domains_operations')->where('id', $op->id)->first();
-        try { return $check(sealRenewal($op, $attempt, at: $at)); }
+        try { return $check(sealRenewal($op, $attempt, reply: $reply, at: $at)); }
         finally { DB::table('domains_operations')->where('id', $op->id)->update($raw); $op->refresh(); }
     }
 

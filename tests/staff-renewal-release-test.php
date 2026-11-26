@@ -39,7 +39,7 @@ foreach(RenewalCode::cases() as $code){
     else{$refuse($code->value);}
 }
 // A sealed attempt whose reply was lost, sealed through the renewal fixture builder.
-$lostReply=['attempt'=>['execution'=>null]];
+$lostReply=['reply'=>'lost'];
 foreach([
     ['attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent']],
     $lostReply,
@@ -52,7 +52,7 @@ foreach([
     $check=static function()use($op,$refuse,$evidence):void{$refuse('non-virgin '.implode(',',array_keys($evidence)));
         if(!Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::virgin($op->fresh())){expect(!isset(Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::for($op->fresh())['admission']),'Non-virgin request has no release instruction');}};
     // The temporary seal is removed with the rest of the row, so no later case runs on a leftover seal.
-    if($evidence===$lostReply){withSealedRenewal($op,$check,$evidence['attempt'],$clock->now());}else{$set($evidence);$check();}}
+    if($evidence===$lostReply){withSealedRenewal($op,static function()use($op,$check):void{same(Paymenter\Extensions\Servers\Domains\Data\ExecutionRecord::RecordedNull,renewalAttempt($op)?->replyRecord(),'The sealed renewal records its lost reply');$check();},at:$clock->now(),reply:RenewalReply::unknown());}else{$set($evidence);$check();}}
 $restore();$payment=DB::table('invoice_transactions')->where('invoice_id',$invoice->id)->sole();
 DB::table('invoice_transactions')->where('id',$payment->id)->update(['amount'=>'0.00']);$refuse('stale payment despite paid label');
 DB::table('invoice_transactions')->where('id',$payment->id)->update(['amount'=>$payment->amount]);

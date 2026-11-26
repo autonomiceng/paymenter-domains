@@ -21,7 +21,7 @@ foreach(['attempt','state'] as $field){
     $kept=static function()use($field,$op):mixed{
         if($field!=='attempt'){return $op->fresh()->getRawOriginal($field);}
         $seal=renewalAttempt($op);
-        return [$op->fresh()->state,$seal===null?null:[$seal->claimKey(),$seal->sentAt()?->getTimestamp(),$seal->authorizedCost()?->amount,$seal->mode(),$seal->sendState(),$seal->replyRecord()]];};
+        return [$op->fresh()->state,$seal===null?null:[$seal->claimKey(),$seal->sentAt()?->getTimestamp(),$seal->authorizedCost()?->amount,$seal->authorizedCost()?->currency,$seal->mode(),$seal->sendState(),$seal->replyRecord()]];};
     $check=static function()use($field,$op,$account,$clock,$nativeMoney,$kept):void{$value=$kept();$before=$nativeMoney();
         if($field==='attempt'){expect($value[0]==='held'&&$value[1]!==null,'The swept renewal is held and sealed');}
         \Paymenter\Extensions\Servers\Domains\Services\FundsWaits::sweep($account,$clock->now());
