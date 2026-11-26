@@ -9,7 +9,9 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Paymenter\Extensions\Servers\Domains\Domains;
+use Paymenter\Extensions\Servers\Domains\Installation\{Registry, SchemaVerifier};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, Price, Tld};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
 use Paymenter\Extensions\Servers\Domains\Services\{FoundationSchema, ObservationSchema};
 
 // The extension lifecycle owns fresh-install authority through catalogue retirement.
@@ -114,6 +116,59 @@ $entry->installed();
 FoundationSchema::verify();
 expect(DB::table('migrations')->where('migration', '2026_11_23_000001_create_domains_schema')->exists(), 'Native migration history recorded');
 foreach ($before as $table => $rows) { same($rows, DB::table($table)->orderBy('id')->get()->toJson(), 'Reinstall retains bytes: '.$table); }
+// Until the writer becomes authority, no install creates its tables; they are installed here only for their checks.
+$operationTables = OperationSchema::tables();
+same([], array_values(array_filter($operationTables, Schema::hasTable(...))), 'Install creates no operation step, attempt or evidence table');
+same([], array_values(array_intersect($operationTables, Registry::expectedTables())), 'The table inventory excludes the operation tables');
+OperationSchema::install(); OperationSchema::verify();
+// Nullable time columns without a default are the declaration MariaDB never initializes or updates implicitly.
+$timeColumns = [];
+foreach ($operationTables as $table) {
+    foreach (Schema::getColumns($table) as $column) {
+        if ($column['type_name'] === 'datetime') { $timeColumns[$table.'.'.$column['name']] = [$column['nullable'], $column['default']]; }
+    }
+}
+same(array_fill_keys(['domains_operation_attempts.claimed_at', 'domains_operation_attempts.claim_until', 'domains_operation_attempts.released_at',
+    'domains_operation_attempts.sealed_at', 'domains_operation_attempts.dispatch_until', 'domains_operation_attempts.grant_consumed_at',
+    'domains_operation_attempts.read_until', 'domains_operation_evidence.observed_at', 'domains_operation_evidence.recorded_at'], [true, null]),
+    $timeColumns, 'Operation time columns are nullable with no default');
+// Attempts and evidence cannot outlive their operation, and verification compares each reference's columns, target and actions.
+$ownedRows = static fn (): array => [DB::table(OperationSchema::STEPS)->count(), DB::table(OperationSchema::EVIDENCE)->count()];
+try { DB::table(OperationSchema::STEPS)->insert(['operation_id' => 999999, 'step_type' => 'renew', 'sequence' => 1]); expect(false, 'Step without operation accepted'); }
+catch (QueryException) { same([0, 0], $ownedRows(), 'Orphan step refused'); }
+$stepId = DB::table(OperationSchema::STEPS)->insertGetId(['operation_id' => 71, 'step_type' => 'renew', 'sequence' => 1]);
+try { DB::table('domains_operations')->where('id', 71)->delete(); expect(false, 'Operation with a step deleted'); }
+catch (QueryException) { same(1, DB::table('domains_operations')->where('id', 71)->count(), 'Restrictive step reference keeps the operation'); }
+DB::table(OperationSchema::STEPS)->where('id', $stepId)->delete();
+$evidence = (new ReflectionMethod(OperationSchema::class, 'definitions'))->invoke(null)[OperationSchema::EVIDENCE];
+$rebuildEvidence = static function (Closure $change) use ($evidence): void {
+    Schema::drop(OperationSchema::EVIDENCE);
+    Schema::create(OperationSchema::EVIDENCE, static function (Blueprint $t) use ($evidence, $change): void { $evidence($t); $change($t); });
+};
+$withoutAttemptReference = static function (Blueprint $t): void {
+    (fn () => $this->commands = array_values(array_filter($this->commands, static fn ($command): bool => $command->name !== 'foreign' || $command->columns !== ['attempt_id'])))->call($t);
+};
+foreach ([
+    'Missing attempt reference' => $withoutAttemptReference,
+    'Cascading attempt reference' => static function (Blueprint $t) use ($withoutAttemptReference): void {
+        $withoutAttemptReference($t);
+        $t->foreign('attempt_id', 'domains_operation_evidence_cascade_f')->references('id')->on(OperationSchema::ATTEMPTS)->cascadeOnDelete();
+    },
+    'Unexpected reference' => static fn (Blueprint $t) => $t->foreign('operation_id', 'domains_operation_evidence_extra_f')->references('id')->on(OperationSchema::STEPS),
+] as $case => $change) {
+    $rebuildEvidence($change);
+    try { OperationSchema::verify(); expect(false, $case.' accepted'); }
+    catch (RuntimeException $e) { same('Retained Domains schema mismatch: '.OperationSchema::EVIDENCE, $e->getMessage(), $case.' refuses retained verification'); }
+}
+$rebuildEvidence(static function (): void {});
+OperationSchema::verify();
+// A same-named target in another database is a different reference. SQLite cannot build one; MariaDB proves it physically.
+$reference = new ReflectionMethod(SchemaVerifier::class, 'reference');
+$key = Schema::getForeignKeys(OperationSchema::EVIDENCE)[0];
+expect($reference->invoke(null, $key) !== $reference->invoke(null, ['foreign_schema' => 'restored_copy'] + $key), 'Reference target includes its schema');
+expect($reference->invoke(null, ['foreign_schema' => 'paymenter'] + $key) !== $reference->invoke(null, ['foreign_schema' => 'Paymenter'] + $key), 'A case-distinct schema is another target');
+expect($reference->invoke(null, $key) !== $reference->invoke(null, ['foreign_table' => strtoupper($key['foreign_table'])] + $key), 'A case-distinct table is another target');
+foreach (array_reverse($operationTables) as $table) { Schema::drop($table); }
 // Missing indexes and changed columns fail closed; verification never repairs retained history.
 Schema::table('domains_domains', static fn (Blueprint $t) => $t->dropUnique(['reservation_name']));
 app(Illuminate\Database\Migrations\Migrator::class)->run([dirname(__DIR__).'/Domains/database/migrations']);
