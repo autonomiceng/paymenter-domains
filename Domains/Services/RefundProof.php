@@ -57,7 +57,7 @@ final class RefundProof
         if (array_diff(array_keys($a), $allowed)) { throw new \DomainException('Unresolved attempt facts prevent refund.'); }
         if ($sealed) {
             $funded = $op->action === 'renew' && $op->funding_basis === 'paid_invoice'
-                ? $op->renewal_reserved_revision !== null && $op->renewal_proof === null && !array_key_exists('claim', $f)
+                ? $renewal?->sealed() === true && !$renewal->observed() && !array_key_exists('claim', $f)
                     && !array_key_exists('seal', $f) && RenewalFundingLedger::funded($op, $ledger)
                 : isset($f['claim'], $f['seal']) && $f['claim'] === $f['seal'];
             // Slice25 commits possibly_sent at seal; ONLY its exact typed local prewire result can override it.

@@ -7,6 +7,7 @@ use App\Models\Server;
 use Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain, Operation, Price, Tld};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationAttempts;
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalProof;
 
 /** Internal billing/save prefix, joining exactly one caller-owned transaction. Never performs I/O. */
@@ -49,8 +50,9 @@ final class HoldingLocks
         $identity_source = HoldingIdentitySource::resolve($domain, $nativeIdentity, $adoption, $account, $cancel);
         $service->setRelation('user', $user);
         $rows = [$user, ...$user->properties, ...$invoices, ...$items, ...$transactions, ...$orders, ...$services, ...$products, ...$plans, ...$cancel, ...$configs, ...$properties, ...$markers, $server, $account, ...$settings, $tld, ...$prices, $domain, ...($adoption ? [$adoption] : []), ...$operations, ...$upgrades, ...$links, ...($tax === 0 ? [] : [$tax])];
-        // Saved renewal proof is left out (RenewalProof::stampRow). A scoped stamp covers fewer rows, so it never equals a full one; full stamps are unchanged.
-        $stamp = hash('sha256', json_encode([array_map(static fn ($row) => $row instanceof Operation ? RenewalProof::stampRow($row) : (method_exists($row, 'getRawOriginal') ? $row->getRawOriginal() : (array) $row), $rows), $identity_source, ...($scope ? [['invoice_scope' => $scope->invoiceId]] : [])], JSON_THROW_ON_ERROR));
+        // Renewal steps and attempts are part of the stamp; their evidence is not (OperationAttempts::stamp). A scoped stamp covers fewer rows, so it never equals a full one.
+        $renewals = $operations->where('action', 'renew')->pluck('id')->map(static fn ($id) => (int) $id)->values()->all();
+        $stamp = hash('sha256', json_encode([array_map(static fn ($row) => $row instanceof Operation ? RenewalProof::stampRow($row) : (method_exists($row, 'getRawOriginal') ? $row->getRawOriginal() : (array) $row), $rows), $identity_source, ...($scope ? [['invoice_scope' => $scope->invoiceId]] : []), ...($renewals ? [OperationAttempts::stamp($renewals)] : [])], JSON_THROW_ON_ERROR));
         return compact('offer', 'scope', 'identity_source', 'adoption', 'advisory', 'credit', 'staff', 'stamp', 'prices', 'transactions', 'domain', 'service', 'product', 'plan', 'user', 'tax', 'server', 'account', 'settings', 'tld', 'operations', 'invoices', 'items', 'cancel', 'services', 'orders', 'products') + ['relatedProperties' => $nativeLocks['relatedProperties']];
     }
 }

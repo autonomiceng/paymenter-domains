@@ -7,6 +7,7 @@ use App\Models\{Invoice, User};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\Money;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter, Transition};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
@@ -217,6 +218,8 @@ final readonly class RenewalCycles
             'policy' => [...($op->policy ?? []), 'unpaid_retirement' => $audit],
             'attempt' => ['seal' => 'absent', 'send_state' => 'definitely_unsent', 'disposition' => 'rejected', 'rejection_basis' => 'definitely_unsent',
                 'terminal' => ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'invoice_id' => $invoice->id, 'transactions' => []]]]);
+        if ((new OperationWriter($clock))->recordTerminal((int) $op->id, 'renewal_cancelled_unpaid', $op->attempt['terminal'])
+            !== Transition::Applied) { throw new \DomainException('Renewal already has terminal proof.'); }
         return $op;
     }
     public function complimentary(int $domainId, User $actor, int $years, Money $cap, string $reason): Operation

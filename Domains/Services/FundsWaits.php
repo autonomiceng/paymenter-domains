@@ -5,6 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Enums\InvoiceTransactionStatus;
 use Illuminate\Support\Facades\{Cache,DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Data\BalanceRetry;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter, Transition};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 /** Acquisition funds deadline and the existing provider-safe renewal boundary. No provider I/O. */
@@ -50,6 +51,8 @@ final class FundsWaits
         // These are retained receipt identities, never the empty zero-money retirement proof.
         if($receipts!==null){$attempt['terminal']['transactions']=$receipts;}
         $op->update(['state'=>'rejected','safe_code'=>self::RENEWAL_CLOSED,'completed_at'=>$now,'attempt'=>$attempt]);
+        if(OperationWriter::at($now)->recordTerminal((int)$op->id,self::RENEWAL_CLOSED,$attempt['terminal'])
+            !==Transition::Applied){throw new \DomainException('Renewal already has terminal proof.');}
         if(!$complimentary){$l['invoices']->firstWhere('id',$op->invoice_id)->update(['status'=>'cancelled']);}
     }
     public static function sweep(Account $a,\DateTimeImmutable $now): void

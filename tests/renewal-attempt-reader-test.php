@@ -4,9 +4,10 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Data\{ExecutionRecord, SendState};
+use Paymenter\Extensions\Servers\Domains\Data\{ExecutionRecord, Money, SendState};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter, SealTerms, StepKey};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 use Paymenter\Extensions\Servers\Domains\Services\{FoundationSchema, WriteMoney};
 
@@ -30,8 +31,13 @@ $never = $make([]);
 $open = $make(['state' => 'running', 'started_at' => $start, 'request_fingerprint' => str_repeat('d', 64), 'attempt' => $sealed]);
 $refused = $make(['state' => 'held', 'safe_code' => 'renewal_definitely_unsent', 'started_at' => $start, 'attempt' => [...$sealed, 'execution' => $refusal]]);
 $settled = $make(['state' => 'succeeded', 'started_at' => $start, 'completed_at' => $done,
-    'attempt' => [...$sealed, 'execution' => $accepted, 'renewal' => ['query' => ['name' => 'example.com', 'years' => 1], 'order_reference' => '1234'], 'reconciliation' => $proof],
-    'renewal_proof' => ['claim_key' => $sealed['claim_key'], 'identity' => 'i', 'at' => $at, 'observation' => ['expiry' => '2027-11-25']]]);
+    'attempt' => [...$sealed, 'execution' => $accepted, 'renewal' => ['query' => ['name' => 'example.com', 'years' => 1], 'order_reference' => '1234'], 'reconciliation' => $proof]]);
+// A positive observation is retained on the sealed attempt row.
+DB::transaction(static function () use ($settled, $start): void {
+    $writer = OperationWriter::at($start); $token = $writer->claim($settled, StepKey::renew(), $start->modify('+360 seconds'));
+    $writer->seal($token, new SealTerms(1, str_repeat('d', 64), new Money('8.12', 'USD'), 'ordinary', $start->modify('+360 seconds')));
+    $writer->recordObservation($token, ['identity' => 'i', 'observation' => ['expiry' => '2027-11-25']], $start);
+});
 $lost = $make(['state' => 'pending', 'started_at' => $start, 'attempt' => [...$sealed, 'execution' => null, 'send_failure' => ['phase' => 'reply']]]);
 $review = $make(['state' => 'uncertain', 'safe_code' => 'actual_charge_changed', 'started_at' => $start,
     'attempt' => [...$sealed, 'execution' => $accepted, 'reconciliation' => $proof]]);

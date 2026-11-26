@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/Support/namesilo-no-id-registered.php';
 require_once __DIR__.'/Support/namesilo-account-guard.php';
+require_once __DIR__.'/Support/renewal-attempts.php';
 use Illuminate\Support\Facades\{Cache,Queue};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,Cost,FeedObserved,Query};
 use Paymenter\Extensions\Servers\Domains\Data\CostUnit;
@@ -49,7 +50,7 @@ $wire->commands=[];$completion=new RenewalCompletion($renewBindings,$clock);
 $wire->expiry='2027-10-18';$wire->orderCredit=['credited_amount'=>'8.95','credited_date'=>'2027-10-16 05:01:00'];
 $creditedOrder=$completion->run($renewal->id);
 expect(in_array('orderDetails',$wire->commands,true),'Renewal recovery receives the exact credited NameSilo order');
-same(['pending',null],[$creditedOrder->state,$creditedOrder->renewal_proof??null],
+same(['pending',null],[$creditedOrder->state,renewalObservation($creditedOrder)],
     'A credited renewal order with unchanged expiry cannot establish positive renewal proof');
 $wire->commands=[];$wire->expiry='2028-10-18';$wire->orderCredit=[];Cache::flush();
 same('succeeded',$completion->run($renewal->id)->state,'Exact readback completes the supported renewal without history acceptance');

@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Support\Facades\{Crypt,DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationAttempts;
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalProof;
 use Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns;
 use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
@@ -24,7 +25,7 @@ final class StaffOperationReview
     public static function permission(string $action): string
     { if(!isset(self::ACTIONS[$action])){throw new StaffReviewRefused('Unknown review action.');} return 'admin.domains.operations.'.$action; }
     public static function stamp(Operation $op,Domain $d): string
-    { return hash('sha256',json_encode([RenewalProof::stampRow($op),$d->getRawOriginal()],JSON_THROW_ON_ERROR)); }
+    { return hash('sha256',json_encode([RenewalProof::stampRow($op),$d->getRawOriginal(),...($op->action==='renew'?[OperationAttempts::stamp([(int)$op->id])]:[])],JSON_THROW_ON_ERROR)); }
     public static function ticket(int $actor,int $domain,int $op,string $action,string $stamp,Clock $clock): string
     {
         return Crypt::encryptString(json_encode(['actor'=>$actor,'domain'=>$domain,'operation'=>$op,'action'=>$action,'stamp'=>$stamp,
