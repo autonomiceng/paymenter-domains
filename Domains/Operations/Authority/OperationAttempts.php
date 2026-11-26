@@ -110,8 +110,8 @@ final class OperationAttempts
 
     private static function decoded(object $row): array
     {
-        return ['source' => $row->source, 'outcome' => $row->outcome, 'observed_at' => $row->observed_at,
-            'recorded_at' => $row->recorded_at, 'evidence' => json_decode(Crypt::decryptString($row->evidence), true, self::EVIDENCE_DEPTH, JSON_THROW_ON_ERROR)];
+        return ['source' => $row->source, 'outcome' => $row->outcome, 'observed_at' => self::time($row->observed_at)?->format(DATE_ATOM),
+            'recorded_at' => self::time($row->recorded_at)?->format(DATE_ATOM), 'evidence' => json_decode(Crypt::decryptString($row->evidence), true, self::EVIDENCE_DEPTH, JSON_THROW_ON_ERROR)];
     }
 
     /** The first evidence of one kind on the step's sealed attempt, in one read. */
@@ -142,10 +142,13 @@ final class OperationAttempts
             $row->authorized_currency, $row->mode, $row->read_token, self::time($row->read_until), (bool) $row->read_unresolved);
     }
 
-    /** Stored in the application time zone, like the model's timestamps. */
+    /**
+     * Stored as a UTC instant in a datetime column, which no session time zone converts, so a deadline in the
+     * repeated hour of a daylight-saving rollback still compares correctly, in PHP and in SQL.
+     */
     public static function at(\DateTimeInterface $time): string
-    { return \DateTimeImmutable::createFromInterface($time)->setTimezone(new \DateTimeZone(config('app.timezone') ?: 'UTC'))->format('Y-m-d H:i:s'); }
+    { return \DateTimeImmutable::createFromInterface($time)->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s'); }
 
     private static function time(?string $value): ?\DateTimeImmutable
-    { return $value === null ? null : new \DateTimeImmutable($value, new \DateTimeZone(config('app.timezone') ?: 'UTC')); }
+    { return $value === null ? null : new \DateTimeImmutable($value, new \DateTimeZone('UTC')); }
 }

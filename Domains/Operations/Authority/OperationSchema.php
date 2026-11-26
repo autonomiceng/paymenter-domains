@@ -13,7 +13,8 @@ use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementProgress;
  * A step's current attempt is a logical reference checked by the writer under the operation lock, so the
  * tables have no circular reference. Child rows reference their parent and cannot outlive it.
  * Every time column is nullable, so MariaDB gives none of them an implicit default or ON UPDATE, even with
- * explicit_defaults_for_timestamp = OFF. The writer sets each required time itself.
+ * explicit_defaults_for_timestamp = OFF. The writer sets each required time itself. Attempt and evidence times
+ * are datetime columns holding UTC instants (OperationAttempts::at), so no session time zone converts them.
  */
 final class OperationSchema extends TableSchema
 {
@@ -87,20 +88,20 @@ final class OperationSchema extends TableSchema
                 $t->unsignedBigInteger('step_id');
                 $t->unsignedSmallInteger('ordinal');
                 $t->char('claim_key', 32)->unique();
-                $t->timestamp('claimed_at')->nullable();
-                $t->timestamp('claim_until')->nullable();
-                $t->timestamp('released_at')->nullable();
+                $t->dateTime('claimed_at')->nullable();
+                $t->dateTime('claim_until')->nullable();
+                $t->dateTime('released_at')->nullable();
                 $t->unsignedBigInteger('operation_revision')->nullable();
                 $t->char('request_digest', 64)->nullable();
-                $t->timestamp('sealed_at')->nullable();
-                $t->timestamp('dispatch_until')->nullable();
+                $t->dateTime('sealed_at')->nullable();
+                $t->dateTime('dispatch_until')->nullable();
                 $t->string('send_state', 32);
-                $t->timestamp('grant_consumed_at')->nullable();
+                $t->dateTime('grant_consumed_at')->nullable();
                 $t->string('authorized_amount', 32)->nullable();
                 $t->char('authorized_currency', 3)->nullable();
                 $t->string('mode', 16)->nullable();
                 $t->char('read_token', 32)->nullable()->unique();
-                $t->timestamp('read_until')->nullable();
+                $t->dateTime('read_until')->nullable();
                 $t->boolean('read_unresolved')->default(false);
                 $t->unique(['step_id', 'ordinal'], $t->getTable().'_ordinal_u');
                 $t->foreign('step_id', self::name($t, 'step_f'))->references('id')->on(self::STEPS)
@@ -113,8 +114,8 @@ final class OperationSchema extends TableSchema
                 $t->string('source', 32);
                 $t->string('kind', 32);
                 $t->string('outcome', 32);
-                $t->timestamp('observed_at')->nullable();
-                $t->timestamp('recorded_at')->nullable();
+                $t->dateTime('observed_at')->nullable();
+                $t->dateTime('recorded_at')->nullable();
                 $t->char('authority_key', 64)->unique();
                 $t->longText('evidence');
                 $t->index(['operation_id', 'kind'], $t->getTable().'_kind_i');

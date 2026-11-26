@@ -120,6 +120,25 @@ expect($deep && OperationAttempts::evidence($deepId, null, 'terminal') === null,
 same(Transition::Applied, $in(fn () => $writer->recordTerminal($deepId, 'never_sent_unpaid', $nest(OperationAttempts::EVIDENCE_DEPTH - 1))), 'The deepest readable evidence is written');
 same($nest(OperationAttempts::EVIDENCE_DEPTH - 1), OperationAttempts::evidence($deepId, null, 'terminal')['evidence'], 'The deepest written evidence reads back');
 
+// A Los Angeles app keeps deadlines across the daylight-saving rollback, when 01:00 to 02:00 happens twice.
+$zone = config('app.timezone'); config(['app.timezone' => 'America/Los_Angeles']);
+try {
+    $clock->instant = new DateTimeImmutable('2026-11-01T01:00:00-07:00');
+    $rollbackId = $operation('writer-rollback');
+    $rollback = $in(fn () => $writer->claim($rollbackId, $step, $later(60)));
+    $in(fn () => $writer->seal($rollback, new SealTerms(7, str_repeat('a', 64), new Money('8.120000', 'USD'), 'ordinary',
+        new DateTimeImmutable('2026-11-01T01:59:00-07:00'))));
+    $clock->instant = new DateTimeImmutable('2026-11-01T01:01:00-08:00');
+    same(Transition::Stale, $in(fn () => $writer->consumeGrant($rollback)), 'A grant that expired at 01:59 PDT is refused at 01:01 PST');
+    same(null, OperationAttempts::attempt($rollback)->grantConsumedAt, 'The refused grant writes nothing');
+    $heldId = $operation('writer-rollback-claim');
+    $in(fn () => $writer->claim($heldId, $step, new DateTimeImmutable('2026-11-01T01:30:00-08:00')));
+    same(Transition::Busy, $in(fn () => $writer->claim($heldId, $step, $later(60))), 'A claim until 01:30 PST is still live at 01:01 PST');
+    $in(fn () => $writer->recordTerminal($heldId, 'never_sent_unpaid', []));
+    same($clock->now()->getTimestamp(), (new DateTimeImmutable(OperationAttempts::evidence($heldId, null, 'terminal')['recorded_at']))->getTimestamp(),
+        'Evidence time reads back as the instant it was recorded');
+} finally { config(['app.timezone' => $zone]); }
+
 // Database keys hold across independent sessions, and child rows keep their operation.
 $file = tempnam((string) getenv('TMPDIR'), 'operation-writer-');
 DB::connection()->statement('VACUUM INTO '.DB::connection()->getPdo()->quote($file));
