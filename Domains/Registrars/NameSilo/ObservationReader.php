@@ -3,7 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,ManagementRequest,RequestContext};
-use Paymenter\Extensions\Servers\Domains\Services\{ContactDetails,ManagementPayload,ReadDeferred,EnomTestCallLimit,ReadFailure};
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\ReadRefusal;
+use Paymenter\Extensions\Servers\Domains\Services\{ContactDetails,ManagementPayload,ReadFailure};
 /** Named reads only. DNS records and DNSSEC are read only when $records is on: the deployed runtime does not offer them for
  * NameSilo, so its sync reads nameservers, flags, glue and contacts and never reports the families it does not offer as failed.
  * DS read support comes from D's list parser; it grants no DS mutation (that stays on the policy map). */
@@ -45,7 +46,7 @@ final class ObservationReader extends Management
                 $reply=$this->reply(Glue::preserveAddresses($this->read($r,$c,'listRegisteredNameServers',['domain'=>$r->name])),'listRegisteredNameServers');
                 // NameSilo omits hosts on a successful empty list. Management reads still require an explicit list.
                 $out['glue']=['state'=>'complete','records'=>array_key_exists('hosts',$reply)?Glue::records($reply,$r->name):[]];
-            } catch (ReadDeferred|EnomTestCallLimit $e) { throw $e; }
+            } catch (ReadRefusal $e) { throw $e; }
             catch (\Throwable $e) { $out['failure_code']=ReadFailure::code($e);$out['failed_family']=$family; }
             $family='contacts';$roles=['registrant'=>'registrant','admin'=>'administrative','tech'=>'technical','auxbilling'=>'billing'];
             $contacts=[];$cache=[];
@@ -67,7 +68,7 @@ final class ObservationReader extends Management
                 }
             }
             $out['settings']['contacts']['state']='complete';
-        } catch (ReadDeferred|EnomTestCallLimit $e) { throw $e; }
+        } catch (ReadRefusal $e) { throw $e; }
         catch (\Throwable $e) { $out['failure_code']??=ReadFailure::code($e);$out['failed_family']??=$family; }
         return $out;
     }

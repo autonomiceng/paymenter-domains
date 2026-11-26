@@ -3,7 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Money};
-use Paymenter\Extensions\Servers\Domains\Services\{LiveReservationLimit,LiveReservations,OperationClaims};
+use Paymenter\Extensions\Servers\Domains\Services\{LiveReservations, OperationClaims};
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\LiveReservationLimit;
 /** Worker-local transport guard. Armed after fresh funded admission, before the engine seals the attempt. */
 final class SendReservation implements \Paymenter\Extensions\Servers\Domains\Contracts\WriteReservation
 {

@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api;
 
-use Paymenter\Extensions\Servers\Domains\Services\LiveReservationLimit;
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\LiveReservationLimit;
 
 final class RegistrarClient implements \JsonSerializable
 {

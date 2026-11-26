@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api;
 
-use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Dns;
 
 /** Offline descriptors only. Deliberately not a RegistrarRequest: no sender accepts these writes. */

@@ -3,6 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Data;
 
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
+
 /** Explicit malformed row in an otherwise accepted catalogue; unknown cost, never confirmed withdrawal. */
 final readonly class CatalogueUnavailable
 {

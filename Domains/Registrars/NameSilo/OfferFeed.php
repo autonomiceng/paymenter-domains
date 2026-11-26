@@ -4,7 +4,8 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Cost, FactsObserved, FeedObserved, PricedFeed};
-use Paymenter\Extensions\Servers\Domains\Data\{CanonicalName, CatalogueFreshness, CostUnit, RequestContext};
+use Paymenter\Extensions\Servers\Domains\Data\{CatalogueFreshness, CostUnit, RequestContext};
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 
 /** One account getPrices, annual-only. No catalogue row establishes registry/renewal safety. */

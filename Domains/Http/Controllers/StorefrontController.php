@@ -6,7 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\RateLimiter;
-use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Services\{CartHandoffFailure,CartLines,PolicyEndings,Storefront};
 

@@ -3,7 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
 
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName};
+use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 
 /** Replace only with newer verified facts; a failed read never becomes this command. */
 final readonly class FactsObserved implements Command

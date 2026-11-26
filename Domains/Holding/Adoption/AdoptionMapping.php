@@ -5,7 +5,8 @@ namespace Paymenter\Extensions\Servers\Domains\Holding\Adoption;
 
 use App\Models\{Invoice, Service, User};
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName, Environment};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\{StaffContext, Target};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;

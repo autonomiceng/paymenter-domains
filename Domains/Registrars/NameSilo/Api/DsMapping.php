@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api;
 
-use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Ds, DsRegistryPolicy};
 
 /** Offline descriptors, deliberately outside RegistrarRequest so the sender cannot execute them. */

@@ -6,7 +6,8 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting};
 
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName, Environment, SaleSelection};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment, SaleSelection};
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Price, SalesPolicy, Tld};
 
 final class SellerPolicies

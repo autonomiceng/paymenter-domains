@@ -1,8 +1,8 @@
 # MIT, Copyright (c) 2026 Autonomic Engineering.
 """Registrar API clients stay protocol code, and the rest of Domains reaches a provider only through Dispatch.
 
-Each file under Registrars/<Provider>/Api names only that subtree. A `use` import or a fully qualified class name
-outside that namespace must appear in ALLOWED. The list records what the clients reach today and may only shrink:
+Each file under Registrars/<Provider>/Api names only that subtree and the explicit shared contract. A `use` import or a fully qualified class name
+outside those namespaces must appear in ALLOWED. The list records what the clients reach today and may only shrink:
 remove an entry when its last reference goes, and move code instead of adding one.
 
 Outside the provider trees and Registrars/Dispatch, every reference to a provider class is listed in
@@ -26,8 +26,7 @@ PROVIDERS = ('Registrars/Enom/', 'Registrars/NameSilo/')
 # Dispatch files that build provider objects or classify their refusals. Other Dispatch files stay provider neutral.
 COMPOSITION = {'Registrars/Dispatch/Offers.php', 'Registrars/Dispatch/RegistrarFactories.php',
                'Registrars/Dispatch/RegistrarRegistry.php', 'Registrars/Dispatch/RenewalWriter.php'}
-# One provider naming the other. Only shrinks: the shared pre-wire refusal type replaces this Enom one.
-CROSSING = ['NameSilo/ObservationReader.php: Services\\EnomTestCallLimit']
+SHARED_CONTRACT = {'Registrars\\Contract\\CanonicalName', 'Registrars\\Contract\\LiveReservationLimit'}
 
 ALLOWED = {
     'Enom/Api/AdoptionTransport.php': ['Data\\Environment'],
@@ -39,12 +38,9 @@ ALLOWED = {
     'Enom/Api/ResponseParser.php': ['Data\\RegistrarReply'],
     'Enom/Api/Transport.php': ['Data\\Environment'],
     'NameSilo/Api/CurlTransport.php': ['Services\\ProviderSendGuard'],
-    'NameSilo/Api/DnsMapping.php': ['Data\\CanonicalName', 'Registrars\\NameSilo\\Dns'],
-    'NameSilo/Api/DomainName.php': ['Data\\CanonicalName'],
-    'NameSilo/Api/DsMapping.php': ['Data\\CanonicalName', 'Registrars\\NameSilo\\Ds',
+    'NameSilo/Api/DnsMapping.php': ['Registrars\\NameSilo\\Dns'],
+    'NameSilo/Api/DsMapping.php': ['Registrars\\NameSilo\\Ds',
                                    'Registrars\\NameSilo\\DsRegistryPolicy'],
-    'NameSilo/Api/RegistrarClient.php': ['Services\\LiveReservationLimit'],
-    'NameSilo/Api/RegistrarRequest.php': ['Data\\CanonicalName'],
     'NameSilo/Api/ResponseParser.php': ['Registrars\\NameSilo\\DefaultContact'],
 }
 
@@ -94,7 +90,8 @@ def outside(path, root=API):
 
 
 def current(root=API):
-    return {str(p.relative_to(root)): found for p in sorted(root.glob('*/Api/**/*.php')) if (found := outside(p, root))}
+    return {str(p.relative_to(root)): found for p in sorted(root.glob('*/Api/**/*.php'))
+            if (found := [name for name in outside(p, root) if name not in SHARED_CONTRACT])}
 
 
 # Legacy Services classes and files that belong to Enom without carrying its name.
@@ -264,7 +261,7 @@ class RegistrarApiImports(unittest.TestCase):
                              if name.startswith((f'Registrars\\{other}\\', f'Services\\{other}', f'path:{other}/',
                                                  f'path:Registrars/{other}/', f'path:Services/{other}'))
                              or other == 'Enom' and name in ENOM_SERVICES]
-        self.assertEqual(CROSSING, crossing, 'A provider names the other provider; move the shared part out instead')
+        self.assertEqual([], crossing, 'A provider names the other provider; move the shared part out instead')
 
     def test_reverse_reader_resolves_prefixes_aliases_strings_and_blade(self):
         source = (f'<?php\nnamespace {BASE}Catalogue;\nuse {BASE}Registrars\\{{Enom, NameSilo as Silo}};\n'

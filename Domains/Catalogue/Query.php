@@ -3,7 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
 
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName};
+use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 
 /** Bounded account batch. Binding comes from the selected seller or the existing holding. */
 final readonly class Query

@@ -3,7 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 
-use Paymenter\Extensions\Servers\Domains\Data\{Action, AttemptEvidence, DateEvidence, ExpiryPrecision, Money, OrderEvidence, RequestContext, Evidence, CanonicalName};
+use Paymenter\Extensions\Servers\Domains\Data\{Action, AttemptEvidence, DateEvidence, ExpiryPrecision, Money, OrderEvidence, RequestContext, Evidence};
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Outcome, RegistrarRequest as Request};
 
 /** Incomplete, synthetic-contract candidate search. Completeness requires explicit account acceptance. */
