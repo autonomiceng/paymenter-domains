@@ -5,7 +5,6 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, Capability, ManagementRequest, ManagementResult, RequestContext, Support, SystemClock};
-use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\DsMapping;
 
 /** Dormant sequence adapter. C1 alone selects it and wires physical admission. */
 final class DsManagement extends Management

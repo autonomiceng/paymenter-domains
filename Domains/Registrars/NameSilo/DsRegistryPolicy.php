@@ -3,7 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 
-use Paymenter\Extensions\Servers\Domains\Data\{CanonicalName, ReviewedFacts};
+use Paymenter\Extensions\Servers\Domains\Data\ReviewedFacts;
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 
 /** Deployment-only reviewed facts. No customer allowlist or default registry grants. */
 final class DsRegistryPolicy

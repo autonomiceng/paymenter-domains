@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 
 /** One structural identity from the already locked native prefix. Never acquisition proof. */

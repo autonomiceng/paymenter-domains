@@ -1,7 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
+namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api;
 /** Only the singleton default ID and normalized email leave contact inventory parsing. */
 final class DefaultContact
 {

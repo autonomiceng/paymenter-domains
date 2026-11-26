@@ -31,7 +31,7 @@ abstract class RegistrationProtocol extends RegistrationTransport
     final public function guardAccount(RequestContext $context): void
     {
         if($this->binding->registrarKey==='namesilo'){
-            \Paymenter\Extensions\Servers\Domains\Services\NameSiloAccountGuard::check($this->binding,$context,$this->exchange->getValue());
+            \Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\Accounts::checkNameSiloAccount($this->binding,$context,$this->exchange->getValue());
         }
     }
     final public function bindsTo(AccountBinding $binding): bool { return $this->binding->matches($binding); }

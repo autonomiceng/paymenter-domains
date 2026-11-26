@@ -3,10 +3,10 @@
 declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
 
-use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DnsMapping, RegistrarRequest};
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsMapping;
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\RegistrarRequest;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Dns;
 
-expect(is_file(dirname(__DIR__).'/Domains/Registrars/NameSilo/Api/DnsMapping.php'), 'Dormant DNS wire builders exist');
 $reject = static function (callable $call): void {
     try { $call(); } catch (DomainException|TypeError) { return; }
     throw new RuntimeException('Expected invalid DNS mapping refusal');

@@ -2,7 +2,8 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
-use Paymenter\Extensions\Servers\Domains\Data\{CanonicalName,ReviewedFacts};
+use Paymenter\Extensions\Servers\Domains\Data\ReviewedFacts;
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 
 /** Deployment facts codec only. No default suffixes, transport, policy activation or tuple grants. */
 final class DsFacts

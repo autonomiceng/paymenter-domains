@@ -63,9 +63,6 @@
   "Services\\EnomTestCallLimit",
   "Services\\EnomTestWriteReservation"
  ],
- "Contracts/RegistrationProtocol.php": [
-  "Services\\NameSiloAccountGuard"
- ],
  "Contracts/RegistrationTransport.php": [
   "Registrars\\NameSilo\\Api\\Environment",
   "Services\\EnomTestCallLimit"
@@ -260,7 +257,6 @@
  ],
  "Services/LocalAccountEnrollment.php": [
   "Registrars\\NameSilo\\AccountVerifier",
-  "Registrars\\NameSilo\\Api\\CurlTransport",
   "Registrars\\NameSilo\\Api\\DeadlineTransport",
   "Registrars\\NameSilo\\Client",
   "Registrars\\NameSilo\\CredentialAuthenticator",
@@ -275,12 +271,7 @@
  "Services/ManagementPayload.php": [
   "Registrars\\NameSilo\\Glue"
  ],
- "Services/NameSiloAccountGuard.php": [
-  "Registrars\\NameSilo\\Api\\Environment",
-  "Registrars\\NameSilo\\DefaultContact"
- ],
  "Services/NameSiloAccountReset.php": [
-  "Registrars\\NameSilo\\DefaultContact",
   "Registrars\\NameSilo\\Driver",
   "Services\\NameSiloAccountGuard"
  ],
@@ -291,12 +282,6 @@
  ],
  "Services/NameSiloSandbox.php": [
   "Registrars\\NameSilo\\AccountVerifier",
-  "Registrars\\NameSilo\\Api\\CurlTransport",
-  "Registrars\\NameSilo\\Api\\Environment",
-  "Registrars\\NameSilo\\Api\\Outcome",
-  "Registrars\\NameSilo\\Api\\RegistrarClient",
-  "Registrars\\NameSilo\\Api\\RegistrarRequest",
-  "Registrars\\NameSilo\\Api\\RequestContext",
   "Registrars\\NameSilo\\Client",
   "Registrars\\NameSilo\\Driver"
  ],

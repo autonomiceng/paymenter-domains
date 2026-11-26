@@ -6,17 +6,26 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{CurlTransport, DeadlineTransport, Environment as WireEnvironment,
     RegistrarClient, RegistrarRequest, RegistrarResult, RequestContext as WireContext};
+use Paymenter\Extensions\Servers\Domains\Services\ProviderSendGuard;
 
 /** @internal Only an accepted AccountBindings reader factory may bind credentials. No identity probe exists here. */
 final class Client
 {
     private readonly \SensitiveParameterValue $client;
     public function __construct(#[\SensitiveParameter] public readonly AccountBinding $binding,
-        #[\SensitiveParameter] string $apiKey, #[\SensitiveParameter] DeadlineTransport $transport = new CurlTransport)
+        #[\SensitiveParameter] string $apiKey, #[\SensitiveParameter] ?DeadlineTransport $transport = null)
     {
         if ($binding->registrarKey !== 'namesilo') { throw new \InvalidArgumentException('NameSilo binding required.'); }
         $this->client = new \SensitiveParameterValue(new RegistrarClient($apiKey,
-            $binding->environment === Environment::Live ? WireEnvironment::Live : WireEnvironment::Sandbox, $transport));
+            $binding->environment === Environment::Live ? WireEnvironment::Live : WireEnvironment::Sandbox, $transport ?? self::readTransport()));
+    }
+
+    /** The host policy runs immediately before the client enters the physical exchange. */
+    public static function readTransport(): DeadlineTransport
+    {
+        return new CurlTransport(static function (WireEnvironment $environment, string $command): void {
+            ProviderSendGuard::beforeSend('namesilo', $environment === WireEnvironment::Live ? 'live' : 'test', $command);
+        });
     }
     public function read(RegistrarRequest $request, #[\SensitiveParameter] RequestContext $context): RegistrarResult
     {

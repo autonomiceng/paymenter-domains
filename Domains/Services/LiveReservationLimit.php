@@ -3,8 +3,5 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
-/** A definite pre-send refusal, without database, credential or provider exception details. */
-final class LiveReservationLimit extends \DomainException
-{
-    public function __construct() { parent::__construct('Our live account safety check stopped this request before sending.'); }
-}
+// Loading the shared class also registers this legacy catch type.
+class_exists(\Paymenter\Extensions\Servers\Domains\Registrars\Contract\LiveReservationLimit::class);

@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
-use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Models\SalesPolicy;
 
 /** Input-bounded current policy reads. Never a price or eligibility cache. */

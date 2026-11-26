@@ -2,7 +2,12 @@
 // Synthetic cURL functions: no sockets. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api;
-require dirname(__FILE__).'/bootstrap.php';
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment as AccountEnvironment, RequestBudget,
+    RequestContext as AccountContext, RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Client;
+
+require __DIR__.'/bootstrap.php';
 // Exercise redaction even when the host includes arguments in exception traces.
 ini_set('zend.exception_ignore_args', '0');
 
@@ -26,7 +31,7 @@ function fake(array $overrides = []): void
         'timeout' => false, 'chunks' => ['{}'], 'status' => 200];
 }
 
-$transport = new CurlTransport;
+$transport = new CurlTransport(static function (): void {});
 foreach ([[1750, 1750], [20000, 8000], [1, 1], [25000, 8000]] as [$timeoutMs, $connectMs]) {
     fake(); $accepted = true;
     try { $transport->sendWithin(Environment::Sandbox, RequestContext::Background, RegistrarRequest::balance(), 'test-api-key', $timeoutMs); }
@@ -97,5 +102,38 @@ putenv('SSLKEYLOGFILE=synthetic-keylog');
 same(Outcome::Unknown, $client->execute(RegistrarRequest::balance(), RequestContext::Background)->outcome, 'TLS key logging guard');
 same([0, 0], [$GLOBALS['curlFake']['inits'], $GLOBALS['curlFake']['calls']], 'TLS logging blocks before dispatch');
 putenv('SSLKEYLOGFILE');
+
+// Bind the shipped reader to the scripted physical wire, through request and reply parsing.
+$clock = new class implements Clock {
+    public function now(): \DateTimeImmutable { return new \DateTimeImmutable('2026-11-26T00:00:00Z'); }
+};
+$binding = new AccountBinding('namesilo', 13, AccountEnvironment::Test, 'synthetic-account');
+$reader = new Client($binding, 'test-api-key');
+$readContext = static fn () => new AccountContext($binding, RequestOrigin::Background,
+    $clock->now()->modify('+1750 milliseconds'), new RequestBudget(1), $clock);
+$request = RegistrarRequest::availability([' ExAmPlE.COM. '], false);
+$reply = ['request' => ['operation' => 'checkRegisterAvailability'],
+    'reply' => ['code' => 300, 'detail' => 'synthetic', 'available' => [
+        ['domain' => 'example.com', 'price' => '12.34', 'duration' => 1, 'premium' => 0]]]];
+fake(['chunks' => [json_encode($reply, JSON_THROW_ON_ERROR)]]);
+$context = $readContext();
+$result = $reader->read($request, $context);
+same(Outcome::Success, $result->outcome, 'Bound availability accepts the matching reply');
+same('12.34', $result->value('available.0.price'), 'Availability keeps the exact quoted amount');
+$url = parse_url($GLOBALS['curlFake']['options'][CURLOPT_URL]);
+parse_str($url['query'], $query);
+same(['ote.namesilo.com', '/apibatch/checkRegisterAvailability', 'example.com'],
+    [$url['host'], $url['path'], $query['domains']], 'Bound TEST read sends the canonical name on the background route');
+same([1, 1, 1, 1750], [$GLOBALS['curlFake']['calls'], $context->exchanges(), $context->completedReads(),
+    $GLOBALS['curlFake']['options'][CURLOPT_TIMEOUT_MS]], 'One successful exchange uses the bound deadline');
+
+$reply['reply']['available'][0]['domain'] = 'other.example.com';
+fake(['chunks' => [json_encode($reply, JSON_THROW_ON_ERROR)]]);
+$context = $readContext();
+$result = $reader->read($request, $context);
+same(Outcome::Unknown, $result->outcome, 'A mismatched name cannot supply an availability quote');
+same(null, $result->value('available'), 'No quote is exposed from a mismatched reply');
+same([1, 1, 0], [$GLOBALS['curlFake']['calls'], $context->exchanges(), $context->completedReads()],
+    'A mismatched reply consumes one exchange and is never retried');
 
 echo "Transport: synthetic HTTPS options, routing, streaming cap, redirects and timeouts passed.\n";

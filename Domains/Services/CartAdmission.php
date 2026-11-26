@@ -7,7 +7,8 @@ use App\Classes\Cart as NativeCart;
 use App\Models\{CartItem, Order, Product, Service};
 use Illuminate\Support\Facades\{Auth, DB, Event};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{CanonicalName, SaleSelection};
+use Paymenter\Extensions\Servers\Domains\Data\SaleSelection;
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 
 /** One batch in native Order Creating, after ALL native user/coupon/product locks. Dormant until slice 39. */
 class CartAdmission

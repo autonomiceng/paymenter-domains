@@ -47,7 +47,7 @@ final class ResponseParser
         if (in_array($request->command, ['checkRegisterAvailability', 'checkTransferAvailability'], true)) {
             $reply = $this->availability($request, $reply);
         }
-        if ($request->command === 'contactList') { $reply['default_contact'] = \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DefaultContact::fromReply($reply); }
+        if ($request->command === 'contactList') { $reply['default_contact'] = DefaultContact::fromReply($reply); }
         if (!$this->validSuccess($request, $reply)) { return new RegistrarResult(Outcome::Unknown, 300); }
         unset($reply['code'], $reply['detail'], $reply['message']);
         return new RegistrarResult(Outcome::Success, 300, $this->sanitize($this->project($request->command, $reply), $key));

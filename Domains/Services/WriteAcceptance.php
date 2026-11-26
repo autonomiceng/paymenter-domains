@@ -3,7 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\Cache;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName, Capability, Query, Support};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capability, Query, Support};
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 /** Trusted provider acceptance, separate from catalogue, identity and live spending authority.
  * Default refuses. The local profileProofCheck must inspect durable fresh proof bound to the

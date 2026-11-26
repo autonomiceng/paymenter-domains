@@ -9,7 +9,8 @@ use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{CurlTransport,Read
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit,EnomTestSendLimitSchema,EnomTestWriteReservation as Reservation};
 $sends=static fn():int=>DB::table(EnomTestSendLimitSchema::SENDS)->count();
-use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{CurlTransport as NsTransport,Environment as NsEnvironment,RequestContext as NsContext,RegistrarRequest};
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Client as NameSiloClient;
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Environment as NsEnvironment,RequestContext as NsContext,RegistrarRequest};
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 same(1,\Paymenter\Extensions\Servers\Domains\Services\ProviderSendGuard::CONTRACT,'Deployment capability contract');
 $warnings=[];$logThrows=false;
@@ -65,7 +66,7 @@ $requests=[RegistrarRequest::balance(),RegistrarRequest::prices(),RegistrarReque
     RegistrarRequest::availability(['example.com'],true),RegistrarRequest::domainInfo('example.com'),
     RegistrarRequest::transferStatus('example.com'),RegistrarRequest::listOrders(),RegistrarRequest::orderDetails('123')];
 foreach(NsEnvironment::cases() as $env){foreach(NsContext::cases() as $context){foreach($requests as $request){
-    $events=[];$GLOBALS['nsGuardSends']=0;(new NsTransport)->send($env,$context,$request,'SYNTHETIC-KEY');
+    $events=[];$GLOBALS['nsGuardSends']=0;NameSiloClient::readTransport()->send($env,$context,$request,'SYNTHETIC-KEY');
     same([['namesilo',$env===NsEnvironment::Live?'live':'test',$request->command]],$events,'NameSilo environment uses neutral test/live names');
     same(1,$GLOBALS['nsGuardSends'],'Allowed NameSilo send once');
 }}}
@@ -91,7 +92,7 @@ foreach([false,true] as $logThrows){
         foreach([
             ['enom','GetBalance',fn()=>(new CurlTransport)->send(\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,ReadCommand::Balance,[],'synthetic-uid','SYNTHETIC-TOKEN',25000),true],
             ['enom','Purchase',fn()=>$exchange($wire,'registration')($origin,'Purchase',['Contact'=>'PRIVATE-REQUEST-SENTINEL'],25000),false],
-            ['namesilo','getDomainInfo',fn()=>(new NsTransport)->send(NsEnvironment::Sandbox,NsContext::Background,RegistrarRequest::domainInfo('example.com'),'SYNTHETIC-KEY'),true],
+            ['namesilo','getDomainInfo',fn()=>NameSiloClient::readTransport()->send(NsEnvironment::Sandbox,NsContext::Background,RegistrarRequest::domainInfo('example.com'),'SYNTHETIC-KEY'),true],
         ] as [$registrar,$command,$send,$typed]){$refusal($send,$registrar,$command,$reason,$typed);}
     }
     $clockCalls=0;$guardCalls=0;
@@ -103,7 +104,7 @@ foreach([false,true] as $logThrows){
     foreach(['enom','namesilo'] as $registrar){
         $refusal(fn()=>\Paymenter\Extensions\Servers\Domains\Services\ProviderSendGuard::beforeSend($registrar,'test','GetBalance'),$registrar,'GetBalance','clock_failed');
     }
-    $refusal(fn()=>(new NsTransport)->send(NsEnvironment::Sandbox,NsContext::Background,RegistrarRequest::balance(),'SYNTHETIC-KEY'),'namesilo','getAccountBalance','clock_failed');
+    $refusal(fn()=>NameSiloClient::readTransport()->send(NsEnvironment::Sandbox,NsContext::Background,RegistrarRequest::balance(),'SYNTHETIC-KEY'),'namesilo','getAccountBalance','clock_failed');
     same(3,$clockCalls,'Clock failure tests reach the central guard clock stage');
     same(0,$guardCalls,'Clock failure never invokes the callback');
     app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
@@ -176,25 +177,25 @@ same([],$warnings,'Enom deadline failures outside the guard do not warn');
 config(['domains.provider_send_guard'=>null]);resetWire(['chunks'=>[$purchaseReply]]);$before=$sends();
 (new CurlTransport)->send(\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,ReadCommand::Balance,[],'synthetic-uid','SYNTHETIC-TOKEN',25000);
 $exchange($wire,'registration')($origin,'Purchase',[],25000);
-$GLOBALS['nsGuardSends']=0;(new NsTransport)->send(NsEnvironment::Sandbox,NsContext::Background,RegistrarRequest::balance(),'SYNTHETIC-KEY');
+$GLOBALS['nsGuardSends']=0;NameSiloClient::readTransport()->send(NsEnvironment::Sandbox,NsContext::Background,RegistrarRequest::balance(),'SYNTHETIC-KEY');
 same([2,1],[count($GLOBALS['enomWire']['forms']),$GLOBALS['nsGuardSends']],'Null guard preserves all three physical senders');
 same($before+2,$sends(),'Each Enom TEST send site records one attempt; NameSilo records none');
 same([],$warnings,'Null guard does not warn');
 $GLOBALS['nsGuardNanoseconds']=0;$GLOBALS['nsGuardSends']=0;
 config(['domains.provider_send_guard'=>static function():void { $GLOBALS['nsGuardNanoseconds']+=250000000; }]);
-(new NsTransport)->sendWithin(NsEnvironment::Sandbox,NsContext::Interactive,RegistrarRequest::balance(),'SYNTHETIC-KEY',1000);
+NameSiloClient::readTransport()->sendWithin(NsEnvironment::Sandbox,NsContext::Interactive,RegistrarRequest::balance(),'SYNTHETIC-KEY',1000);
 same([750,750],[$GLOBALS['nsGuardOptions'][CURLOPT_CONNECTTIMEOUT_MS],$GLOBALS['nsGuardOptions'][CURLOPT_TIMEOUT_MS]],'Guard time shortens both NameSilo timeouts');
 same(1,$GLOBALS['nsGuardSends'],'Partial remaining budget still sends once');
 $GLOBALS['nsGuardSends']=0;$expired=null;
 config(['domains.provider_send_guard'=>static function():void { $GLOBALS['nsGuardNanoseconds']+=1000000000; }]);
-try{(new NsTransport)->sendWithin(NsEnvironment::Sandbox,NsContext::Background,RegistrarRequest::balance(),'SYNTHETIC-KEY',1000);}catch(RuntimeException $error){$expired=$error;}
+try{NameSiloClient::readTransport()->sendWithin(NsEnvironment::Sandbox,NsContext::Background,RegistrarRequest::balance(),'SYNTHETIC-KEY',1000);}catch(RuntimeException $error){$expired=$error;}
 expect($expired!==null,'Guard cannot spend an expired NameSilo request budget');
 same(0,$GLOBALS['nsGuardSends'],'Expired NameSilo budget sends no bytes');
 same([],$warnings,'NameSilo deadline failures outside the guard do not warn');
 config(['domains.provider_send_guard'=>$guard]);
 foreach([fn()=>(new CurlTransport)->send(\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,ReadCommand::Balance,[],'synthetic-uid','SYNTHETIC-TOKEN',1000),
     fn()=>$exchange($wire,'management')($origin,'GetBalance',[],1000),
-    fn()=>(new NsTransport)->send(NsEnvironment::Sandbox,NsContext::Background,RegistrarRequest::balance(),'SYNTHETIC-KEY')] as $index=>$send){
+    fn()=>NameSiloClient::readTransport()->send(NsEnvironment::Sandbox,NsContext::Background,RegistrarRequest::balance(),'SYNTHETIC-KEY')] as $index=>$send){
     resetWire(['execFail'=>true]);$caught=null;$warnings=[];$events=[];$GLOBALS['nsGuardSends']=0;
     $GLOBALS['nsGuardExecFail']=$index===2;
     try{

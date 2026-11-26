@@ -3,7 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\Server;
-use Paymenter\Extensions\Servers\Domains\Data\{Action, CanonicalName, Query, RequestContext, SaleSelection};
+use Paymenter\Extensions\Servers\Domains\Data\{Action, Query, RequestContext, SaleSelection};
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Contracts\RegistrarDriver;
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
 /** External one-year code transfers only. No dispatch or new registry-schema acceptance. */

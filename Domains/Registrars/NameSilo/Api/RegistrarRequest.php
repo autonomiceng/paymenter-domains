@@ -3,6 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api;
 
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
+
 final class RegistrarRequest implements \JsonSerializable
 {
     private readonly \SensitiveParameterValue $payload;
@@ -21,7 +23,7 @@ final class RegistrarRequest implements \JsonSerializable
         $names = [];
         foreach ($domains as $domain) {
             if (!is_string($domain)) { throw new \InvalidArgumentException('Invalid domain input.'); }
-            $names[] = \Paymenter\Extensions\Servers\Domains\Data\CanonicalName::normalize($domain);
+            $names[] = CanonicalName::normalize($domain);
         }
         return new self($transfer ? 'checkTransferAvailability' : 'checkRegisterAvailability',
             ['domains' => implode(',', array_unique($names))]);
@@ -37,11 +39,11 @@ final class RegistrarRequest implements \JsonSerializable
 
     public static function domainInfo(string $domain): self
     {
-        return new self('getDomainInfo', ['domain' => \Paymenter\Extensions\Servers\Domains\Data\CanonicalName::normalize($domain)]);
+        return new self('getDomainInfo', ['domain' => CanonicalName::normalize($domain)]);
     }
 
     public static function transferStatus(string $domain): self
-    { return new self('checkTransferStatus', ['domain' => \Paymenter\Extensions\Servers\Domains\Data\CanonicalName::normalize($domain)]); }
+    { return new self('checkTransferStatus', ['domain' => CanonicalName::normalize($domain)]); }
 
     public static function defaultContact(): self { return new self('contactList', []); }
 

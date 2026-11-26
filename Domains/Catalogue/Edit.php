@@ -3,7 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
 
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName};
+use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 
 /** Privileged local commands. Authorization belongs to the injected caller, never form input.

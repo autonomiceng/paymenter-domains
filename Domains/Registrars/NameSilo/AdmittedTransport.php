@@ -4,8 +4,9 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,SendFailure};
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\{CanonicalName, LiveReservationLimit};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{CurlTransport,DeadlineTransport,Environment,RegistrarRequest,RequestContext,TransportResponse};
-use Paymenter\Extensions\Servers\Domains\Services\{LiveReservationLimit,LiveReservations,OperationClaims,ProviderSendGuard};
+use Paymenter\Extensions\Servers\Domains\Services\{LiveReservations, OperationClaims, ProviderSendGuard};
 /** Account-bound port. The installed binding factory supplies fresh, verified credentials on every call. */
 final class AdmittedTransport implements DeadlineTransport
 {
@@ -47,7 +48,7 @@ final class AdmittedTransport implements DeadlineTransport
             $keys=array_keys($parameters);sort($keys);
             $expected=$dsWrite?['domain','digest','keyTag','digestType','alg']:['domain'];sort($expected);
             if($keys!==$expected||!is_string($parameters['domain']??null)
-                ||\Paymenter\Extensions\Servers\Domains\Data\CanonicalName::normalize($parameters['domain'])!==$parameters['domain']){throw new LiveReservationLimit;}
+                ||CanonicalName::normalize($parameters['domain'])!==$parameters['domain']){throw new LiveReservationLimit;}
             if($dsWrite){
                 $tuple=Ds::tuple(['key_tag'=>$parameters['keyTag'],'algorithm'=>$parameters['alg'],
                     'digest_type'=>$parameters['digestType'],'digest'=>$parameters['digest']]);
@@ -63,7 +64,7 @@ final class AdmittedTransport implements DeadlineTransport
         if(array_key_exists('auto_renew',$parameters)&&$parameters['auto_renew']!==0){throw new LiveReservationLimit;}
         if(in_array($command,['registerDomain','transferDomain','renewDomain'],true)){
             if(($parameters['auto_renew']??null)!==0||!is_string($parameters['domain']??null)
-                ||\Paymenter\Extensions\Servers\Domains\Data\CanonicalName::normalize($parameters['domain'])!==$parameters['domain']){throw new LiveReservationLimit;}
+                ||CanonicalName::normalize($parameters['domain'])!==$parameters['domain']){throw new LiveReservationLimit;}
             if($command!=='transferDomain'&&($parameters['years']??null)!==1){throw new LiveReservationLimit;}
             if($command==='renewDomain'&&array_diff(array_keys($parameters),['domain','years','auto_renew'])){throw new LiveReservationLimit;}
             if($command!=='renewDomain'&&!in_array($parameters['private']??null,[0,1],true)){throw new LiveReservationLimit;}

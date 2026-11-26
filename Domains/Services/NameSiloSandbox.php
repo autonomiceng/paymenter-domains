@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RegistrarRegistry;
+use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\{Accounts, RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 /** Explicit local OTE enrollment, never a provider-confirmed identity verifier. */
 final class NameSiloSandbox
@@ -58,10 +58,7 @@ final class NameSiloSandbox
     {return self::PREFIX.hash('sha256',json_encode($facts,JSON_THROW_ON_ERROR));}
     public static function checkKey(#[\SensitiveParameter] array $credentials): void
     {
-        $client=new NameSilo\Api\RegistrarClient($credentials['api_key'],NameSilo\Api\Environment::Sandbox,new NameSilo\Api\CurlTransport);
-        $result=$client->execute(NameSilo\Api\RegistrarRequest::balance(),NameSilo\Api\RequestContext::Interactive,10000);
-        if($result->outcome!==NameSilo\Api\Outcome::Success){throw new \DomainException('Sandbox key check failed.');}
-        // The balance is discarded. This proves key authentication only, never account ownership.
+        Accounts::checkNameSiloSandboxKey($credentials);
     }
     public static function validate(Account $a,#[\SensitiveParameter] array $facts,#[\SensitiveParameter] array $credentials): void
     {

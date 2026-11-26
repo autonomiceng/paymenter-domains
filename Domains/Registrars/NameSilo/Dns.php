@@ -3,8 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 
-use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
-use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DnsMapping, Outcome, RegistrarResult};
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Outcome, RegistrarResult};
 
 /** Pure, dormant DNS mapping. No discovery caller, transport, grant or edit capability. */
 final class Dns

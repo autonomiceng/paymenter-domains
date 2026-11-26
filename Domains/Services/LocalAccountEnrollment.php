@@ -13,7 +13,7 @@ final class LocalAccountEnrollment
     public const PREFIX = 'local-account-enrollment:';
     public static function enrolled(Account $account): bool
     { return str_starts_with($account->stable_identity, self::PREFIX); }
-    public static function bootstrap(RegistrarRegistry $registry, NameSilo\Api\DeadlineTransport $transport = new NameSilo\Api\CurlTransport): bool
+    public static function bootstrap(RegistrarRegistry $registry, ?NameSilo\Api\DeadlineTransport $transport = null): bool
     {
         $environment = Environment::tryFrom((string) config('domains.namesilo_account.environment', ''));
         if (!$environment) { return false; }

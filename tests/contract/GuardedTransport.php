@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace OteContract;
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Client;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{CurlTransport, DeadlineTransport, Environment, RegistrarRequest, RequestContext, TransportResponse};
 
 /** The only network boundary; never installed in a registrar registry outside this runner. */
@@ -54,7 +55,7 @@ final class GuardedTransport implements DeadlineTransport
         $this->clearReply($r->command, $r->parameters());
         if ($e !== Environment::Sandbox || !hash_equals($this->secret->getValue(), $key)) { throw new \RuntimeException('OTE environment refused.'); }
         return $this->exchange($e->origin().'/'.$c->value, $r->command, $r->parameters(), $ms,
-            fn () => (new CurlTransport)->sendWithin($e, $c, $r, $key, $ms));
+            fn () => Client::readTransport()->sendWithin($e, $c, $r, $key, $ms));
     }
     public function raw(string $origin, string $command, #[\SensitiveParameter] array $parameters, int $ms = 25000): string
     { return $this->exchange($origin, $command, $parameters, $ms)->body(); }

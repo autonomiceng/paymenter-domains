@@ -8,7 +8,8 @@ One MIT Paymenter server extension that sells and manages domains through Enom a
   code, which folders exist today and where new code goes. Put new classes in the owning feature folder, not in
   `Services/`, `Data/` or `Admin/Support/`.
 - Provider protocols live in `Domains/Registrars/<Provider>/`; the wire clients in `Registrars/<Provider>/Api/`
-  name only their own namespace. Other code reaches a provider through `Registrars/Dispatch/`.
+  name only their own namespace and the shared types listed in `tests/test_registrar_api_imports.py`.
+  Other code reaches providers through `Registrars/Dispatch/` and shares types in `Registrars/Contract/`.
 - A directory holds at most 40 PHP files of its own. `tests/test_directory_sizes.py` and
   `tests/test_registrar_api_imports.py` enforce both rules; their lists of today's exceptions may only shrink.
   Never raise a count or add an entry to make them pass: move the code instead.

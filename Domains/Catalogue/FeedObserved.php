@@ -3,7 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
 
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName};
+use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 
 /** Partial observations: empty is a no-op; the writer retains omissions and rejects older observations.
  * Costs never change fact timestamps. Disabled is positive provider evidence, not a failed read. */

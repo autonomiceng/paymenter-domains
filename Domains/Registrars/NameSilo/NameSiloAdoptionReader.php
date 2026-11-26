@@ -3,7 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Contracts\{AdoptionSource,Clock,ReadLimiter};
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,CanonicalName,Disposition,ExpiryPrecision,Query,RequestBudget,RequestContext,RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Disposition, ExpiryPrecision, Query, RequestBudget, RequestContext, RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\AdoptionReadback;
 
 /** Exact-name import through the admitted read runtime; no writer or renewal quote is exposed. */

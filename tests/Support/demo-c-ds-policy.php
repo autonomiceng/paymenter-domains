@@ -2,7 +2,8 @@
 // Synthetic C0 registry facts; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Ds, DsRegistryPolicy};
-use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DsMapping, RegistrarRequest};
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DsMapping;
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\RegistrarRequest;
 expect(is_file(dirname(__DIR__, 2).'/Domains/Registrars/NameSilo/DsRegistryPolicy.php'), 'Versioned DS policy exists');
 $now = new DateTimeImmutable('2026-11-04T12:00:00+00:00');
 $row = ['key_tag'=>12345, 'algorithm'=>13, 'digest_type'=>2, 'digest'=>str_repeat('AB', 32)];

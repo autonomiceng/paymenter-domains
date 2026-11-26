@@ -4,7 +4,8 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName, CatalogueRate, CostUnit, Disposition, DriverResult, Query};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CatalogueRate, CostUnit, Disposition, DriverResult, Query};
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 
 final class Prices

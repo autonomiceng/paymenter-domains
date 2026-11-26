@@ -8,7 +8,8 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,ReadLimiter};
 use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{DefaultContact,Driver};
+use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\Accounts;
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Driver;
 /** Deliberate contact continuity change; grants no operation release or provider write authority. */
 final readonly class NameSiloAccountReset
 {
@@ -34,14 +35,14 @@ final readonly class NameSiloAccountReset
             $v=json_decode($s->value,true,8,JSON_THROW_ON_ERROR);
             if(!is_array($v)||!is_string($v['binding']??null)||!preg_match('/^[a-f0-9]{64}$/D',$v['binding'])
                 ||!is_string($v['contact_id']??null)||!preg_match('/^[1-9][0-9]{0,19}$/D',$v['contact_id'])
-                ||DefaultContact::email($v['email']??null)!==($v['email']??null)){throw new \DomainException;}
+                ||Accounts::nameSiloDefaultContactEmail($v['email']??null)!==($v['email']??null)){throw new \DomainException;}
             return $v;
         }catch(\Throwable){throw new \DomainException("Can't read the saved NameSilo account.");}
     }
     private static function expected(Server $server,bool $lock=false): string
     {
         $q=$server->settings()->where('key',NameSiloAccountGuard::EXPECTED);if($lock){$q->lockForUpdate();}
-        try{return DefaultContact::email($q->first()?->value);}catch(\Throwable){throw new \DomainException('Set the Expected default contact email before accepting this account.');}
+        try{return Accounts::nameSiloDefaultContactEmail($q->first()?->value);}catch(\Throwable){throw new \DomainException('Set the Expected default contact email before accepting this account.');}
     }
     private function live(int $id): array
     {

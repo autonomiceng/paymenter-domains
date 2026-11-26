@@ -3,6 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Data;
 
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
+
 final readonly class Query
 {
     public function __construct(public string $name, public Action $action, public int $years)
@@ -17,6 +19,6 @@ final readonly class Query
     }
     public static function requireName(string $name): void
     {
-        \Paymenter\Extensions\Servers\Domains\Data\CanonicalName::requireCanonical($name);
+        CanonicalName::requireCanonical($name);
     }
 }

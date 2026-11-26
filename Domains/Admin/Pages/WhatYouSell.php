@@ -24,7 +24,8 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\SetUp
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Row,Value};
 use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus,Fact,Reader,State};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,CanonicalName};
+use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,OfferRow};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EndingChoices,LocalAccountEnrollment,NameSiloSandbox,PriceList,StaffSettingsReview as Review,StaffSettingsWrites};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;

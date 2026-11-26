@@ -4,7 +4,8 @@ declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
 
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Dns;
-use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DnsMapping, Outcome, RegistrarClient, Environment, RequestContext, Transport, TransportResponse, RegistrarRequest};
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsMapping;
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Outcome, RegistrarClient, Environment, RequestContext, Transport, TransportResponse, RegistrarRequest};
 
 expect(method_exists(Dns::class, 'acknowledgement'), 'Dormant DNS acknowledgement parser exists');
 $body = static fn (string $operation, array $reply): string => json_encode([

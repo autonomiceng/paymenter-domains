@@ -1,6 +1,6 @@
 # Dormant NameSilo DNS primitives
 
-`NameSilo\Dns` and `Api\DnsMapping` are pure adapters. No caller, capability, form,
+`NameSilo\Dns` and `NameSilo\DnsMapping` are pure adapters. No caller, capability, form,
 request, scheduler or transport was changed. DNS editing remains unsupported.
 `DnsMapping` is deliberately outside `RegistrarRequest`; existing clients and
 transports refuse it. A later sequence integration must authorize each write.
