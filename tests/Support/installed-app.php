@@ -19,8 +19,6 @@ foreach(['APP_ENV'=>'testing','APP_KEY'=>'base64:'.base64_encode(str_repeat('t',
     putenv($key.'='.$value);$_ENV[$key]=$_SERVER[$key]=$value;
 }
 $loader=require $fixture.'/vendor/autoload.php';
-require_once __DIR__.'/fixture-clock.php';
-nativeFixtureClock();
 $loader->addPsr4('App\\',$fixture.'/app/',true);
 // Replace Composer's worker path: a missing installed class must stay missing.
 $loader->setPsr4('Paymenter\\Extensions\\',$fixture.'/extensions/');
