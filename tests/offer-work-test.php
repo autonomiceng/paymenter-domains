@@ -339,12 +339,15 @@ same($oneCheck,$evidenceReads,'A first hint for fresh TEST facts reads the saved
 same($fresh->freshUntil->getTimestamp(),$worker->status($n,'com')['due_at'],'A first hint for fresh TEST facts waits for their expiry');
 // Republication creates the entry after the claim; a second hint promotes it while the feed reads.
 DB::table('domains_observation_queues')->where('server_id',$n->serverId)->update(['offer_work'=>'{}','offer_claim'=>null,'offer_lease'=>0]);
-$nsWire->during=static function()use($worker,$n,$fresh):void{
-    same($fresh->freshUntil->getTimestamp(),$worker->status($n,'com')['due_at'],'Republication queued the fresh facts after the claim');
+// The feed read turns a callback failure into a provider failure, so record the deadline here and assert it after the turn.
+$observedDue=null;
+$nsWire->during=static function()use($worker,$n,&$observedDue):void{
+    $observedDue=$worker->status($n,'com')['due_at'];
     DB::table('domains_tlds')->where('server_id',$n->serverId)->where('tld','com')->update(['catalogue_facts'=>null]);
     $worker->requestFacts($n,'com');
 };
 $nsBefore=$nsWire->calls;$worker->accountTurn($n->serverId);$nsWire->during=null;
+same($fresh->freshUntil->getTimestamp(),$observedDue,'Republication queued the fresh facts after the claim');
 same($nsBefore+1,$nsWire->calls,'The turn reads the feed after republication');
 same($clock->now()->getTimestamp(),$worker->status($n,'com')['due_at'],'Worker save keeps a promotion made after it refreshed the facts');
 echo "Dormant offer queue and lazy facts checks passed.\n";
