@@ -27,6 +27,20 @@ def arrivals(ready, children, seconds):
     return seen.decode()
 
 
+def judged(reports):
+    """One round's proof from its racers' reports: exactly three admitted and three refused over the limit, and at
+    least one InnoDB row lock wait after the last racer's reading before the barrier. A database error or a round
+    whose racers never waited on the account row fails."""
+    outcomes = [report['outcome'] for report in reports]
+    if outcomes.count('admitted') != 3 or outcomes.count('over_limit') != 3:
+        raise AssertionError('Send limit must admit 3 and refuse 3 over the limit: '+str(outcomes))
+    befores, afters = zip(*(report['row_lock_waits'] for report in reports))
+    waits = max(afters)-max(befores)
+    if waits < 1:
+        raise AssertionError('No racer waited on the account row lock, so the round was not concurrent')
+    return {'admitted': 3, 'refused': 3, 'row_lock_waits': waits}
+
+
 def exercise(command, php_args, env, scratch):
     script = str(ROOT/'tests/Support/mariadb-enom-send-limit.php')
     races = []
@@ -37,7 +51,7 @@ def exercise(command, php_args, env, scratch):
         release_end, release = os.pipe()
         limits = dict(LIMIT_PHASE='admit', LIMIT_DAY=str(day), LIMIT_MINUTE=str(minute), LIMIT_UID=uid,
                       LIMIT_READY_FD=str(ready_end), LIMIT_RELEASE_FD=str(release_end))
-        children, outcomes = [], []
+        children, reports = [], []
         try:
             for worker in range(WORKERS):
                 children.append(subprocess.Popen(php_args+[script], env=dict(env, **limits, LIMIT_WORKER=str(worker)),
@@ -51,7 +65,7 @@ def exercise(command, php_args, env, scratch):
                 out, err = child.communicate(timeout=60)
                 if child.returncode:
                     raise AssertionError('Send limit racer failed: '+err.decode())
-                outcomes.append(json.loads(out)['outcome'])
+                reports.append(json.loads(out))
         finally:
             for pipe in (ready, ready_end, release_end, release):
                 if pipe is not None:
@@ -61,9 +75,7 @@ def exercise(command, php_args, env, scratch):
                     child.kill(); child.wait(timeout=10)
         if sorted(order) != [str(worker) for worker in range(WORKERS)]:
             raise AssertionError('Each racer must reach the barrier once: '+order)
-        if outcomes.count('admitted') != 3 or outcomes.count('refused') != 3:
-            raise AssertionError('Send limit over- or under-admitted: '+str(outcomes))
-        races.append({'arrivals': order, 'admitted': 3, 'refused': 3})
+        races.append({'arrivals': order, **judged(reports)})
     phase('seed')
     race(3, 100)  # first use: the login has no row yet
     race(6, 100)  # the row exists: lock waits, never false refusals

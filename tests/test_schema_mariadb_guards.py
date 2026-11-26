@@ -10,10 +10,12 @@ import signal
 from pathlib import Path
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
 
+import test_enom_send_limit_mariadb as send_limit
 import test_schema_mariadb as schema_harness
 
 
@@ -104,6 +106,29 @@ class MariaGuardTests(unittest.TestCase):
              contextlib.redirect_stdout(io.StringIO()):
             self.assertIn('skipped', schema_harness.run())
         called.assert_not_called()
+
+    def test_send_limit_round_needs_three_over_limit_refusals_and_an_observed_row_lock_wait(self):
+        """The real round driver and barrier, with racers that report a chosen refusal and lock wait count."""
+        racer = """import json, os
+worker = os.environ['LIMIT_WORKER']
+with open(int(os.environ['LIMIT_READY_FD']), 'wb', 0) as ready: ready.write(worker.encode())
+with open(int(os.environ['LIMIT_RELEASE_FD']), 'rb', 0) as release: assert release.read(1) == b''
+print(json.dumps({'outcome': 'admitted' if int(worker) < 3 else os.environ['RACER_REFUSAL'],
+                  'row_lock_waits': [7, 7+int(os.environ['RACER_WAITS'])]}))
+"""
+        verify = json.dumps({'complete': True, 'prefix': ''}).encode()
+        def command(role, argv, **options):
+            return subprocess.CompletedProcess(argv, 0, verify if role.endswith('verify') else b'', b'')
+        for refusal, waits, error in (('over_limit', 2, None), ('over_limit', 0, 'account row lock'),
+                                      ('unreadable', 2, 'refuse 3 over the limit')):
+            with self.subTest(refusal=refusal, waits=waits), tempfile.TemporaryDirectory() as directory:
+                (Path(directory)/'racer.py').write_text(racer)
+                env = dict(PATH='/usr/bin:/bin', RACER_REFUSAL=refusal, RACER_WAITS=str(waits))
+                args = (command, [sys.executable, '-I', str(Path(directory)/'racer.py')], env, Path(directory))
+                if error:
+                    with self.assertRaisesRegex(AssertionError, error): send_limit.exercise(*args)
+                else:
+                    self.assertEqual([race['row_lock_waits'] for race in send_limit.exercise(*args)['races']], [2, 2, 2])
 
     def test_schema_remote_host_refuses_without_any_docker_call(self):
         with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, self.environment(directory, DOCKER_HOST='tcp://remote.test'), clear=True), \
