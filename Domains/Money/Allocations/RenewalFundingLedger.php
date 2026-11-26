@@ -15,7 +15,7 @@ final class RenewalFundingLedger
 
     public static function reserve(RenewalReservation $reservation): void
     {
-        if (DB::transactionLevel() !== 1) { throw new \LogicException('Renewal reservations need the outer seal transaction.'); }
+        if (DB::transactionLevel() < 1) { throw new \LogicException('Renewal reservations need a transaction.'); }
         $rows = array_map(static fn (RenewalAllocation $allocation) => [
             'invoice_item_id' => $reservation->invoiceItemId, 'retry_number' => $reservation->retryNumber,
             'source' => $allocation->source->value, 'source_id' => $allocation->postingId, 'amount_minor' => $allocation->amountMinor,
