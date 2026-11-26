@@ -84,6 +84,7 @@
     "tests/test_template_locks_mariadb.py",
     "tests/test_receipt_lock_order_mariadb.py",
     "tests/test_checkout_lock_order_mariadb.py",
-    "tests/test_schema_foreign_keys_mariadb.py"
+    "tests/test_schema_foreign_keys_mariadb.py",
+    "tests/test_operation_schema_mariadb.py"
   ]
 }
