@@ -53,6 +53,7 @@ final class FeedTurn
         $this->queue->edit($b, function ($q, $row) use (&$job): void {
             if ((int) $row->offer_lease > $this->at()) { return; }
             $job = $row; $job->offer_claim = bin2hex(random_bytes(16)); $job->offer_feed_run++;
+            $job->factsRead = OfferState::decode($row->offer_work)['facts'] ?? [];
             $q->update(['offer_claim' => $job->offer_claim, 'offer_lease' => $this->at() + self::LEASE, 'offer_feed_run' => $job->offer_feed_run]);
         });
         return $job;
@@ -68,7 +69,7 @@ final class FeedTurn
         }
         $this->republish($writer, $b, $work, $guard, $touched);
         // Republication can wake retained facts when reviewed authority changes.
-        $work['facts'] = OfferState::decode(DB::table('domains_observation_queues')->where('server_id', $b->serverId)->value('offer_work'))['facts'] ?? [];
+        $work['facts'] = $job->factsRead = OfferState::decode(DB::table('domains_observation_queues')->where('server_id', $b->serverId)->value('offer_work'))['facts'] ?? [];
         $this->checkFactsEvidence($b, $credential, $work);
         $t = $this->nextFacts($work);
         if (!empty($work['pending'])) {
@@ -81,9 +82,9 @@ final class FeedTurn
             $work['last'] = 'facts'; $this->facts($writer, $b, $t, $work, $guard, $touched);
         } elseif ($due) {
             $this->beginFeed($b, $job, $work);
-            $work['last'] = 'feed'; $this->prices($b, $job, $work, $guard);
+            $work['last'] = 'feed';
             // Durable buffer precedes per-offer writes; a crash can resume without rereading.
-            $this->queue->save($b, $job, ['offer_work' => OfferState::json($work)]);
+            if (!$this->prices($b, $job, $work, $guard)) { $this->queue->save($b, $job, ['offer_work' => OfferState::json($work)]); }
             $this->drain($writer, $b, $work, $touched);
         }
     }
@@ -113,7 +114,8 @@ final class FeedTurn
         });
     }
 
-    private function prices(AccountBinding $b, object $job, array &$work, \Closure $guard): void
+    /** Returns whether it saved the buffer with the success checkpoint. */
+    private function prices(AccountBinding $b, object $job, array &$work, \Closure $guard): bool
     {
         $origin = RequestOrigin::from($work['origin'] ?? RequestOrigin::Background->value);
         try {
@@ -131,12 +133,14 @@ final class FeedTurn
             // Provider success ends feed coalescing; later Sync requests need another feed.
             unset($work['feed_claim']);
             $this->queue->save($b, $job, ['offer_work' => OfferState::json($work), 'offer_feed_succeeded_at' => $this->at(), 'offer_feed_failure' => null]);
+            return true;
         } catch (ReadDeferred|EnomTestCallLimit) { $work['feed_due'] = $this->at() + 120; }
         catch (\Throwable $error) {
             $guard(); $work['tries'] = ($work['tries'] ?? 0) + 1;
             $work['feed_due'] = $this->at() + $this->backoff($work['tries']);
             $this->queue->save($b, $job, ['offer_feed_failed_at' => $this->at(), 'offer_feed_failure' => ReadFailure::code($error)]);
         }
+        return false;
     }
 
     private function facts(Writer $writer, AccountBinding $b, string $tld, array &$work, \Closure $guard, array &$touched): void

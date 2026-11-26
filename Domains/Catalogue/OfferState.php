@@ -5,8 +5,8 @@ namespace Paymenter\Extensions\Servers\Domains\Catalogue;
 use Paymenter\Extensions\Servers\Domains\Catalogue\Pricing\CurrentCost;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CostUnit, Environment};
-use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestCatalogueFacts;
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CostUnit};
+use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\Offers;
 use Paymenter\Extensions\Servers\Domains\Services\{EndingChoices, PricingRule};
 
 /** Persistence codec. Facts have one independent age; normalized costs never carry fact proofs. */
@@ -127,10 +127,7 @@ final class OfferState
     }
     /** TEST NameSilo evidence is an extra gate; callers still check ordinary freshness. */
     public static function testFactsAccepted(AccountBinding $binding, string $tld, ?Facts $facts, Clock $clock): bool
-    {
-        return $binding->registrarKey !== 'namesilo' || $binding->environment !== Environment::Test
-            || TestCatalogueFacts::current($binding, $tld, $facts, $clock);
-    }
+    { return Offers::testFactsAccepted($binding, $tld, $facts, $clock); }
 
     /** Facts a worker or sale can rely on now: unexpired, read under the current reviewed authority and,
      * on NameSilo TEST, backed by accepted local evidence. */

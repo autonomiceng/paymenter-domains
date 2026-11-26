@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
+use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RegistrarRegistry;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 /** Stable local lineage independent of credentials and provider contacts. */
 final class LocalAccountEnrollment

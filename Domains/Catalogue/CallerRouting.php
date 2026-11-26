@@ -10,8 +10,8 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AcquisitionOffers, CartAdmission, CheckoutEligibility,
-    EnomTestRegistration, EnomTestRenewal, EnomTestTransfer, HoldingObservationWork, NativeCatalogue, PayCheck,
+use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\Offers;
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AcquisitionOffers, CartAdmission, CheckoutEligibility, HoldingObservationWork, NativeCatalogue, PayCheck,
     PriceCatalogue, Runtime, RuntimePorts, SellerPolicies, StaffSettingsWrites, Storefront};
 
 /** One construction point. A private inspection never grants execution or caches future services. */
@@ -87,21 +87,7 @@ final class CallerRouting
     private static function feature(AccountBinding $b, ?string $action, bool $setup): bool
     {
         if (!self::supportsSales($b->registrarKey)) { return false; }
-        if ($b->registrarKey === 'namesilo') {
-            $feature = match ($action) { 'register'=>'registration','renew'=>'renewal','transfer'=>'transfer',null=>null,default=>'unsupported' };
-            if (in_array($feature,['renewal','transfer'],true)) {
-                return $setup
-                    ? \Paymenter\Extensions\Servers\Domains\Services\NameSiloFeatureSettings::enabled($b,$feature)
-                    : \Paymenter\Extensions\Servers\Domains\Services\NameSiloFeatureSettings::accepted($b,$feature);
-            }
-            return \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestRuntime::enabled($b,$feature);
-        }
-        return match ($action) {
-            'register' => $setup ? EnomTestRegistration::enabled($b) : EnomTestRegistration::sellable($b),
-            'renew' => $setup ? EnomTestRenewal::enabled($b) : EnomTestRenewal::accepted($b),
-            'transfer' => $setup ? EnomTestTransfer::enabled($b) : EnomTestTransfer::accepted($b),
-            default => $action === null,
-        };
+        return Offers::salesFeature($b, $action, $setup);
     }
 
     /** Compiled installed contract, not caller flags, adapter lists or a compatibility receipt. */
