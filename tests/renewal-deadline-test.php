@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/Support/renewal-execution.php';
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
-use Paymenter\Extensions\Servers\Domains\Services\RenewalFundingLedger;
+use Paymenter\Extensions\Servers\Domains\Money\Allocations\RenewalAllocationSchema;
 [$op,$d,$binding] = $makeRenewal(placeholderComFixtureName('renewal-deadline-placeholder.com'));
 $setNow = static fn (DateTimeImmutable $at) => $clock->instant = $at;
 // The 30-second account slot can end while the seal commits or while the spend waits for its locks. Either way the
@@ -18,7 +18,7 @@ foreach (['"sealed_at" = ?' => 'before the transport callback', '"grant_consumed
     DB::table(OperationSchema::EVIDENCE)->where('operation_id', $op->id)->delete();
     DB::table(OperationSchema::ATTEMPTS)->whereIn('step_id', $steps)->delete();
     DB::table(OperationSchema::STEPS)->where('operation_id', $op->id)->delete();
-    DB::table(RenewalFundingLedger::TABLE)->where(['invoice_item_id' => $op->invoice_item_id, 'retry_number' => $op->retry_number])->delete();
+    DB::table(RenewalAllocationSchema::TABLE)->where(['invoice_item_id' => $op->invoice_item_id, 'retry_number' => $op->retry_number])->delete();
     DB::table('domains_operations')->where('id', $op->id)->update($original); $setNow($start); Cache::flush(); $state->writes = 0;
     [$engine,$writer] = $compose($binding); $money = $nativeMoney(); $expireOn = $marker;
     $result = $engine->run($op->id, $writer); $expireOn = null;

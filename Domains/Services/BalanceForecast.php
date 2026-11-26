@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Money\Allocations\RenewalFundingLedger;
 use App\Models\{Invoice,Server,ServiceCancellation};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Adoption,Domain,Price};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;

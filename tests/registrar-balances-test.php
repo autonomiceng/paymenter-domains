@@ -8,6 +8,7 @@ require_once __DIR__.'/Support/renewal-attempts.php';
 require __DIR__.'/Support/native-commerce.php';
 require __DIR__.'/Support/staff-panel.php';
 require __DIR__.'/Support/staff-alerts.php';
+use Paymenter\Extensions\Servers\Domains\Money\Allocations\{PostingSource, RenewalAllocation, RenewalFundingLedger, RenewalReservation};
 use App\Models\{Invoice,ServiceCancellation};
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\{Auth,DB,Route,Schema};
@@ -18,7 +19,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier,Clock};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Capabilities,Disposition,DriverResult,Environment,Evidence,Money,RequestBudget,RequestContext,RequestOrigin,ResultReason,SendState};
 use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation,Price};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, BalanceForecast, BalanceReads, BalanceSchema, ObservationSchema, RegistrarBalances, RegistrarRegistry, RenewalFundingLedger};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, BalanceForecast, BalanceReads, BalanceSchema, ObservationSchema, RegistrarBalances, RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 extract(commerceFixture(true));
 // Account enrollment needs a reviewer during setup; this matrix creates its own two alert recipients below.
@@ -55,7 +56,10 @@ $renew=static function(Domain $d,string $state='awaiting_payment',array $extra=[
     if (isset($line)) {
         // The paid reservation belongs to the attempt sealed in the same transaction.
         DB::transaction(static function () use ($op, $line, $payment, $extra, $refused): void {
-            RenewalFundingLedger::reserve($op->refresh(), ['item' => [$line->id => 1000], 'payment' => [$payment->id => 1000]]);
+            RenewalFundingLedger::reserve(RenewalReservation::forOperation($op->refresh(), [
+                new RenewalAllocation(PostingSource::Item, (int) $line->id, 1000),
+                new RenewalAllocation(PostingSource::Payment, (int) $payment->id, 1000),
+            ]));
             sealRenewal($op, $extra['attempt'] ?? [], amount: '8.00', reply: $refused ? RenewalReply::localRefusal() : null);
         });
     }

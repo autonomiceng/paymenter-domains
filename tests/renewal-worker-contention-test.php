@@ -3,12 +3,13 @@
 declare(strict_types=1);
 require __DIR__.'/Support/renewal-execution.php';
 
+use Paymenter\Extensions\Servers\Domains\Money\Allocations\{PostingSource, RenewalFundingLedger};
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, StepKey};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, OperationReconciliation, PricingRule, RegistrarAnswers, RenewalFundingLedger, StaffOperationReview, StaffOperations, StaffSettingsReview, StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, OperationReconciliation, PricingRule, RegistrarAnswers, StaffOperationReview, StaffOperations, StaffSettingsReview, StaffSettingsWrites};
 
 [$op, $domain, $binding, $invoice] = $makeRenewal(placeholderComFixtureName('worker-overlap-placeholder.com'));
 $file = tempnam((string) getenv('TMPDIR'), 'renewal-workers-');
@@ -60,9 +61,10 @@ try {
     same(['uncertain', 5, true], $afterExpiry, 'Expired reservation is quarantined before the first reply');
     same(['uncertain', 'stale_claim', 'accepted', 6], [$reply->state, $reply->safe_code, renewalReply($reply)['outcome'], $reply->transition_revision],
         'Late acknowledgement observes the original reservation without reviving it');
-    same(['item' => [$op->invoice_item_id => PricingRule::minor($op->amount)],
-        'payment' => [$invoice->transactions()->sole()->id => PricingRule::minor($op->amount)]],
-        RenewalFundingLedger::entries($reply), 'One original invoice line and signed payment are reserved');
+    $reservation = RenewalFundingLedger::reservation($reply);
+    same([$invoice->id, [$op->invoice_item_id => PricingRule::minor($op->amount)], [$invoice->transactions()->sole()->id => PricingRule::minor($op->amount)]],
+        [$reservation?->invoiceId, $reservation?->postings(PostingSource::Item), $reservation?->postings(PostingSource::Payment)],
+        'One original invoice line and signed payment are reserved');
     // The sealed attempt row is the reservation; the renewal keeps no attempt JSON beside it.
     $sealed = OperationAttempts::sealed((int) $op->id, StepKey::renew());
     same([4, 2, null], [$sealed->operationRevision, $sealed->token->ordinal, $reply->fresh()->getRawOriginal('attempt')],

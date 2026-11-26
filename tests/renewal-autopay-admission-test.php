@@ -32,7 +32,7 @@ foreach ([false, true] as $auto) {
     $state->name = $d->domain; $state->price = '8.00';
     $clock->instant = new DateTimeImmutable('2027-10-18T11:59:00Z');
     Illuminate\Support\Facades\Cache::flush();
-    $result = $runRenewal($op, $binding); $results[] = [$result->state, $result->funding_basis, \Paymenter\Extensions\Servers\Domains\Services\RenewalFundingLedger::funded($result)];
+    $result = $runRenewal($op, $binding); $results[] = [$result->state, $result->funding_basis, \Paymenter\Extensions\Servers\Domains\Money\Allocations\RenewalFundingLedger::funded($result)];
     same('pending', $result->state, 'Same ordinary renewal admission and synthetic registrar acknowledgment');
     same($auto?'submitted':'skipped', ($result->funding['auto_pay_result']??$result->funding['auto_pay'])['status'], 'Collection audit survives registrar funding seal');
     [$engine, $writer, $completion] = $compose($binding);

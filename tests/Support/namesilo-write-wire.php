@@ -23,7 +23,7 @@ function curl_exec($h): bool {
         same('sealed',$renewal?($renewal->sealed()?'sealed':'absent'):$op->attempt['seal'],'Durable engine seal precedes physical send');
         expect($renewal?$renewal->sentAt()!==null:isset($op->attempt['dispatch_attempted_at']),'Dispatch marker precedes physical send');
         same(false,$GLOBALS['nsTransport']->reservation->unconsumed((int)$op->id),'Exact grant consumed at physical handoff');
-        if($op->funding_basis==='paid_invoice'){$funded = $op->action === 'renew' ? \Paymenter\Extensions\Servers\Domains\Services\RenewalFundingLedger::funded($op) : isset($op->funding['seal']);
+        if($op->funding_basis==='paid_invoice'){$funded = $op->action === 'renew' ? \Paymenter\Extensions\Servers\Domains\Money\Allocations\RenewalFundingLedger::funded($op) : isset($op->funding['seal']);
             expect($funded,'Native funding sealed before paid send');}
         same('https://www.namesilo.com/apibatch/'.$cmd,strtok($url,'?'),'Fixed Live batch mutation route');
     }

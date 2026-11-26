@@ -134,7 +134,7 @@ DB::table('domains_domains')->where('id',$retired->domain_id)->update(['authorit
 expect($oldAttempt['terminal']!==null,'The retired renewal has terminal unpaid proof');same($oldAttempt,renewalRecord($retired),'Original terminal unpaid proof unchanged'); same($paidStatus,$bill->fresh()->status,'Refund does not rewrite native paid status');
 DB::transaction(function()use($d,$replacement,$retired){
     $l=HoldingLocks::take($d); expect(RefundPayment::retiredSettled($retired->fresh(),$l),'Exact refunded retired debt is resolved');
-    same('paid_invoice',RenewalFunding::requireCurrent($replacement->fresh(),$l)['basis'],'Replacement rechecks its own funding after old debt credited');
+    same($replacement->invoice_id,RenewalFunding::requireCurrent($replacement->fresh(),$l)->invoiceId,'Replacement rechecks its own funding after old debt credited');
     $cycle=$l; $cycle['operations']=$l['operations']->reject(fn($row)=>$row->id===$replacement->id);
     same(RenewalCycles::key($d).':replacement:1',RenewalCycles::next($cycle),'Settled old debt permits replacement key');
 });
@@ -253,7 +253,7 @@ for($number=0;$number<=3;$number++){
     same($retry->id,\Paymenter\Extensions\Servers\Domains\Services\RenewalRetries::recover($retry->id,$clock)->id,'Retry delay is enforced');
     $clock->instant=$clock->now()->modify('+16 minutes');$next=\Paymenter\Extensions\Servers\Domains\Services\RenewalRetries::recover($retry->id,$clock);
     same($sealed,renewalRecord($retry),'Retry never resets its sealed predecessor');
-    $ordinals = DB::table(\Paymenter\Extensions\Servers\Domains\Services\RenewalFundingLedger::TABLE)
+    $ordinals = DB::table(\Paymenter\Extensions\Servers\Domains\Money\Allocations\RenewalAllocationSchema::TABLE)
         ->where('invoice_item_id', $retry->invoice_item_id)->where('source', 'item')->where('source_id', $retry->invoice_item_id)
         ->orderBy('retry_number')->pluck('retry_number')->map(static fn ($n) => (int) $n)->all();
     same(range(0, $number), $ordinals, 'Each attempt retains its own funding against the original billed line');

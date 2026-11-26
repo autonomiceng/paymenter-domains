@@ -2,13 +2,14 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/renewal-execution.php';
+use Paymenter\Extensions\Servers\Domains\Money\Allocations\{PostingSource, RenewalFundingLedger};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\{Auth, DB, Queue};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Paymenter\Extensions\Servers\Domains\Data\{ExecutionRecord, SendFailure};
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
-use Paymenter\Extensions\Servers\Domains\Services\{EnomAnswers, NativePaidHooks, PricingRule, RegistrarCheck, Refunds, RenewalFundingLedger, RuntimeWork};
+use Paymenter\Extensions\Servers\Domains\Services\{EnomAnswers, NativePaidHooks, PricingRule, RegistrarCheck, Refunds, RuntimeWork};
 require __DIR__.'/Support/renewal-runtime.php';
 
 // The real financial fixture is required: a lost paid reply must retain both the sealed attempt
@@ -37,7 +38,7 @@ $job->handle($work);
 $result = $op->fresh();
 $payments = $invoice->transactions()->orderBy('id')->get()->mapWithKeys(static fn ($row) => [(int) $row->id => PricingRule::minor($row->amount)])->all();
 same(2, count($payments), 'Both native receipts survive the lost reply');
-same($payments, RenewalFundingLedger::entries($result)['payment'], 'The original reservation records each payment once');
+same($payments, RenewalFundingLedger::reservation($result)?->postings(PostingSource::Payment), 'The original reservation records each payment once');
 same(['uncertain', 'renewal_confirmation_required', 'unknown', 1],
     [$result->state, $result->safe_code, renewalReply($result)['outcome'], $state->writes], 'Lost paid renewal stays uncertain after one send');
 same(ExecutionRecord::RecordedNull, renewalAttempt($result)?->replyRecord(), 'The lost reply is saved as an explicit null reply');

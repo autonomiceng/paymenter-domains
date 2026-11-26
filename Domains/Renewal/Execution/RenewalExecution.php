@@ -2,6 +2,7 @@
 // Enom d1392a8 managed renewal execution; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Renewal\Execution;
+use Paymenter\Extensions\Servers\Domains\Money\Allocations\{RenewalFundingLedger, RenewalReservation};
 use Paymenter\Extensions\Servers\Domains\Money\Native\{MoneyDecisions, MoneyLockContext};
 use Illuminate\Support\Facades\{DB, Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
@@ -9,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AdmittedO
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AttemptToken, OperationAttempts, OperationWriter, SealTerms, StepKey, Transition, WireOutcome};
 use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\{RenewalUnsent, RenewalWriter};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, ComplimentaryCosts, EnomLateRenewal, EnomTestCallLimit, EnomTestCalls, EnomTestRenewal, EnomTestWriteReservation, EntryDeadline, FreshTransaction, FundsWaits, HoldingLocks, LateRenewalQuote, MoneyRequest, ObligationAlerts, OperationClaims, ReadDeferred, RenewalAcceptance, RenewalAuthority, RenewalBusy, RenewalCycles, RenewalFunding, RenewalFundingLedger, RenewalHold, RenewalRefused, Runtime, WriteFeatures, WriteHeld, WriteMoney};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, ComplimentaryCosts, EnomLateRenewal, EnomTestCallLimit, EnomTestCalls, EnomTestRenewal, EnomTestWriteReservation, EntryDeadline, FreshTransaction, FundsWaits, HoldingLocks, LateRenewalQuote, MoneyRequest, ObligationAlerts, OperationClaims, ReadDeferred, RenewalAcceptance, RenewalAuthority, RenewalBusy, RenewalCycles, RenewalFunding, RenewalHold, RenewalRefused, Runtime, WriteFeatures, WriteHeld, WriteMoney};
 /** One sealed attempt. A durable row, request or admission decision is never a live grant. */
 final class RenewalExecution
 {
@@ -127,7 +128,7 @@ final class RenewalExecution
         $reservedContext->requireReservedCapacity();$claim = $token->claimKey; $digest = hash('sha256', json_encode([$op->operation_key, $op->policy['renewal'], $op->payload], JSON_THROW_ON_ERROR));
         $now = $this->clock->now();
         // The sealed attempt records the post-seal revision; for a paid renewal it identifies the reserved postings.
-        if ($op->funding_basis === 'paid_invoice') { RenewalFundingLedger::reserve($op, $funding['entries']); $reservation = []; }
+        if ($funding instanceof RenewalReservation) { RenewalFundingLedger::reserve($funding); $reservation = []; }
         else { $reservation = ['funding' => [...($op->funding ?? []), 'claim' => $funding, 'seal' => $funding]]; }
         // The seal is the attempt row; the operation keeps its run state, start and request digest.
         $op->update([...$reservation, 'state' => 'running', 'started_at' => $now, 'lease_expires_at' => $now->modify('+360 seconds'),
@@ -211,8 +212,8 @@ final class RenewalExecution
         try { FreshTransaction::run(function () use ($context, $grant, $writer) {
             $row = Operation::findOrFail($grant['id']); $l = HoldingLocks::take($row->domain()->firstOrFail()); $row = $l['operations']->firstWhere('id', $row->id);
             $funding = $this->standing->current($row, $l); $writer->requirePolicy($grant['binding'], $this->features, $this->accepted);
-            $matchesFunding = $row->funding_basis === 'paid_invoice'
-                ? RenewalFundingLedger::entries($row) === $funding['entries']
+            $matchesFunding = $funding instanceof RenewalReservation
+                ? RenewalFundingLedger::reservation($row) == $funding
                 : $row->funding['seal'] === $funding;
             // The sealed attempt row, not the JSON copy, carries the grant's claim, digest and revision.
             $attempt = OperationAttempts::attempt($grant['attempt'], true);
