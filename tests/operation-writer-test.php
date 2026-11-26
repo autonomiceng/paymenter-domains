@@ -110,6 +110,12 @@ $done = $in(fn () => $writer->claim($doneId, $step, $later(60))); $in(fn () => $
 $doneRead = $in(fn () => $writer->openRead($done, $later(60)));
 same(Transition::Applied, $in(fn () => $writer->settle($doneRead, 'succeeded', ['order' => '44'])), 'Positive proof settles an unspent grant');
 same(Transition::Stale, $in(fn () => $writer->consumeGrant($done)), 'A settled attempt has no grant to spend, so a proven renewal is not sent again');
+$spentId = $operation('writer-spent');
+$spent = $in(fn () => $writer->claim($spentId, $step, $later(60))); $in(fn () => $writer->seal($spent, $terms()));
+$in(fn () => $writer->consumeGrant($spent)); $spentRead = $in(fn () => $writer->openRead($spent, $later(60)));
+same(Transition::Stale, $in(fn () => $writer->settle($spentRead, OperationWriter::NOT_SENT, ['answer' => 'not_processed'])),
+    'A spent grant cannot be settled as not sent, even through a clean read');
+same(null, OperationAttempts::evidence($spentId, $spent->attemptId, 'settlement'), 'The refused settlement writes nothing');
 same(Transition::Applied, $in(fn () => $writer->recordTerminal($unsentId, 'never_sent_unpaid', ['reason' => 'closed'])), 'Terminal proof');
 same(Transition::Stale, $in(fn () => $writer->recordTerminal($unsentId, 'never_sent_unpaid', [])), 'Terminal proof is recorded once');
 // Evidence is written only as deep as the reader decodes it.

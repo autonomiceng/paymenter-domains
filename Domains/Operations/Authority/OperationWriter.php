@@ -149,17 +149,24 @@ final readonly class OperationWriter
             ? Transition::Applied : Transition::Stale;
     }
 
-    /** A settlement that resolves an uncertain send as not sent. Only a current read that inherited no uncertainty may record it. */
+    /**
+     * A settlement that resolves an uncertain send as not sent. Only a current read that inherited no uncertainty
+     * may record it, and only while the grant is unspent.
+     */
     public const NOT_SENT = 'not_sent';
 
     /**
      * Records the attempt's settlement through the read that found it. New positive proof only needs the read it came
-     * from; resolving the send as not sent also needs a read that inherited no uncertainty.
+     * from; resolving the send as not sent also needs a read that inherited no uncertainty and an unspent grant,
+     * since a spent grant's send may still complete.
      */
     public function settle(ReadToken $read, string $outcome, array $settlement): Transition
     {
         self::requireTransaction();
-        if (!($outcome === self::NOT_SENT ? $this->readCurrent($read) : $this->readHeld($read))) { return Transition::Stale; }
+        $owned = $outcome === self::NOT_SENT
+            ? $this->readCurrent($read) && OperationAttempts::attempt($read->attempt, true)?->grantConsumedAt === null
+            : $this->readHeld($read);
+        if (!$owned) { return Transition::Stale; }
         return $this->append($read->attempt->operationId, $read->attempt->attemptId, 'settlement', 'registrar_read', $outcome, $settlement, 'settlement')
             ? Transition::Applied : Transition::Stale;
     }
