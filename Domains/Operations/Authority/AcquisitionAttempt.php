@@ -9,6 +9,8 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 /** Acquisition evidence as seen by checkout, staff, profile and refund readers. */
 final readonly class AcquisitionAttempt
 {
+    private const KINDS = ['claim', 'admission', 'reply', 'decision', 'test_capacity', 'capacity', 'answer', 'settlement'];
+
     private function __construct(public AttemptFacts $facts, private string $action, private array $rows, private array $origin, private array $history) {}
 
     public static function key(string $action): ?StepKey
@@ -21,8 +23,24 @@ final readonly class AcquisitionAttempt
         $key = self::key($action);
         $facts = $key ? OperationAttempts::latest($id, $key, $lock) : null;
         if (!$facts) { return null; }
-        $rows = OperationAttempts::evidenceMany([$id], ['claim', 'admission', 'reply', 'decision', 'test_capacity',
-            'capacity', 'answer', 'settlement'])[$id] ?? [];
+        return self::fromRows($facts, $action, OperationAttempts::evidenceMany([$id], self::KINDS)[$id] ?? []);
+    }
+
+    /** One bad attempt must fail closed at its own reader without hiding the other rows. */
+    public static function many(array $ids): array
+    {
+        $facts = OperationAttempts::latestAcquisitions($ids);
+        $rows = OperationAttempts::evidenceMany(array_keys($facts), self::KINDS);
+        $attempts = [];
+        foreach ($facts as $id => [$attempt, $action]) {
+            try { $attempts[$id] = self::fromRows($attempt, $action, $rows[$id] ?? []); }
+            catch (DecryptException|\DomainException $error) { $attempts[$id] = $error; }
+        }
+        return $attempts;
+    }
+
+    private static function fromRows(AttemptFacts $facts, string $action, array $rows): self
+    {
         foreach ($rows as $evidence) {
             if (in_array(OperationAttempts::UNREADABLE, $evidence, true)) { throw new DecryptException('Acquisition attempt evidence is unreadable.'); }
         }
@@ -32,8 +50,7 @@ final readonly class AcquisitionAttempt
             $original = $rows[$origin['origin_attempt_id']]['claim']['evidence'] ?? throw new \DomainException('Original acquisition claim unavailable.');
             $origin = [...$original, 'origin_attempt_id' => $origin['origin_attempt_id']];
         }
-        $origin['identity'] ??= isset($origin['origin_attempt_id']) ? OperationAttempts::claimKey($facts->token->stepId, $origin['origin_attempt_id'])
-            : $facts->token->claimKey;
+        if (!is_string($origin['identity'] ?? null)) { throw new \DomainException('Original acquisition identity unavailable.'); }
         $history = [];
         ksort($rows);
         foreach ($rows as $attempt) {

@@ -32,7 +32,7 @@ final readonly class OperationWriter
             'claimed_at' => OperationAttempts::at($now), 'claim_until' => OperationAttempts::at($until), 'send_state' => SendState::DefinitelyUnsent->value]);
         $this->point($stepId, $id);
         if ($acquisition !== null) {
-            $this->append($operationId, $id, 'claim', 'local', 'claimed', $acquisition, 'claim');
+            $this->append($operationId, $id, 'claim', 'local', 'claimed', ['identity' => $claim, ...$acquisition], 'claim');
         }
         return new AttemptToken($operationId, $stepId, $id, $ordinal, $claim);
     }
@@ -53,7 +53,7 @@ final readonly class OperationWriter
             'authorized_amount' => $cost['amount'] ?? null, 'authorized_currency' => $cost['currency'] ?? null, 'mode' => $record->step->type,
         ]);
         $this->append($id, $attemptId, 'claim', 'retained', 'sealed', [
-            'started_at' => $record->startedAt->format(DATE_ATOM), 'digest' => $record->digest,
+            'identity' => $record->claimKey, 'started_at' => $record->startedAt->format(DATE_ATOM), 'digest' => $record->digest,
             'legacy_attempt' => $record->envelope, 'legacy_funding' => $record->funding,
         ], 'claim');
         $this->point($stepId, $attemptId);

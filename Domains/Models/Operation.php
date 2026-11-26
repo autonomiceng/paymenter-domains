@@ -16,7 +16,7 @@ class Operation extends Model
     public ?Tld $catalogueTld = null;
     /** Exact worker authority, set by the claim or seal transaction and never persisted. */
     public ?AttemptToken $acquisitionWorker = null;
-    private ?AcquisitionAttempt $acquisitionAttempt = null;
+    private AcquisitionAttempt|\Throwable|null $acquisitionAttempt = null;
     private bool $acquisitionLoaded = false;
 
     protected $table = 'domains_operations';
@@ -75,7 +75,27 @@ class Operation extends Model
             $this->acquisitionAttempt = AcquisitionAttempt::of((int) $row['id'], $this->getRawOriginal('action') ?? $row['action']);
             $this->acquisitionLoaded = true;
         }
+        if ($this->acquisitionAttempt instanceof \Throwable) { throw $this->acquisitionAttempt; }
         return $this->acquisitionAttempt;
+    }
+
+    /** Load the same attempt projection for each record in an existing staff read batch. */
+    public static function loadAcquisitionAttempts(iterable $operations): void
+    {
+        $pending = [];
+        foreach ($operations as $op) {
+            if (!$op->acquisitionLoaded && $op->getRawOriginal('id') !== null
+                && AcquisitionAttempt::key((string) $op->getRawOriginal('action')) !== null) {
+                $pending[(int) $op->id][] = $op;
+            }
+        }
+        $attempts = AcquisitionAttempt::many(array_keys($pending));
+        foreach ($pending as $id => $models) {
+            foreach ($models as $op) {
+                $op->acquisitionAttempt = $attempts[$id] ?? null;
+                $op->acquisitionLoaded = true;
+            }
+        }
     }
 
     /** Called after a writer transition on this model's locked operation. */

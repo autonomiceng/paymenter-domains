@@ -29,7 +29,12 @@ class ListOperations extends RecordListPage
     }
     private function status(Operation $o): array
     { return RequestFacts::status($o, OperationQueries::ordersOff($o, $this->off()), grants: $this->grants(), accounts: $this->off()); }
-    protected function query(): Builder { return OperationResource::getEloquentQuery(); }
+    protected function query(): Builder
+    {
+        return OperationResource::getEloquentQuery()->afterQuery(static function ($rows): void {
+            Operation::loadAcquisitionAttempts($rows);
+        });
+    }
     protected function rowUrl(\Illuminate\Database\Eloquent\Model $record): ?string { return OperationResource::getUrl('view', ['record' => $record]); }
     protected function columns(): array
     {

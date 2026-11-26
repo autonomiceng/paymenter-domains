@@ -44,6 +44,7 @@ final class StaffDomainInputs
         $waiting=($release?$operations->flatten(1)->filter(fn(Operation $op)=>in_array($op->state,[...StaffDomainStatus::MOVING,'held','uncertain'],true))
             :Operation::query()->whereIn('domain_id',$ids)->whereIn('state',[...StaffDomainStatus::MOVING,'held','uncertain'])->orderBy('id')->get())->keyBy('domain_id');
         $requests=[...$domains->pluck('latestAcquisition')->filter()->all(),...$operations->flatten(1)->all(),...$waiting->all()];
+        Operation::loadAcquisitionAttempts($requests);
         $accounts=$release?['accounts'=>self::accounts([...$domains->all(),...$requests]),'invoices'=>self::invoiceStatuses($requests)]:null;
         $inputs=[];
         foreach ($domains as $d) {

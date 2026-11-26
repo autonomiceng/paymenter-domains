@@ -47,6 +47,25 @@ final class OperationAttempts
         return $facts?->sealed() && !$facts->released ? $facts : null;
     }
 
+    /** Each listed acquisition's current attempt, or latest history when the step has no owner. */
+    public static function latestAcquisitions(array $operationIds): array
+    {
+        if (!$operationIds) { return []; }
+        $rows = DB::table(OperationSchema::STEPS.' as s')->join(OperationSchema::ATTEMPTS.' as a', 'a.step_id', '=', 's.id')
+            ->join('domains_operations as o', 'o.id', '=', 's.operation_id')
+            ->whereIn('s.operation_id', $operationIds)->whereIn('s.step_type', ['register', 'transfer'])
+            ->where('s.sequence', 1)->whereColumn('s.step_type', 'o.action')
+            ->where(fn ($q) => $q->whereNull('s.current_attempt_id')->orWhereColumn('a.id', 's.current_attempt_id'))
+            ->orderByDesc('a.ordinal')->get(['a.*', 's.operation_id as step_operation_id', 's.current_attempt_id as step_current_attempt_id', 's.step_type']);
+        $attempts = [];
+        foreach ($rows as $row) {
+            $id = (int) $row->step_operation_id;
+            $step = (object) ['id' => $row->step_id, 'current_attempt_id' => $row->step_current_attempt_id];
+            $attempts[$id] ??= [self::facts($id, $step, $row), $row->step_type];
+        }
+        return $attempts;
+    }
+
     /** True only when the step's sealed attempt is definitely unsent and its retained reply is the local refusal. */
     public static function locallyRefused(int $operationId, StepKey $key): bool
     {
@@ -88,12 +107,6 @@ final class OperationAttempts
             ->when($lock, fn ($q) => $q->lockForUpdate())->first() : null;
         if (!$row || !hash_equals($row->claim_key, $token->claimKey)) { return null; }
         return self::facts($token->operationId, $step, $row);
-    }
-
-    /** The first claim remains the business identity for a retried acquisition. */
-    public static function claimKey(int $stepId, int $attemptId): ?string
-    {
-        return DB::table(OperationSchema::ATTEMPTS)->where(['id' => $attemptId, 'step_id' => $stepId])->value('claim_key');
     }
 
     /** Decrypted evidence of one kind for an attempt, or for the operation when no attempt is given. */
