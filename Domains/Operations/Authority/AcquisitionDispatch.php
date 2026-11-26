@@ -149,7 +149,7 @@ final readonly class AcquisitionDispatch
         return true;
     }
     /** Independent presence guard: null charge/refund/candidate facts are still uncertainty. */
-    private static function requireNoSendEvidence(Operation $op): void
+    public static function requireNoSendEvidence(Operation $op): void
     {
         if (array_diff(array_keys($op->attempt ?? []), ['claim_key', 'seal', 'send_state', 'capacity_deferrals', 'test_call_refusals', 'dispatch_attempted_at', 'authorized_cost', 'registration_admission', 'transfer_admission'])
             || array_key_exists('refund', $op->funding ?? []) || array_key_exists('actual', $op->cost ?? [])

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Money\Allocations\RenewalFundingLedger;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, OperationAttempts};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 /** Payment-return proof. Sent finality never grants definitely-unsent proof or retry authority. */
@@ -47,6 +48,10 @@ final class RefundProof
             $funded = isset($f['claim'], $f['seal']) && $f['claim'] === $f['seal'];
             // Current attempts record the local refusal as definitely unsent. Retained attempts kept the seal's send state.
             $claimKey = $a['claim_key'] ?? null;
+            $step = AcquisitionAttempt::key($op->action);
+            if ($step && OperationAttempts::latest((int) $op->id, $step) && !OperationAttempts::locallyRefused((int) $op->id, $step)) {
+                throw new \DomainException('Sealed attempt is not proven prewire refusal.');
+            }
             if (!in_array($op->safe_code, ['acquisition_definitely_unsent', 'refund_approved'], true) || !$acquisition
                 || !in_array($a['send_state'] ?? null, ['possibly_sent', 'definitely_unsent'], true)
                 || ($a['execution'] ?? null) !== self::REFUSAL

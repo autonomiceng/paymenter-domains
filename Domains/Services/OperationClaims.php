@@ -265,7 +265,7 @@ final class OperationClaims
         return $this->locked((int)$claimed->id,function($op)use($claimed):Operation {
             if(!AcquisitionAttempt::sameClaim($op,$claimed)||!in_array($op->action,['register','transfer'],true)||$op->state!=='running') { return $op; }
             $attempt=$op->attempt??[];$sealed=($attempt['seal']??null)==='sealed';
-            try { self::requireNoSendEvidence($op); } catch (\Throwable) { return $op; }
+            try { AcquisitionDispatch::requireNoSendEvidence($op); } catch (\DomainException) { return $op; }
             if($sealed) {
                 if(($attempt['send_state']??null)!=='possibly_sent'||!isset($attempt['dispatch_attempted_at'],$attempt['authorized_cost'],$attempt[$op->action==='transfer'?'transfer_admission':'registration_admission'])) { return $op; }
                 if(!EnomTestCalls::purchaseUnconsumed($op->account_fingerprint,(int)$op->id)) { return $op; }
