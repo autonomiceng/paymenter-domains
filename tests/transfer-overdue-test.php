@@ -36,6 +36,8 @@ $pending = function (string $label) use ($prepare, $reconcile, $observe, $clock,
     $clock->instant = new DateTimeImmutable('@'.TransferPolling::deadline($op));
     $op = $reconcile->run($op->id);
     same('done', $op->policy['reconciliation']['final_check'], 'The existing final check ran');
+    same(TransferPolling::schedule($op, $clock->now()->getTimestamp())['next_read_at'], $op->policy['status_check']['next_at'],
+        'The finished status uses the scheduled follow-up time after releasing its read claim');
     $observe->calls = [];
     $clock->instant = $clock->now()->modify('+1 day');
     return $op;

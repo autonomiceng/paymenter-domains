@@ -89,13 +89,14 @@ final class OperationReconciliation
         $read = $capture->token;
         try {
             return $check->finish($this->readCaptured($id, $check, $capture), $read);
-        } finally {
+        } catch (\Throwable $error) {
             if ($read !== null) {
                 FreshTransaction::run(function () use ($id, $read): void {
                     Operation::whereKey($id)->lockForUpdate()->firstOrFail();
                     $this->attempts->closeRead($read);
                 });
             }
+            throw $error;
         }
     }
 

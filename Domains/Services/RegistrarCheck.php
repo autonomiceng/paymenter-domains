@@ -53,8 +53,12 @@ final class RegistrarCheck
         return DB::transaction(function () use ($result, $read): Operation {
             Domain::whereKey($result->domain_id)->lockForUpdate()->firstOrFail();
             $op = Operation::whereKey($result->id)->lockForUpdate()->firstOrFail();
+            if ($read) {
+                $writer = new OperationWriter($this->clock);
+                if (!$writer->ownsRead($read, allowExpired: true)) { return $op; }
+                $writer->closeRead($read);
+            }
             if ($this->identity===null || !hash_equals($this->identity,RegistrarAnswers::identity($op))) { return $op; }
-            if ($read && !(new OperationWriter($this->clock))->ownsRead($read, allowExpired: true)) { return $op; }
             // A check, resume or answer saved after this check began is newer. This result must not replace it.
             $stored=$op->policy['status_check']??null;
             if ($stored!==$this->seen && $this->newer($stored)) { return $op; }
