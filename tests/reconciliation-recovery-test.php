@@ -60,6 +60,7 @@ foreach(['accepted','not_processed'] as $outcome){
     commerceReject(fn()=>$settings->run($review($op),$input($op,$outcome),$clock->now()));
     $clock->instant=$clock->now()->modify('+25 hours');
     // Enom reads the domain on a lost reply before staff record its answer.
+    if ($outcome === 'not_processed') { $observation->fault = 'absent'; }
     $reconcile->run($op->id);$r=$review($op);
     $bad=$input($op,$outcome);$bad['attempt_hash']=str_repeat('0',64);commerceReject(fn()=>$settings->run($r,$bad,$clock->now()));
     $role->update(['permissions'=>array_diff($permissions,['admin.domains.settings.enom_answer'])]);commerceReject(fn()=>$settings->run($r,$input($op,$outcome),$clock->now()));$role->update(['permissions'=>$permissions]);

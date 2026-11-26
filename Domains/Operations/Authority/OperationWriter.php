@@ -120,7 +120,7 @@ final readonly class OperationWriter
         self::requireTransaction();
         $facts = OperationAttempts::attempt($token, true);
         $now = $this->clock->now();
-        if (!$facts?->current || $facts->released || $facts->claimUntil <= $now) { return Transition::Stale; }
+        if (!$facts?->current || $facts->released || $facts->claimUntil === null || $facts->claimUntil <= $now) { return Transition::Stale; }
         if ($facts->sealed() && $this->recordReply($token, WireOutcome::localRefusal('test_capacity')) !== Transition::Applied) {
             return Transition::Stale;
         }

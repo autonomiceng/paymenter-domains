@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Native ordinary-worker closure; no provider network.
 declare(strict_types=1);
+require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 $fixtureEnding='example.com';require __DIR__.'/Support/registration-fixture.php';
 require __DIR__.'/Support/registration-refusal-reply.php';
 use App\Models\{Credit,Invoice,InvoiceTransaction,Role,Service};
@@ -12,7 +13,7 @@ $outside=null;try{ComplimentaryAccounts::authorization($user->id,true);}catch(Lo
 same('Current funding requires the owner transaction.',$outside,'Locked complimentary reads cannot run outside a transaction');
 expect(DB::transaction(fn()=>ComplimentaryAccounts::authorization($user->id,true))!==null,'The same authorization succeeds inside native locks');
 foreach(['RuntimeSchema','ReminderSchema','ObservationSchema'] as $schema){('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$schema)::install();}
-$binding=$bindingFor(0);$calls=[];$controls=[];$originalAttempts=[];
+$binding=$bindingFor(0);$calls=[];$controls=[];$restoreEvidence=[];
 foreach(['unknown','lost','contradictory','missing_proof','foreign_proof','invalid_receipt'] as $case){
     $makeEngine($binding,static function($origin,$command,$parameters,$timeout)use($case,$purchaseRefusal):string {
         if($case==='lost'){throw new RuntimeException('Synthetic lost reply');}
@@ -23,11 +24,11 @@ foreach(['unknown','lost','contradictory','missing_proof','foreign_proof','inval
     });
     $bad=$runRegistration($new(str_replace('_','-',$case).'.example.com',false));
     if(in_array($case,['missing_proof','foreign_proof'],true)){
-        $originalAttempts[$bad->id]=$bad->getRawOriginal('attempt');$attempt=$bad->attempt;
-        if($case==='missing_proof'){unset($attempt['evidence']['registrationRefusal']);}
-        else{$attempt['evidence']['registrationRefusal']['record']['claim_key']='foreign';}
-        // Test-only corruption of retained encrypted facts, never a production bypass.
-        DB::table('domains_operations')->where('id',$bad->id)->update(['attempt'=>Illuminate\Support\Facades\Crypt::encryptString(json_encode($attempt))]);
+        $restoreEvidence[$case] = changeAcquisitionEvidence($bad, 'reply', static function (array $facts) use ($case): array {
+            if ($case === 'missing_proof') { unset($facts['evidence']['registrationRefusal']); }
+            else { $facts['evidence']['registrationRefusal']['record']['claim_key'] = 'foreign'; }
+            return $facts;
+        });
     }
     if($case==='invalid_receipt'){DB::table('invoice_items')->where('id',$bad->invoice_item_id)->update(['price'=>'1.00']);}
     $controls[$case]=[$bad->id,$bad->service_id,Service::findOrFail($bad->service_id)->status];
@@ -67,7 +68,7 @@ $evidence=static fn()=>array_intersect_key($op->fresh()->getAttributes(),array_f
 same($serviceClosed,Service::findOrFail($op->service_id)->getRawOriginal(),'Later worker replay does not rewrite the closed native service');same($closed,$evidence(),'Repeated worker closure retains original evidence; native closure bookkeeping may be recorded separately');
 foreach($controls as $case=>[$id,$serviceId,$status]){same($status,Service::findOrFail($serviceId)->status,'Unproved or invalid complimentary order stays open: '.$case);expect(!isset(\Paymenter\Extensions\Servers\Domains\Models\Operation::findOrFail($id)->funding['refund']),'No refund authority from '.$case);}
 same(0,$badLocks,'Unchanged invalid complimentary refusal evidence never enters native refund locks');
-$repair=$controls['missing_proof'];DB::table('domains_operations')->where('id',$repair[0])->update(['attempt'=>$originalAttempts[$repair[0]]]);
+$repair=$controls['missing_proof'];$restoreEvidence['missing_proof']();
 $clock->instant=$clock->now()->modify('+1 minute');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());$runtime->tick();
 same('cancelled',Service::findOrFail($repair[1])->status,'Repaired evidence resumes normal guarded closure without waiting for a cooldown');
 same(0,$refundLocks,'A later runtime tick never re-locks the already closed complimentary holding');

@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/operation-fixture.php';
 use App\Models\{Order,Service,User};
@@ -19,10 +20,10 @@ foreach(['services','orders','users'] as $table){foreach(['before_claim','during
     };
     $nativeControls();
     $raw=$op->getAttributes();expect($claims->claim($op->id)!==null,'Healthy paid request can claim');
-    DB::table('domains_operations')->where('id',$op->id)->update($raw);
+    restoreAcquisitionFixture($raw);
     ContactSetup::recoveryWrite(fn()=>$op->fresh()->update(['state'=>'held','safe_code'=>'contact_details_required']));
     same('queued',ContactRecovery::replace($user,$op->id,'Healthy recovery control')->state,'Healthy readmission works');
-    DB::table('domains_operations')->where('id',$op->id)->update($raw);
+    restoreAcquisitionFixture($raw);
     $service=Service::findOrFail($op->service_id);$id=match($table){'services'=>$service->id,'orders'=>$service->order_id,'users'=>$user->id};
     $row=(array)DB::table($table)->where('id',$id)->sole();
     // Isolate each missing-parent validator. Real event-enabled FK cascade is tested separately.
@@ -45,7 +46,7 @@ foreach(['services','orders','users'] as $table){foreach(['before_claim','during
         fn()=>DB::transaction(fn()=>HoldingIdentityLock::lockForAdoption((int)$service->order_id,(int)$service->id)->owners($user->id))
     ] as $attempt){$refused=false;try{$attempt();}catch(DomainException|Illuminate\Database\Eloquent\ModelNotFoundException){$refused=true;}expect($refused,'Missing '.$table.' refuses native authority');}
     // Isolate missing identity from the separate already-attempted recovery prohibition.
-    DB::table('domains_operations')->where('id',$op->id)->update($raw);
+    restoreAcquisitionFixture($raw);
     ContactSetup::recoveryWrite(fn()=>$op->fresh()->update(['state'=>'held','safe_code'=>'contact_details_required']));
     $before=$op->fresh()->getAttributes();$refused=false;
     try{ContactRecovery::replace($user,$op->id,'Missing parent recovery');}catch(DomainException|Illuminate\Database\Eloquent\ModelNotFoundException){$refused=true;}

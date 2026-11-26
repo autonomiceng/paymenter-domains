@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 require __DIR__.'/Support/namesilo-no-id-registered.php';
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Data\{Action, Disposition, Query, RenewalCode, RenewalRequest, RenewalStatus, RequestBudget, RequestContext, RequestOrigin, ResultReason, SendState};
@@ -97,22 +98,31 @@ same(RenewalCode::Admitted, $check()->code, 'Exact NameSilo balance admits');
 // Privileged fixture edits exercise absence and contradictions; ordinary evidence edits are refused above.
 $originalAttempt = $result->fresh()->attempt;
 foreach ([null, ['premium' => true], ['premium' => null], ['name' => 'another-placeholder.com'], ['years' => 2], ['cost' => ['amount' => '1.00', 'currency' => 'USD']]] as $change) {
-    $attempt = $result->fresh()->attempt;
-    if ($change === null) { unset($attempt['registration_admission']); }
-    else { $attempt['registration_admission'] = array_replace($attempt['registration_admission'], $change); }
-    $saved = $result->fresh()->getRawOriginal('attempt');
-    $result->fresh()->forceFill(['attempt' => $attempt])->saveQuietly();
-    if ($change === null) { commerceReject(fn () => $result->fresh()->update(['attempt' => $originalAttempt])); }
-    same(RenewalCode::Cost, $check()->code, 'Missing/contradictory local nonpremium proof refuses');
-    DB::table('domains_operations')->where('id', $result->id)->update(['attempt' => $saved]);
+    $restore = changeAcquisitionEvidence($result, 'admission', static function (array $facts) use ($change): array {
+        if ($change === null) { unset($facts['registration_admission']); }
+        else { $facts['registration_admission'] = array_replace($facts['registration_admission'], $change); }
+        return $facts;
+    });
+    try {
+        if ($change === null) { commerceReject(fn () => $result->fresh()->update(['attempt' => $originalAttempt])); }
+        same(RenewalCode::Cost, $check()->code, 'Missing/contradictory local nonpremium proof refuses');
+    } finally { $restore(); }
 }
-$saved = ['attempt' => $result->fresh()->getRawOriginal('attempt'), 'cost' => $result->fresh()->getRawOriginal('cost')];
+$saved = $result->fresh()->getRawOriginal('cost');
 foreach (['500.00', '8.94', '8.950000'] as $amount) {
-    $attempt = $result->fresh()->attempt; $cost = $result->fresh()->cost;
-    $cost['actual']['amount'] = $amount; $attempt['reconciliation']['charge'] = $cost['actual'];
-    $result->fresh()->forceFill(['attempt' => $attempt, 'cost' => $cost])->saveQuietly();
-    same($amount === '8.950000' ? RenewalCode::Admitted : RenewalCode::Cost, $check()->code, 'Actual charge must equal nonpremium authorization after decimal normalization');
-    DB::table('domains_operations')->where('id', $result->id)->update($saved);
+    $cost = $result->fresh()->cost;
+    $cost['actual']['amount'] = $amount;
+    $restore = changeAcquisitionEvidence($result, 'settlement', static function (array $facts) use ($cost): array {
+        $facts['reconciliation']['charge'] = $cost['actual'];
+        return $facts;
+    });
+    try {
+        $result->fresh()->forceFill(['cost' => $cost])->saveQuietly();
+        same($amount === '8.950000' ? RenewalCode::Admitted : RenewalCode::Cost, $check()->code, 'Actual charge must equal nonpremium authorization after decimal normalization');
+    } finally {
+        $restore();
+        DB::table('domains_operations')->where('id', $result->id)->update(['cost' => $saved]);
+    }
 }
 Cache::flush();
 same(RenewalCode::Anchor, $admission->check($request('fabricated'))->code, 'No-ID request cannot fabricate a domain ID');

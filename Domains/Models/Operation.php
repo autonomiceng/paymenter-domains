@@ -87,7 +87,7 @@ class Operation extends Model
         return parent::getOriginal($key, $default);
     }
 
-    /** Advisory list queries can rule out step evidence in the same read as the operation. */
+    /** Read step presence with the operation when the caller has a current view of the ledger. */
     public function scopeWithAcquisitionStep(Builder $query): Builder
     {
         return $query->addSelect(['has_acquisition_step' => DB::table(OperationSchema::STEPS)
@@ -186,7 +186,7 @@ class Operation extends Model
         return Attribute::get(function ($value, array $row) {
             $facts = $this->acquisitionRow($row)['facts'] ?? null;
             if (!$facts) { return $value === null ? null : $this->asDateTime($value)->toImmutable(); }
-            return ($row['state'] ?? null) === 'running' && $facts->current
+            return ($row['state'] ?? null) === 'running' && $facts->current && $facts->claimUntil !== null
                 ? $this->asDateTime($facts->claimUntil)->toImmutable() : null;
         })->withoutObjectCaching();
     }
