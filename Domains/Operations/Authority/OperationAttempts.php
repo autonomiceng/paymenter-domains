@@ -40,11 +40,11 @@ final class OperationAttempts
         return $facts?->current ? $facts : null;
     }
 
-    /** The one sealed attempt of a step. Row 08 permits at most one. */
+    /** The active sealed attempt. A TEST cap refusal may have retired an earlier seal. */
     public static function sealed(int $operationId, StepKey $key, bool $lock = false): ?AttemptFacts
     {
         $facts = self::latest($operationId, $key, $lock);
-        return $facts?->sealed() ? $facts : null;
+        return $facts?->sealed() && !$facts->released ? $facts : null;
     }
 
     /** True only when the step's sealed attempt is definitely unsent and its retained reply is the local refusal. */
@@ -96,6 +96,13 @@ final class OperationAttempts
         $row = DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $operationId, 'attempt_id' => $attemptId, 'kind' => $kind])
             ->orderBy('id')->first();
         return $row ? self::decoded($row) : null;
+    }
+
+    /** Insertion order preserves repeated local refusals, including equal timestamps. */
+    public static function history(int $operationId, string $kind): array
+    {
+        return DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $operationId, 'kind' => $kind])
+            ->orderBy('id')->get()->map(self::decoded(...))->all();
     }
 
     /**

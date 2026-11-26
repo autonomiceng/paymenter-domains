@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\RegistrarDriver;
 use Paymenter\Extensions\Servers\Domains\Data\{BalanceRetry,DriverResult,Disposition,Money,RequestContext};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionAttempt;
 /** Scheduling and the cheap first read. Readmission itself belongs to OperationClaims' ordered financial locks. */
 final class BalanceRetries
 {
@@ -74,6 +75,15 @@ final class BalanceRetries
     /** The existing purchase-scope negative proof also permits retaining a system retry's original claim. */
     public static function capReset(Operation $op): bool
     {
+        if ($attempt = AcquisitionAttempt::of((int) $op->id, $op->action)) {
+            $old = $op->getOriginal('policy')['balance_retry'] ?? null;
+            $next = $op->policy['balance_retry'] ?? null;
+            $proof = $attempt->balanceCap();
+            return $proof !== null && $old !== null && $next !== null
+                && $op->getOriginal('state') === 'running' && $op->state === 'held' && $op->safe_code === 'write_rate_limited'
+                && $next === array_replace($old, ['cap_refusal' => ['dispatch_attempted_at' => $proof['dispatch_attempted_at'],
+                    'authorized_cost' => $proof['authorized_cost'], 'refused_at' => $proof['refused_at']]]);
+        }
         try {
             $before=clone $op;$before->setRawAttributes($op->getRawOriginal(),true);
             $old=BalanceRetry::from($before);$next=BalanceRetry::from($op);
@@ -99,8 +109,9 @@ final class BalanceRetries
         if($old===null){return;}
         if(!$next){throw new \DomainException('System retry authority is retained.');}
         $firstClaim=$old['claim_key']===null&&$old['request_fingerprint']===null&&$op->getOriginal('state')==='queued'&&$op->state==='running'
-            &&$op->getOriginal('started_at')===null&&$op->getOriginal('request_fingerprint')===null&&($op->getOriginal('attempt')??[])===[]
-            &&!array_intersect(['claim','seal'],array_keys($op->getOriginal('funding')??[]))&&$next->record['claim_key']!==null;
+            &&$op->getRawOriginal('started_at')===null&&$op->getRawOriginal('request_fingerprint')===null
+            &&($op->acquisitionWorker !== null || (($op->getOriginal('attempt')??[])===[]
+                &&!array_intersect(['claim','seal'],array_keys($op->getOriginal('funding')??[]))))&&$next->record['claim_key']!==null;
         foreach(['type','operation_key','generation','claim_key','request_fingerprint','held_at'] as $key){
             if($firstClaim&&in_array($key,['claim_key','request_fingerprint'],true)){continue;}
             if($old[$key]!==$next->record[$key]){throw new \DomainException('Original system retry identity is frozen.');}

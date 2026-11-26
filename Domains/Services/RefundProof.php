@@ -45,9 +45,10 @@ final class RefundProof
         if (array_diff(array_keys($a), $allowed)) { throw new \DomainException('Unresolved attempt facts prevent refund.'); }
         if ($sealed) {
             $funded = isset($f['claim'], $f['seal']) && $f['claim'] === $f['seal'];
-            // Slice25 commits possibly_sent at seal; ONLY its exact typed local prewire result can override it.
+            // Current attempts record the local refusal as definitely unsent. Retained attempts kept the seal's send state.
             $claimKey = $a['claim_key'] ?? null;
-            if (!in_array($op->safe_code, ['acquisition_definitely_unsent', 'refund_approved'], true) || !$acquisition || ($a['send_state'] ?? null) !== 'possibly_sent'
+            if (!in_array($op->safe_code, ['acquisition_definitely_unsent', 'refund_approved'], true) || !$acquisition
+                || !in_array($a['send_state'] ?? null, ['possibly_sent', 'definitely_unsent'], true)
                 || ($a['execution'] ?? null) !== self::REFUSAL
                 || !is_string($claimKey) || !preg_match('/^[a-f0-9]{32}$/D', $claimKey)
                 || !$op->started_at || !$op->request_fingerprint || !isset($a['dispatch_attempted_at'], $a['authorized_cost'])

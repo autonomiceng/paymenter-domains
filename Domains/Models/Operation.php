@@ -6,6 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Models;
 
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AttemptToken};
 
 class Operation extends Model
 {
@@ -13,6 +14,8 @@ class Operation extends Model
 
     /** Transaction-local capability evidence; never an attribute, relationship or persisted authority. */
     public ?Tld $catalogueTld = null;
+    /** Exact worker authority, set by the claim or seal transaction and never persisted. */
+    public ?AttemptToken $acquisitionWorker = null;
 
     protected $table = 'domains_operations';
     protected $guarded = [];
@@ -28,8 +31,60 @@ class Operation extends Model
      */
     protected function attempt(): Attribute
     {
-        return Attribute::get(fn (?string $value, array $row): ?array => ($row['action'] ?? null) === 'renew' ? []
-            : ($value === null ? null : $this->fromJson($this->fromEncryptedString($value))));
+        return $this->retainedEvidence('attempt');
+    }
+
+    protected function funding(): Attribute { return $this->retainedEvidence('funding'); }
+
+    private function retainedEvidence(string $field): Attribute
+    {
+        return Attribute::make(
+            get: function (?string $value, array $row) use ($field): ?array {
+                if ($field === 'attempt' && ($row['action'] ?? null) === 'renew') { return []; }
+                $stored = $value === null ? null : $this->fromJson($this->fromEncryptedString($value));
+                $projection = $this->acquisitionEvidence($field, $row);
+                return $projection ? array_replace($stored ?? [], $projection) : $stored;
+            },
+            set: function (?array $value, array $row) use ($field): ?string {
+                $projection = $this->acquisitionEvidence($field, $row);
+                if ($projection) { $value = AcquisitionAttempt::retain($projection, $value); }
+                return $value === null ? null : $this->castAttributeAsEncryptedString($field, $this->asJson($value));
+            },
+        );
+    }
+
+    private function acquisitionEvidence(string $field, array $row): array
+    {
+        $attempt = self::acquisition($row);
+        return $attempt ? ($field === 'attempt' ? $attempt->attempt($row['action']) : $attempt->funding()) : [];
+    }
+
+    private static function acquisition(array $row): ?AcquisitionAttempt
+    {
+        return isset($row['id'], $row['action'], $row['transition_revision'])
+            ? AcquisitionAttempt::of((int) $row['id'], $row['action']) : null;
+    }
+
+    protected function startedAt(): Attribute
+    {
+        return Attribute::get(fn ($value, array $row) => ($attempt = self::acquisition($row))
+            ? ($attempt->start() ? $this->asDateTime($attempt->start())->toImmutable() : null)
+            : ($value === null ? null : $this->asDateTime($value)->toImmutable()));
+    }
+
+    protected function requestFingerprint(): Attribute
+    {
+        return Attribute::get(fn ($value, array $row) => ($attempt = self::acquisition($row)) ? $attempt->digest() : $value);
+    }
+
+    protected function leaseExpiresAt(): Attribute
+    {
+        return Attribute::get(function ($value, array $row) {
+            $attempt = self::acquisition($row);
+            if (!$attempt) { return $value === null ? null : $this->asDateTime($value)->toImmutable(); }
+            return ($row['state'] ?? null) === 'running' && $attempt->facts->current
+                ? $this->asDateTime($attempt->facts->claimUntil)->toImmutable() : null;
+        });
     }
 
     protected static function booted(): void

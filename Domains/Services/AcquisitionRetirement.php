@@ -145,7 +145,7 @@ final readonly class AcquisitionRetirement
         if(($op->attempt['seal']??null)!=='sealed'){RefundProof::requireUnsent($op,$d);return true;}
         // A normal funded send makes unpaid closure obsolete; contradictory retained send facts do not.
         if(($op->funding['claim']??null)!==$paid||($op->funding['seal']??null)!==$paid
-            ||($op->attempt['send_state']??null)!=='possibly_sent'||!preg_match('/^[a-f0-9]{32}$/D',$op->attempt['claim_key']??'')
+            ||!in_array($op->attempt['send_state']??null,['possibly_sent','sent'],true)||!preg_match('/^[a-f0-9]{32}$/D',$op->attempt['claim_key']??'')
             ||array_diff(array_keys($op->attempt),['claim_key','seal','send_state','capacity_deferrals','test_call_refusals','dispatch_attempted_at',
                 'authorized_cost','registration_admission','transfer_admission','execution','evidence','charge','order_candidates','registration','corrections'])
             ||($op->attempt['charge']??null)!==null||($op->attempt['order_candidates']??[])!==[]

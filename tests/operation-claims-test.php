@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Data\Disposition;
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, StepKey};
 use Paymenter\Extensions\Servers\Domains\Services\{FundsWaits, MoneyWorkSchema, PricingRule, Refunds, WriteAcceptance};
 // Claim, seal, funds cutoff and send outcome cases share the one prepared claim fixture and clock. Each makes
 // its own paid native checkout; the reset restores rows, payments, attempts, listeners, cache and fakes after it.
@@ -21,6 +22,22 @@ $cases['claims'] = static function () use ($new, $engine, $writer, $assertNoSend
     $forged = clone $writer->last; commerceReject(fn () => $engine->consume($forged, $writer->context, new WriteAcceptance($forged->binding,catalogue: $GLOBALS['caps']??null)));
     foreach (['execution', 'dispatch_attempted_at', 'claim_key', 'seal'] as $key) {
         $attempt = $result->attempt; unset($attempt[$key]); commerceReject(fn () => $result->fresh()->update(['attempt' => $attempt]));
+    }
+};
+$cases['attempt-authority'] = static function () use ($new, $engine, $writer): void {
+    foreach (['register', 'transfer'] as $action) {
+        $op = $new('ledger-'.$action.'.example.com', action: $action);
+        $before = $writer->calls;
+        $result = $engine->execute($op->id)->fresh();
+        same($before + 1, $writer->calls, 'Exactly one acquisition crossed the writer boundary');
+        $attempt = OperationAttempts::sealed((int) $result->id, new StepKey($action, 1));
+        expect($attempt !== null && $attempt->grantConsumedAt !== null, 'Acquisition seal and grant are durable across reload');
+        same('unknown', OperationAttempts::evidence((int) $result->id, $attempt->token->attemptId, 'reply')['outcome'] ?? null,
+            'The active attempt owns the reply');
+        same([null, null, null], [$result->getRawOriginal('attempt'), $result->getRawOriginal('request_fingerprint'),
+            $result->getRawOriginal('lease_expires_at')], 'The operation has no mirrored claim or reply');
+        $engine->execute($result->id);
+        same($before + 1, $writer->calls, 'A restarted worker cannot send again');
     }
 };
 $cases['funds-cutoff'] = static function () use ($new, $engine, $preflight, $clock, $user, $assertNoSend): void {
