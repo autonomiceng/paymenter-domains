@@ -16,7 +16,7 @@ final class RenewalAllocationSchema extends TableSchema
         return [self::TABLE => static function (Blueprint $t): void {
             $t->unsignedBigInteger('invoice_item_id');
             $t->unsignedTinyInteger('retry_number');
-            $t->enum('source', array_column(PostingSource::cases(), 'value'));
+            $t->enum('source', ['item', 'payment']);
             $t->unsignedBigInteger('source_id');
             $t->bigInteger('amount_minor');
             $t->primary(['invoice_item_id', 'retry_number', 'source', 'source_id']);

@@ -6,7 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Money\Native;
 use Paymenter\Extensions\Servers\Domains\Services\{FreshTransaction, MoneyScopeChanged, NativeCancellation, NativeUserDeletion};
 
 use App\Models\{Invoice, InvoiceItem, InvoiceTransaction, Order, Plan, Product, Service, ServiceCancellation, TaxRate, User};
-use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\{Builder, ModelNotFoundException};
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
@@ -60,6 +60,15 @@ final class HoldingNativeLocks
         $links = DB::table('config_option_products')->where('product_id', $product->id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $tax = self::tax($user, $advisory);
         return compact('user', 'staff', 'credit', 'invoices', 'items', 'orders', 'services', 'products', 'plans', 'service', 'product', 'plan', 'cancel', 'configs', 'properties', 'markers', 'upgrades', 'links', 'tax', 'opIds', 'relatedProperties');
+    }
+
+    /** A receipt starts at the invoice and never adds an owner lock behind it. */
+    public static function receipt(int $invoiceId): ReceiptLocks
+    {
+        $invoice = self::rows(Invoice::whereKey($invoiceId))->first()
+            ?? throw (new ModelNotFoundException)->setModel(Invoice::class, [$invoiceId]);
+        $items = self::rows(InvoiceItem::where('invoice_id', $invoiceId));
+        return new ReceiptLocks($invoice, $items, self::checkout($items));
     }
 
     public static function rows(Builder $query, bool $advisory = false): Collection

@@ -18,8 +18,7 @@ final class InvoiceFunding
     private bool $active = true;
     private ?Collection $transactions = null;
     private function __construct(private readonly \Illuminate\Database\Connection $connection,
-        private readonly Invoice $invoice, private readonly Collection $items,
-        private readonly CheckoutLocks $checkout) {}
+        private readonly ReceiptLocks $receipt) {}
 
     public function __clone(): void { throw new \LogicException('Funding contexts cannot be cloned.'); }
     public function __serialize(): array { throw new \LogicException('Funding contexts cannot be persisted.'); }
@@ -42,11 +41,7 @@ final class InvoiceFunding
                 });
             }
         }
-        $invoice = HoldingNativeLocks::rows(Invoice::whereKey($invoiceId))->first()
-            ?? throw (new \Illuminate\Database\Eloquent\ModelNotFoundException)->setModel(Invoice::class, [$invoiceId]);
-        $items = HoldingNativeLocks::rows(InvoiceItem::where('invoice_id', $invoiceId));
-        $checkout = HoldingNativeLocks::checkout($items);
-        $context = new self(DB::connection(), $invoice, $items, $checkout);
+        $context = new self(DB::connection(), HoldingNativeLocks::receipt($invoiceId));
         self::$contexts[$context] = true; return $context;
     }
 
@@ -55,7 +50,7 @@ final class InvoiceFunding
     public function lockPayments(): void
     {
         $this->requireLive();
-        $this->transactions ??= HoldingNativeLocks::transactions([$this->invoice->id]);
+        $this->transactions ??= HoldingNativeLocks::transactions([$this->receipt->invoice->id]);
     }
 
     /** Acquisition lifecycle under the same native prefix; renewal/complimentary authority is separate. */
@@ -86,7 +81,7 @@ final class InvoiceFunding
     public function initialService(Operation $op, Domain $domain): Service
     {
         $this->requireInitial($op, $domain);
-        $service = $this->checkout->services->firstWhere('id', $op->service_id);
+        $service = $this->receipt->checkout->services->firstWhere('id', $op->service_id);
         if ($service->isDirty()) { throw new \DomainException('Acquisition lifecycle changed.'); }
         return $service;
     }
@@ -109,11 +104,11 @@ final class InvoiceFunding
     private function facts(Domain $domain): array
     {
         $this->requireLive();
-        $service=$this->checkout->services->firstWhere('id', $domain->service_id);
+        $service=$this->receipt->checkout->services->firstWhere('id', $domain->service_id);
         if(!$service){throw new \DomainException('Missing native service.');}
-        return ['domain'=>$domain,'service'=>$service,'product'=>$this->checkout->products->firstWhere('id', $service->product_id),
-            'plan'=>$this->checkout->plans->firstWhere('id', $service->plan_id),'orders'=>$this->checkout->orders,'cancel'=>$this->checkout->cancellations,
-            'invoices'=>collect([$this->invoice]),'items'=>$this->items,'transactions'=>$this->payments()];
+        return ['domain'=>$domain,'service'=>$service,'product'=>$this->receipt->checkout->products->firstWhere('id', $service->product_id),
+            'plan'=>$this->receipt->checkout->plans->firstWhere('id', $service->plan_id),'orders'=>$this->receipt->checkout->orders,'cancel'=>$this->receipt->checkout->cancellations,
+            'invoices'=>collect([$this->receipt->invoice]),'items'=>$this->receipt->items,'transactions'=>$this->payments()];
     }
 
     private function requireLive(): void

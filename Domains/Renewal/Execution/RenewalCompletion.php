@@ -21,11 +21,12 @@ final readonly class RenewalCompletion
     private function runEntered(int $id, \DateTimeImmutable $deadline, RegistrarCheck $check, bool $staff): Operation
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
-        $capture = $this->decide($seed, $id, function (array $l) use ($id, $check, $staff, $deadline) {
-            $op = $l['operations']->firstWhere('id', $id);
+        $capture = $this->decide($seed, $id, function (MoneyLockContext $locks) use ($id, $check, $staff, $deadline) {
+            $op = $locks->operation($id);
             if (!$op || !$this->eligible($op) || self::capturedChargeHeld($op)) { return null; }
             // One registrar check at a time per attempt: another check (staff, cron or retry) waits while this one runs.
             if (RenewalProof::running($op, $this->clock->now())) { if ($staff) { throw new StaffReviewRefused(MoneyDecisions::BUSY); } return null; }
+            $l = $locks->facts();
             $check->capture($op);
             $financial=CapturedChargeReview::hasProof($op);
             $policy = $op->policy; $policy['renewal_execution'] = ['staff_alert' => true, 'reason' => ($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT ? 'poll_limit_reached' : 'original_attempt_unresolved', 'refundable_later' => false];
@@ -81,8 +82,8 @@ final readonly class RenewalCompletion
         try {
         // A check with nothing to project still releases its claim.
         if (!$financialRead && !$covered && !$autoRenewUnconfirmed && !$autoRenewConfirmed && !$ran) { return Operation::findOrFail($id); }
-        return $this->decide($seed, $id, function (array $l) use ($id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed,$financialRead,$check,$scan,$ran,$saved) {
-            $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
+        return $this->decide($seed, $id, function (MoneyLockContext $locks) use ($id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed,$financialRead,$check,$scan,$ran,$saved) {
+            $op = $locks->operation($id); $d = $locks->domain(); $l = $locks->facts();
             if (!$op || !$this->eligible($op) || $l['stamp'] !== $stamp || ($proof && $proof['provider_domain_id'] !== $d->provider_domain_id)) { return $op; }
             try { $this->bindings->requireReadableLocked($l['server'], $l['account']); RenewalFunding::requireCurrent($op, $l, true); }
             catch (\PDOException|RenewalBusy $e) { throw $e; } catch (\Throwable) { return $op; }
@@ -137,7 +138,7 @@ final readonly class RenewalCompletion
     /** Contention queues automatic work; interactive checks refuse so staff never see an unsaved read as finished. */
     private function decide($seed, int $id, \Closure $step, bool $staff): mixed
     {
-        $decision = MoneyDecisions::run(new MoneyRequest($seed, $staff ? null : RenewalExecution::KIND, $id), static fn (MoneyLockContext $locks) => $step($locks->facts()));
+        $decision = MoneyDecisions::run(new MoneyRequest($seed, $staff ? null : RenewalExecution::KIND, $id), $step);
         if ($decision->error) { throw $decision->error; }
         if ($staff && $decision->outcome === MoneyOutcome::Deferred) { throw new StaffReviewRefused(MoneyDecisions::BUSY); }
         return $decision->value;

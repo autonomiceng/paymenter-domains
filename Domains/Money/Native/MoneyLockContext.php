@@ -4,9 +4,8 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Money\Native;
 
 use Illuminate\Database\Connection;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Models\Domain;
+use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks, MoneyRequest, MoneyScopeChanged};
 
 /** The holding rows acquired for one decision, valid only inside that decision's transaction. */
@@ -41,7 +40,10 @@ final class MoneyLockContext
 
     public function domain(): Domain { return $this->facts()['domain']; }
 
-    public function operations(): Collection { return $this->facts()['operations']; }
+    public function operation(int $id): ?Operation
+    {
+        return $this->facts()['operations']->firstWhere('id', $id);
+    }
 
     /** Adapter for the shared holding policies that also accept advisory reads. */
     public function facts(): array
