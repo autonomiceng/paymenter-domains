@@ -171,8 +171,9 @@ final class RegistrarCheck
     private static function at(int $at): string
     { return \Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($at); }
     /** Older lost replies need no worker turn to expose their existing answer step. Read only.
-     * $known: batch-loaded reads for customer lists, the server's 'accounts' and its 'server' with settings. Its domain relation is set. */
-    public static function status(Operation $op, ?array $known = null): ?array
+     * $known: batch-loaded reads for customer lists, the server's 'accounts' and its 'server' with settings. Its domain relation is set.
+     * $renewal: the renewal's attempt facts when the page already read them. */
+    public static function status(Operation $op, ?array $known = null, ?RenewalAttempt $renewal = null): ?array
     {
         $check = $op->policy['status_check'] ?? null;
         if (isset($check['attempt_identity']) && !hash_equals(RegistrarAnswers::identity($op),(string)$check['attempt_identity'])) { $check=null; }
@@ -180,7 +181,7 @@ final class RegistrarCheck
         if ($op->action==='register'&&$op->registrar_key==='enom'&&in_array($op->state,['running','pending','uncertain'],true)
             &&RegistrarAnswers::eligible($op,app(Clock::class)->now())&&!self::attempted($op)) { return ['outcome'=>'not_checked']; }
         if ($op->action !== 'renew' || !in_array($op->state, ['running', 'pending', 'uncertain'], true)
-            || isset($op->policy['enom_answer']) || ($renewal = RenewalAttempt::of($op))->readProof() !== null) { return $check; }
+            || isset($op->policy['enom_answer']) || ($renewal ??= RenewalAttempt::of($op))->readProof() !== null) { return $check; }
         try {
             $now = app(Clock::class)->now();
             if ($op->state === 'running' && $op->lease_expires_at !== null && $op->lease_expires_at > $now) { return $check; }
@@ -214,13 +215,16 @@ final class RegistrarCheck
         $check=self::status($op);
         return in_array($check['outcome']??null,['checked','deferred'],true) && !isset($check['next_at']);
     }
-    /** Customers wait for our registrar check; recording the answer is a staff task. */
-    public static function forCustomer(Operation $op, ?array $known = null): array
+    /** Customers wait for our registrar check; recording the answer is a staff task. A page that lists several requests
+     * passes each renewal's facts from one RenewalAttempt::loaded() read. */
+    public static function forCustomer(Operation $op, ?array $known = null, ?RenewalAttempt $renewal = null): array
     {
-        $check = self::status($op, $known);
+        $check = self::status($op, $known, $renewal);
         // Before the first read the customer sees the same pending line; Check status is a staff button.
-        if (($check['outcome'] ?? null) === 'not_checked' && is_string($op->attempt['dispatch_attempted_at'] ?? null)) {
-            $check = ['outcome'=>'awaiting_answer','answer_after'=>(new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp()];
+        if (($check['outcome'] ?? null) === 'not_checked') {
+            $sent = $op->action === 'renew' ? ($renewal ?? RenewalAttempt::of($op))->windowStart()
+                : (is_string($op->attempt['dispatch_attempted_at'] ?? null) ? new \DateTimeImmutable($op->attempt['dispatch_attempted_at']) : null);
+            if ($sent !== null) { $check = ['outcome'=>'awaiting_answer','answer_after'=>$sent->modify('+24 hours')->getTimestamp()]; }
         }
         // Once the usual wait is over, the line never names that past day as a deadline still to come.
         if (($check['outcome'] ?? null) === 'awaiting_answer' && self::answerReady($check)) { return self::lateForCustomer($op); }

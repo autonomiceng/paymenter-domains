@@ -4,6 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-panel.php';
 require __DIR__.'/Support/staff-filter-lookalikes.php';
+require_once __DIR__.'/Support/renewal-attempts.php';
 use Illuminate\Support\Facades\{Auth, DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
@@ -370,9 +371,11 @@ same('$0.00',Labels::money('0'),'Known zero is distinct'); same('Unknown',Labels
 same('$123456789012345678.1234',Labels::money('123456789012345678.12340000'),'Exact money without floats');
 // Historic admitted renewals retain the sealed authorization, even without a checkout estimate.
 $costUser=staffUser([Staff::VIEW,Staff::COSTS]); Auth::setUser($costUser);
-$renewal=new Operation(['action'=>'renew','state'=>'succeeded','cost'=>['actual'=>['amount'=>'8.95','currency'=>'USD']],
-    'attempt'=>['seal'=>'sealed','authorized_cost'=>['amount'=>'8.9500','currency'=>'USD']],
-    'policy'=>['renewal'=>['cost_cap'=>['amount'=>'12.00','currency'=>'USD']]],'funding'=>[]]);
+// Saved request rows on the held domain, so the renewal fixture builder can seal them. Each sets only the columns its probe names.
+$saved=static fn(string $key,array $columns)=>tap((new Operation)->forceFill(['domain_id'=>$held->id,'service_id'=>$held->service_id,'server_id'=>$held->server_id,
+    'registrar_key'=>$held->registrar_key,'operation_key'=>'staff-cost-'.$key,'currency'=>'USD',...$columns]))->saveQuietly();
+$renewal=sealRenewal($saved('renewal',['action'=>'renew','state'=>'succeeded','cost'=>['actual'=>['amount'=>'8.95','currency'=>'USD']],
+    'policy'=>['renewal'=>['cost_cap'=>['amount'=>'12.00','currency'=>'USD']]],'funding'=>[]]),amount:'8.9500');
 $retained=$renewal->getAttributes(); $cost=fn(Operation $op)=>[($f=RequestFacts::for($op))['cost'],$f['cost_sub']];
 same(['$8.95','Authorized $8.95'],$cost($renewal),'Historic renewal shows authorized registrar cost');
 same($retained,$renewal->getAttributes(),'Reading renewal facts never backfills retained cost evidence');
@@ -392,19 +395,22 @@ foreach(['awaiting_payment','held'] as $state){
 }
 // An unpaid request that closed before sending never cost anything, so its Cost row is not Missing.
 foreach(['renewal_cancelled_unpaid'=>'renew','acquisition_cancelled_unpaid'=>'register'] as $code=>$action){
-    $unpaid=new Operation(['action'=>$action,'state'=>'rejected','safe_code'=>$code,'cost'=>null,'funding'=>[],
+    $unpaid=$saved($code,['action'=>$action,'state'=>'rejected','safe_code'=>$code,'cost'=>null,'funding'=>[],
         'attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent','disposition'=>'rejected','rejection_basis'=>'definitely_unsent'],
         'policy'=>['renewal'=>['cost_cap'=>['amount'=>'8.9500','currency'=>'USD']]]]);
     same(['Not charged',null],$cost($unpaid),'Closed unpaid request was not charged: '.$code);
-    $unpaid->attempt=['seal'=>'sealed','send_state'=>'unknown']; same(null,$cost($unpaid)[0],'A send attempt keeps the cost Missing: '.$code);
+    if($action==='renew'){$unpaid=sealRenewal($unpaid);}else{$unpaid->attempt=['seal'=>'sealed','send_state'=>'unknown'];}
+    same(null,$cost($unpaid)[0],'A send attempt keeps the cost Missing: '.$code);
 }
+// A finished renewal, so the sealed authorization is read without an unconfirmed send.
+$renewal->forceFill(['state'=>'succeeded'])->saveQuietly();
 foreach([['amount'=>'8.95'],['amount'=>'8.95','currency'=>'EUR'],['amount'=>8.95,'currency'=>'USD'],['amount'=>'private','currency'=>'USD']] as $authorized){
-    $renewal->attempt=$authorized===[]?[]:['authorized_cost'=>$authorized];
+    $renewal=sealRenewal($renewal,['authorized_cost'=>$authorized]);
     same([null,'No cost recorded. Check at the registrar.'],$cost($renewal),'Missing or invalid authorization never falls back to estimate or cap');
 }
-$renewal->attempt=['authorized_cost'=>['amount'=>'0','currency'=>'USD']];
+$renewal=sealRenewal($renewal,amount:'0.00');
 same([null,'Authorized $0.00'],$cost($renewal),'Known zero authorization remains distinct from unknown');
-$renewal->attempt=['authorized_cost'=>['amount'=>'123456789012345678.12340000','currency'=>'USD']];
+$renewal=sealRenewal($renewal,amount:'123456789012345678.123400');
 same([null,'Authorized $123456789012345678.1234'],$cost($renewal),'Authorized cost preserves exact money');
 foreach(['register','transfer'] as $action){
     $renewal->action=$action;

@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
+require_once __DIR__.'/Support/renewal-attempts.php';
 require __DIR__.'/Support/native-commerce.php';
 require __DIR__.'/Support/staff-panel.php';
 require __DIR__.'/Support/staff-alerts.php';
@@ -192,7 +193,7 @@ $d->update(['billing_managed'=>true,'provider_expires_at'=>'2026-11-15']);same('
 $server->settings()->where('key','domains_due_days')->delete();$d->update(['billing_managed'=>false]);
 $far=$make(placeholderComFixtureName('balance-open-placeholder.com'),'2027-06-01');$op=$renew($far,'held',['attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent']]);
 same('8.000000',$forecast()['total'],'Open unsent obligation outside horizon counts');
-$op->update(['attempt'=>['seal'=>'sealed','dispatch_attempted_at'=>$clock->now()->format(DATE_ATOM)]]);
+sealRenewal($op,at:$clock->now());
 same(0,$forecast()['count'],'Sent obligation excluded');
 $far->update(['billing_managed'=>false]);$proven=$make(placeholderComFixtureName('balance-prewire-placeholder.com'),'2027-06-01');
 $proof=['safe_code'=>'renewal_definitely_unsent','lease_expires_at'=>null,'started_at'=>$clock->now(),'request_fingerprint'=>str_repeat('a',64),

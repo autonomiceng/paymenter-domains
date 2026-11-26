@@ -149,22 +149,46 @@ foreach(['1.00',(string)bcsub((string)$small->amount,'1.00',2)]as$paying){
 same('cancelled',Invoice::whereKey($small->invoice_id)->value('status'),'Paying it off keeps it closed');
 
 // Funding is encrypted, so 100 settled orders cannot be skipped in SQL: the cursor still reaches an order behind them, then wraps for a new payment on an old one.
-$refunds=app(Refunds::class);$account=Account::where('server_id',$serverId)->sole();$tick();$model=(array)DB::table('domains_operations')->find($late->id);$invoiceRow=(array)DB::table('invoices')->find($late->invoice_id);
-for($i=0;$i<110;$i++){
-    $invoiceId=DB::table('invoices')->insertGetId([...array_diff_key($invoiceRow,['id'=>1]),'number'=>null]);
-    $paidId=DB::table('invoice_transactions')->insertGetId(['invoice_id'=>$invoiceId,'amount'=>'1.00','fee'=>'0.00','status'=>'succeeded']);
-    DB::table('domains_operations')->insert([...array_diff_key($model,['id'=>1]),'operation_key'=>'settled-'.$i,'invoice_id'=>$invoiceId,'invoice_item_id'=>null,'funding'=>Illuminate\Support\Facades\Crypt::encryptString(json_encode(['late_credits'=>[['payments'=>[['id'=>$paidId,'amount_minor'=>100]],'amount'=>'1.00','currency'=>'USD','to'=>'account_credit','credit_id'=>null,'at'=>'2026-10-21T10:00:00+00:00']]]))]);
+// Each settled order is its own closed checkout: domain, service, invoice line and sealed record, with its late payment already credited.
+$refunds=app(Refunds::class);$account=Account::where('server_id',$serverId)->sole();$tick();$seal=static fn(array $v):string=>Illuminate\Support\Facades\Crypt::encryptString(json_encode($v));
+$raw=static fn(string $table,$id):array=>(array)DB::table($table)->find($id);$lateOp=$late->fresh();$creditId=(int)Credit::where('user_id',$user->id)->where('currency_code','USD')->value('id');
+$copy=['domains_domains'=>$raw('domains_domains',$late->domain_id),'services'=>$raw('services',$late->service_id),'invoices'=>$raw('invoices',$late->invoice_id),'invoice_items'=>$raw('invoice_items',$late->invoice_item_id),'domains_operations'=>$raw('domains_operations',$late->id)];
+$properties=DB::table('properties')->where('model_type',(new Service)->getMorphClass())->where('model_id',$late->service_id)->orderBy('id')->get()->map(static fn($p)=>array_diff_key((array)$p,['id'=>1]));
+$tables=['domains_domains','services','invoices','invoice_items','invoice_transactions','domains_operations'];$ids=array_map(static fn(string $table):int=>(int)DB::table($table)->max('id'),$tables);
+$batch=array_fill_keys([...$tables,'properties'],[]);$settled=[];
+for($i=1;$i<=110;$i++){
+    [$domainId,$serviceId,$invoiceId,$itemId,$paidId,$opId]=array_map(static fn(int $max)=>$max+$i,$ids);$name=placeholderComFixtureName('settled-'.$i.'-placeholder.com');$settled[]=$domainId;
+    $checkout=[...$lateOp->policy['checkout'],'service_id'=>$serviceId,'invoice_id'=>$invoiceId,'invoice_item_id'=>$itemId,'name'=>$name];
+    $batch['domains_domains'][]=[...$copy['domains_domains'],'id'=>$domainId,'domain'=>$name,'sld'=>'settled-'.$i.'-placeholder','service_id'=>$serviceId,'snapshot'=>$seal([...$lateOp->domain->snapshot,'checkout'=>$checkout])];
+    $batch['services'][]=[...$copy['services'],'id'=>$serviceId,'label'=>$name];
+    foreach($properties as $p){$batch['properties'][]=[...$p,'model_id'=>$serviceId,...($p['key']==='domain'?['value'=>$name]:[])];}
+    $batch['invoices'][]=[...$copy['invoices'],'id'=>$invoiceId,'number'=>null];
+    $batch['invoice_items'][]=[...$copy['invoice_items'],'id'=>$itemId,'invoice_id'=>$invoiceId,'reference_id'=>$serviceId];
+    $batch['invoice_transactions'][]=['id'=>$paidId,'invoice_id'=>$invoiceId,'amount'=>'1.00','fee'=>'0.00','status'=>'succeeded'];
+    $key='invoice-item:'.$itemId;
+    $batch['domains_operations'][]=[...$copy['domains_operations'],'id'=>$opId,'operation_key'=>$key,'domain_id'=>$domainId,'service_id'=>$serviceId,'invoice_id'=>$invoiceId,'invoice_item_id'=>$itemId,
+        'policy'=>$seal([...$lateOp->policy,'checkout'=>$checkout]),'attempt'=>$seal(array_replace_recursive($lateOp->attempt,['terminal'=>['operation_key'=>$key,'invoice_id'=>$invoiceId]])),
+        'funding'=>$seal(['late_credits'=>[['payments'=>[['id'=>$paidId,'amount_minor'=>100]],'amount'=>'1.00','currency'=>'USD','to'=>'account_credit','credit_id'=>$creditId,'at'=>'2026-10-21T10:00:00+00:00']]])];
 }
-// Inspecting settled history reads invoice payments and peer credits in batches, without moving money.
-$historyQueries=0;$countHistory=true;
-DB::listen(static function($query)use(&$historyQueries,&$countHistory):void {
+foreach($batch as $table=>$rows){foreach(array_chunk($rows,50) as $chunk){DB::table($table)->insert($chunk);}}
+$repairs=static fn():int=>DB::table('domains_obligation_alerts')->where('code','refund_repair')->count();$repairsBefore=$repairs();
+// Inspecting settled history reads invoice payments and peer credits in batches, without moving money. Each domain still reads its own requests, in these two shapes only.
+$requests=['select * from domains_operations where domains_operations.domain_id = ? and domains_operations.domain_id is not null and action in (?, ?)',
+    'select exists(select * from domains_operations where domains_operations.domain_id = ? and domains_operations.domain_id is not null and safe_code = ?) as exists'];
+$historyQueries=$requestReads=0;$countHistory=true;
+DB::listen(static function($query)use(&$historyQueries,&$requestReads,&$countHistory,$requests):void {
     $sql=str_replace(['"','`','[',']'],'',$query->sql);
-    if($countHistory&&preg_match('/^select .* from (?:invoices|invoice_transactions|domains_operations)\b/i',$sql)){$historyQueries++;}
+    if(!$countHistory||!preg_match('/^select .* from (?:invoices|invoice_transactions|domains_operations)\b/i',$sql)){return;}
+    if(in_array($sql,$requests,true)){$requestReads++;}else{$historyQueries++;}
 });
-$settledCash=$cash();$retirement->inspect((int)$late->domain_id);$countHistory=false;
-expect($historyQueries>0&&$historyQueries<=8,'Settled history inspection batches invoice, payment and peer reads; queries='.$historyQueries);
+$settledCash=$cash();$retirement->inspectMany($settled);$countHistory=false;
+expect($historyQueries>0&&$historyQueries<=8&&$requestReads<=2*count($settled),'Settled history inspection batches invoice, payment and peer reads; queries='.$historyQueries.', request reads='.$requestReads);
 same($settledCash,$cash(),'Inspecting the settled cursor history moves no money');
-$behind=$new(placeholderComFixtureName('late-behind-placeholder.com'),paid:false);$shut($behind);ExtensionHelper::addPayment($behind->invoice_id,null,amount:$behind->amount);ExtensionHelper::addPayment($parts->invoice_id,null,amount:'0.25');$before=$cash();
-foreach(range(1,3) as $pass){$refunds->creditRetired($account);}
-same($plus($before,$behind->amount,'0.25'),$cash(),'Every order gets its turn behind 100 settled ones');
+$behind=$new(placeholderComFixtureName('late-behind-placeholder.com'),paid:false);$shut($behind);ExtensionHelper::addPayment($behind->invoice_id,null,amount:$behind->amount);$before=$cash();
+// The first pass fills a whole page with older orders; a payment on one of them after it waits for the pass that starts again from the beginning.
+$refunds->creditRetired($account);ExtensionHelper::addPayment($parts->invoice_id,null,amount:'0.25');$refunds->creditRetired($account);
+same($plus($before,$behind->amount),$cash(),'Every order gets its turn behind 100 settled ones');
+$refunds->creditRetired($account);
+same($plus($before,$behind->amount,'0.25'),$cash(),'After the last page the cursor starts again and credits the older order');
+same($repairsBefore,$repairs(),'Settled orders pass the closed-order check, so staff get no money-return check');
 echo "Unpaid hold, refused orders and late money passed.\n";$nativeSuccessful=true;

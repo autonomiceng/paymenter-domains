@@ -11,6 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head, Row, Value};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{RecordDetailPage, Section};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 use Paymenter\Extensions\Servers\Domains\Staff\Requests\RequestReads;
 use Paymenter\Extensions\Servers\Domains\Presentation\{Fact, Reader, State};
 use Paymenter\Extensions\Servers\Domains\Services\{EnomAnswers, StaffOperationReview, StaffSettingsReview};
@@ -30,7 +31,7 @@ class ViewOperation extends RecordDetailPage
         $head=Head::make('Request #'.$op->id,Reader::Staff)->tag(OperationResource::demo($op),$test)
             ->state(RequestRows::state(RequestFacts::status($op,true,$op->domain),$op),'request-'.$op->id);
         if (($name=Fact::host($domain?->domain))!==null) { $head->fact(Labels::action($op->action).' of',$name); }
-        if (($sent=self::sentAt($op))!==null) { $head->fact('Sent',Fact::date($sent,Reader::Staff)); }
+        if (($sent=self::sentAt($op,self::renewal($op)))!==null) { $head->fact('Sent',Fact::date($sent,Reader::Staff)); }
         return $head;
     }
     public function getBreadcrumbs(): array { return [$this->getResourceUrl()=>'Registrar requests',$this->getTitle()]; }
@@ -97,7 +98,7 @@ class ViewOperation extends RecordDetailPage
     public function releaseAction(): Action { return $this->pageAction('release'); }
     public function history_recoveryAction(): Action { return HistoryRecovery::action($this->getRecord()); }
     /** Sits on the one request that can't settle itself. */
-    public function enom_answerAction(): Action { return EnomAnswerAction::make($this->getRecord(),$this->answerStamp); }
+    public function enom_answerAction(): Action { return EnomAnswerAction::make($op=$this->getRecord(),$this->answerStamp,self::renewal($op)); }
     /** A free change's final result, on the reply row where a paid one records the registrar support answer. */
     public function mark_failedAction(): Action { return $this->pageAction('mark_failed'); }
     private function pageAction(string $name): Action
@@ -105,7 +106,7 @@ class ViewOperation extends RecordDetailPage
     private function operationActions(): array { return OperationActions::make($this->getRecord(),$this->reviewStamp); }
     protected function sections(): array
     {
-        $op=$this->getRecord(); $grants=Staff::requireView(); $facts=RequestFacts::for($op,$grants);
+        $op=$this->getRecord(); $grants=Staff::requireView(); $renewal=self::renewal($op); $facts=RequestFacts::for($op,$grants,renewal:$renewal);
         $review=[]; $request=[]; $payment=[];
         $state=RequestRows::state($status=RequestFacts::status($op,true,$op->domain),$op);
         // Nothing else on the page says why this request has stopped moving.
@@ -166,7 +167,7 @@ class ViewOperation extends RecordDetailPage
         // A renewal waiting out Enom's repeat refusal goes at a fixed time; the notice says why, this row says when.
         if (($goes=\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalRepeatWait::until($op))!==null) { $review[]=Row::make('Goes to registrar',RequestRows::time($goes,RequestFacts::NO_TIME)); }
         // Sent to registrar is hidden while the request has not been sent. An unsure send is History's to say, once.
-        if (($sent=self::sentAt($op))!==null) { $request[]=Row::make(StaffReviewHistory::SENT,RequestRows::time($sent,RequestFacts::NO_TIME)); }
+        if (($sent=self::sentAt($op,$renewal))!==null) { $request[]=Row::make(StaffReviewHistory::SENT,RequestRows::time($sent,RequestFacts::NO_TIME)); }
         if (!($facts['unreadable']??false)) {
             $reply=$facts['registrar_reply']??$facts['send_failure']??null;
             if ($reply!==null||$answers||$check!==null||$copy!==null||$fail!==null||RequestFacts::answerState($op)!==null) {
@@ -244,17 +245,24 @@ class ViewOperation extends RecordDetailPage
             Row::make('Next check',$next),
         ];
     }
-    private static function sentAt(Operation $op): ?\DateTimeImmutable
+    private static function sentAt(Operation $op, ?RenewalAttempt $renewal): ?\DateTimeImmutable
     {
         return ($op->started_at || in_array($op->state,['running','pending','uncertain','succeeded'],true))
-            && StaffReviewHistory::sendEvent($op)===StaffReviewHistory::SENT ? StaffReviewHistory::sentAt($op) : null;
+            && StaffReviewHistory::sendEvent($op,$renewal)===StaffReviewHistory::SENT ? StaffReviewHistory::sentAt($op,$renewal) : null;
+    }
+    /** A renewal's attempt facts, read once by each part of the page that shows them: head, sections, rail and answer.
+     * Null when the record no longer decrypts, so each part reads it again under its own unreadable-data boundary. */
+    private static function renewal(Operation $op): ?RenewalAttempt
+    {
+        if ($op->action!=='renew') { return null; }
+        try { return RenewalAttempt::of($op); } catch (\Throwable) { return null; }
     }
     /** The rail: what happened, newest first. Each step shows its own outcome; the request's state is in the page head. */
     protected function rail(): array
     {
         $op=$this->getRecord(); $rows=StaffReviewHistory::rows($op,Staff::requireView());
         if ($rows===null) { return [Section::make('History',[Row::notice('history',Value::state(State::CouldntRead,Reader::Staff,DomainFacts::UNREADABLE))])]; }
-        $steps=array_reverse(StaffReviewHistory::timeline($op,$rows));
+        $steps=array_reverse(StaffReviewHistory::timeline($op,$rows,self::renewal($op)));
         if ($steps===[]) { return [Section::make('History',[],'No history yet.')]; }
         return [Section::make('History',[RequestRows::trace($steps)])];
     }

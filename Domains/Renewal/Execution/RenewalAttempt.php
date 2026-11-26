@@ -16,7 +16,8 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 final readonly class RenewalAttempt
 {
     private function __construct(private array $attempt, private ?string $state = null, private ?string $safeCode = null,
-        private ?\DateTimeImmutable $startedAt = null, private ?\DateTimeImmutable $completedAt = null, private ?Operation $row = null) {}
+        private ?\DateTimeImmutable $startedAt = null, private ?\DateTimeImmutable $completedAt = null, private ?Operation $row = null,
+        private ?string $digest = null) {}
 
     /** The renewal's attempt facts from this row as loaded. A renewal that was never sealed has no send facts but may have terminal proof. */
     public static function of(Operation $op): self
@@ -24,17 +25,71 @@ final readonly class RenewalAttempt
         if ($op->action !== 'renew') { return new self([]); }
         $attempt = $op->attempt;
         // The retained proof is read only when a caller asks for it, as before this reader.
-        return new self(is_array($attempt) ? $attempt : [], $op->state, $op->safe_code, $op->started_at, $op->completed_at, $op);
+        return new self(is_array($attempt) ? $attempt : [], $op->state, $op->safe_code, $op->started_at, $op->completed_at, $op,
+            is_string($op->request_fingerprint) ? $op->request_fingerprint : null);
     }
 
     /** Attempt facts of many renewals in one read, keyed by every given operation id. */
     public static function many(array $operationIds): array
     {
         $ids = array_values(array_unique(array_map('intval', $operationIds)));
-        $rows = $ids ? Operation::whereKey($ids)->get(['id', 'action', 'state', 'safe_code', 'attempt', 'renewal_proof', 'started_at', 'completed_at'])->keyBy('id') : collect();
+        $rows = $ids ? Operation::whereKey($ids)->get(['id', 'action', 'state', 'safe_code', 'attempt', 'renewal_proof', 'started_at', 'completed_at', 'request_fingerprint'])->keyBy('id') : collect();
         $facts = [];
         foreach ($ids as $id) { $facts[$id] = ($row = $rows->get($id)) ? self::of($row) : new self([]); }
         return $facts;
+    }
+
+    /**
+     * Attempt facts of these already loaded operations for one page, keyed by operation id. This read adds no query while
+     * the facts live on the operation row. An unreadable record is left out, so its caller reads it alone and fails as before.
+     */
+    public static function loaded(iterable $ops): array
+    {
+        $facts = [];
+        foreach ($ops as $op) {
+            if (!$op instanceof Operation) { continue; }
+            try { $facts[(int) $op->id] = self::of($op); } catch (\Throwable) {}
+        }
+        return $facts;
+    }
+
+    /** True while nothing is recorded for this renewal's attempt: never claimed, sealed or closed. */
+    public function untouched(): bool { return $this->attempt === []; }
+
+    /**
+     * Local closure proof: the renewal stopped before any seal and was closed as rejected and definitely unsent, with
+     * no send time, reply, provider evidence, charge or order candidates recorded.
+     */
+    public function closedUnsent(): bool
+    {
+        $a = $this->attempt;
+        return ($a['disposition'] ?? null) === 'rejected' && ($a['rejection_basis'] ?? null) === 'definitely_unsent'
+            && ($a['send_state'] ?? null) === SendState::DefinitelyUnsent->value && ($a['seal'] ?? null) === 'absent'
+            && !array_intersect(array_keys($a), ['execution', 'dispatch_attempted_at', 'provider_reference', 'evidence', 'registration'])
+            && ($a['charge'] ?? null) === null && ($a['order_candidates'] ?? []) === [];
+    }
+
+    /** True when the only record is a local closure before any seal whose terminal evidence is exactly $evidence. */
+    public function closedOnlyWith(array $evidence): bool
+    {
+        return $this->attempt === ['seal' => 'absent', 'send_state' => SendState::DefinitelyUnsent->value, 'disposition' => 'rejected',
+            'rejection_basis' => 'definitely_unsent', 'terminal' => $evidence];
+    }
+
+    /**
+     * True while no seal and no reply are recorded: the seal is missing or absent and no reply is set. Any other seal
+     * value, a malformed one included, counts as recorded.
+     */
+    public function unsealed(): bool
+    { return ($this->attempt['seal'] ?? 'absent') === 'absent' && !isset($this->attempt['execution']); }
+
+    /**
+     * Proof the renewal never went out: recorded definitely unsent before any seal, or the sealed send locally refused.
+     * For display only; a refund or credit needs the gate's own proof.
+     */
+    public function provedUnsent(): bool
+    {
+        return $this->sealed() ? $this->locallyRefused() : ($this->attempt['send_state'] ?? null) === SendState::DefinitelyUnsent->value;
     }
 
     /** True once the renewal was sealed for dispatch. From then on it is possibly sent until proved otherwise. */
@@ -42,6 +97,12 @@ final readonly class RenewalAttempt
 
     /** When the renewal was sealed for dispatch, in UTC; null when never sealed. */
     public function sentAt(): ?\DateTimeImmutable { return $this->windowStart()?->setTimezone(new \DateTimeZone('UTC')); }
+
+    /** When the sealed attempt was claimed, as stored; null when never sealed. The registrar read window cannot open before it. */
+    public function claimedAt(): ?\DateTimeImmutable { return $this->sealed() ? $this->startedAt : null; }
+
+    /** The request digest the sealed attempt was claimed with; null when never sealed or when none was recorded. */
+    public function requestDigest(): ?string { return $this->sealed() && $this->digest !== null && $this->digest !== '' && $this->digest !== '0' ? $this->digest : null; }
 
     /** The sealed attempt's claim key, its exact identity; null when never sealed. */
     public function claimKey(): ?string

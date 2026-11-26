@@ -11,7 +11,10 @@ use Paymenter\Extensions\Servers\Domains\Presentation\{RequestStatus,State};
 use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, ComplimentaryCosts, ContactProfileHold, ContactStepRetries, EnomTestManagement, EnomTestRegistration, ManagementEvidence, OperationClaims, RegistrarCheck, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, WriteHeld};
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementProgress;
-/** Request page facts and its one notice. A null fact value is Missing and its "_sub" key names the cause. */
+use Paymenter\Extensions\Servers\Domains\Data\ExecutionRecord;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
+/** Request page facts and its one notice. A null fact value is Missing and its "_sub" key names the cause. A page that lists
+ * several requests passes each renewal's facts from one RenewalAttempt::loaded() read. */
 final class RequestFacts
 {
     public const NO_TIME='No time recorded. No action needed.';
@@ -42,7 +45,7 @@ final class RequestFacts
         'Acquisition lifecycle changed.'=>'This order changed. Check its status.',
         'This request is not proven unsent.'=>'This may already have been sent. Check at the registrar.',
         'Registry details are not supported for this ending.'=>"This TLD needs details we can't collect yet."];
-    public static function for(Operation $op, ?StaffGrants $grants = null, ?Domain $domain = null): array
+    public static function for(Operation $op, ?StaffGrants $grants = null, ?Domain $domain = null, ?RenewalAttempt $renewal = null): array
     {
         $grants ??= Staff::requireView();
         $out=['reason'=>self::reason($op)];
@@ -59,7 +62,7 @@ final class RequestFacts
                     $out['contact_recovery']=self::CONTACT_RECOVERY[$error->getMessage()]??'Customer details need a check before this can go on.';
                 }
             }
-            $p=$op->policy??[]; $a=$op->attempt??[]; $f=$op->funding??[];
+            $p=$op->policy??[]; $a=$op->attempt??[]; $f=$op->funding??[]; $r=$op->action==='renew'?$renewal??RenewalAttempt::of($op):null;
             if($op->state==='held'&&$op->safe_code===ContactProfileHold::CODE
                 &&($blocked=ContactProfileHold::releaseBlocked($op))!==null){
                 $out['contact_recovery']=$blocked;
@@ -82,7 +85,7 @@ final class RequestFacts
             }
             $admissionHold=$op->state==='held'&&RenewalCycles::registrarVirgin($op)&&ReleaseDecision::renewalAdmission((string)$op->action,$op->safe_code);
             if ($admissionHold&&OperationActions::relevant('release',$op)) { $out['admission']='Fix the cause, then release the hold.'; }
-            if ($op->registrar_key==='namesilo' && $op->action==='renew' && ($admissionHold || $a!==[])
+            if ($op->registrar_key==='namesilo' && $op->action==='renew' && ($admissionHold || !$r->untouched())
                 && (($p['renewal_execution']['reason']??null)==='provider_auto_renew_unconfirmed'
                     || $op->safe_code==='provider_auto_renew_unconfirmed')) {
                 $out['auto_renew']='Turn off auto-renew at NameSilo, then '.($admissionHold ? 'release the hold.' : 'check status.');
@@ -141,7 +144,8 @@ final class RequestFacts
             }
             // Completed, Failed and Cancelled requests are final, so a lost send response no longer leaves the result unconfirmed.
             $unsent=$op->state==='held'&&in_array($op->safe_code,['acquisition_definitely_unsent','management_definitely_unsent','renewal_definitely_unsent'],true);
-            $unknown=!$unsent&&!in_array($op->state,RequestStatus::FINISHED,true) && ($op->state==='uncertain' || (array_key_exists('execution',$a) && $a['execution']===null) || ($a['seal']??null)==='sealed');
+            $unknown=!$unsent&&!in_array($op->state,RequestStatus::FINISHED,true) && ($op->state==='uncertain' || ($r ? $r->replyRecord()===ExecutionRecord::RecordedNull || $r->sealed()
+                : (array_key_exists('execution',$a) && $a['execution']===null) || ($a['seal']??null)==='sealed'));
             $out['outcome']=$unknown ? PaidUncertainty::title($op) : null;
             if ($grants->costs) {
                 $c=$op->cost??[];
@@ -149,12 +153,12 @@ final class RequestFacts
                 $actual=$usd($c['actual']['amount']??null,$c['actual']['currency']??null);
                 // Renewals authorize a fresh registrar cost at the seal; checkout estimates stay a separate quote.
                 $quote=$op->action==='renew'
-                    ? (($m=$usd($a['authorized_cost']['amount']??null,$a['authorized_cost']['currency']??null)) ? 'Authorized '.$m : null)
+                    ? (($cost=$r->authorizedCost())&&($m=$usd($cost->amount,$cost->currency)) ? 'Authorized '.$m : null)
                     : (($m=$usd($c['estimated']??null,$c['currency']??null)) ? 'Estimated '.$m : null);
                 // Credit needs proof the request was never sent, so neither has a cost to miss.
                 if ($actual===null&&$op->state==='rejected'&&(array_key_exists('refund',$f)||array_key_exists('late_credits',$f))) { [$actual,$quote]=['Not charged',null]; }
                 // A request never sent has no cost to miss. A renewal's saved cap is a spending limit, not a cost.
-                $unsent=$actual===null&&($a===[]&&$op->started_at===null&&$op->provider_order_id===null&&!array_key_exists('dispatch_attempted_at',$p)
+                $unsent=$actual===null&&(($r?$r->untouched():$a===[])&&$op->started_at===null&&$op->provider_order_id===null&&!array_key_exists('dispatch_attempted_at',$p)
                     &&in_array($op->state,['awaiting_payment','awaiting_code','queued','held'],true)
                     ||($op->state==='queued'||$op->state==='held'&&in_array($op->safe_code,ContactProfileHold::HOLDS,true))&&ContactProfileHold::unsent($op));
                 if ($unsent) {
@@ -168,8 +172,8 @@ final class RequestFacts
                     }
                 }
                 // An unpaid request closed with its unsent proof never cost anything.
-                $closedUnsent=$op->state==='rejected'&&in_array($op->safe_code,['renewal_cancelled_unpaid',UnpaidAcquisitionProof::CODE],true)&&($a['send_state']??null)==='definitely_unsent'&&!array_key_exists('dispatch_attempted_at',$p);
-                if ($actual===null&&($closedUnsent||($op->state==='cancelled'&&$a===[]&&$op->started_at===null))) { [$actual,$quote]=['Not charged',null]; }
+                $closedUnsent=$op->state==='rejected'&&in_array($op->safe_code,['renewal_cancelled_unpaid',UnpaidAcquisitionProof::CODE],true)&&($r?$r->closedUnsent():($a['send_state']??null)==='definitely_unsent')&&!array_key_exists('dispatch_attempted_at',$p);
+                if ($actual===null&&($closedUnsent||($op->state==='cancelled'&&($r?$r->untouched():$a===[])&&$op->started_at===null))) { [$actual,$quote]=['Not charged',null]; }
                 if ($paid||isset($c['actual'])) {
                     $out['cost']=$actual??($unknown&&$quote!==null?'Not confirmed':null);
                     $out['cost_sub']=$out['registrar_refund'] ?? $quote ?? ($actual===null ? 'No cost recorded. Check at the registrar.' : null);

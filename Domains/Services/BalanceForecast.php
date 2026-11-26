@@ -85,7 +85,7 @@ final class BalanceForecast
     {
         // A sealed local prewire refusal is still unsent, but only with the full retained proof.
         if($op->state==='held'&&$op->safe_code==='renewal_definitely_unsent'){
-            try{RefundProof::requireUnsent($op,$domain,$ledger);return false;}catch(\DomainException){}
+            try{RefundProof::requireUnsent($op,$domain,$ledger,$attempt);return false;}catch(\DomainException){}
         }
         return in_array($op->state,['pending','uncertain','succeeded'],true)||$attempt->sealed()||$attempt->replyOutcome()!==null
             ||array_key_exists('actual',$op->cost??[]);

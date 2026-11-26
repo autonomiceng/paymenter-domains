@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\Money;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 /** A price increase never expands an issued account grant without an audited staff approval. */
 final class ComplimentaryCosts
 {
@@ -63,6 +64,9 @@ final class ComplimentaryCosts
         if($op->state!=='held'||$op->safe_code!=='registrar_price_increased'||!$review){return false;}
         try{return WriteMoney::compare((string)$review['amount'],self::cap($op,(string)$review['usual']))>0;}catch(\Throwable){return true;}
     }
+    /** No seal and no reply recorded. A renewal reads its attempt facts; any seal value other than absent refuses. */
+    private static function unsealed(Operation $op):bool
+    {return $op->action==='renew'?RenewalAttempt::of($op)->unsealed():($op->attempt['seal']??'absent')==='absent'&&!isset($op->attempt['execution']);}
     public static function approve(int $id,User $actor,string $amount,string $reason,Clock $clock):void
     {
         OperationClaims::outside();$seed=Operation::findOrFail($id)->domain;$reason=trim($reason);
@@ -71,7 +75,7 @@ final class ComplimentaryCosts
             $staff=$l['staff'];$review=$op?->policy['complimentary_cost_review']??null;
             if(!$staff?->hasPermission('admin.domains.fund')||!$staff->hasPermission('admin.domains.manage')||!$staff->hasPermission('admin.domains.costs')||$reason===''||strlen($reason)>500
                 ||!$review||$review['amount']!==$amount||!self::message($op)||!isset($op->policy['account_complimentary'])
-                ||($op->attempt['seal']??'absent')!=='absent'||isset($op->attempt['execution'])||isset($op->cost['actual'])){throw new \DomainException('Current unsent registrar cost approval required.');}
+                ||!self::unsealed($op)||isset($op->cost['actual'])){throw new \DomainException('Current unsent registrar cost approval required.');}
             ComplimentaryAccounts::require($op->policy['account_complimentary'],(int)$l['domain']->user_id);
             DB::table('domains_complimentary_approvals')->insert(['operation_id'=>$id,'actor_id'=>$staff->id,'amount'=>$amount,'reason'=>$reason,'created_at'=>ComplimentaryAccounts::stamp($clock->now()),'time_zone'=>ComplimentaryAccounts::ZONE]);
             $policy=$op->policy;

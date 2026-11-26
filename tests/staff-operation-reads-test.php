@@ -327,7 +327,8 @@ expect(str_contains($copied[0]??'','Account: Enom "Primary" &amp; <b>main</b>'),
 // Unreadable saved attempt data renders the request page without an answer form or a send.
 $storedAttempt=$lostRenew->fresh()->getRawOriginal('attempt');$writes=$state->writes;
 DB::table('domains_operations')->where('id',$lostRenew->id)->update(['attempt'=>'d29-explicit-unreadable-fixture']);
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lostRenew->id])->assertSuccessful()->assertActionHidden('enom_answer')->assertSee($lostDomain->domain);
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lostRenew->id])->assertSuccessful()->assertActionHidden('enom_answer')->assertSee($lostDomain->domain)
+    ->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::UNREADABLE);
 same([false,$writes],[RegistrarAnswers::ready($lostRenew->fresh(),$clock->now()),$state->writes],'Unreadable attempt is never ready for an answer and sends nothing');
 DB::table('domains_operations')->where('id',$lostRenew->id)->update(['attempt'=>$storedAttempt]);
 echo "Native staff actions: permissions, confirmations, reasons, audit, stale/replay/binding, read-only reconciliation, credit and cycle replacement passed.\n";

@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering. Offline query counts, not a latency benchmark.
 declare(strict_types=1);
 require __DIR__.'/Support/owned.php';
+require_once __DIR__.'/Support/renewal-attempts.php';
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController;
@@ -28,10 +29,11 @@ expect($emptyQueries<=50,'Fixed catalogue reads stay bounded: '.$emptyQueries);
 // A renewal still being confirmed with the registrar: a sealed attempt with no answer, pending or uncertain.
 $baseOp=$base->operations()->sole();$started=$clock->now()->modify('-3 days');
 $renewing=static function(int $domain,int $service,string $key,int $i)use($clone,$baseOp,$started):void {
-    $attempt=['claim_key'=>'claim-'.$key,'dispatch_attempted_at'=>$started->modify('+10 seconds')->format(DATE_ATOM),'seal'=>'sealed'];
-    $clone('domains_operations',(int)$baseOp->id,['domain_id'=>$domain,'service_id'=>$service,'action'=>'renew','state'=>$i%2?'pending':'uncertain',
+    $id=$clone('domains_operations',(int)$baseOp->id,['domain_id'=>$domain,'service_id'=>$service,'action'=>'renew','state'=>$i%2?'pending':'uncertain',
         'operation_key'=>$key,'invoice_id'=>null,'invoice_item_id'=>null,'lease_expires_at'=>null,'started_at'=>$started->format('Y-m-d H:i:s'),
-        'request_fingerprint'=>hash('sha256',$key),'attempt'=>Illuminate\Support\Facades\Crypt::encryptString(json_encode($attempt,JSON_THROW_ON_ERROR))]);
+        'request_fingerprint'=>hash('sha256',$key),'attempt'=>null]);
+    // The cloned row as a model without another read; the builder writes and rereads it.
+    sealRenewal((new Paymenter\Extensions\Servers\Domains\Models\Operation)->newFromBuilder(['id'=>$id,'action'=>'renew','operation_key'=>$key]),at:$started->modify('+10 seconds'));
 };
 $expiry=$clock->now()->modify('+200 days')->format('Y-m-d');
 $results=[];

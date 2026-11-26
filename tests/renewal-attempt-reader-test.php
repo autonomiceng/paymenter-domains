@@ -27,7 +27,7 @@ $make = static function (array $row) use (&$n): int {
         'state' => 'queued', 'amount' => '8.95', 'currency' => 'USD', 'payload' => [], 'policy' => []], ...$row]))->id;
 };
 $never = $make([]);
-$open = $make(['state' => 'running', 'started_at' => $start, 'attempt' => $sealed]);
+$open = $make(['state' => 'running', 'started_at' => $start, 'request_fingerprint' => str_repeat('d', 64), 'attempt' => $sealed]);
 $refused = $make(['state' => 'held', 'safe_code' => 'renewal_definitely_unsent', 'started_at' => $start, 'attempt' => [...$sealed, 'execution' => $refusal]]);
 $settled = $make(['state' => 'succeeded', 'started_at' => $start, 'completed_at' => $done,
     'attempt' => [...$sealed, 'execution' => $accepted, 'renewal' => ['query' => ['name' => 'example.com', 'years' => 1], 'order_reference' => '1234'], 'reconciliation' => $proof],
@@ -58,6 +58,7 @@ same(['2026-11-25T12:00:00+00:00', 'UTC'], [$f->sentAt()->format(DATE_ATOM), $f-
 same($at, $f->windowStart()->format(DATE_ATOM), 'The read window starts at the seal time as recorded');
 same([$start->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds')->format(DATE_ATOM), 'UTC'], [$f->windowEnd()->format(DATE_ATOM), $f->windowEnd()->getTimezone()->getName()], 'The read window ends after the execution limit, in UTC');
 same([ExecutionRecord::Absent, null, null, null], [$f->replyRecord(), $f->reply(), $f->acceptance(), $f->readProof()], 'No reply, acceptance or proof yet');
+same([$start->getTimestamp(), str_repeat('d', 64), null, null], [$f->claimedAt()->getTimestamp(), $f->requestDigest(), $facts[$never]->claimedAt(), $facts[$settled]->requestDigest()], 'The sealed attempt claim time and request digest');
 
 $f = $facts[$refused];
 same([true, SendState::DefinitelyUnsent, 'unsent', null], [$f->locallyRefused(), $f->sendState(), $f->replyOutcome(), $f->settlement()], 'A prewire refusal is the local refusal');
@@ -76,11 +77,23 @@ same([null, $proof], [$facts[$review]->settlement(), $facts[$review]->readProof(
 $f = $facts[$unpaid];
 same([false, null, false], [$f->sealed(), $f->sendState(), $f->locallyRefused()], 'An unpaid closure was never sealed');
 same(['outcome' => 'renewal_cancelled_unpaid', 'evidence' => $terminal, 'recorded_at' => '2026-11-25 12:05:00'], $f->terminal(), 'Operation-level terminal proof');
+same([true, true, false], [$f->closedUnsent(), $f->closedOnlyWith($terminal), $f->closedOnlyWith([...$terminal, 'transactions' => [1]])], 'A local closure before any seal, with its exact terminal evidence');
+same([true, false, false, false], [$facts[$never]->untouched(), $f->untouched(), $facts[$open]->untouched(), $facts[$open]->closedUnsent()], 'Only a renewal with nothing recorded is untouched; a sealed one is no closure');
+same([false, true, true, false, false], [$facts[$never]->provedUnsent(), $f->provedUnsent(), $facts[$refused]->provedUnsent(), $facts[$open]->provedUnsent(), $facts[$lost]->provedUnsent()],
+    'Proved unsent: a closure before any seal or a local refusal of the sealed send; a sealed or lost send is not');
+
+$malformed = $make(['state' => 'held', 'attempt' => ['seal' => 'pending']]);
+same([true, true, false, false, false, false], [$facts[$never]->unsealed(), $facts[$unpaid]->unsealed(), $facts[$open]->unsealed(), $facts[$lost]->unsealed(),
+    RenewalAttempt::of(Operation::findOrFail($malformed))->unsealed(), RenewalAttempt::of(Operation::findOrFail($malformed))->sealed()],
+    'Unsealed: no seal and no reply recorded; a malformed seal counts as recorded, though it is not a seal');
 
 same([false, null, null], [$facts[$register]->sealed(), $facts[$register]->claimKey(), $facts[999]->sentAt()], 'Other actions and missing rows have no renewal attempt');
 
 DB::enableQueryLog(); DB::flushQueryLog();
 $one = RenewalAttempt::of(Operation::findOrFail($settled)); $count = count(DB::getQueryLog()); DB::disableQueryLog();
 same(1, $count, 'One loaded renewal reads its facts without another query');
+$rows = Operation::whereKey([$settled, $unpaid])->get(); DB::enableQueryLog(); DB::flushQueryLog();
+$page = RenewalAttempt::loaded($rows); $count = count(DB::getQueryLog()); DB::disableQueryLog();
+same([0, [$settled, $unpaid], true], [$count, array_keys($page), $page[$unpaid]->closedUnsent()], 'A page reads its loaded renewals once, with no further query');
 same([$facts[$settled]->settlement(), $facts[$settled]->sentAt()->format(DATE_ATOM), $facts[$settled]->claimKey()], [$one->settlement(), $one->sentAt()->format(DATE_ATOM), $one->claimKey()], 'One renewal reads the same facts');
 echo "Renewal attempt reader passed.\n"; $nativeSuccessful = true;

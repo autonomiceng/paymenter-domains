@@ -4,6 +4,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 require __DIR__.'/native-app.php';
+require_once __DIR__.'/Support/renewal-attempts.php';
 use Illuminate\Support\Facades\{Cache,Queue};
 use Paymenter\Extensions\Servers\Domains\Data\{Environment,CostUnit};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,Cost,FeedObserved,Query};
@@ -48,12 +49,12 @@ for($cycle=0;$cycle<2;$cycle++){
     if($cycle===0){foreach(['cap','off'] as $refusal){
         config([$GLOBALS['nsAccountKey'].'.daily_spend_limit_usd'=>$refusal==='cap'?'0.00':'1000.00','domains.namesilo_live.renewal'=>$refusal!=='off']);
         $before=nsUsage($binding);$result=$engine->run($op->id,$writer);
-        expect(!isset($result->attempt['seal']),'Local cap/Off refuses before the renewal seal');same($before['spend_micros'],nsUsage($binding)['spend_micros'],'No refused purchase spend');
+        expect(renewalAttempt($result)===null,'Local cap/Off refuses before the renewal seal');same($before['spend_micros'],nsUsage($binding)['spend_micros'],'No refused purchase spend');
         expect(!in_array('renewDomain',$GLOBALS['nsPhysical'],true),'No refused physical purchase');Cache::flush();
     }config([$GLOBALS['nsAccountKey'].'.daily_spend_limit_usd'=>'1000.00','domains.namesilo_live.renewal'=>true]);}
     $mode=$cycle===0?'success':'unsent';
     config(['domains.provider_send_guard'=>static function()use(&$mode):void {
-        if($mode==='unsent'&&(Operation::findOrFail($GLOBALS['nsOperation'])->attempt['seal']??null)==='sealed'){throw new \RuntimeException('Synthetic local refusal');}
+        if($mode==='unsent'&&renewalAttempt(Operation::findOrFail($GLOBALS['nsOperation']))!==null){throw new \RuntimeException('Synthetic local refusal');}
     }]);
     $money=$nativeMoney();$before=nsUsage($binding);$result=$engine->run($op->id,$writer);
     same($money,$nativeMoney(),'Renewal execution preserves native finance and jobs');same($before['spend_micros']+8950000,nsUsage($binding)['spend_micros'],'Fresh admitted wholesale spend reserved once');

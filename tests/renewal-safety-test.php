@@ -34,7 +34,7 @@ foreach(['topup','return','unknown'] as $case){
         same($writes+1,$state->writes,'Top-up sends once');continue;
     }
     $clock->instant=$until->modify('-1 second');\Paymenter\Extensions\Servers\Domains\Services\FundsWaits::sweep($account,$clock->now());same('queued',$op->fresh()->state,'Wait remains open immediately before the boundary');
-    if($case==='unknown'){$op->refresh()->update(['attempt'=>['seal'=>'sealed','send_state'=>'possibly_sent']]);}
+    if($case==='unknown'){sealRenewal($op,at:$clock->now());}
     $credit=fn()=>\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)(App\Models\Credit::where('user_id',$d->user_id)->where('currency_code','USD')->value('amount')??'0.00'));$before=$credit();
     $clock->instant=$until;$reads=count($state->calls);$engine->run($op->id,$writer);same($reads,count($state->calls),'Elapsed funds wait cannot start another admission');
     \Paymenter\Extensions\Servers\Domains\Services\FundsWaits::sweep($account,$clock->now());

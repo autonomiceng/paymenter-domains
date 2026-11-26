@@ -108,13 +108,13 @@ config(['domains.enom_test_sends_per_day'=>1000]);
 resetWire(['reply'=>$ack]);config(['domains.enom_test_sends_per_day'=>$recent()]);$before=DB::table(EnomTestSendLimitSchema::SENDS)->count();Cache::flush();
 $limitOp=$bound(fn()=>$limitEngine->run($limitOp->id,$limitWriter))->fresh();
 same([],$GLOBALS['enomWire']['forms'],'The refused Extend never reaches cURL');same($before,DB::table(EnomTestSendLimitSchema::SENDS)->count(),'The refused Extend is not counted');
-same(['held','renewal_definitely_unsent','sealed'],[$limitOp->state,$limitOp->safe_code,$limitOp->attempt['seal']],'A refused Extend is held as proven unsent');
-same('definitely_unsent',$limitOp->attempt['execution']['send_state']??null,'The driver result records the write as unsent');expect($limitOp->policy['renewal_execution']['refundable_later'],'The paid unsent renewal can be refunded');
+same(['held','renewal_definitely_unsent',true],[$limitOp->state,$limitOp->safe_code,renewalAttempt($limitOp)!==null],'A refused Extend is held as proven unsent');
+same('definitely_unsent',renewalAttempt($limitOp)?->sendState()?->value,'The driver result records the write as unsent');expect($limitOp->policy['renewal_execution']['refundable_later'],'The paid unsent renewal can be refunded');
 $bound(fn()=>$limitEngine->run($limitOp->id,$limitWriter));same([],$extends(),'A held unsent renewal never sends on its own');
 config(['domains.enom_test_sends_per_day'=>1000]);
 // (b) The Extend reached cURL, then a refusal is raised: consumed is sticky, so it is never unsent.
 [$sentOp,,$sentBinding]=$make('renew-limit-sent-placeholder.com');[$sentEngine,$sentWriter]=$wired($sentBinding);
 resetWire(['reply'=>$ack,'during'=>static function(array $p):void {if($p['Command']==='Extend'){throw new EnomTestCallLimit;}}]);Cache::flush();
 $sentOp=$bound(fn()=>$sentEngine->run($sentOp->id,$sentWriter))->fresh();same(['Extend'],$extends(),'The Extend reached cURL once');
-same(['uncertain','renewal_confirmation_required','possibly_sent'],[$sentOp->state,$sentOp->safe_code,$sentOp->attempt['send_state']],'A refusal after the Extend was sent stays uncertain');
+same(['uncertain','renewal_confirmation_required','possibly_sent'],[$sentOp->state,$sentOp->safe_code,renewalAttempt($sentOp)?->sendState()?->value],'A refusal after the Extend was sent stays uncertain');
 echo "TEST renewal opt-in, default-off parity, acceptance, armed scope and send-limit unsent proof passed\n";$nativeSuccessful=true;

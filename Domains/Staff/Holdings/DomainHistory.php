@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, DomainAudit};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 use Paymenter\Extensions\Servers\Domains\Services\{HoldingDeparture,StaffOperationReview};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns;
 /** One domain's history: registrar requests, staff holds, releases and renewal changes, customer auto-renew changes and departure reads, newest first. Read by the History tab and the Activity rail. */
@@ -18,9 +19,12 @@ final class DomainHistory
     {
         $rows=DomainQueries::operations($domain)->with('invoice:id,status')->orderByDesc('id')->get()->all();
         $departed=DepartedHistory::closed($domain);
+        // One read of the renewals' attempt facts serves every Sent row.
+        $renewals=RenewalAttempt::loaded(array_filter($rows,fn($op)=>$op->action==='renew'));
         foreach ($rows as $op) {
             if(is_array($op)){continue;}
-            if(($sent=StaffReviewHistory::sendEvent($op))!==null&&($at=StaffReviewHistory::sentAt($op))!==null){
+            $renewal=$renewals[$op->id]??null;
+            if(($sent=StaffReviewHistory::sendEvent($op,$renewal))!==null&&($at=StaffReviewHistory::sentAt($op,$renewal))!==null){
                 $rows[]=['__key'=>'sent-'.$op->id,'__request'=>$op->id,'__order'=>101,'time'=>$at,'event'=>$sent,
                     'sub'=>'Request #'.$op->id.' '.Labels::action($op->action),'status'=>null,'by'=>'System'];
             }

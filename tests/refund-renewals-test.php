@@ -70,7 +70,7 @@ Operation::updated(static function($row)use($op,$d){
     if($row->id===$op->id && $row->state==='running'){ DB::table('services')->where('id',$d->service_id)->update(['status'=>'cancelled']); }
 });
 same('held',$engine->run($op->id,$writer)->state,'Real local prewire refusal'); same($beforeWrites,$state->writes,'Typed refusal before exchange');
-same('definitely_unsent',$op->fresh()->attempt['execution']['send_state'],'Retained typed summary');
+same('definitely_unsent',renewalAttempt($op)->sendState()->value,'Retained typed summary');
 $attempt=$op->fresh()->attempt; $original=$op->fresh()->getRawOriginal();
 foreach(['execution_null','fallback','possible_send','extra_null_fact'] as $case){
     $bad=$attempt;

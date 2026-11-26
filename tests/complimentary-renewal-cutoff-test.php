@@ -16,10 +16,18 @@ same(['complimentary','queued','0.00','paid',0.0,0],[$op->funding_basis,$op->sta
 $op->update(['state'=>'held','safe_code'=>'registrar_balance_insufficient_or_unknown','policy'=>[...$op->policy,'funds_wait_until'=>$clock->now()->format(DATE_ATOM)]]);
 // The same native sweep must refuse sent/uncertain attempts and damaged receipts.
 $account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->sole();$virgin=$op->fresh()->getRawOriginal();
-foreach([['attempt',encrypt(json_encode(['seal'=>'sealed','send_state'=>'possibly_sent']),false)],['state','uncertain']]as[$field,$value]){
-    DB::table('domains_operations')->where('id',$op->id)->update([$field=>$value]);$before=$nativeMoney();
-    \Paymenter\Extensions\Servers\Domains\Services\FundsWaits::sweep($account,$clock->now());
-    same($value,$op->fresh()->getRawOriginal($field),'Sent/uncertain renewal remains open: '.$field);same($before,$nativeMoney(),'Unresolved renewal moves no money');
+foreach(['attempt','state'] as $field){
+    // A sealed renewal is compared by its typed seal and held state, an uncertain one by its state column.
+    $kept=static function()use($field,$op):mixed{
+        if($field!=='attempt'){return $op->fresh()->getRawOriginal($field);}
+        $seal=renewalAttempt($op);
+        return [$op->fresh()->state,$seal===null?null:[$seal->claimKey(),$seal->sentAt()?->getTimestamp(),$seal->authorizedCost()?->amount,$seal->authorizedCost()?->currency,$seal->mode(),$seal->sendState(),$seal->replyRecord()]];};
+    $check=static function()use($field,$op,$account,$clock,$nativeMoney,$kept):void{$value=$kept();$before=$nativeMoney();
+        if($field==='attempt'){expect($value[0]==='held'&&$value[1]!==null,'The swept renewal is held and sealed');}
+        \Paymenter\Extensions\Servers\Domains\Services\FundsWaits::sweep($account,$clock->now());
+        same($value,$kept(),'Sent/uncertain renewal remains open: '.$field);same($before,$nativeMoney(),'Unresolved renewal moves no money');};
+    if($field==='attempt'){withSealedRenewal($op,$check,at:$clock->now());continue;}
+    DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'uncertain']);$check();
     DB::table('domains_operations')->where('id',$op->id)->update($virgin);
 }
 DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'pending']);

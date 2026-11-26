@@ -83,7 +83,7 @@ $state->afterWrite = static function () use ($op, $completion, $state, $clock, $
     $failed = [$stopped, $failing, isset($fresh->renewal_proof), isset($fresh->renewal_check), $polls($op)];
 };
 $reply = $engine->run($op->id, $writer);
-same(['uncertain', 'accepted', 1], [$reply->state, $reply->attempt['execution']['disposition'], $state->writes - $writes],
+same(['uncertain', 'accepted', 1], [$reply->state, renewalReply($reply)['outcome'], $state->writes - $writes],
     'The late acknowledgement is recorded after the proof write failed');
 $state->after = '2027-10-18'; $state->duringCommand = null; $clock->instant = $clock->now()->modify('+1 hour');
 $check($op, $completion); $fresh = $op->fresh();

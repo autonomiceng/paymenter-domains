@@ -12,7 +12,7 @@ Paymenter\Extensions\Servers\Domains\Models\Operation::updated(static function($
     if($row->id===$op->id && $row->state==='running'){ Illuminate\Support\Facades\DB::table('invoices')->where('id',$bill->id)->update(['status'=>'cancelled']); }
 });
 same('held',$engine->run($op->id,$writer)->state,'Changed sealed authority retains positive prewire refusal');
-same($writes,$state->writes,'Known prewire refusal never enters exchange'); same('definitely_unsent',$op->fresh()->attempt['execution']['send_state'],'Typed definitely-unsent evidence retained');
+same($writes,$state->writes,'Known prewire refusal never enters exchange'); same('definitely_unsent',renewalAttempt($op)->sendState()->value,'Typed definitely-unsent evidence retained');
 $engine->run($op->id,$writer); same($writes,$state->writes,'Sealed prewire refusal cannot replay');
 [$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-postsend-cancel-placeholder.com')); [$engine,$writer,$completion]=$compose($b); $engine->run($op->id,$writer);
 App\Models\ServiceCancellation::create(['service_id'=>$d->service_id,'type'=>'end_of_period','reason'=>'Synthetic']);

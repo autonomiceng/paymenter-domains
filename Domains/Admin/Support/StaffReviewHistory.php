@@ -4,8 +4,11 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
+use Paymenter\Extensions\Servers\Domains\Data\SendState;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 use Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview;
-/** Plain text only. Policy is already loaded and its append-only history is capped at 100 entries. */
+/** Plain text only. Policy is already loaded and its append-only history is capped at 100 entries. A renewal's send facts
+ * come from its RenewalAttempt, read once per page and passed in. */
 final class StaffReviewHistory
 {
     public const SENT = 'Sent to registrar';
@@ -54,14 +57,14 @@ final class StaffReviewHistory
         return $rows;
     }
     /** The whole story: created, sent and finished, in time order with the rows() above. A row with no time stays after the one before it. */
-    public static function timeline(Operation $op, array $rows): array
+    public static function timeline(Operation $op, array $rows, ?RenewalAttempt $renewal = null): array
     {
         $system=fn(?\DateTimeInterface $at,string $event,?string $sub=null)=>['time'=>self::time($at),'event'=>$event,'sub'=>$sub,'by'=>'System'];
         $status=Labels::requestStatus($op);
         try { $hold=$op->policy['first_hold']??null; } catch (\Throwable) { $hold=null; }
         // A staff Cancelled or Marked as failed already says how this request ended.
         $ended=$op->completed_at&&in_array($op->state,['succeeded','rejected','disposed','cancelled'],true)&&!array_intersect([$status['label'],'Marked as failed'],array_column($rows,'event'));
-        $all=[$system($op->created_at,'Request created'),...($hold?[$system(new \DateTimeImmutable($hold['at']),'Put on hold',Labels::reason($hold['reason'],$op->funding_basis==='complimentary'))]:[]),...(($at=self::sentAt($op))&&($sent=self::sendEvent($op))?[$system($at,$sent)]:[]),...$rows,...($ended?[$system($op->completed_at,$status['label'],$status['reason'])]:[])];
+        $all=[$system($op->created_at,'Request created'),...($hold?[$system(new \DateTimeImmutable($hold['at']),'Put on hold',Labels::reason($hold['reason'],$op->funding_basis==='complimentary'))]:[]),...(($at=self::sentAt($op,$renewal))&&($sent=self::sendEvent($op,$renewal))?[$system($at,$sent)]:[]),...$rows,...($ended?[$system($op->completed_at,$status['label'],$status['reason'])]:[])];
         $at=PHP_INT_MIN;
         $keyed=array_map(function(array $row)use(&$at){$at=$row['time']===null?$at:(int)strtotime($row['time']);return [$at,$row];},$all);
         usort($keyed,fn(array $a,array $b)=>$a[0]<=>$b[0]);
@@ -69,18 +72,30 @@ final class StaffReviewHistory
     }
     /** What the saved attempt proves about the send, or null when it never left here. A claim saves started_at before the seal, so that alone proves nothing.
      * A result recorded after the seal outranks the possibly_sent written at it. */
-    public static function sendEvent(Operation $op): ?string
+    public static function sendEvent(Operation $op, ?RenewalAttempt $renewal = null): ?string
     {
-        try { $a=$op->attempt??[]; } catch (\Throwable) { $a=[]; }
-        $send=$a['transfer_terminal']['send_state']??$a['execution']['send_state']??$a['send_state']??null;
-        if($send==='definitely_unsent'){return null;}
-        return $send==='sent'||in_array($op->state,['pending','succeeded'],true)?self::SENT:RequestStatus::STATES['uncertain'][1];
+        if ($op->action==='renew') {
+            try { $r=$renewal??RenewalAttempt::of($op); } catch (\Throwable) { $r=null; }
+            if ($r?->provedUnsent()) { return null; }
+            $sent=$r?->sendState()===SendState::Sent;
+        } else {
+            try { $a=$op->attempt??[]; } catch (\Throwable) { $a=[]; }
+            $send=$a['transfer_terminal']['send_state']??$a['execution']['send_state']??$a['send_state']??null;
+            if($send==='definitely_unsent'){return null;}
+            $sent=$send==='sent';
+        }
+        return $sent||in_array($op->state,['pending','succeeded'],true)?self::SENT:RequestStatus::STATES['uncertain'][1];
     }
     /** When the request went to the registrar: its seal time. A retry keeps the first claim's started_at, so that time can be days before the send. */
-    public static function sentAt(Operation $op): ?\DateTimeImmutable
+    public static function sentAt(Operation $op, ?RenewalAttempt $renewal = null): ?\DateTimeImmutable
     {
-        try { $at=$op->attempt['dispatch_attempted_at']??null; } catch (\Throwable) { $at=null; }
-        if (is_string($at)) { try { return new \DateTimeImmutable($at); } catch (\Throwable) {} }
+        if ($op->action==='renew') {
+            try { $at=($renewal??RenewalAttempt::of($op))->windowStart(); } catch (\Throwable) { $at=null; }
+            if ($at!==null) { return $at; }
+        } else {
+            try { $at=$op->attempt['dispatch_attempted_at']??null; } catch (\Throwable) { $at=null; }
+            if (is_string($at)) { try { return new \DateTimeImmutable($at); } catch (\Throwable) {} }
+        }
         return $op->started_at?\DateTimeImmutable::createFromInterface($op->started_at):null;
     }
     public static function time(?\DateTimeInterface $at): ?string

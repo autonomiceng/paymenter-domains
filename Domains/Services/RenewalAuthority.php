@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{CanonicalName, DateEvidence, ExpiryPrecision, Money, RenewalCode, RenewalRequest};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 /** Owns the renewal-specific ordered prefix. No general callback or write-authority scope is exposed. */
 final readonly class RenewalAuthority
 {
@@ -90,14 +91,13 @@ final readonly class RenewalAuthority
     }
     public static function requireCostAnchor(Operation $op): void
     {
-        if ($op->action === 'renew' && WriteMoney::compare($op->cost['actual']['amount'] ?? '', $op->attempt['authorized_cost']['amount'] ?? '') !== 0) { throw new RenewalRefused(RenewalCode::Cost); }
+        if ($op->action === 'renew' && WriteMoney::compare($op->cost['actual']['amount'] ?? '', RenewalAttempt::of($op)->authorizedCost()?->amount ?? '') !== 0) { throw new RenewalRefused(RenewalCode::Cost); }
     }
     /** Exactly the named virgin obligation may coexist with prospective admission. */
     private static function expected(Operation $op, RenewalRequest $r): bool
     {
         return $r->obligationKey !== null && $op->operation_key === $r->obligationKey && $op->action === 'renew'
-            && in_array($op->state, ['awaiting_payment', 'queued'], true) && ($op->attempt ?? []) === []
-            && RenewalCycles::registrarVirgin($op) && $op->provider_order_id === null
+            && in_array($op->state, ['awaiting_payment', 'queued'], true) && RenewalCycles::registrarVirgin($op) && $op->provider_order_id === null
             && $op->confirmed_expires_at === null && $op->authority_generation === $r->generation
             && $op->base_expires_at?->format('Y-m-d') === $r->expiry && (int) $op->term === $r->years;
     }
@@ -120,7 +120,8 @@ final readonly class RenewalAuthority
     public static function completed(Operation $op, Domain $domain, \Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding): bool
     {
         if ($domain->adoptionPending()) { return false; }
-        $p = $op->attempt['reconciliation'] ?? [];
+        $renewal = $op->action === 'renew' ? RenewalAttempt::of($op) : null;
+        $p = $renewal ? ($renewal->readProof() ?? []) : ($op->attempt['reconciliation'] ?? []);
         try { if ($op->action === 'transfer' && (($p['transfer_status'] ?? null) !== 'completed'
             || !($base = $op->attempt['transfer_admission']['base_expiry'] ?? null) || ($p['base_expiry'] ?? null) !== $base
             || \Carbon\CarbonImmutable::parse($base)->addYearsNoOverflow($op->term)->format('Y-m-d') !== ($p['expiry'] ?? null))) { return false; } } catch (\Throwable) { return false; }
@@ -138,7 +139,7 @@ final readonly class RenewalAuthority
         try {
             // A history-discovered ID is completion proof, not a retroactive original response ID.
             $original = clone $op;
-            $reference = $op->attempt[$op->action === 'renew' ? 'renewal' : 'registration']['order_reference'] ?? $op->attempt['evidence']['registration']['orderReference'] ?? null;
+            $reference = $renewal ? $renewal->orderReference() : ($op->attempt['registration']['order_reference'] ?? $op->attempt['evidence']['registration']['orderReference'] ?? null);
             if ($p['source'] === 'accepted_history' && $reference === null) { $original->provider_order_id = null; }
             $attempt = ReconciliationEvidence::attempt($original, $domain, $binding);
             $precision = ExpiryPrecision::from($p['processed_precision'] ?? 'instant');
