@@ -6,6 +6,7 @@ use App\Helpers\ExtensionHelper;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use App\Models\{Gateway,Invoice,InvoiceTransaction};
 use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Money\Allocations\{PostingSource, RenewalAllocation, RenewalFundingLedger, RenewalReservation};
 use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks,PricingRule};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 class RetiredLossGateway extends \App\Classes\Extension\Gateway
@@ -15,6 +16,27 @@ class RetiredLossGateway extends \App\Classes\Extension\Gateway
     public function receiptLedger(Invoice $invoice):array{return self::$ledger;}
 }
 class_alias(RetiredLossGateway::class,'Paymenter\\Extensions\\Gateways\\RetiredLoss\\RetiredLoss');
+
+[$reservedOp, , , $paidInvoice] = $makeRenewal(placeholderComFixtureName('allocation-rollback-placeholder.com'));
+$reservation = RenewalReservation::forOperation($reservedOp, [
+    new RenewalAllocation(PostingSource::Item, (int) $reservedOp->invoice_item_id, PricingRule::minor($reservedOp->amount)),
+    new RenewalAllocation(PostingSource::Payment, (int) $paidInvoice->transactions()->sole()->id, PricingRule::minor($reservedOp->amount)),
+]);
+DB::beginTransaction();
+DB::beginTransaction();
+$refused = false;
+try {
+    // A database rollback discards both the outer transaction and its savepoint.
+    DB::connection()->getPdo()->rollBack();
+    same(2, DB::transactionLevel(), 'Laravel still reports the discarded savepoint');
+    try { RenewalFundingLedger::reserve($reservation); }
+    catch (LogicException) { $refused = true; }
+} finally {
+    DB::rollBack(0);
+}
+same(null, RenewalFundingLedger::reservation($reservedOp), 'No renewal postings can autocommit after an engine rollback');
+expect($refused, 'The allocation writer refuses the discarded savepoint');
+
 [$op,$d,,$invoice]=$makeRenewal('retired-loss-guard-placeholder.com',false);
 $cycles->retireUnpaid($op->id);
 $gateway=Gateway::create(['extension'=>'RetiredLoss','name'=>'Synthetic loss','type'=>'gateway','enabled'=>true]);
