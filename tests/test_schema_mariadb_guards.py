@@ -8,6 +8,7 @@ import json
 import os
 import signal
 from pathlib import Path
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -89,6 +90,20 @@ class MariaGuardTests(unittest.TestCase):
         for env in seen:
             self.assertEqual({name: value for name, value in env.items() if 'caller' in value}, {})
             self.assertEqual(env['DOCKER_HOST'], caller['DOCKER_HOST'])
+
+    def test_unset_docker_host_skips_instead_of_using_a_default_socket(self):
+        real_stat = os.stat
+        def default_socket(path, *args, **options):
+            if str(path) == '/var/run/docker.sock':
+                return os.stat_result((stat.S_IFSOCK | 0o660, 0, 0, 1, 0, 0, 0, 0, 0, 0))
+            return real_stat(path, *args, **options)
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, self.environment(directory), clear=True), \
+             mock.patch.object(schema_harness.shutil, 'which', return_value='/usr/bin/docker'), \
+             mock.patch.object(schema_harness.os, 'stat', side_effect=default_socket), \
+             mock.patch.object(schema_harness.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, b'', b'')) as called, \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertIn('skipped', schema_harness.run())
+        called.assert_not_called()
 
     def test_schema_remote_host_refuses_without_any_docker_call(self):
         with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, self.environment(directory, DOCKER_HOST='tcp://remote.test'), clear=True), \

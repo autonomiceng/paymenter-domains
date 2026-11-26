@@ -612,8 +612,11 @@ checkout and `CONVERSION_MARIADB_PHP` to a supported host PHP with `pdo_mysql`; 
 `python3 scripts/test.py --suite mariadb`. No installed application or provider is used.
 Docker or the existing `mariadb:11.4.5` image being absent produces a clear skip receipt;
 there is no image pull. A skip exits 77, records incomplete acceptance in both receipts,
-and is never MariaDB evidence. Docker context/environment variables are forwarded only for
-this explicit suite. Each harness owns one `dom-schema-` container labelled with its private
+and is never MariaDB evidence. The runner admits one daemon before it seals any command
+environment: `DOCKER_HOST`, else the endpoint of the caller's current Docker context. It must
+be an existing local `unix://` socket; every MariaDB command gets it as `DOCKER_HOST`, no other
+Docker setting reaches them, and the receipt records it as `docker_daemon`. No daemon to admit
+is a skip, never a default socket. Each harness owns one `dom-schema-` container labelled with its private
 owner, with no network, published ports or persistent volumes, and stops it after success or
 failure. `tests/test_schema_mariadb_guards.py` checks the harness refusals without Docker.
 

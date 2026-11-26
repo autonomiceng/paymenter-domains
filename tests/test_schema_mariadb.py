@@ -20,8 +20,6 @@ import native
 
 # mariadb:11.4.5 by its registry digest; another local image under the same tag is refused, and nothing is pulled.
 IMAGE = 'mariadb@sha256:49117dcc565cf51aa57ac5fca59ab31213402ff0eae6ffc13c46a37b938f7e4b'
-# The runner admits one local daemon as DOCKER_HOST; without it, Docker's own default socket, never a caller's context.
-DEFAULT_DAEMON = 'unix:///var/run/docker.sock'
 
 
 def sealed_environment(scratch, **names):
@@ -78,7 +76,10 @@ def run(*, exercise=None):
         docker = shutil.which('docker')
         if not docker:
             receipt['skipped'] = 'Docker unavailable.'; return receipt
-        daemon = os.environ.get('DOCKER_HOST', DEFAULT_DAEMON)
+        # The runner admits one daemon, from DOCKER_HOST or the caller's Docker context, and passes it as DOCKER_HOST.
+        daemon = os.environ.get('DOCKER_HOST')
+        if not daemon:
+            receipt['skipped'] = 'No admitted Docker daemon; run through scripts/test.py.'; return receipt
         if not daemon.startswith('unix://'):
             raise ValueError('Only a local Unix-socket Docker daemon is supported.')
         try:
@@ -87,6 +88,7 @@ def run(*, exercise=None):
             admitted = False
         if not admitted:
             receipt['skipped'] = 'Admitted local Docker socket unavailable.'; return receipt
+        receipt['docker_host'] = daemon
         for private in ('home', 'tmp', 'docker'):
             (scratch/private).mkdir(mode=0o700)
         # An empty client config: no caller context, credential helper, plugin or proxy setting reaches Docker.

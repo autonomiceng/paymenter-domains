@@ -334,7 +334,7 @@ def cancel_on_error(processes):
         raise
 
 def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, workers=None, worker_check=None, timings=None, only=None,
-        fail_fast=False, requested_jobs=None, memory_mib=None, jobs_explicit=False, lint_base=None, checkout=None, coverage=None, retry=frozenset()):
+        fail_fast=False, requested_jobs=None, memory_mib=None, jobs_explicit=False, lint_base=None, checkout=None, coverage=None, retry=frozenset(), docker_daemon=None):
     started_run = time.monotonic()
     image = os.environ.get('PHP_SUITE_IMAGE') if selected != ['mariadb'] else None
     php_version, php_packages = php_suite.installed_versions() if image else (None, {})
@@ -545,7 +545,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         receipt = {'php_suite_image': image, 'php_version': php_version, 'php_packages': php_packages,
                    'runner_error': runner_error, 'runner_error_detail': runner_error_detail, 'final_guard_complete': final_guard_complete,
                    'final_guard_error': final_guard_error, 'timings': timings, 'only_tests': sorted(set(only or [])),
-                   'lint_base': lint_base, 'coverage': coverage, 'test_options': test_workers.test_options(),
+                   'lint_base': lint_base, 'coverage': coverage, 'test_options': test_workers.test_options(), 'docker_daemon': docker_daemon,
                    'git_tree': tree, 'git_tree_error': tree_error,
                    'fail_fast': fail_fast, 'first_failure': first_failure, 'failures': failed_indexes,
                    'cancelled': cancelled, 'commands_planned': len(commands),
@@ -697,7 +697,7 @@ def main(*, launch=False):
             parser.error(str(error))
     output = setup_output()
     runtime = fixture = None
-    workers = None
+    workers = docker_daemon = None
     try:
         previous = history(args.timings_from)
         Path(f'/proc/{os.getpid()}/task/{os.getpid()}/children').read_text()
@@ -735,7 +735,8 @@ def main(*, launch=False):
         if binary:
             env.update(PAYMENTER_TEST_PHP=str(binary), PAYMENTER_TEST_CURL_EXTENSION=str(extension))
         if 'mariadb' in selected:
-            env.update({name: os.environ[name] for name in test_workers.MARIADB_INPUTS if name in os.environ})
+            mariadb, docker_daemon = test_workers.mariadb_environment(os.environ)
+            env.update(mariadb)
         if fixture:
             env.update(PAYMENTER_TEST_FIXTURE=str(fixture), PAYMENTER_TEST_NATIVE_EXTENSIONS=str(extension.parent),
                        LD_LIBRARY_PATH=str(runtime/'usr/lib/x86_64-linux-gnu'))
@@ -776,7 +777,7 @@ def main(*, launch=False):
         return run(commands, env, output, selected, suites, dependency, jobs=jobs, workers=workers, worker_check=worker_check,
                    timings=timings, only=args.only, fail_fast=args.fail_fast, requested_jobs=args.jobs, memory_mib=args.memory_mib,
                    jobs_explicit=jobs_explicit, lint_base=args.lint_base, checkout=checkout, coverage=coverage,
-                   retry=test_scheduling.known_failures(commands, previous))
+                   retry=test_scheduling.known_failures(commands, previous), docker_daemon=docker_daemon)
     except BaseException as error:
         setup_failure(output, error)
         raise
