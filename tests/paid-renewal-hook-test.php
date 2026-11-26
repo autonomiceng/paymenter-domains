@@ -4,11 +4,13 @@ declare(strict_types=1);
 require __DIR__.'/Support/renewal-execution.php';
 use Paymenter\Extensions\Servers\Domains\Money\Allocations\{PostingSource, RenewalFundingLedger};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
+use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Log\Events\MessageLogged;
-use Illuminate\Support\Facades\{Auth, DB, Queue};
+use Illuminate\Support\Facades\{Auth, DB, Event, Queue};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Paymenter\Extensions\Servers\Domains\Data\{ExecutionRecord, SendFailure};
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
 use Paymenter\Extensions\Servers\Domains\Services\{EnomAnswers, NativePaidHooks, PricingRule, RegistrarCheck, Refunds, RuntimeWork};
 require __DIR__.'/Support/renewal-runtime.php';
 
@@ -31,6 +33,21 @@ $state->lost = new SendFailure('timeout', 24993);
 $logged = [];
 app('events')->listen(MessageLogged::class, static function ($event) use (&$logged): void {
     if ($event->message === 'Domains renewal reply not recorded.') { $logged[] = [$event->level, $event->context]; }
+});
+// Watch the owner lock that opens the holding prefix in the transactions that seal or open a read.
+$transaction = 0;
+$lockTrace = [];
+Event::listen(TransactionBeginning::class, static function () use (&$transaction): void { $transaction++; });
+DB::listen(static function ($query) use (&$transaction, &$lockTrace): void {
+    if ($query->connection->transactionLevel() !== 1) { return; }
+    if (str_starts_with($query->sql, 'select * from "users" where "users"."id" in (')) {
+        $lockTrace[$transaction][] = 'owner lock';
+    } elseif (str_starts_with($query->sql, 'update "'.OperationSchema::ATTEMPTS.'" ')) {
+        if (str_contains($query->sql, '"sealed_at" = ?')) { $lockTrace[$transaction][] = 'seal'; }
+        if (str_contains($query->sql, '"read_token" = ?') && $query->bindings[0] !== null) {
+            $lockTrace[$transaction][] = 'open read';
+        }
+    }
 });
 // The fixed clock is the seal time; the deadline checks below use this capture, not the reader under test.
 $dispatchedAt = $clock->now();
@@ -60,6 +77,10 @@ $deadline = $dispatchedAt->modify('+24 hours')->setTimezone(new DateTimeZone('Am
 expect(preg_match('/(?<!\d)'.$deadline->format('j').'(?!\d)/', $beforeCheck['body']) && empty($beforeCheck['asks']),
     'Before the first check the customer sees the original local deadline and has no action');
 $result = $completion->run($op->id);
+$transitionLocks = array_values(array_filter($lockTrace, static fn (array $trace) =>
+    in_array('seal', $trace, true) || in_array('open read', $trace, true)));
+same([['owner lock', 'seal'], ['owner lock', 'open read']], $transitionLocks,
+    'Sealing and opening a reconciliation read each take the holding prefix once: '.json_encode($transitionLocks));
 same('awaiting_answer', $result->policy['status_check']['outcome'], 'Unrecoverable renewal names the staff registrar-answer action');
 same('Enom', $result->policy['status_check']['registrar'], 'Staff action names the bound registrar');
 same($dispatchedAt->modify('+24 hours')->getTimestamp(),

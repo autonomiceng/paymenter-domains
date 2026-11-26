@@ -139,8 +139,8 @@ final class RenewalExecution
         }
         $descriptor = new AdmittedOperation($binding, new Query($name, Action::Renew, (int) $op->term), $op->operation_key, $claim,
             $d->authority_generation, $claim, $digest, $ready->cost, new DateEvidence($op->base_expires_at->format('Y-m-d'), ExpiryPrecision::Date, 'renewal_base'));
-        $fresh = HoldingLocks::take($d); $this->grants[$descriptor] = [
-            'context' => $reservedContext, 'stamp' => $fresh['stamp'], 'id' => $id, 'revision' => $op->transition_revision,
+        $this->grants[$descriptor] = [
+            'context' => $reservedContext, 'stamp' => $l['stampForHeldRows'](), 'id' => $id, 'revision' => $op->transition_revision,
             'mode' => $ready->status->value, 'writer' => $writer, 'binding' => $binding, 'query' => $descriptor->query,
             'digest' => $digest, 'attempt' => $token,
         ];

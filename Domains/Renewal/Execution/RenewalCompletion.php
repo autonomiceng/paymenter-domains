@@ -48,7 +48,7 @@ final readonly class RenewalCompletion
                 $read=$financial?CapturedChargeReview::reserve($op,$this->clock):null;
             } catch (\PDOException|RenewalBusy $e) { throw $e; } catch (\Throwable) { return null; }
             $readProof = RenewalProof::open($op, $attempt, $deadline, $this->clock);
-            return [$attempt, HoldingLocks::take($l['domain'])['stamp'], $read, $readProof];
+            return [$attempt, $l['stampForHeldRows'](), $read, $readProof];
         }, $staff);
         if (!$capture) { return Operation::findOrFail($id); }
         [$attempt, $stamp,$financialRead,$saved] = $capture; $proof = null; $covered = false; $autoRenewConfirmed = false; $autoRenewUnconfirmed = $attempt->binding->registrarKey === 'namesilo'; $scan = null; $sample = null;
