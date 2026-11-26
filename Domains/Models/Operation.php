@@ -115,7 +115,7 @@ class Operation extends Model
     {
         return Attribute::get(fn ($value, array $row) => ($attempt = $this->acquisition($row))
             ? ($attempt->start() ? $this->asDateTime($attempt->start())->toImmutable() : null)
-            : ($value === null ? null : $this->asDateTime($value)->toImmutable()));
+            : ($value === null ? null : $this->asDateTime($value)->toImmutable()))->withoutObjectCaching();
     }
 
     protected function requestFingerprint(): Attribute
@@ -130,7 +130,7 @@ class Operation extends Model
             if (!$attempt) { return $value === null ? null : $this->asDateTime($value)->toImmutable(); }
             return ($row['state'] ?? null) === 'running' && $attempt->facts->current
                 ? $this->asDateTime($attempt->facts->claimUntil)->toImmutable() : null;
-        });
+        })->withoutObjectCaching();
     }
 
     protected static function booted(): void
