@@ -30,7 +30,7 @@ $never = $make([]);
 $open = $make(['state' => 'running', 'started_at' => $start, 'attempt' => $sealed]);
 $refused = $make(['state' => 'held', 'safe_code' => 'renewal_definitely_unsent', 'started_at' => $start, 'attempt' => [...$sealed, 'execution' => $refusal]]);
 $settled = $make(['state' => 'succeeded', 'started_at' => $start, 'completed_at' => $done,
-    'attempt' => [...$sealed, 'execution' => $accepted, 'renewal' => ['query' => ['name' => 'placeholder.com', 'years' => 1], 'order_reference' => '1234'], 'reconciliation' => $proof],
+    'attempt' => [...$sealed, 'execution' => $accepted, 'renewal' => ['query' => ['name' => 'example.com', 'years' => 1], 'order_reference' => '1234'], 'reconciliation' => $proof],
     'renewal_proof' => ['claim_key' => $sealed['claim_key'], 'identity' => 'i', 'at' => $at, 'observation' => ['expiry' => '2027-11-25']]]);
 $lost = $make(['state' => 'pending', 'started_at' => $start, 'attempt' => [...$sealed, 'execution' => null, 'send_failure' => ['phase' => 'reply']]]);
 $review = $make(['state' => 'uncertain', 'safe_code' => 'actual_charge_changed', 'started_at' => $start,
@@ -66,7 +66,7 @@ same([ExecutionRecord::Recorded, $refusal], [$f->replyRecord(), $f->reply()], 'T
 $f = $facts[$settled];
 same([false, SendState::Sent, 'accepted', '1234', true], [$f->locallyRefused(), $f->sendState(), $f->replyOutcome(), $f->orderReference(), $f->observed()], 'An accepted reply with its order and observation');
 same(['outcome' => 'succeeded', 'evidence' => $proof, 'recorded_at' => '2026-11-25 12:05:00'], $f->settlement(), 'A confirmed renewal settled on its proof');
-same([$accepted, ['query' => ['name' => 'placeholder.com', 'years' => 1], 'order_reference' => '1234'], $proof], [$f->reply(), $f->acceptance(), $f->readProof()], 'The accepted reply, its acceptance and the read proof');
+same([$accepted, ['query' => ['name' => 'example.com', 'years' => 1], 'order_reference' => '1234'], $proof], [$f->reply(), $f->acceptance(), $f->readProof()], 'The accepted reply, its acceptance and the read proof');
 
 $f = $facts[$lost];
 same([false, SendState::PossiblySent, 'unknown', null], [$f->locallyRefused(), $f->sendState(), $f->replyOutcome(), $f->settlement()], 'A lost reply stays possibly sent');
