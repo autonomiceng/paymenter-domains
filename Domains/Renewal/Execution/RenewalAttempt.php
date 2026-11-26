@@ -17,7 +17,7 @@ use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AttemptFacts, Ope
 final readonly class RenewalAttempt
 {
     /** Evidence kinds of the sealed attempt this reader carries; operation-level terminal proof is read beside them. */
-    private const KINDS = ['reply', 'observation', 'held', 'settlement', 'terminal'];
+    private const KINDS = ['reply', 'observation', 'held', 'settlement', 'answer', 'terminal'];
 
     private function __construct(private ?AttemptFacts $sealed = null, private array $evidence = [], private ?array $terminalRow = null,
         private ?\DateTimeImmutable $startedAt = null) {}
@@ -165,6 +165,18 @@ final readonly class RenewalAttempt
     {
         $proof = ($this->evidence['settlement'] ?? $this->evidence['held'] ?? null)['evidence']['settlement'] ?? null;
         return is_array($proof) ? $proof : null;
+    }
+
+    /**
+     * The audited not-processed answer recorded on the sealed attempt while no positive proof existed; null when none.
+     * It is return proof only, never local no-send proof. Positive proof retained after it voids it.
+     */
+    public function unprocessedAnswer(): ?array
+    {
+        $row = $this->evidence['answer'] ?? null;
+        if ($row === null || isset($this->evidence['observation']) || isset($this->evidence['held']) || isset($this->evidence['settlement'])) { return null; }
+        $answer = $row['evidence']['answer'] ?? null;
+        return is_array($answer) ? $answer : null;
     }
 
     /** True when a registrar read captured proof that waits for charge review and no settlement was recorded. */

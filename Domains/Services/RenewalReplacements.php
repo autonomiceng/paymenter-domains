@@ -40,7 +40,7 @@ final class RenewalReplacements
     {
         if ($op->action !== 'renew' || $op->state !== 'rejected' || $op->safe_code !== 'refund_approved') { return false; }
         // An unreadable policy or refund proof is never a reviewed replacement.
-        try { $p=$op->policy['renewal_replacement']??null; RefundProof::requireUnsent($op,$d); }
+        try { $p=$op->policy['renewal_replacement']??null; RefundProof::requireReturnable($op,$d); }
         catch(\PDOException $e){throw $e;}catch(\Throwable){return false;}
         return is_array($p)
             &&array_keys($p)===['actor_id','operation_key','generation','expiry','refund_hash','at']&&($p['actor_id']===null||is_int($p['actor_id'])&&$p['actor_id']>0)
@@ -71,7 +71,7 @@ final class RenewalReplacements
     }
     private static function settled(Operation $op,array $l): bool
     {
-        try { RefundProof::requireUnsent($op,$l['domain']); $current=RefundPayment::requireCurrent($op,$l);$refund=$op->funding['refund']??[];
+        try { RefundProof::requireReturnable($op,$l['domain']); $current=RefundPayment::requireCurrent($op,$l);$refund=$op->funding['refund']??[];
             if(($refund['to']??null)!=='account_credit'||!$l['credit']||($refund['credit_id']??null)!==(int)$l['credit']->id
                 ||$current['invoice_total_minor']!==PricingRule::minor($op->amount)||$current['succeeded_net_minor']!==$current['invoice_total_minor']
                 ||count($current['payments'])!==$l['transactions']->where('invoice_id',$op->invoice_id)->count()){return false;}

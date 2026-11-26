@@ -43,7 +43,7 @@ final class OperationTerminalProof
     {
         $a = $op->attempt ?? [];
         if(RegistrationRefusals::proved($op,$domain)){return true;}
-        if($op->state==='rejected'&&EnomAnswers::unprocessed($op,$domain)){return true;}
+        if($op->state==='rejected'&&EnomAnswers::unprocessed($op,$domain)&&RefundProof::answeredAttempt($op)){return true;}
         if($op->safe_code===UnpaidAcquisitionProof::CODE){return UnpaidAcquisitionProof::terminal($op,$domain);}
         return $op->authority_generation > 0 && is_string($op->account_fingerprint) && $op->state === 'rejected' && in_array($op->action, ['register', 'renew', 'transfer'], true) && $op->account_fingerprint === $domain->account_fingerprint
             && $op->registrar_key === $domain->registrar_key && $op->server_id === $domain->server_id && $op->service_id === $domain->service_id

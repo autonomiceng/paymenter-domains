@@ -71,6 +71,13 @@ final class RenewalProof
             ['identity' => $this->identity, 'settlement' => $proof]) === Transition::Applied;
     }
 
+    /** Records the audited not-processed answer through this read, under the caller's holding locks. False when the read lost the attempt or positive proof exists. */
+    public function answerLocked(Operation $op, array $answer): bool
+    {
+        return $this->matches($op) && (new OperationWriter($this->clock))->recordUnprocessed($this->read,
+            ['identity' => $this->identity, 'answer' => $answer]) === Transition::Applied;
+    }
+
     /** The sealed attempt's retained settlement, or null before one is recorded. */
     public static function settlement(Operation $op): ?array
     { return OperationAttempts::sealedEvidence((int) $op->id, StepKey::renew(), 'settlement'); }

@@ -75,21 +75,30 @@ $attempt=$op->fresh()->attempt; $original=$op->fresh()->getRawOriginal();
 $sealedRow=(array)DB::table('domains_operation_attempts')->where('id',renewalAttempt($op)->attempt()->token->attemptId)->first();
 $replyRow=(array)DB::table('domains_operation_evidence')->where(['attempt_id'=>$sealedRow['id'],'kind'=>'reply'])->first();
 $replyEvidence=json_decode(Illuminate\Support\Facades\Crypt::decryptString($replyRow['evidence']),true);
-foreach(['reply_lost','fallback','possible_send','extra_null_fact'] as $case){
+foreach(['reply_lost','fallback','possible_send','observed'] as $case){
     // Privileged fixture corruption probes independent interpretation of the sealed attempt and its reply rows.
     $reply=$replyEvidence;
     if($case==='reply_lost'){DB::table('domains_operation_evidence')->where('id',$replyRow['id'])->update(['source'=>'unknown_reply','outcome'=>'unknown','evidence'=>Illuminate\Support\Facades\Crypt::encryptString('[]')]);}
     elseif($case==='fallback'){$reply['result']['reason']='fallback';DB::table('domains_operation_evidence')->where('id',$replyRow['id'])->update(['evidence'=>Illuminate\Support\Facades\Crypt::encryptString(json_encode($reply))]);}
     elseif($case==='possible_send'){DB::table('domains_operation_attempts')->where('id',$sealedRow['id'])->update(['send_state'=>'possibly_sent']);}
-    else{Operation::withoutEvents(fn()=>$op->fresh()->update(['attempt'=>[...$attempt,'provider_reference'=>null]]));}
+    // A positive observation retained on the refused attempt outweighs its local refusal.
+    else{DB::transaction(fn()=>Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationWriter::at($clock->now())->recordObservation(renewalAttempt($op)->attempt()->token,['identity'=>'probe'],$clock->now()));}
     commerceReject(fn()=>$refunds->refundHeld($staff,$op->id,'service_cancelled'));
     DB::table('domains_operations')->where('id',$op->id)->update($original);
     DB::table('domains_operation_attempts')->where('id',$sealedRow['id'])->update($sealedRow);DB::table('domains_operation_evidence')->where('id',$replyRow['id'])->update($replyRow);
+    DB::table('domains_operation_evidence')->where(['attempt_id'=>$sealedRow['id'],'kind'=>'observation'])->delete();
 }
+// The rows decide: a genuine prewire refusal still proves unsent with an empty JSON envelope.
+Operation::withoutEvents(fn()=>$op->fresh()->update(['attempt'=>[]]));
+try{Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireUnsent($op->fresh(),$d->fresh());$rowOnly=true;}catch(DomainException){$rowOnly=false;}
+DB::table('domains_operations')->where('id',$op->id)->update($original);expect($rowOnly,'A row-only prewire refusal proves unsent with an empty JSON envelope');
 $before=$credit(); $refunds->refundHeld($staff,$op->id,'service_cancelled');
 same($before+PricingRule::minor($op->amount),$credit(),'Proven prewire refusal credited'); same($attempt,$op->fresh()->attempt,'Sealed audit untouched');
 // Retired cancelled debt is never dispatched on late payment. Credit once to resolve financial conflict.
 [$retired,$d,$b,$bill]=$makeRenewal(placeholderComFixtureName('refund-late-retired-placeholder.com'),false); $cycles->retireUnpaid($retired->id);
+$raw=$retired->fresh()->getRawOriginal();Operation::withoutEvents(fn()=>$retired->fresh()->update(['attempt'=>[]]));
+expect(Paymenter\Extensions\Servers\Domains\Services\RefundProof::retired($retired->fresh(),$d->fresh()),'A row-only unpaid closure stays retired with an empty JSON envelope');
+DB::table('domains_operations')->where('id',$retired->id)->update($raw);
 commerceReject(fn()=>(new FinancialAdjustments($clock))->append($staff,$retired->id,'mint_retired',$retired->amount,'payment_correction'));
 commerceReject(fn()=>(new FinancialAdjustments($clock))->append($staff,$retired->id,'reverse_retired','-'.$retired->amount,'payment_correction'));
 same('cancelled',$bill->fresh()->status,'Correction cannot fabricate a late retired payment');

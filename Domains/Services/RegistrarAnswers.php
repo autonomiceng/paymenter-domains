@@ -204,6 +204,8 @@ class RegistrarAnswers
             if ($outcome === 'not_processed' && $op->action === 'renew') {
                 if (self::renewalProof($op, $d)) { throw new \DomainException(self::POSITIVE_PROOF); }
                 if (!$read?->allowsAnswer($op, $attempt->binding)) { throw new \DomainException(self::READ_UNRESOLVED); }
+                // The audited negative proof is appended on the exact sealed attempt, in the transaction that authorizes the return.
+                if (!$read->answerLocked($op, $answer)) { throw new \DomainException(self::POSITIVE_PROOF); }
                 $read->releaseLocked($op);
             }
             $policy=[...$op->policy,'enom_answer'=>$answer];
