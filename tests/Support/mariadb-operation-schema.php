@@ -26,17 +26,17 @@ same(0, (int) DB::selectOne('SELECT @@session.explicit_defaults_for_timestamp AS
 FoundationSchema::install(); OperationSchema::install(); OperationSchema::verify();
 $operations = $prefix.'domains_operations'; $evidence = $prefix.OperationSchema::EVIDENCE; $attempts = $prefix.OperationSchema::ATTEMPTS;
 $times = DB::select("SELECT COLUMN_NAME AS name, IS_NULLABLE AS nullable, COLUMN_DEFAULT AS value, EXTRA AS extra FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = ? AND TABLE_NAME IN (?, ?, ?) AND DATA_TYPE = 'timestamp' ORDER BY TABLE_NAME, ORDINAL_POSITION", [$database, $operations, $attempts, $evidence]);
+    WHERE TABLE_SCHEMA = ? AND TABLE_NAME IN (?, ?, ?) AND DATA_TYPE IN ('timestamp', 'datetime') ORDER BY TABLE_NAME, ORDINAL_POSITION", [$database, $operations, $attempts, $evidence]);
 same(14, count($times), 'Every operation time column inspected');
 foreach ($times as $column) {
     // MariaDB reports an explicit NULL default as the string NULL.
     same(['YES', true, ''], [$column->nullable, in_array($column->value, [null, 'NULL'], true), $column->extra], $column->name.' has no implicit default or update');
 }
 // An ON UPDATE added to a retained column is drift: Laravel's portable columns omit it, so the verifier reads it itself.
-DB::statement('ALTER TABLE `'.$attempts.'` MODIFY `claimed_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP');
+DB::statement('ALTER TABLE `'.$attempts.'` MODIFY `claimed_at` DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP');
 try { OperationSchema::verify(); throw new LogicException('ON UPDATE drift accepted'); }
 catch (RuntimeException $error) { same('Retained Domains schema mismatch: '.OperationSchema::ATTEMPTS, $error->getMessage(), 'ON UPDATE drift refused'); }
-DB::statement('ALTER TABLE `'.$attempts.'` MODIFY `claimed_at` TIMESTAMP NULL DEFAULT NULL');
+DB::statement('ALTER TABLE `'.$attempts.'` MODIFY `claimed_at` DATETIME NULL DEFAULT NULL');
 OperationSchema::verify();
 
 // Sealing and spending the grant update the attempt; the claim time stays the writer's own.

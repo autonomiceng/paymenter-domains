@@ -88,7 +88,9 @@ same([ExecutionRecord::Recorded, $refusal], [$f->replyRecord(), $f->reply()], 'T
 
 $f = $facts[$settled];
 same([false, SendState::Sent, 'accepted', '1234', true], [$f->locallyRefused(), $f->sendState(), $f->replyOutcome(), $f->orderReference(), $f->observed()], 'An accepted reply with its order and observation');
-same(['outcome' => 'succeeded', 'evidence' => $proof, 'recorded_at' => '2026-11-25 12:01:00'], $f->settlement(), 'A confirmed renewal settled on its proof');
+// Evidence times are UTC instants; compare the instant and offset, not the spelling.
+$instant = static fn (array $row): array => [...$row, 'recorded_at' => [($t = new DateTimeImmutable($row['recorded_at'], new DateTimeZone('America/Los_Angeles')))->getTimestamp(), $t->getOffset()]];
+same(['outcome' => 'succeeded', 'evidence' => $proof, 'recorded_at' => [strtotime('2026-11-25 12:01:00 UTC'), 0]], $instant($f->settlement()), 'A confirmed renewal settled on its proof');
 same([$accepted, $acceptance, $proof, false], [$f->reply(), $f->acceptance(), $f->readProof(), $f->heldForReview()], 'The accepted reply, its acceptance and the read proof');
 
 $f = $facts[$lost];
@@ -99,7 +101,7 @@ same([null, $proof, true, null], [$facts[$review]->settlement(), $facts[$review]
 
 $f = $facts[$unpaid];
 same([false, null, false], [$f->sealed(), $f->sendState(), $f->locallyRefused()], 'An unpaid closure was never sealed');
-same(['outcome' => 'renewal_cancelled_unpaid', 'evidence' => $terminal, 'recorded_at' => '2026-11-25 12:05:00'], $f->terminal(), 'Operation-level terminal proof');
+same(['outcome' => 'renewal_cancelled_unpaid', 'evidence' => $terminal, 'recorded_at' => [strtotime('2026-11-25 12:05:00 UTC'), 0]], $instant($f->terminal()), 'Operation-level terminal proof');
 same([true, true, false], [$f->closedUnsent(), $f->closedOnlyWith($terminal), $f->closedOnlyWith([...$terminal, 'transactions' => [1]])], 'A local closure before any seal, with its exact terminal evidence');
 same([true, true, false, false, false], [$facts[$never]->untouched(), $facts[$released]->untouched(), $f->untouched(), $facts[$open]->untouched(), $facts[$open]->closedUnsent()],
     'Only a renewal with nothing sealed or closed is untouched; a released claim is history; a sealed one is no closure');

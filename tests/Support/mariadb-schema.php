@@ -76,7 +76,7 @@ $after = Schema::getTableListing($database, false); sort($after); same($tables, 
 Schema::table('domains_adoptions', static fn ($t) => $t->dropColumn('unexpected'));
 // A drifted ON UPDATE is refused by the full check, which then leaves no fresh verification receipt.
 Verification::run(); expect(Verification::current(), 'A clean full check records a fresh receipt');
-$claimedAt = static fn (string $extra): bool => DB::statement('ALTER TABLE `'.$prefix.OperationSchema::ATTEMPTS.'` MODIFY `claimed_at` TIMESTAMP NULL DEFAULT NULL'.$extra);
+$claimedAt = static fn (string $extra): bool => DB::statement('ALTER TABLE `'.$prefix.OperationSchema::ATTEMPTS.'` MODIFY `claimed_at` DATETIME NULL DEFAULT NULL'.$extra);
 $claimedAt(' ON UPDATE CURRENT_TIMESTAMP');
 expect(!Verification::current(), 'Drift makes the receipt stale');
 try { Verification::run(); throw new LogicException('ON UPDATE drift accepted by the full check'); }
