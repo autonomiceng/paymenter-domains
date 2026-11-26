@@ -84,8 +84,7 @@
   "Services\\NameSiloSandbox"
  ],
  "Models/Operation.php": [
-  "Services\\EnomAnswers",
-  "Services\\EnomTestCalls"
+  "Services\\EnomAnswers"
  ],
  "Presentation/DsState.php": [
   "Registrars\\NameSilo\\DsRegistryPolicy"
@@ -137,9 +136,6 @@
  ],
  "Services/BalanceReads.php": [
   "Services\\EnomTestCallLimit"
- ],
- "Services/BalanceRetries.php": [
-  "Services\\EnomTestCalls"
  ],
  "Services/CartAdmission.php": [
   "Services\\EnomTestRegistration",
