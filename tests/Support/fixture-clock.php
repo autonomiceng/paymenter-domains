@@ -18,10 +18,14 @@ function nativeFixtureClock(): void
  */
 function nativeFixtureClockFollow(): void
 {
-    Carbon\CarbonImmutable::setTestNow(static function (DateTimeInterface $wall): DateTimeInterface {
+    Carbon\CarbonImmutable::setTestNow(static function (): DateTimeInterface {
         $app = Illuminate\Container\Container::getInstance();
         $clock = $app->bound(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class) ? $app->make(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class) : null;
-        // The instant is read, not now(): a test that counts its clock's reads sees only product reads.
-        return $clock instanceof Paymenter\Extensions\Servers\Domains\Tests\FakeClock ? $clock->instant : $wall;
+        // The instant is read, not now(): a test that counts its clock's reads sees only product reads. Wall time is read
+        // here, not taken from Carbon's argument, which re-parses local wall time in the requested zone and shifts UTC.
+        // Either instant is given in the site zone, as the real framework clock gives it.
+        $zone = new DateTimeZone(date_default_timezone_get());
+        return $clock instanceof Paymenter\Extensions\Servers\Domains\Tests\FakeClock
+            ? DateTimeImmutable::createFromInterface($clock->instant)->setTimezone($zone) : new DateTimeImmutable('now', $zone);
     });
 }

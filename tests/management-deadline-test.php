@@ -33,6 +33,15 @@ try {
 try { $entryDeadline::run($systemClock, static fn () => throw new RuntimeException('synthetic scope failure')); }
 catch (RuntimeException $error) { same('synthetic scope failure', $error->getMessage(), 'Entry exception propagates'); }
 same('released', $entryDeadline::run($systemClock, static fn () => 'released'), 'Exception releases execution scope');
+// With no FakeClock bound, the after-boot framework clock is wall time, and its UTC instant stays wall time under a
+// non-UTC site zone, so the execution origin is not shifted by the zone offset.
+$clockContract = \Paymenter\Extensions\Servers\Domains\Contracts\Clock::class; $priorClock = app($clockContract);
+$priorZone = date_default_timezone_get(); $priorNow = Carbon\CarbonImmutable::getTestNow(); $elapsed = 0;
+try {
+    app()->instance($clockContract, $systemClock); date_default_timezone_set('America/Los_Angeles'); nativeFixtureClockFollow();
+    $before = time(); $origin = $systemClock->withinExecution(static fn () => $systemClock->now()); $after = time();
+    expect($before <= $origin->getTimestamp() && $origin->getTimestamp() <= $after, 'Wall fallback keeps the UTC execution origin: '.json_encode([$before, $origin->format(DATE_ATOM), $after]));
+} finally { date_default_timezone_set($priorZone); app()->instance($clockContract, $priorClock); Carbon\CarbonImmutable::setTestNow($priorNow); }
 
 $waiting = false; $wait = 0;
 DB::listen(static function ($query) use (&$waiting, &$wait, $clock): void {
