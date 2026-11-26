@@ -6,7 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 // Column declarations adapted from Enom d2c55e2.
 use Illuminate\Database\Schema\Blueprint;
-use Paymenter\Extensions\Servers\Domains\Installation\TableSchema;
+use Paymenter\Extensions\Servers\Domains\Installation\{Installer, TableSchema};
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
 
 /** Holdings, renewal funding postings and accounts. Registry also lists OperationSchema on its own. */
@@ -72,9 +72,13 @@ final class FoundationSchema extends TableSchema
         ];
     }
 
-    /** Fixtures and commerce install the holding foundation with its operations in one call; each part verifies its own tables. */
+    /**
+     * Fixtures and commerce install the holding foundation with its operations in one call; each part verifies its own
+     * tables. The two inventories are checked together first, so retained foundation tables never get new empty operation tables.
+     */
     public static function install(): void
     {
+        self::requireWhole([...self::tables(), ...OperationSchema::tables()], Installer::recovering());
         parent::install();
         OperationSchema::install();
     }

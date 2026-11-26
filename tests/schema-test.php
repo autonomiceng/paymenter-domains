@@ -185,6 +185,10 @@ Schema::drop('domains_operations');
 try { FoundationSchema::install(); expect(false, 'Partial retained installation accepted'); }
 catch (RuntimeException $e) { expect(str_contains($e->getMessage(), 'Partial retained'), 'Partial installation refusal'); }
 expect(!Schema::hasTable('domains_operations'), 'Missing history was not silently recreated');
+foreach ([OperationSchema::EVIDENCE, OperationSchema::ATTEMPTS, OperationSchema::STEPS] as $table) { Schema::drop($table); }
+try { FoundationSchema::install(); expect(false, 'Foundation without operation tables accepted'); }
+catch (RuntimeException $e) { expect(str_contains($e->getMessage(), 'Partial retained'), 'Missing operation inventory refusal'); }
+expect(!Schema::hasTable(OperationSchema::STEPS), 'Missing operation tables were not silently created');
 // A connection prefix must not hide missing or weakened reservation constraints.
 $connection = DB::getDefaultConnection();
 $schema = Schema::getFacadeRoot();
