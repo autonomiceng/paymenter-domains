@@ -80,7 +80,7 @@ final readonly class RenewalCompletion
         try {
         // A check with nothing to project still releases its claim.
         if (!$financialRead && !$covered && !$autoRenewUnconfirmed && !$autoRenewConfirmed && !$ran) { return Operation::findOrFail($id); }
-        return $this->decide($seed, $id, function (array $l) use ($id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed,$financialRead,$check,$scan,$ran) {
+        return $this->decide($seed, $id, function (array $l) use ($id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed,$financialRead,$check,$scan,$ran,$saved) {
             $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
             if (!$op || !$this->eligible($op) || $l['stamp'] !== $stamp || ($proof && $proof['provider_domain_id'] !== $d->provider_domain_id)) { return $op; }
             try { $this->bindings->requireReadableLocked($l['server'], $l['account']); RenewalFunding::requireCurrent($op, $l, true); }
@@ -104,6 +104,8 @@ final readonly class RenewalCompletion
                 $op->funding_basis === 'complimentary' ? null : $op->amount, $proof['observed_corrections'] !== []);
             $policy['renewal_execution'] = $decision['renewal_execution'];
             $confirmed = $decision['state'] === 'succeeded';
+            // Completion is settled on the sealed attempt through the read that proved it, in the same transaction.
+            if ($confirmed && !$saved->settleLocked($op, $proof)) { return $op; }
             $op->update(['state' => $decision['state'], 'safe_code' => $decision['safe_code'], 'policy' => $policy,
                 'attempt' => [...$op->attempt, 'reconciliation' => $proof], 'cost' => ['actual' => $cost],
                 'lease_expires_at' => null, ...($confirmed ? ['provider_order_id' => $proof['order_reference'],

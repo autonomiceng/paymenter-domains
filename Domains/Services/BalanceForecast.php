@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{Invoice,Server,ServiceCancellation};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Adoption,Domain,Price};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, StepKey};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 final class BalanceForecast
 {
@@ -27,11 +28,14 @@ final class BalanceForecast
             $adoptionIds=$domains->pluck('adoption_id')->filter();
             $adoptions=$adoptionIds->isEmpty()?collect():Adoption::whereKey($adoptionIds)->get()->keyBy('id');
             $invoices=Invoice::whereKey($domains->flatMap(fn($d)=>$d->operations->pluck('invoice_id'))->filter()->unique())->get()->keyBy('id');
-            $reservedItems = $domains->flatMap(fn ($d) => $d->operations->where('state', 'held')
-                ->where('safe_code', 'renewal_definitely_unsent')->whereNotNull('renewal_reserved_revision')->pluck('invoice_item_id'));
-            $ledger = RenewalFundingLedger::forInvoiceItems($reservedItems->unique()->values()->all());
             // The chunk's renewal attempt facts come from the rows already loaded; no read per renewal.
-            $attempts = $domains->flatMap(fn ($d) => $d->operations->where('action', 'renew'))->mapWithKeys(fn ($o) => [$o->id => RenewalAttempt::of($o)])->all();
+            $renewals = $domains->flatMap(fn ($d) => $d->operations->where('action', 'renew'));
+            $observed = array_flip(OperationAttempts::sealedWithEvidence($renewals->pluck('id')->all(), StepKey::renew(), 'observation'));
+            $attempts = $renewals->mapWithKeys(fn ($o) => [$o->id => RenewalAttempt::of($o, isset($observed[$o->id]))])->all();
+            // Paid postings are reserved in the same transaction as the attempt seal.
+            $reservedItems = $domains->flatMap(fn ($d) => $d->operations->where('state', 'held')->where('safe_code', 'renewal_definitely_unsent'))
+                ->filter(fn ($o) => $o->funding_basis === 'paid_invoice' && ($attempts[$o->id] ?? null)?->sealed())->pluck('invoice_item_id');
+            $ledger = RenewalFundingLedger::forInvoiceItems($reservedItems->unique()->values()->all());
             foreach($domains as $d){
                 if(!$d->billing_managed||!$d->service||$d->service->status!=='active'){continue;}
                 $policy=RenewalStop::policy($d);if($policy===null){$unknown++;$count++;$unreadable++;continue;}

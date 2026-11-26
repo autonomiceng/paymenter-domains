@@ -79,14 +79,21 @@ final class RequestContext
     }
     public function requireReservedCapacity(): void
     {if(!$this->reserved||$this->leaseUntil<$this->clock->now()->modify('+25 seconds')){throw new \Paymenter\Extensions\Servers\Domains\Services\ReadDeferred('Reservation headroom exhausted.');}}
+    private ?\DateTimeImmutable $wireUntil=null;
+    /** Milliseconds left in the current claimed wire's slot. Work inside the wire, such as a locked spend, rechecks before the exchange. */
+    public function wireRemaining(): int
+    {
+        if(!$this->wireUntil){throw new \LogicException('No claimed wire.');}
+        return (int) floor(((float)$this->wireUntil->format('U.u') - (float)$this->clock->now()->format('U.u')) * 1000);
+    }
     /** Physical write exchanges already consumed their admitted per-operation budget. */
     public function withinClaimedWire(AccountBinding $driver, \Closure $wire): mixed
     {
         $driver->requireMatch($this->binding);
         $reserved=$this->reserved;$token=$reserved?$this->token:$this->limiter?->acquire($driver,$this->origin);if($reserved){$this->reserved=false;}
         try {
-            $until=$reserved?min($this->deadline,$this->leaseUntil):$this->deadline;
-            $remaining = (int) floor(((float)$until->format('U.u') - (float)$this->clock->now()->format('U.u')) * 1000);
+            $this->wireUntil=$reserved?min($this->deadline,$this->leaseUntil):$this->deadline;
+            $remaining = $this->wireRemaining();
             if ($remaining < 1) { throw new RequestDeadlineReached('Registrar request deadline reached.'); }
             if($this->current){($this->current)();}
             // A refusal raised inside the wire before sending is not an exchange; any other failure may have reached the registrar.
@@ -94,7 +101,7 @@ final class RequestContext
             try { return $wire($remaining); }
             catch (\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit|\Paymenter\Extensions\Servers\Domains\Services\LiveReservationLimit|\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred $refused) { $this->exchanges--; throw $refused; }
         }
-        finally { if ($token !== null) { $this->limiter->release($driver, $this->origin, $token); } }
+        finally { $this->wireUntil=null; if ($token !== null) { $this->limiter->release($driver, $this->origin, $token); } }
     }
 
     /** Observation opts into conservative failure holds even when adapters return failure values. */

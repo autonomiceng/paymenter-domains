@@ -47,7 +47,7 @@ foreach (['admission', 'reserved'] as $when) {
         $refund();
     } else {
         Operation::updated(static function (Operation $row) use ($op, $refund): void {
-            if ($row->id === $op->id && $row->wasChanged('renewal_reserved_revision')) { DB::afterCommit($refund); }
+            if ($row->id === $op->id && $row->wasChanged('state') && $row->state === 'running') { DB::afterCommit($refund); }
         });
     }
     $before = $state->writes;

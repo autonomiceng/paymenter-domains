@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, StepKey};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, OperationReconciliation, PricingRule, RegistrarAnswers, RenewalFundingLedger, StaffOperationReview, StaffOperations, StaffSettingsReview, StaffSettingsWrites};
 
 [$op, $domain, $binding, $invoice] = $makeRenewal(placeholderComFixtureName('worker-overlap-placeholder.com'));
@@ -37,9 +38,10 @@ try {
         });
     };
     $conflict = $first->run($op->id, $firstWriter);
-    same(['awaiting_payment', 2, null, 0], [$conflict->state, $conflict->transition_revision, $conflict->renewal_reserved_revision, $state->writes],
+    $claim = OperationAttempts::current((int) $op->id, StepKey::renew());
+    same(['awaiting_payment', 2, false, 0], [$conflict->state, $conflict->transition_revision, $claim->sealed(), $state->writes],
         'An old admission cannot reserve, dispatch or release a newer revision');
-    expect($conflict->renewal_admission_until !== null, 'The new admission owns its full lease');
+    expect($claim->claiming($clock->now()), 'The new admission owns its full lease');
     $clock->instant = $clock->now()->modify('+361 seconds');
     Cache::flush();
     $duringAdmission = $afterExpiry = null;
@@ -61,11 +63,13 @@ try {
     same(['item' => [$op->invoice_item_id => PricingRule::minor($op->amount)],
         'payment' => [$invoice->transactions()->sole()->id => PricingRule::minor($op->amount)]],
         RenewalFundingLedger::entries($reply), 'One original invoice line and signed payment are reserved');
-    commerceReject(static fn () => $reply->fresh()->update(['renewal_reserved_revision' => null]));
     commerceReject(static fn () => $reply->fresh()->update(['attempt' => [...$reply->attempt, 'claim_key' => 'replacement']]));
     commerceReject(static fn () => $reply->fresh()->update(['attempt' => [...$reply->attempt, 'send_state' => 'definitely_unsent']]));
-    same([4, $reply->attempt], [$reply->fresh()->renewal_reserved_revision, $reply->fresh()->attempt],
+    $sealed = OperationAttempts::sealed((int) $op->id, StepKey::renew());
+    same([4, 2, $reply->attempt], [$sealed->operationRevision, $sealed->token->ordinal, $reply->fresh()->attempt],
         'The original reservation and observations remain immutable after a late reply');
+    same(['accepted', true], [OperationAttempts::evidence((int) $op->id, $sealed->token->attemptId, 'reply')['outcome'], $sealed->grantConsumedAt !== null],
+        'The sealed attempt keeps its one spent grant and late reply');
     $runSecond();
     same(1, $state->writes, 'Both database workers and replay share one registrar send');
     same($money, nativeFinancialSnapshot($op->fresh()), 'Quarantine and replay preserve native customer money');
@@ -97,9 +101,9 @@ try {
     $state->after = '2028-10-18'; $state->duringCommand = ReadCommand::Info;
     $state->during = static fn () => $asSecond($resume);
     Cache::flush(); $raced = $completion->run($op->id);
-    same([2, 'uncertain', 'advanced_expiry', $reply->attempt['claim_key']],
-        [count($raced->policy['renewal_resumptions']), $raced->state, $raced->renewal_proof['observation']['kind'],
-            $raced->renewal_proof['claim_key']], 'The stale read can retain proof but cannot complete the resumed renewal');
+    same([2, 'uncertain', 'advanced_expiry', OperationAttempts::sealed((int) $op->id, StepKey::renew())->token->claimKey],
+        [count($raced->policy['renewal_resumptions']), $raced->state, renewalObservation($raced)['observation']['kind'] ?? null,
+            renewalObservation($raced)['claim_key'] ?? null], 'The stale read can retain proof but cannot complete the resumed renewal');
     $state->after = '2027-10-18'; $state->duringCommand = null;
     $clock->instant = $clock->now()->modify('+10 minutes'); $stop();
     $ticket = StaffSettingsReview::ticket($staff->id, $op->server_id, null, 'enom_answer', StaffSettingsReview::stamp($op->server_id, null));

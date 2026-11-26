@@ -53,15 +53,15 @@ $before = $credit(); $priorState = $op->fresh()->state; $writes = $state->writes
 
 // Deferral: the fifth check's Expiry reply shows the renewal. Its locked save then meets contention twice and defers to the queue.
 $state->after = '2028-10-18'; $state->duringCommand = ReadCommand::Order; $atReply = null;
-$state->during = static function () use ($op, &$contend, &$atReply): void { $atReply = $op->fresh()->renewal_proof['identity'] ?? null; $contend = 2; };
+$state->during = static function () use ($op, &$contend, &$atReply): void { $atReply = renewalObservation($op->fresh())['identity'] ?? null; $contend = 2; };
 Cache::flush(); $completion->run($op->id); $fresh = $op->fresh();
-$deferred = [$atReply, $contend, DB::table(MoneyWorkSchema::TABLE)->where('subject_id', $op->id)->count(), isset($fresh->renewal_check),
-    $polls($op), $fresh->renewal_proof['identity'] ?? null];
+$deferred = [$atReply, $contend, DB::table(MoneyWorkSchema::TABLE)->where('subject_id', $op->id)->count(), renewalRead($fresh) !== null,
+    $polls($op), renewalObservation($fresh)['identity'] ?? null];
 
 // The deferred check ended its claim once its read and proof were saved. The next check (a lagging read) counts the last poll.
 $state->after = '2027-10-18'; $state->duringCommand = null; $clock->instant = $clock->now()->modify('+1 hour');
 $calls = count($state->calls); $check($op, $completion); $fresh = $op->fresh();
-$takeover = [count($state->calls) > $calls, $polls($op), isset($fresh->renewal_check)];
+$takeover = [count($state->calls) > $calls, $polls($op), renewalRead($fresh) !== null];
 $taken = [$record($op), $credit() - $before, $op->fresh()->state, $state->writes - $writes];
 same([true, 0, $priorState, 0], $taken, 'After deferral and a later check, lagging reads cannot record Not processed: '.json_encode($taken));
 same([$identity, 0, 1, false, OperationReconciliation::POLL_LIMIT - 1, $identity], $deferred,
@@ -73,7 +73,7 @@ $resume($op);
 same(0, $polls($op), 'Staff restarted the reads');
 for ($i = 0; $i < OperationReconciliation::POLL_LIMIT; $i++) { $check($op, $completion); }
 $fresh = $op->fresh();
-$resumed = [$polls($op), $fresh->renewal_proof['identity'] ?? null, $record($op), $credit() - $before, $op->fresh()->state, $state->writes - $writes];
+$resumed = [$polls($op), renewalObservation($fresh)['identity'] ?? null, $record($op), $credit() - $before, $op->fresh()->state, $state->writes - $writes];
 same([OperationReconciliation::POLL_LIMIT, $identity, true, 0, $priorState, 0], $resumed,
     'Proof survives a staff resume and later lagging checks: '.json_encode($resumed));
 same([$sentCount, $originalMoney], [$state->writes, nativeFinancialSnapshot($op)], 'A refused answer preserves expiry, receipts and customer funds without another send');

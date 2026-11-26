@@ -159,7 +159,7 @@ $seen['an advanced expiry before a deferred read'] = $refused($deferred);
 // whose reads all lag again is still refused.
 [$op, , , $completion] = $sent('renew-proof-kept-placeholder.com', '2027-10-18', 'another order');
 $readUntilStopped($op, $completion, 'kept'); $state->expiry = '10/18/2028 5:00:00 AM'; $state->fail = ReadCommand::Expiry;
-$first = $refused($op); $kept = isset($op->fresh()->renewal_proof); $state->expiry = '10/18/2027 5:00:00 AM'; $state->fail = null;
+$first = $refused($op); $kept = renewalObservation($op->fresh()) !== null; $state->expiry = '10/18/2027 5:00:00 AM'; $state->fail = null;
 $seen['a fresh later expiry kept for a lagging retry'] = $first && $kept && $refused($op);
 [$op, , , $completion] = $accepted('renew-proof-shapes-placeholder.com');
 $restoreAccepted = nativeRegistrarCheckpoint($clock, $state);

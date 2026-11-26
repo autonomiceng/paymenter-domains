@@ -81,7 +81,7 @@ for ($cycle=0;$cycle<2;$cycle++) {
         same('queued',$deferred->state,'Renewal refresh limiter refusal remains retryable');
         same('renewal_rate_limited',$deferred->safe_code,'NameSilo refresh preserves the local request-limit reason');
         same(4,count($wire->commands),'Limited fifth read makes no provider exchange after the four admission reads');
-        expect($deferred->renewal_admission_until === null,'Renewal limiter refusal removes admission');
+        expect(Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationAttempts::current((int)$deferred->id,Paymenter\Extensions\Servers\Domains\Operations\Authority\StepKey::renew())===null,'Renewal limiter refusal removes admission');
         same($attempt,$deferred->attempt,'Renewal limiter refusal creates no dispatch seal');
         same($reads,$accountGuard->reads,'Local enrollment limiter refusal sends no default-contact exchange');same($paid,$writes,'Renewal limiter refusal sends no paid request');
         same($pin,$settings->where('key','domains_namesilo_default_contact_fingerprint')->first()?->getRawOriginal(),'Local enrollment never creates or changes a default-contact fingerprint');

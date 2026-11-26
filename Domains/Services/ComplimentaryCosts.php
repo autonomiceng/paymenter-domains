@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\Money;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter, StepKey};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 /** A price increase never expands an issued account grant without an audited staff approval. */
 final class ComplimentaryCosts
@@ -82,7 +83,8 @@ final class ComplimentaryCosts
             $policy['staff_actions']=[...($policy['staff_actions']??[]),['action'=>'release','phase'=>'completed','operation_key'=>$op->operation_key,
                 'generation'=>$op->authority_generation,'actor_id'=>$staff->id,'reason'=>$reason,'at'=>$clock->now()->format(DATE_ATOM),
                 'before'=>['state'=>'held','reason'=>'registrar_price_increased'],'after'=>['state'=>'queued','reason'=>null]]];
-            $op->update(['state'=>'queued','safe_code'=>null,'lease_expires_at'=>null,'renewal_admission_until'=>null,'policy'=>$policy]);
+            (new OperationWriter($clock))->releaseCurrent($id,StepKey::renew());
+            $op->update(['state'=>'queued','safe_code'=>null,'lease_expires_at'=>null,'policy'=>$policy]);
         });
     }
 }

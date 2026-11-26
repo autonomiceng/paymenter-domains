@@ -7,6 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Staff\Requests\RequestReads;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceRetries,ComplimentaryInvoices,ContactDetails,ContactProfileHold,ContactRecovery,ContactSetup,EnomTestRegistration,EnomTestRenewal,EnomTestTransfer,HoldingLocks,OperationClaims,RefundProof,RenewalFunding,RenewalStop,StaffOperationReview,StaffOperationWrites,TransferInputs};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter,StepKey};
 /** Releases a held request back to the queue. The offer and the locked writer run the same check over complete native facts. */
 final class HeldRelease
 {
@@ -15,7 +16,7 @@ final class HeldRelease
     {
         self::require($op,$l,$now);
         $policy=$op->policy??[];
-        if($op->action==='renew'){unset($policy['renewal_execution']);$op->renewal_admission_until=null;}
+        if($op->action==='renew'){unset($policy['renewal_execution']);OperationWriter::at($now)->releaseCurrent((int)$op->id,StepKey::renew());}
         $op->update(['state'=>'queued','safe_code'=>null,'policy'=>$policy]);
     }
     /** Read-only facts only; no locks, mutation, registrar exchange or spending grant. A request page reads them once. */

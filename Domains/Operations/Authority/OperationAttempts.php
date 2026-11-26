@@ -124,6 +124,17 @@ final class OperationAttempts
         return $row ? self::decoded($row) : null;
     }
 
+    /** Ids of these operations whose sealed attempt on the step retained evidence of one kind, in one read. */
+    public static function sealedWithEvidence(array $operationIds, StepKey $key, string $kind): array
+    {
+        $ids = array_values(array_unique(array_map('intval', $operationIds)));
+        if (!$ids) { return []; }
+        return DB::table(OperationSchema::EVIDENCE.' as e')->join(OperationSchema::ATTEMPTS.' as a', 'a.id', '=', 'e.attempt_id')
+            ->join(OperationSchema::STEPS.' as s', 's.id', '=', 'a.step_id')
+            ->whereIn('s.operation_id', $ids)->where(['s.step_type' => $key->type, 's.sequence' => $key->sequence, 'e.kind' => $kind])
+            ->whereColumn('e.operation_id', 's.operation_id')->whereNotNull('a.sealed_at')->distinct()->pluck('s.operation_id')->map(static fn ($id) => (int) $id)->all();
+    }
+
     /** Logical step and attempt facts for authority stamps. Evidence is left out, so a read's own proof keeps the stamp. */
     public static function stamp(array $operationIds): array
     {

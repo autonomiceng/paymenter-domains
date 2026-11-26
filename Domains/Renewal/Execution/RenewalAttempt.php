@@ -17,23 +17,26 @@ final readonly class RenewalAttempt
 {
     private function __construct(private array $attempt, private ?string $state = null, private ?string $safeCode = null,
         private ?\DateTimeImmutable $startedAt = null, private ?\DateTimeImmutable $completedAt = null, private ?Operation $row = null,
-        private ?string $digest = null) {}
+        private ?string $digest = null, private ?bool $observedKnown = null) {}
 
-    /** The renewal's attempt facts from this row as loaded. A renewal that was never sealed has no send facts but may have terminal proof. */
-    public static function of(Operation $op): self
+    /**
+     * The renewal's attempt facts from this row as loaded. A renewal that was never sealed has no send facts but may have terminal proof.
+     * $observed: whether the sealed attempt retained a positive observation, when the caller already read it in a batch.
+     */
+    public static function of(Operation $op, ?bool $observed = null): self
     {
         if ($op->action !== 'renew') { return new self([]); }
         $attempt = $op->attempt;
         // The retained proof is read only when a caller asks for it, as before this reader.
         return new self(is_array($attempt) ? $attempt : [], $op->state, $op->safe_code, $op->started_at, $op->completed_at, $op,
-            is_string($op->request_fingerprint) ? $op->request_fingerprint : null);
+            is_string($op->request_fingerprint) ? $op->request_fingerprint : null, $observed);
     }
 
     /** Attempt facts of many renewals in one read, keyed by every given operation id. */
     public static function many(array $operationIds): array
     {
         $ids = array_values(array_unique(array_map('intval', $operationIds)));
-        $rows = $ids ? Operation::whereKey($ids)->get(['id', 'action', 'state', 'safe_code', 'attempt', 'renewal_proof', 'started_at', 'completed_at', 'request_fingerprint'])->keyBy('id') : collect();
+        $rows = $ids ? Operation::whereKey($ids)->get(['id', 'action', 'state', 'safe_code', 'attempt', 'started_at', 'completed_at', 'request_fingerprint'])->keyBy('id') : collect();
         $facts = [];
         foreach ($ids as $id) { $facts[$id] = ($row = $rows->get($id)) ? self::of($row) : new self([]); }
         return $facts;
@@ -142,7 +145,8 @@ final readonly class RenewalAttempt
     }
 
     /** True when a check of this sealed attempt retained a positive registrar observation. */
-    public function observed(): bool { return $this->sealed() && $this->row !== null && RenewalProof::held($this->row); }
+    public function observed(): bool
+    { return $this->sealed() && ($this->observedKnown ?? ($this->row !== null && RenewalProof::held($this->row))); }
 
     /** The sealed attempt's send state; null when never sealed. A recorded reply that settled the send state wins. */
     public function sendState(): ?SendState
