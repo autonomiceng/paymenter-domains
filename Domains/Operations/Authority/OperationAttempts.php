@@ -51,7 +51,7 @@ final class OperationAttempts
      * Each listed acquisition's current attempt, or latest history when the step has no owner.
      * @return array<int, array{facts: AttemptFacts, action: string, start: ?\DateTimeImmutable}>
      */
-    public static function latestAcquisitions(array $operationIds): array
+    public static function latestAcquisitions(array $operationIds, bool $lock = false): array
     {
         if (!$operationIds) { return []; }
         $rows = DB::table(OperationSchema::STEPS.' as s')->join(OperationSchema::ATTEMPTS.' as a', 'a.step_id', '=', 's.id')
@@ -61,6 +61,7 @@ final class OperationAttempts
             ->whereIn('s.operation_id', $operationIds)->whereIn('s.step_type', ['register', 'transfer'])
             ->where('s.sequence', 1)->whereColumn('s.step_type', 'o.action')
             ->where(fn ($q) => $q->whereNull('s.current_attempt_id')->orWhereColumn('a.id', 's.current_attempt_id'))
+            ->when($lock, fn ($q) => $q->lockForUpdate())
             ->orderByDesc('a.ordinal')->get(['a.*', 's.operation_id as step_operation_id', 's.current_attempt_id as step_current_attempt_id',
                 's.step_type', 'e.id as fresh_capacity_refusal']);
         $attempts = [];
@@ -131,11 +132,13 @@ final class OperationAttempts
      * (0 for operation-level evidence), then kind. A row that no longer decrypts reads as UNREADABLE, so it never
      * hides the evidence of another operation.
      */
-    public static function evidenceMany(array $operationIds, array $kinds): array
+    public static function evidenceMany(array $operationIds, array $kinds, bool $lock = false): array
     {
         if (!$operationIds || !$kinds) { return []; }
         $found = [];
-        foreach (DB::table(OperationSchema::EVIDENCE)->whereIn('operation_id', $operationIds)->whereIn('kind', $kinds)->orderBy('id')->get() as $row) {
+        $rows = DB::table(OperationSchema::EVIDENCE)->whereIn('operation_id', $operationIds)->whereIn('kind', $kinds)
+            ->when($lock, fn ($q) => $q->lockForUpdate())->orderBy('id')->get();
+        foreach ($rows as $row) {
             $slot = &$found[(int) $row->operation_id][(int) ($row->attempt_id ?? 0)][$row->kind];
             if ($slot === null) { try { $slot = self::decoded($row); } catch (DecryptException|\JsonException) { $slot = self::UNREADABLE; } }
             unset($slot);

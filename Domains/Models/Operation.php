@@ -23,6 +23,7 @@ class Operation extends Model
     private AcquisitionAttempt|\Throwable|null $acquisitionAttempt = null;
     private bool $acquisitionLoaded = false;
     private bool $noAcquisitionStep = false;
+    private bool $validatingUpdate = false;
 
     protected $table = 'domains_operations';
     protected $guarded = [];
@@ -81,8 +82,8 @@ class Operation extends Model
 
     public function getOriginal($key = null, $default = null)
     {
-        if (in_array($key, ['attempt', 'funding', 'policy'], true)) {
-            // Both versions use the same retained attempt. Eloquent otherwise constructs a fresh model on every call.
+        if ($this->validatingUpdate && in_array($key, ['attempt', 'funding', 'policy'], true)) {
+            // The save checks compare both versions against the same retained attempt.
             return $this->projectEvidence($key, Arr::get($this->original, $key, $default), $this->original);
         }
         return parent::getOriginal($key, $default);
@@ -130,7 +131,7 @@ class Operation extends Model
     }
 
     /** Batch the attempt rows for staff readers. Date-only readers need no encrypted evidence. */
-    public static function loadAcquisitionAttempts(iterable $operations, bool $withEvidence = true): void
+    public static function loadAcquisitionAttempts(iterable $operations, bool $withEvidence = true, bool $lock = false): void
     {
         $pending = [];
         foreach ($operations as $op) {
@@ -140,8 +141,8 @@ class Operation extends Model
                 $pending[(int) $op->id][] = $op;
             }
         }
-        $rows = OperationAttempts::latestAcquisitions(array_keys($pending));
-        $attempts = $withEvidence ? AcquisitionAttempt::many($rows) : [];
+        $rows = OperationAttempts::latestAcquisitions(array_keys($pending), $lock);
+        $attempts = $withEvidence ? AcquisitionAttempt::many($rows, $lock) : [];
         foreach ($pending as $id => $models) {
             foreach ($models as $op) {
                 $op->acquisitionRow = $rows[$id] ?? [];
@@ -192,6 +193,48 @@ class Operation extends Model
         })->withoutObjectCaching();
     }
 
+    protected function performUpdate(Builder $query)
+    {
+        $this->validatingUpdate = true;
+        try {
+            return AcquisitionAttempt::key((string) $this->getRawOriginal('action'))
+                ? $this->updateAcquisition($query) : parent::performUpdate($query);
+        } finally {
+            $this->validatingUpdate = false;
+        }
+    }
+
+    private function updateAcquisition(Builder $query): bool
+    {
+        $dirty = $this->getDirty();
+        $identity = array_intersect_key($dirty, array_flip(['started_at', 'request_fingerprint', 'lease_expires_at']));
+        $payload = array_key_exists('payload', $dirty);
+        $claimFacts = [];
+        foreach (array_intersect_key($dirty, ['attempt' => true, 'funding' => true]) as $field => $value) {
+            // The setter strips projected facts. A receipt-only update has no claim authority to write.
+            $facts = AcquisitionAttempt::operationClaimFacts($field, $this->decodeEvidence($value))
+                + AcquisitionAttempt::operationClaimFacts($field, $this->decodeEvidence($this->getRawOriginal($field)));
+            if ($facts) { $claimFacts[$field] = $facts; }
+        }
+        if (!$identity && !$payload && !$claimFacts) { return parent::performUpdate($query); }
+
+        $connection = $this->getConnection();
+        $write = function () use ($query, $identity, $payload, $claimFacts): bool {
+            // The attempt writer holds the same operation lock. Read through old snapshots before saving.
+            $this->newModelQuery()->whereKey($this->getKeyForSaveQuery())->lockForUpdate()->firstOrFail(['id']);
+            $this->reloadAcquisitionAttempt();
+            self::loadAcquisitionAttempts([$this], lock: true);
+            if ($attempt = $this->acquisition($this->original)) {
+                if ($identity || ($payload && $attempt->sealed())) {
+                    throw new \DomainException('Acquisition authority belongs to its operation attempt.');
+                }
+                foreach ($claimFacts as $field => $facts) { $attempt->guardOperationClaimFacts($field, $facts); }
+            }
+            return parent::performUpdate($query);
+        };
+        return $connection->transactionLevel() ? $write() : $connection->transaction($write);
+    }
+
     protected static function booted(): void
     {
         static::saving(static fn(self $operation)=>\Paymenter\Extensions\Servers\Domains\Services\ManagementProgressIndex::capture($operation));
@@ -204,15 +247,6 @@ class Operation extends Model
         });
         static::updating(static function (self $operation): void {
             $dirty = array_keys($operation->getDirty());
-            $claimIdentity = array_intersect($dirty, ['started_at', 'request_fingerprint', 'lease_expires_at']);
-            if (AcquisitionAttempt::key($operation->action) && ($claimIdentity || in_array('payload', $dirty, true))) {
-                // A model loaded before a worker's seal may still have an empty, cached attempt.
-                $operation->reloadAcquisitionAttempt();
-                $attempt = $operation->acquisition($operation->attributes);
-                if ($attempt && ($attempt->sealed() || $claimIdentity)) {
-                    throw new \DomainException('Acquisition authority belongs to its operation attempt.');
-                }
-            }
             if (AcquisitionAttempt::key($operation->action) && $operation->acquisition($operation->attributes)) {
                 $next = (int) $operation->getRawOriginal('transition_revision') + 1;
                 if (in_array('state', $dirty, true)) { $operation->transition_revision = $next; }

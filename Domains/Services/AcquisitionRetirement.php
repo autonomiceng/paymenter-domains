@@ -177,7 +177,11 @@ final readonly class AcquisitionRetirement
     {
         $observations=null;
         if(DB::transactionLevel()===0){
-            try{$observations=self::observations(Operation::whereIn('domain_id',$ids)->whereIn('action',['register','transfer'])->get());}
+            try {
+                $ops = Operation::withAcquisitionStep()->whereIn('domain_id', $ids)->whereIn('action', ['register', 'transfer'])->get();
+                Operation::loadAcquisitionAttempts($ops);
+                $observations = self::observations($ops) + ['operationsByDomain' => $ops->groupBy('domain_id')];
+            }
             catch(\Throwable){ /* Individual inspection retains its usual diagnostics on an unreadable batch. */ }
         }
         foreach($ids as $id){$this->inspectObserved((int)$id,$observations);}
@@ -212,13 +216,16 @@ final readonly class AcquisitionRetirement
         $service=Service::whereKey($seed->service_id)->value('status');
         $cancelled=ServiceCancellation::where('service_id',$seed->service_id)->exists()
             ||(Schema::hasTable('domains_native_intents')&&DB::table('domains_native_intents')->where('service_id',$seed->service_id)->exists());
-        // Quiet closed history never locks the owner's unrelated hosting/money rows.
-        $ops=$seed->operations()->when(DB::transactionLevel() === 0, fn ($q) => $q->withAcquisitionStep())
-            ->whereIn('action',['register','transfer'])->get();
-        if (DB::transactionLevel() === 0) { Operation::loadAcquisitionAttempts($ops); }
         // Batch the preliminary history reads only outside transactions. The authoritative path below
         // still takes the native prefix and rereads each operation before recording any alert.
         $observed=DB::transactionLevel()===0;
+        if ($observed && $observations !== null) {
+            $ops = $observations['operationsByDomain']->get($seed->id, collect());
+        } else {
+            $ops = $seed->operations()->when($observed, fn ($q) => $q->withAcquisitionStep())
+                ->whereIn('action', ['register', 'transfer'])->get();
+            if ($observed) { Operation::loadAcquisitionAttempts($ops); }
+        }
         ['invoices'=>$invoices,'payments'=>$payments,'peers'=>$peers,'money'=>$money]=$observed
             ?($observations??self::observations($ops)):['invoices'=>null,'payments'=>null,'peers'=>null,'money'=>[]];
         $hit=$ops->contains(function($op)use($seed,$service,$cancelled,$observed,$invoices,$payments,$peers,$money){

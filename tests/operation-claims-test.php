@@ -45,6 +45,45 @@ $cases['attempt-authority'] = static function () use ($new, $engine, $writer): v
         same($before + 1, $writer->calls, 'A restarted worker cannot send again');
     }
 };
+$cases['stale-claim-evidence'] = static function () use ($new, $engine, $preflight, $writer): void {
+    $op = $new('stale-claim.example.com');
+    $op->update(['state' => 'queued']);
+    $staleAttempt = $op->fresh();
+    $staleFunding = Operation::withAcquisitionStep()->findOrFail($op->id);
+    same('queued', $staleAttempt->state, 'The stale model predates the claim');
+    same([], $staleAttempt->attempt ?? [], 'The stale attempt projection is empty');
+    same([], $staleFunding->attempt ?? [], 'The stale funding writer has no attempt');
+    $originalReader = clone $staleAttempt;
+
+    $refused = [];
+    $readsCurrentClaim = false;
+    $preflight->during = static function (Operation $claimed) use ($staleAttempt, $staleFunding, $originalReader, &$refused, &$readsCurrentClaim): void {
+        $claimKey = $claimed->attempt['claim_key'];
+        $readsCurrentClaim = ($originalReader->getOriginal('attempt')['claim_key'] ?? null) === $claimKey;
+        foreach ([
+            [$staleAttempt, 'attempt', ['claim_key' => str_repeat('a', 32)]],
+            [$staleFunding, 'funding', ['claim' => []]],
+        ] as [$stale, $field, $value]) {
+            try {
+                $stale->update([$field => $value]);
+                $refused[$field] = false;
+            } catch (\DomainException) {
+                $refused[$field] = true;
+            }
+        }
+    };
+    $before = $writer->calls;
+    $result = $engine->execute($op->id);
+    $preflight->during = null;
+
+    $seal = OperationAttempts::sealed((int) $result->id, new StepKey('register', 1));
+    $expected = ['original_reads_claim' => true, 'attempt_refused' => true, 'funding_refused' => true,
+        'sends' => 1, 'sealed_and_consumed' => true];
+    $actual = ['original_reads_claim' => $readsCurrentClaim, 'attempt_refused' => $refused['attempt'] ?? false,
+        'funding_refused' => $refused['funding'] ?? false, 'sends' => $writer->calls - $before,
+        'sealed_and_consumed' => $seal?->grantConsumedAt !== null];
+    same($expected, $actual, 'Stale claim regression: '.json_encode($actual, JSON_THROW_ON_ERROR));
+};
 $cases['funds-cutoff'] = static function () use ($new, $engine, $preflight, $clock, $user, $assertNoSend): void {
     // The real worker must release its own unsealed claim when the funds cutoff passes during preflight.
     $op=$new('funds-seal-cutoff.example.com');

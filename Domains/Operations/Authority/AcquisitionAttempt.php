@@ -27,9 +27,9 @@ final readonly class AcquisitionAttempt
     }
 
     /** One bad attempt must fail closed at its own reader without hiding the other rows. */
-    public static function many(array $facts): array
+    public static function many(array $facts, bool $lock = false): array
     {
-        $rows = OperationAttempts::evidenceMany(array_keys($facts), self::KINDS);
+        $rows = OperationAttempts::evidenceMany(array_keys($facts), self::KINDS, $lock);
         $attempts = [];
         foreach ($facts as $id => ['facts' => $attempt, 'action' => $action]) {
             try { $attempts[$id] = self::fromRows($attempt, $action, $rows[$id] ?? []); }
@@ -123,17 +123,29 @@ final readonly class AcquisitionAttempt
     public function keepOperationFacts(string $field, array $projection, ?array $value): ?array
     {
         $stored = $projection ? self::retain($projection, $value) : $value;
+        $this->guardOperationClaimFacts($field, self::operationClaimFacts($field, $stored));
+        return $stored;
+    }
+
+    /** Identify the claim facts that an operation column could write. */
+    public static function operationClaimFacts(string $field, ?array $value): array
+    {
         $reserved = match ($field) {
             'attempt' => ['claim_key', 'dispatch_attempted_at', 'authorized_cost', 'registration_admission', 'transfer_admission',
                 'execution', 'send_failure', 'evidence', 'charge', 'order_candidates', 'registration', 'corrections', 'reconciliation',
-                'test_call_refusals', 'capacity_deferrals', ...($this->hasOriginalClaim() ? ['seal', 'send_state'] : [])],
+                'test_call_refusals', 'capacity_deferrals', 'seal', 'send_state'],
             'funding' => ['claim', 'seal'],
             default => [],
         };
-        if (array_intersect(array_keys($stored ?? []), $reserved)) {
+        return array_intersect_key($value ?? [], array_flip($reserved));
+    }
+
+    public function guardOperationClaimFacts(string $field, array $facts): void
+    {
+        if ($field === 'attempt' && !$this->hasOriginalClaim()) { unset($facts['seal'], $facts['send_state']); }
+        if ($facts) {
             throw new \DomainException('Acquisition evidence belongs to its operation attempt.');
         }
-        return $stored;
     }
 
     /** Raw claim facts on a step-backed acquisition are contradictory. Refuse any stale worker that sees them. */
