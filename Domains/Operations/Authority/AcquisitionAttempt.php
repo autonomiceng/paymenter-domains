@@ -27,12 +27,11 @@ final readonly class AcquisitionAttempt
     }
 
     /** One bad attempt must fail closed at its own reader without hiding the other rows. */
-    public static function many(array $ids): array
+    public static function many(array $facts): array
     {
-        $facts = OperationAttempts::latestAcquisitions($ids);
         $rows = OperationAttempts::evidenceMany(array_keys($facts), self::KINDS);
         $attempts = [];
-        foreach ($facts as $id => [$attempt, $action]) {
+        foreach ($facts as $id => ['facts' => $attempt, 'action' => $action]) {
             try { $attempts[$id] = self::fromRows($attempt, $action, $rows[$id] ?? []); }
             catch (DecryptException|\DomainException $error) { $attempts[$id] = $error; }
         }
@@ -69,9 +68,6 @@ final readonly class AcquisitionAttempt
     { return ($this->rows['test_capacity']['outcome'] ?? null) !== 'fresh'; }
 
     public function sealed(): bool { return $this->facts->sealed() && !$this->facts->released; }
-
-    public function start(): ?\DateTimeImmutable
-    { return $this->hasOriginalClaim() ? new \DateTimeImmutable($this->origin['started_at']) : null; }
 
     public function digest(): ?string { return $this->hasOriginalClaim() ? $this->origin['digest'] : null; }
 

@@ -80,6 +80,7 @@ final class PaidUncertainty
         $names=\App\Models\Server::whereIn('id',$ids)->pluck('name','id');
         // The oldest held request per account decides Delayed: one bounded read of the rows already found.
         $firstOps = Operation::whereKey($held->values()->map(fn($id)=>(int)$id)->all())->get()->keyBy('server_id');
+        Operation::loadAcquisitionAttempts($firstOps, withEvidence: false);
         $out=[];
         foreach ($held as $id=>$oldest) {
             $review=$reviews->get($id);

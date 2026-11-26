@@ -164,7 +164,9 @@ final class OperationClaims
         $policy = $op->policy;
         $lease = $now->modify('+'.ExecuteOperation::LEASE_SECONDS.' seconds');
         $prior = AcquisitionAttempt::of((int) $op->id, $op->action, true);
-        $origin = ['started_at' => $start->format(DATE_ATOM), 'digest' => $digest, 'funding' => $paid];
+        // A worker retry keeps the original acquisition start and gets its own lease.
+        if ($retry) { $start = $op->started_at ?? throw new \DomainException('Original acquisition start unavailable.'); }
+        $origin = ['digest' => $digest, 'funding' => $paid];
         if ($retry && $prior) {
             $origin = ['origin_attempt_id' => $prior->originId()];
         } elseif (!$prior && $op->attempt) {
@@ -173,11 +175,10 @@ final class OperationClaims
             $origin['history'] = array_intersect_key($op->attempt, ['test_call_refusals' => true, 'capacity_deferrals' => true]);
             if ($retry) {
                 $origin['identity'] = $op->attempt['claim_key'];
-                $origin['started_at'] = $op->started_at->format(DATE_ATOM);
             }
             RetainedAcquisition::clear($op);
         }
-        $token = $this->attempts->claim((int) $op->id, AcquisitionAttempt::key($op->action), $lease, $origin);
+        $token = $this->attempts->claim((int) $op->id, AcquisitionAttempt::key($op->action), $lease, $origin, $start);
         if (!$token instanceof AttemptToken) { throw new \DomainException('Acquisition claim changed.'); }
         $op->reloadAcquisitionAttempt();
         if ($system && $system->record['claim_key'] === null) { $policy['balance_retry'] = $system->claimed($op)->record; }

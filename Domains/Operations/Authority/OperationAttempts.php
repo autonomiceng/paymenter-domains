@@ -47,21 +47,30 @@ final class OperationAttempts
         return $facts?->sealed() && !$facts->released ? $facts : null;
     }
 
-    /** Each listed acquisition's current attempt, or latest history when the step has no owner. */
+    /**
+     * Each listed acquisition's current attempt, or latest history when the step has no owner.
+     * @return array<int, array{facts: AttemptFacts, action: string, start: ?\DateTimeImmutable}>
+     */
     public static function latestAcquisitions(array $operationIds): array
     {
         if (!$operationIds) { return []; }
         $rows = DB::table(OperationSchema::STEPS.' as s')->join(OperationSchema::ATTEMPTS.' as a', 'a.step_id', '=', 's.id')
             ->join('domains_operations as o', 'o.id', '=', 's.operation_id')
+            ->leftJoin(OperationSchema::EVIDENCE.' as e', fn ($join) => $join->on('e.attempt_id', '=', 'a.id')
+                ->where('e.kind', 'test_capacity')->where('e.outcome', 'fresh'))
             ->whereIn('s.operation_id', $operationIds)->whereIn('s.step_type', ['register', 'transfer'])
             ->where('s.sequence', 1)->whereColumn('s.step_type', 'o.action')
             ->where(fn ($q) => $q->whereNull('s.current_attempt_id')->orWhereColumn('a.id', 's.current_attempt_id'))
-            ->orderByDesc('a.ordinal')->get(['a.*', 's.operation_id as step_operation_id', 's.current_attempt_id as step_current_attempt_id', 's.step_type']);
+            ->orderByDesc('a.ordinal')->get(['a.*', 's.operation_id as step_operation_id', 's.current_attempt_id as step_current_attempt_id',
+                's.step_type', 'e.id as fresh_capacity_refusal']);
         $attempts = [];
         foreach ($rows as $row) {
             $id = (int) $row->step_operation_id;
             $step = (object) ['id' => $row->step_id, 'current_attempt_id' => $row->step_current_attempt_id];
-            $attempts[$id] ??= [self::facts($id, $step, $row), $row->step_type];
+            $attempts[$id] ??= [
+                'facts' => self::facts($id, $step, $row), 'action' => $row->step_type,
+                'start' => $row->fresh_capacity_refusal === null ? self::time($row->claimed_at) : null,
+            ];
         }
         return $attempts;
     }

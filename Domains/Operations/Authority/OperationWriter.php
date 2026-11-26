@@ -18,7 +18,8 @@ final readonly class OperationWriter
     public function __construct(private Clock $clock) {}
 
     /** A new pre-seal claim. A live claim is busy; a sealed attempt keeps the step, so no second claim exists. */
-    public function claim(int $operationId, StepKey $key, \DateTimeImmutable $until, ?array $acquisition = null): AttemptToken|Transition
+    public function claim(int $operationId, StepKey $key, \DateTimeImmutable $until, ?array $acquisition = null,
+        ?\DateTimeImmutable $claimedAt = null): AttemptToken|Transition
     {
         self::requireTransaction(); $now = $this->clock->now();
         $stepId = $this->stepId($operationId, $key);
@@ -29,7 +30,7 @@ final readonly class OperationWriter
         if ($latest?->current) { $this->archive($latest, $now); }
         $claim = bin2hex(random_bytes(16)); $ordinal = ($latest?->token->ordinal ?? 0) + 1;
         $id = (int) DB::table(OperationSchema::ATTEMPTS)->insertGetId(['step_id' => $stepId, 'ordinal' => $ordinal, 'claim_key' => $claim,
-            'claimed_at' => OperationAttempts::at($now), 'claim_until' => OperationAttempts::at($until), 'send_state' => SendState::DefinitelyUnsent->value]);
+            'claimed_at' => OperationAttempts::at($claimedAt ?? $now), 'claim_until' => OperationAttempts::at($until), 'send_state' => SendState::DefinitelyUnsent->value]);
         $this->point($stepId, $id);
         if ($acquisition !== null) {
             $this->append($operationId, $id, 'claim', 'local', 'claimed', ['identity' => $claim, ...$acquisition], 'claim');
@@ -53,7 +54,7 @@ final readonly class OperationWriter
             'authorized_amount' => $cost['amount'] ?? null, 'authorized_currency' => $cost['currency'] ?? null, 'mode' => $record->step->type,
         ]);
         $this->append($id, $attemptId, 'claim', 'retained', 'sealed', [
-            'identity' => $record->claimKey, 'started_at' => $record->startedAt->format(DATE_ATOM), 'digest' => $record->digest,
+            'identity' => $record->claimKey, 'digest' => $record->digest,
             'legacy_attempt' => $record->envelope, 'legacy_funding' => $record->funding,
         ], 'claim');
         $this->point($stepId, $attemptId);

@@ -6,7 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Models;
 
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AttemptToken};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AttemptFacts, AttemptToken, OperationAttempts};
 
 class Operation extends Model
 {
@@ -16,6 +16,8 @@ class Operation extends Model
     public ?Tld $catalogueTld = null;
     /** Exact worker authority, set by the claim or seal transaction and never persisted. */
     public ?AttemptToken $acquisitionWorker = null;
+    /** @var array{facts: AttemptFacts, action: string, start: ?\DateTimeImmutable}|array{}|null */
+    private ?array $acquisitionRow = null;
     private AcquisitionAttempt|\Throwable|null $acquisitionAttempt = null;
     private bool $acquisitionLoaded = false;
 
@@ -69,19 +71,28 @@ class Operation extends Model
         };
     }
 
+    private function acquisitionRow(array $row): array
+    {
+        if (!isset($row['id'], $row['action'], $row['transition_revision'])
+            || AcquisitionAttempt::key($this->getRawOriginal('action') ?? $row['action']) === null) { return []; }
+        $id = (int) $row['id'];
+        return $this->acquisitionRow ??= OperationAttempts::latestAcquisitions([$id])[$id] ?? [];
+    }
+
     private function acquisition(array $row): ?AcquisitionAttempt
     {
-        if (!isset($row['id'], $row['action'], $row['transition_revision'])) { return null; }
+        if (!($facts = $this->acquisitionRow($row))) { return null; }
         if (!$this->acquisitionLoaded) {
-            $this->acquisitionAttempt = AcquisitionAttempt::of((int) $row['id'], $this->getRawOriginal('action') ?? $row['action']);
+            $id = (int) $row['id'];
+            $this->acquisitionAttempt = AcquisitionAttempt::many([$id => $facts])[$id];
             $this->acquisitionLoaded = true;
         }
         if ($this->acquisitionAttempt instanceof \Throwable) { throw $this->acquisitionAttempt; }
         return $this->acquisitionAttempt;
     }
 
-    /** Load the same attempt projection for each record in an existing staff read batch. */
-    public static function loadAcquisitionAttempts(iterable $operations): void
+    /** Batch the attempt rows for staff readers. Date-only readers need no encrypted evidence. */
+    public static function loadAcquisitionAttempts(iterable $operations, bool $withEvidence = true): void
     {
         $pending = [];
         foreach ($operations as $op) {
@@ -90,11 +101,13 @@ class Operation extends Model
                 $pending[(int) $op->id][] = $op;
             }
         }
-        $attempts = AcquisitionAttempt::many(array_keys($pending));
+        $rows = OperationAttempts::latestAcquisitions(array_keys($pending));
+        $attempts = $withEvidence ? AcquisitionAttempt::many($rows) : [];
         foreach ($pending as $id => $models) {
             foreach ($models as $op) {
+                $op->acquisitionRow = $rows[$id] ?? [];
                 $op->acquisitionAttempt = $attempts[$id] ?? null;
-                $op->acquisitionLoaded = true;
+                $op->acquisitionLoaded = $withEvidence;
             }
         }
     }
@@ -102,6 +115,7 @@ class Operation extends Model
     /** Called after a writer transition on this model's locked operation. */
     public function reloadAcquisitionAttempt(): void
     {
+        $this->acquisitionRow = null;
         $this->acquisitionAttempt = null;
         $this->acquisitionLoaded = false;
     }
@@ -114,9 +128,11 @@ class Operation extends Model
 
     protected function startedAt(): Attribute
     {
-        return Attribute::get(fn ($value, array $row) => ($attempt = $this->acquisition($row))
-            ? ($attempt->start() ? $this->asDateTime($attempt->start())->toImmutable() : null)
-            : ($value === null ? null : $this->asDateTime($value)->toImmutable()))->withoutObjectCaching();
+        return Attribute::get(function ($value, array $row) {
+            $acquisition = $this->acquisitionRow($row);
+            $start = $acquisition ? $acquisition['start'] : $value;
+            return $start === null ? null : $this->asDateTime($start)->toImmutable();
+        })->withoutObjectCaching();
     }
 
     protected function requestFingerprint(): Attribute
@@ -127,10 +143,10 @@ class Operation extends Model
     protected function leaseExpiresAt(): Attribute
     {
         return Attribute::get(function ($value, array $row) {
-            $attempt = $this->acquisition($row);
-            if (!$attempt) { return $value === null ? null : $this->asDateTime($value)->toImmutable(); }
-            return ($row['state'] ?? null) === 'running' && $attempt->facts->current
-                ? $this->asDateTime($attempt->facts->claimUntil)->toImmutable() : null;
+            $facts = $this->acquisitionRow($row)['facts'] ?? null;
+            if (!$facts) { return $value === null ? null : $this->asDateTime($value)->toImmutable(); }
+            return ($row['state'] ?? null) === 'running' && $facts->current
+                ? $this->asDateTime($facts->claimUntil)->toImmutable() : null;
         })->withoutObjectCaching();
     }
 
