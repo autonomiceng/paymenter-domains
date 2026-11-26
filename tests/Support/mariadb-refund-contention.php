@@ -16,7 +16,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,FundsWaits,Mone
 $root=(string)getenv('REFUND_BARRIERS');expect(is_dir($root),'Private barriers required');$role=getenv('REFUND_ROLE');
 $signal=static fn(string $step)=>file_put_contents($root.'/'.$step,'ready');
 $wait=static function(string $step)use($root):void {
-    $end=microtime(true)+25;while(!is_file($root.'/'.$step)){if(microtime(true)>$end){throw new RuntimeException('Barrier timeout: '.$step);}usleep(10000);}
+    $end=mariadbClock()+25;while(!is_file($root.'/'.$step)){if(mariadbClock()>$end){throw new RuntimeException('Barrier timeout: '.$step);}usleep(10000);}
 };
 // retry: one deadlock, then the fresh retry credits. deferred: two deadlocks, queued, next sweep credits. timeout: two lock wait timeouts.
 // inversion-retry and inversion-deferred: the same contracts when the holder locks invoice before customer.

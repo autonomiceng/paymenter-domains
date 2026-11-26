@@ -17,7 +17,7 @@ $phase=getenv('TPL_PHASE');$case=(string)getenv('TPL_CASE');$action=(string)gete
 $name=$case.'-'.$action;
 $signal=static fn(string $step)=>file_put_contents($root.'/'.$name.'-'.$step,'ready');
 $wait=static function(string $step)use($root,$name):void {
-    $end=microtime(true)+25;while(!is_file($root.'/'.$name.'-'.$step)){if(microtime(true)>$end){throw new RuntimeException('Barrier timeout: '.$step);}usleep(10000);}
+    $end=mariadbClock()+25;while(!is_file($root.'/'.$name.'-'.$step)){if(mariadbClock()>$end){throw new RuntimeException('Barrier timeout: '.$step);}usleep(10000);}
 };
 if($phase==='seed'){
     Artisan::call('migrate',['--force'=>true]);
@@ -56,8 +56,8 @@ if($phase==='hold'){
             .' JOIN information_schema.INNODB_LOCKS l ON l.lock_id=w.requested_lock_id'
             .' WHERE r.trx_mysql_thread_id=? AND b.trx_mysql_thread_id=CONNECTION_ID() AND l.lock_table=?',[$writer,$lockTable])->n;
         // InnoDB refreshes these tables only after 0.1 s without a read; faster polls re-read the old state.
-        $end=microtime(true)+20;
-        while($waits()===0){if(microtime(true)>$end){throw new RuntimeException('The staff write did not wait on the expected lock.');}usleep(200000);}
+        $end=mariadbClock()+20;
+        while($waits()===0){if(mariadbClock()>$end){throw new RuntimeException('The staff write did not wait on the expected lock.');}usleep(200000);}
         file_put_contents($root.'/'.$name.'-lock-wait',$table);
     };
     if($case==='late'){

@@ -121,7 +121,8 @@ fi
                 with mock.patch.object(runner, 'manifest', return_value=suites), \
                      mock.patch.object(runner, 'git_tree', return_value=(None, None)), \
                      mock.patch.object(sys, 'argv', ['test.py', *flags]), \
-                     mock.patch.dict(os.environ, {'CONVERSION_MARIADB_PHP': '/fixture/php'}, clear=True), \
+                     mock.patch.dict(os.environ, {'CONVERSION_MARIADB_PHP': '/fixture/php',
+                                                  'DOCKER_HOST': 'unix:///synthetic/docker.sock'}, clear=True), \
                      mock.patch.object(tempfile, 'tempdir', directory), \
                      mock.patch.object(runner.php_suite, 'RUNTIME', root/'absent'), \
                      mock.patch.object(runner.php_suite, 'domains', return_value=91) as container, \
@@ -141,6 +142,41 @@ fi
                         self.assertEqual(env['CONVERSION_MARIADB_PHP'], '/fixture/php')
                         self.assertEqual(run.call_args.kwargs['jobs'], 1)
                     container.assert_not_called()
+
+    def test_mariadb_daemon_is_the_callers_docker_context_when_docker_host_is_unset(self):
+        maria = 'tests/test_schema_mariadb.py'
+        with tempfile.TemporaryDirectory() as directory:
+            socket = Path(directory)/'rootless.sock'
+            socket.touch()
+            inspected = []
+            def docker(argv, *, env, **options):
+                inspected.append((argv[1:], env.get('DOCKER_CONTEXT')))
+                endpoint = [{'Name': 'rootless', 'Endpoints': {'docker': {'Host': 'unix://'+str(socket)}}}]
+                return subprocess.CompletedProcess(argv, 0, json.dumps(endpoint).encode(), b'')
+            caller = {'CONVERSION_MARIADB_PHP': '/fixture/php', 'PATH': '/usr/bin:/bin', 'DOCKER_CONTEXT': 'rootless'}
+            with mock.patch.object(runner, 'manifest', return_value={'mariadb': [maria]}), \
+                 mock.patch.object(runner, 'git_tree', return_value=(None, None)), \
+                 mock.patch.object(sys, 'argv', ['test.py', '--only', maria]), \
+                 mock.patch.dict(os.environ, caller, clear=True), mock.patch.object(tempfile, 'tempdir', directory), \
+                 mock.patch.object(runner.test_workers.shutil, 'which', return_value='/usr/bin/docker'), \
+                 mock.patch.object(runner.test_workers.subprocess, 'run', side_effect=docker), \
+                 mock.patch('stat.S_ISSOCK', return_value=True), mock.patch.object(runner, 'run', return_value=0) as run:
+                self.assertEqual(runner.main(launch=True), 0)
+        self.assertEqual(run.call_args.args[1].get('DOCKER_HOST'), 'unix://'+str(socket))
+        self.assertEqual(inspected, [(['context', 'inspect'], 'rootless')])
+        self.assertEqual(run.call_args.kwargs['docker_daemon'],
+                         {'host': 'unix://'+str(socket), 'source': 'context rootless', 'refused': None})
+
+    def test_mariadb_daemon_refuses_a_relative_socket_path(self):
+        # A relative path checked in the caller's directory could name another socket once the harness runs elsewhere.
+        for caller in ({'DOCKER_HOST': 'unix://run/docker.sock'}, {'PATH': '/usr/bin:/bin'}):
+            endpoint = [{'Name': 'relative', 'Endpoints': {'docker': {'Host': 'unix://run/docker.sock'}}}]
+            inspect = subprocess.CompletedProcess(['docker'], 0, json.dumps(endpoint).encode(), b'')
+            with mock.patch.object(runner.test_workers.shutil, 'which', return_value='/usr/bin/docker'), \
+                 mock.patch.object(runner.test_workers.subprocess, 'run', return_value=inspect), \
+                 mock.patch('stat.S_ISSOCK', return_value=True), mock.patch.object(os, 'stat'):
+                with self.assertRaisesRegex(ValueError, 'must be absolute'):
+                    runner.test_workers.docker_daemon(caller)
 
     def test_hosted_bundle_uses_the_selected_runtime_even_with_a_different_runc_on_path(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -14,7 +14,7 @@ $root=(string)getenv('CHECKOUT_BARRIERS');expect(is_dir($root),'Private barriers
 $phase=getenv('CHECKOUT_PHASE');$case=(string)getenv('CHECKOUT_CASE');$prefix=(string)getenv('SCHEMA_PREFIX');
 $signal=static fn(string $step)=>file_put_contents($root.'/'.$case.'-'.$step,'ready');
 $wait=static function(string $step)use($root,$case):void {
-    $end=microtime(true)+25;while(!is_file($root.'/'.$case.'-'.$step)){if(microtime(true)>$end){throw new RuntimeException('Barrier timeout: '.$step);}usleep(10000);}
+    $end=mariadbClock()+25;while(!is_file($root.'/'.$case.'-'.$step)){if(mariadbClock()>$end){throw new RuntimeException('Barrier timeout: '.$step);}usleep(10000);}
 };
 if($phase==='seed'){
     Artisan::call('migrate',['--force'=>true]);
@@ -52,8 +52,8 @@ if($phase==='checkout'){
     // Core Cart has locked the customer row and is about to insert the order and its invoice.
     Event::listen(\App\Events\Order\Creating::class,static function()use($signal,$wait,$waiting,$root,$case):void {
         $signal('customer-locked');$wait('writer-started');
-        $writer=(int)file_get_contents($root.'/'.$case.'-writer-connection');$end=microtime(true)+20;
-        while($waiting($writer,'users')===0){if(microtime(true)>$end){throw new RuntimeException('The writer did not wait on the checkout customer row.');}usleep(200000);}
+        $writer=(int)file_get_contents($root.'/'.$case.'-writer-connection');$end=mariadbClock()+20;
+        while($waiting($writer,'users')===0){if(mariadbClock()>$end){throw new RuntimeException('The writer did not wait on the checkout customer row.');}usleep(200000);}
         file_put_contents($root.'/'.$case.'-customer-wait','proved');
     });
     commerceCheckout($customer,$cart)->assertHasNoErrors();

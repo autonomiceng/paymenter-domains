@@ -53,8 +53,8 @@ $feed = new class implements PricedFeed {
         same(0, DB::transactionLevel(), 'Physical synthetic read is outside locks');
         DB::table('offer_fixture_reads')->insert(['id'=>null]);
         file_put_contents(getenv('OFFER_BARRIER').'.ready', 'ready');
-        $until = microtime(true) + 30;
-        while (!is_file(getenv('OFFER_BARRIER').'.release') && microtime(true) < $until) { usleep(1000); }
+        $until = mariadbClock() + 30;
+        while (!is_file(getenv('OFFER_BARRIER').'.release') && mariadbClock() < $until) { usleep(1000); }
         expect(is_file(getenv('OFFER_BARRIER').'.release'), 'Second connection completed before release');
         return; yield;
     }

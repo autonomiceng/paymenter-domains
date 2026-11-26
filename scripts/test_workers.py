@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import uuid
@@ -21,9 +22,11 @@ TEST_OPTIONS = {'DOMAINS_TEST_MONEY_SCALE_FULL_MATRIX': 'tests/money-lock-scale-
 # Runner controls and named test options that reach commands; other DOMAINS_TEST_ values stay with the caller.
 RUNNER_ENV = ['DOMAINS_TEST_CGROUP', 'DOMAINS_TEST_BUDGET', 'DOMAINS_TEST_LIMITS',
               'DOMAINS_TEST_JOBS', 'DOMAINS_TEST_FIXTURE_COSTS', *TEST_OPTIONS]
-# The MariaDB launcher reaches the caller's Docker client, and keeps its short socket scratch path, through
-# these, and runs unconfined, until it gets its own isolated home.
-MARIADB_HOST_PATHS = frozenset({'HOME', 'XDG_RUNTIME_DIR', 'TMPDIR'})
+# The only caller inputs a MariaDB command gets: the suite's scratch root, which keeps its socket path short, and the
+# pinned PHP and app; mariadb_environment adds the daemon it admitted as DOCKER_HOST. Its home and runtime
+# paths are private, and it seals its own Docker and PHP environments; it still runs unconfined.
+MARIADB_INPUTS = ('TMPDIR', 'CONVERSION_MARIADB_PHP', 'PAYMENTER_TEST_APP')
+MARIADB_HOST_PATHS = frozenset({'TMPDIR'})
 # Writable per-user locations and nested resource receipts, each inside the command's own root.
 PRIVATE_PATHS = {'HOME': 'home', 'XDG_CONFIG_HOME': 'home/.config', 'XDG_DATA_HOME': 'home/.local/share',
                  'XDG_STATE_HOME': 'home/.local/state', 'XDG_CACHE_HOME': 'cache', 'XDG_RUNTIME_DIR': 'run',
@@ -38,6 +41,44 @@ def test_options(only=None):
     if only is not None and (refused := [name for name in options if only != [TEST_OPTIONS[name]]]):
         raise ValueError(', '.join(refused)+' applies only to --only '+', '.join(TEST_OPTIONS[name] for name in refused))
     return options
+
+
+def docker_daemon(environ):
+    """The one Docker daemon a MariaDB run may use, resolved once from the caller's own ENVIRON before any command
+    environment is sealed: DOCKER_HOST, else the endpoint of the caller's current Docker context. It must be a local
+    unix:// socket that exists. Returns the receipt row; host is None, with the reason, when there is no daemon to
+    admit, and the harness then skips. There is no default socket to fall back to."""
+    host, source = environ.get('DOCKER_HOST'), 'DOCKER_HOST'
+    if not host:
+        docker = shutil.which('docker', path=environ.get('PATH', '/usr/bin:/bin'))
+        if not docker:
+            return {'host': None, 'source': None, 'refused': 'Docker unavailable.'}
+        try:
+            result = subprocess.run([docker, 'context', 'inspect'], env=dict(environ), capture_output=True, timeout=20)
+            if result.returncode:
+                raise ValueError(result.returncode)
+            context, = json.loads(result.stdout)
+            host, source = context['Endpoints']['docker']['Host'], 'context '+context['Name']
+        except (OSError, subprocess.TimeoutExpired, ValueError, TypeError, KeyError):
+            return {'host': None, 'source': 'context', 'refused': 'Current Docker context unreadable.'}
+    if not isinstance(host, str) or not host.startswith('unix://'):
+        raise ValueError('Only a local Unix-socket Docker daemon is supported ('+source+').')
+    if not os.path.isabs(host.removeprefix('unix://')):
+        raise ValueError('The Docker socket path must be absolute ('+source+'): '+host)
+    try:
+        socket = stat.S_ISSOCK(os.stat(host.removeprefix('unix://')).st_mode)
+    except OSError:
+        socket = False
+    if not socket:
+        return {'host': None, 'source': source, 'refused': 'Docker socket missing: '+host}
+    return {'host': host, 'source': source, 'refused': None}
+
+
+def mariadb_environment(environ):
+    """The caller inputs a MariaDB command gets, with the admitted daemon as DOCKER_HOST, and that daemon's receipt row."""
+    daemon = docker_daemon(environ)
+    inputs = {name: environ[name] for name in MARIADB_INPUTS if name in environ}
+    return dict(inputs, **({'DOCKER_HOST': daemon['host']} if daemon['host'] else {})), daemon
 
 
 def runtime_hashes(root):

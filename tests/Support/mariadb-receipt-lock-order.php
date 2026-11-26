@@ -18,8 +18,8 @@ $root=(string)getenv('RECEIPT_BARRIERS');expect(is_dir($root),'Private barriers 
 $phase=getenv('RECEIPT_PHASE');$case=(string)getenv('RECEIPT_CASE');$name=(string)getenv('RECEIPT_NAME');$prefix=(string)getenv('SCHEMA_PREFIX');
 $signal=static fn(string $step)=>file_put_contents($root.'/'.$name.'-'.$step,'ready');
 $wait=static function(string $step)use($root,$name):void {
-    $end=microtime(true)+25;
-    while(!is_file($root.'/'.$name.'-'.$step)){if(microtime(true)>$end){throw new RuntimeException('Barrier timeout: '.$step);}usleep(10000);}
+    $end=mariadbClock()+25;
+    while(!is_file($root.'/'.$name.'-'.$step)){if(mariadbClock()>$end){throw new RuntimeException('Barrier timeout: '.$step);}usleep(10000);}
 };
 if($phase==='seed'){
     Artisan::call('migrate',['--force'=>true]);
@@ -82,10 +82,10 @@ if($phase==='receipt'){
         // Core holds the invoice and its new payment row. Pause until the other writer waits on us or finishes.
         $armed=false;DB::afterCommit(static function()use(&$inCore):void {$inCore=false;});
         $signal('receipt-inserted');$wait('runner-started');
-        $runner=(int)file_get_contents($root.'/'.$name.'-connection');$end=microtime(true)+20;
+        $runner=(int)file_get_contents($root.'/'.$name.'-connection');$end=mariadbClock()+20;
         while(!is_file($root.'/'.$name.'-runner-done')){
             if($blocks($runner)){$waited=true;break;}
-            if(microtime(true)>$end){throw new RuntimeException('The other writer neither waited nor finished.');}usleep(100000);
+            if(mariadbClock()>$end){throw new RuntimeException('The other writer neither waited nor finished.');}usleep(100000);
         }
     });
     $error=null;$inCore=true;

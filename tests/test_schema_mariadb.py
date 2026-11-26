@@ -8,6 +8,7 @@ import re
 import secrets
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -17,28 +18,24 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'scripts'))
 import native
 
-IMAGE = 'mariadb:11.4.5'
+# mariadb:11.4.5 by its registry digest; another local image under the same tag is refused, and nothing is pulled.
+IMAGE = 'mariadb@sha256:49117dcc565cf51aa57ac5fca59ab31213402ff0eae6ffc13c46a37b938f7e4b'
 
 
-def memory_gate():
-    for attempt in range(41):
-        available = int(next(line.split()[1] for line in Path('/proc/meminfo').read_text().splitlines()
-                             if line.startswith('MemAvailable:')))
-        if available >= 1572864:
-            return
-        if attempt == 40:
-            raise RuntimeError('MemAvailable remained below 1.5 GiB for ten minutes.')
-        time.sleep(15)
+def sealed_environment(scratch, **names):
+    """The whole environment of a Docker or PHP command: fixed locale, tool path and private home and temp roots in
+    SCRATCH, plus NAMES. Nothing comes from the caller, so host config, credentials or PHP settings cannot reach it."""
+    return dict(PATH='/usr/bin:/bin', LANG='C.UTF-8', LC_ALL='C.UTF-8', TZ='UTC', HOME=str(scratch/'home'),
+                TMPDIR=str(scratch/'tmp'), **names)
 
 
-def php_environment(app, socket, database, password, prefix):
-    # Laravel's DB_URL can override even explicit socket/database settings.
-    return dict(os.environ, APP_ENV='testing', APP_KEY='base64:dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHQ=',
-        APP_URL='http://schema.invalid', DB_CONNECTION='mysql', DB_DATABASE=database, DB_USERNAME='root',
-        DB_PASSWORD=password, DB_SOCKET=str(socket), SCHEMA_PREFIX=prefix, DB_COLLATION='utf8mb4_unicode_ci',
-        CACHE_STORE='array', QUEUE_CONNECTION='sync', SESSION_DRIVER='array', MAIL_MAILER='array',
-        TELEMETRY_ENABLED='false', PAYMENTER_TEST_FIXTURE=str(app), CONVERSION_PHASE='schema',
-        DB_URL='', PHPRC='', PHP_INI_SCAN_DIR='')
+def php_environment(scratch, app, socket, database, password, prefix):
+    return sealed_environment(scratch, PHPRC='', PHP_INI_SCAN_DIR='', APP_ENV='testing',
+        APP_KEY='base64:dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHQ=', APP_URL='http://schema.invalid',
+        DB_CONNECTION='mysql', DB_DATABASE=database, DB_USERNAME='root', DB_PASSWORD=password, DB_SOCKET=str(socket),
+        SCHEMA_PREFIX=prefix, DB_COLLATION='utf8mb4_unicode_ci', CACHE_STORE='array', QUEUE_CONNECTION='sync',
+        SESSION_DRIVER='array', MAIL_MAILER='array', TELEMETRY_ENABLED='false', PAYMENTER_TEST_FIXTURE=str(app),
+        CONVERSION_PHASE='schema')
 
 
 def run(*, exercise=None):
@@ -54,6 +51,7 @@ def run(*, exercise=None):
     container_id = None
     attempted = False
     docker_env = None
+    docker = None
     original = None
     previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
 
@@ -75,30 +73,41 @@ def run(*, exercise=None):
     try:
         for sig in previous:
             signal.signal(sig, terminate)
-        if not shutil.which('docker'):
+        docker = shutil.which('docker')
+        if not docker:
             receipt['skipped'] = 'Docker unavailable.'; return receipt
-        if os.environ.get('DOCKER_HOST') and not os.environ['DOCKER_HOST'].startswith('unix://'):
+        # The runner admits one daemon, from DOCKER_HOST or the caller's Docker context, and passes it as DOCKER_HOST.
+        daemon = os.environ.get('DOCKER_HOST')
+        if not daemon:
+            receipt['skipped'] = 'No admitted Docker daemon; run through scripts/test.py.'; return receipt
+        if not daemon.startswith('unix://'):
             raise ValueError('Only a local Unix-socket Docker daemon is supported.')
-        context = command('context', ['docker', 'context', 'inspect'], timeout=20)
-        endpoint = json.loads(context.stdout)[0]['Endpoints']['docker']['Host']
-        if os.environ.get('DOCKER_HOST') and not os.environ.get('DOCKER_CONTEXT'):
-            endpoint = os.environ['DOCKER_HOST']
-        if not endpoint.startswith('unix://'):
-            raise ValueError('Remote Docker contexts are unsupported.')
-        docker_env = dict(os.environ, DOCKER_HOST=endpoint)
-        docker_env.pop('DOCKER_CONTEXT', None)
-        image = command('image', ['docker', 'image', 'inspect', IMAGE], timeout=20, check=False)
+        if not os.path.isabs(daemon.removeprefix('unix://')):
+            raise ValueError('The admitted Docker socket path must be absolute.')
+        try:
+            admitted = stat.S_ISSOCK(os.stat(daemon.removeprefix('unix://')).st_mode)
+        except OSError:
+            admitted = False
+        if not admitted:
+            receipt['skipped'] = 'Admitted local Docker socket unavailable.'; return receipt
+        receipt['docker_host'] = daemon
+        for private in ('home', 'tmp', 'docker'):
+            (scratch/private).mkdir(mode=0o700)
+        # An empty client config: no caller context, credential helper, plugin or proxy setting reaches Docker.
+        docker_env = sealed_environment(scratch, DOCKER_HOST=daemon, DOCKER_CONFIG=str(scratch/'docker'))
+        image = command('image', [docker, 'image', 'inspect', IMAGE], timeout=20, check=False)
         if image.returncode:
-            receipt['skipped'] = 'Existing MariaDB image or local Docker unavailable; no pull attempted.'; return receipt
+            receipt['skipped'] = 'Pinned MariaDB image or local Docker unavailable; no pull attempted.'; return receipt
         php = os.environ.get('CONVERSION_MARIADB_PHP')
         source = os.environ.get('PAYMENTER_TEST_APP')
         if not php or not source:
             raise ValueError('Set CONVERSION_MARIADB_PHP and PAYMENTER_TEST_APP.')
-        command('php-driver', [php, '-r', 'if(!in_array("mysql",PDO::getAvailableDrivers(),true)){exit(1);}'])
-        if not shutil.which('unshare'):
+        unshare = shutil.which('unshare')
+        if not unshare:
             raise ValueError('Network namespace isolation requires unshare.')
-        command('netns', ['unshare', '--user', '--map-root-user', '--net', 'true'])
-        memory_gate()
+        command('php-driver', [php, '-r', 'if(!in_array("mysql",PDO::getAvailableDrivers(),true)){exit(1);}'],
+                env=sealed_environment(scratch, PHPRC='', PHP_INI_SCAN_DIR=''))
+        command('netns', [unshare, '--user', '--map-root-user', '--net', 'true'])
         original = native.verify(source)[1]
         app = scratch/'app'; native.prepare(source, app)
         sock = scratch/'sock'; sock.mkdir(mode=0o777); sock.chmod(0o777)
@@ -107,7 +116,7 @@ def run(*, exercise=None):
         image_id = json.loads(image.stdout)[0]['Id']
         receipt.update(image_id=image_id, container=container, owner=owner)
         attempted = True
-        start = command('start', ['docker', 'run', '--pull=never', '--rm', '-d', '--name', container,
+        start = command('start', [docker, 'run', '--pull=never', '--rm', '-d', '--name', container,
             '--label', 'domains-schema-rehearsal='+owner, '--network', 'none', '--memory=512m', '--cpus=1',
             '--tmpfs', '/var/lib/mysql', '-v', str(sock)+':/run/mysqld', '-e', 'MARIADB_ROOT_PASSWORD', image_id,
             '--skip-networking', '--socket=/run/mysqld/mysqld.sock', '--innodb-buffer-pool-size=64M'])
@@ -115,21 +124,22 @@ def run(*, exercise=None):
         if not re.fullmatch('[a-f0-9]{64}', container_id):
             container_id = None; raise ValueError('Owned immutable container ID unavailable.')
         socket = sock/'mysqld.sock'
-        sql = ['docker', 'exec', '-i', '-e', 'MYSQL_PWD', container_id, 'mariadb',
+        sql = [docker, 'exec', '-i', '-e', 'MYSQL_PWD', container_id, 'mariadb',
                '--user=root', '--socket=/run/mysqld/mysqld.sock']
-        for _ in range(90):
+        ready_by = time.monotonic()+90
+        while True:
             if socket.exists():
                 ready = command('ready', sql+['--batch', '--skip-column-names', '-e', 'SELECT 1'], check=False, timeout=10)
                 if ready.returncode == 0 and ready.stdout.strip() == b'1':
                     break
-            time.sleep(1)
-        else:
-            raise RuntimeError('MariaDB socket not ready.')
+            if time.monotonic() > ready_by:
+                raise RuntimeError('MariaDB socket not ready.')
+            time.sleep(0.5)
         for index, prefix in enumerate(['', 'p']):
             database = 'schema_proof_'+str(index)
             command('database', sql, data=('CREATE DATABASE '+database+' CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;').encode())
-            env = php_environment(app, socket, database, password, prefix)
-            php_args = ['unshare', '--user', '--map-root-user', '--net', php, '-d', 'allow_url_fopen=0',
+            env = php_environment(scratch, app, socket, database, password, prefix)
+            php_args = [unshare, '--user', '--map-root-user', '--net', php, '-d', 'allow_url_fopen=0',
                 '-d', 'zend.exception_ignore_args=1', '-d',
                 'disable_functions=curl_exec,curl_multi_exec,fsockopen,pfsockopen,stream_socket_client,stream_socket_server,socket_connect,socket_sendto,mail']
             if exercise is None:
@@ -148,16 +158,17 @@ def run(*, exercise=None):
                 signal.signal(sig, signal.SIG_IGN)
             try:
                 if attempted and container_id is None:
-                    probe = subprocess.run(['docker', 'container', 'inspect', container], env=docker_env, capture_output=True, timeout=20)
+                    probe = subprocess.run([docker, 'container', 'inspect', container], env=docker_env, capture_output=True, timeout=20)
                     if probe.returncode == 0:
                         info = json.loads(probe.stdout)[0]
                         if info.get('Config', {}).get('Labels', {}).get('domains-schema-rehearsal') == owner:
                             container_id = info['Id']
                 if container_id:
-                    result = subprocess.run(['docker', 'stop', '-t', '5', container_id], env=docker_env, capture_output=True, timeout=30)
-                    for _ in range(25):
-                        removed = subprocess.run(['docker', 'container', 'inspect', container_id], env=docker_env, capture_output=True, timeout=20)
-                        if removed.returncode != 0: break
+                    result = subprocess.run([docker, 'stop', '-t', '5', container_id], env=docker_env, capture_output=True, timeout=30)
+                    removed_by = time.monotonic()+5
+                    while True:
+                        removed = subprocess.run([docker, 'container', 'inspect', container_id], env=docker_env, capture_output=True, timeout=20)
+                        if removed.returncode != 0 or time.monotonic() > removed_by: break
                         time.sleep(0.2)
                     receipt['container_removed'] = result.returncode == 0 and removed.returncode != 0
                     if not receipt['container_removed']:

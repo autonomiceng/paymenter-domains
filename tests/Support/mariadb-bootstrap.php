@@ -4,6 +4,8 @@ declare(strict_types=1);
 require_once dirname(__DIR__).'/bootstrap.php';
 $nativeSuccessful=false;
 register_shutdown_function(static function()use(&$nativeSuccessful):void{if(!$nativeSuccessful){exit(1);}});
+// Monotonic seconds for fixture deadlines: a wall-clock step can neither cut a wait short nor stretch it.
+function mariadbClock():float{return hrtime(true)/1e9;}
 $fixture=getenv('PAYMENTER_TEST_FIXTURE');
 expect(is_string($fixture)&&realpath($fixture)===$fixture&&!file_exists($fixture.'/.env'),'Disposable pristine fixture required');
 $loader=require $fixture.'/vendor/autoload.php';
