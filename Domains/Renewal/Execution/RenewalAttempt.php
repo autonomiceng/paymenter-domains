@@ -3,223 +3,237 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Renewal\Execution;
 
+use Illuminate\Contracts\Encryption\DecryptException;
 use Paymenter\Extensions\Servers\Domains\Data\{ExecutionRecord, Money, SendState};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AttemptFacts, OperationAttempts, StepKey};
+use Paymenter\Extensions\Servers\Domains\Services\FundsWaits;
 
 /**
- * The attempt facts of one renewal, read from the operation's retained attempt record. Read-only: it never grants a
+ * The attempt facts of one renewal, read from its sealed attempt row and evidence rows. Read-only: it never grants a
  * send, a refund or a settlement, and a caller that acts on it holds the operation lock and rechecks through the writer.
  * Positive proof (a settlement) and negative proof (the prewire local refusal) are separate facts.
  * Other actions have no renewal attempt, so they read as never sealed.
  */
 final readonly class RenewalAttempt
 {
-    private function __construct(private array $attempt, private ?string $state = null, private ?string $safeCode = null,
-        private ?\DateTimeImmutable $startedAt = null, private ?\DateTimeImmutable $completedAt = null, private ?Operation $row = null,
-        private ?string $digest = null) {}
+    /** Evidence kinds of the sealed attempt this reader carries; operation-level terminal proof is read beside them. */
+    private const KINDS = ['reply', 'observation', 'held', 'settlement', 'answer', 'terminal'];
 
-    /** The renewal's attempt facts from this row as loaded. A renewal that was never sealed has no send facts but may have terminal proof. */
+    private function __construct(private ?AttemptFacts $sealed = null, private array $evidence = [], private ?array $terminalRow = null,
+        private ?\DateTimeImmutable $startedAt = null) {}
+
+    /**
+     * The renewal's attempt facts, in two reads. A renewal that was never sealed has no send facts but may have terminal proof.
+     * @throws DecryptException when its attempt evidence or terminal proof no longer decrypts
+     */
     public static function of(Operation $op): self
     {
-        if ($op->action !== 'renew') { return new self([]); }
-        $attempt = $op->attempt;
-        // The retained proof is read only when a caller asks for it, as before this reader.
-        return new self(is_array($attempt) ? $attempt : [], $op->state, $op->safe_code, $op->started_at, $op->completed_at, $op,
-            is_string($op->request_fingerprint) ? $op->request_fingerprint : null);
+        if ($op->action !== 'renew') { return new self; }
+        return self::loaded([$op])[(int) $op->id] ?? throw new DecryptException('The renewal attempt evidence cannot be read.');
     }
 
-    /** Attempt facts of many renewals in one read, keyed by every given operation id. */
+    /**
+     * Attempt facts of many renewals, keyed by given operation id. Other actions and missing rows read as never sealed.
+     * A renewal whose evidence no longer decrypts is left out, as in loaded().
+     */
     public static function many(array $operationIds): array
     {
         $ids = array_values(array_unique(array_map('intval', $operationIds)));
-        $rows = $ids ? Operation::whereKey($ids)->get(['id', 'action', 'state', 'safe_code', 'attempt', 'renewal_proof', 'started_at', 'completed_at', 'request_fingerprint'])->keyBy('id') : collect();
-        $facts = [];
-        foreach ($ids as $id) { $facts[$id] = ($row = $rows->get($id)) ? self::of($row) : new self([]); }
+        $rows = $ids ? Operation::whereKey($ids)->where('action', 'renew')->get(['id', 'action', 'started_at'])->keyBy('id') : collect();
+        $loaded = self::loaded($rows); $facts = [];
+        foreach ($ids as $id) { if (isset($loaded[$id]) || !$rows->has($id)) { $facts[$id] = $loaded[$id] ?? new self; } }
         return $facts;
     }
 
     /**
-     * Attempt facts of these already loaded operations for one page, keyed by operation id. This read adds no query while
-     * the facts live on the operation row. An unreadable record is left out, so its caller reads it alone and fails as before.
+     * Attempt facts of these loaded renewals in two reads, keyed by operation id: their sealed attempts, then the evidence
+     * of those attempts and the operations' terminal proof. Other actions are left out, and so is a renewal whose
+     * evidence no longer decrypts: of() then throws for that renewal alone, under its caller's unreadable-data boundary.
      */
     public static function loaded(iterable $ops): array
     {
+        $renewals = [];
+        foreach ($ops as $op) { if ($op instanceof Operation && $op->action === 'renew') { $renewals[(int) $op->id] = $op; } }
+        if (!$renewals) { return []; }
+        $ids = array_keys($renewals);
+        $sealed = OperationAttempts::sealedMany($ids, StepKey::renew());
+        $evidence = OperationAttempts::evidenceMany($ids, self::KINDS);
         $facts = [];
-        foreach ($ops as $op) {
-            if (!$op instanceof Operation) { continue; }
-            try { $facts[(int) $op->id] = self::of($op); } catch (\Throwable) {}
+        foreach ($renewals as $id => $op) {
+            $attempt = isset($sealed[$id]) ? ($evidence[$id][$sealed[$id]->token->attemptId] ?? []) : [];
+            $terminal = $evidence[$id][0]['terminal'] ?? null;
+            if (in_array(OperationAttempts::UNREADABLE, [...array_values($attempt), $terminal], true)) { continue; }
+            $facts[$id] = new self($sealed[$id] ?? null, $attempt, $terminal, $op->started_at);
         }
         return $facts;
     }
 
-    /** True while nothing is recorded for this renewal's attempt: never claimed, sealed or closed. */
-    public function untouched(): bool { return $this->attempt === []; }
+    /** True while nothing is recorded for this renewal's attempt: never sealed and never closed. A released pre-seal claim is history only. */
+    public function untouched(): bool { return $this->sealed === null && $this->terminalRow === null; }
 
-    /**
-     * Local closure proof: the renewal stopped before any seal and was closed as rejected and definitely unsent, with
-     * no send time, reply, provider evidence, charge or order candidates recorded.
-     */
-    public function closedUnsent(): bool
+    /** Local closure proof: the renewal stopped before any seal and its terminal proof was recorded. */
+    public function closedUnsent(): bool { return $this->sealed === null && $this->terminalRow !== null; }
+
+    /** An unpaid or funds-deadline closure of $op, recorded before any seal for its operation key, generation and invoice. */
+    public function closedBeforeSeal(Operation $op): bool
     {
-        $a = $this->attempt;
-        return ($a['disposition'] ?? null) === 'rejected' && ($a['rejection_basis'] ?? null) === 'definitely_unsent'
-            && ($a['send_state'] ?? null) === SendState::DefinitelyUnsent->value && ($a['seal'] ?? null) === 'absent'
-            && !array_intersect(array_keys($a), ['execution', 'dispatch_attempted_at', 'provider_reference', 'evidence', 'registration'])
-            && ($a['charge'] ?? null) === null && ($a['order_candidates'] ?? []) === [];
+        $t = $this->terminalRow['evidence'] ?? [];
+        return $this->closedUnsent() && in_array($op->safe_code, ['renewal_cancelled_unpaid', FundsWaits::RENEWAL_CLOSED], true)
+            && ($t['operation_key'] ?? null) === $op->operation_key && ($t['generation'] ?? null) === $op->authority_generation
+            && ($t['invoice_id'] ?? null) === $op->invoice_id;
     }
 
-    /** True when the only record is a local closure before any seal whose terminal evidence is exactly $evidence. */
+    /** True when the renewal closed before any seal and its terminal evidence is exactly $evidence. */
     public function closedOnlyWith(array $evidence): bool
-    {
-        return $this->attempt === ['seal' => 'absent', 'send_state' => SendState::DefinitelyUnsent->value, 'disposition' => 'rejected',
-            'rejection_basis' => 'definitely_unsent', 'terminal' => $evidence];
-    }
+    { return $this->closedUnsent() && $this->terminalRow['evidence'] === $evidence; }
+
+    /** True while the renewal was never sealed, so no reply can exist. */
+    public function unsealed(): bool { return $this->sealed === null; }
 
     /**
-     * True while no seal and no reply are recorded: the seal is missing or absent and no reply is set. Any other seal
-     * value, a malformed one included, counts as recorded.
-     */
-    public function unsealed(): bool
-    { return ($this->attempt['seal'] ?? 'absent') === 'absent' && !isset($this->attempt['execution']); }
-
-    /**
-     * Proof the renewal never went out: recorded definitely unsent before any seal, or the sealed send locally refused.
+     * Proof the renewal never went out: closed before any seal, or the sealed send locally refused.
      * For display only; a refund or credit needs the gate's own proof.
      */
-    public function provedUnsent(): bool
-    {
-        return $this->sealed() ? $this->locallyRefused() : ($this->attempt['send_state'] ?? null) === SendState::DefinitelyUnsent->value;
-    }
+    public function provedUnsent(): bool { return $this->sealed() ? $this->locallyRefused() : $this->closedUnsent(); }
 
     /** True once the renewal was sealed for dispatch. From then on it is possibly sent until proved otherwise. */
-    public function sealed(): bool { return ($this->attempt['seal'] ?? null) === 'sealed'; }
+    public function sealed(): bool { return $this->sealed !== null; }
+
+    /** The sealed attempt's identity, for callers that bind a write to that exact attempt; null when never sealed. */
+    public function attempt(): ?AttemptFacts { return $this->sealed; }
 
     /** When the renewal was sealed for dispatch, in UTC; null when never sealed. */
-    public function sentAt(): ?\DateTimeImmutable { return $this->windowStart()?->setTimezone(new \DateTimeZone('UTC')); }
+    public function sentAt(): ?\DateTimeImmutable { return $this->sealed?->sealedAt->setTimezone(new \DateTimeZone('UTC')); }
 
-    /** When the sealed attempt was claimed, as stored; null when never sealed. The registrar read window cannot open before it. */
-    public function claimedAt(): ?\DateTimeImmutable { return $this->sealed() ? $this->startedAt : null; }
+    /** When the sealed attempt started running, as stored; null when never sealed. The registrar read window cannot open before it. */
+    public function claimedAt(): ?\DateTimeImmutable { return $this->sealed ? $this->startedAt : null; }
 
     /** The request digest the sealed attempt was claimed with; null when never sealed or when none was recorded. */
-    public function requestDigest(): ?string { return $this->sealed() && $this->digest !== null && $this->digest !== '' && $this->digest !== '0' ? $this->digest : null; }
+    public function requestDigest(): ?string
+    { $digest = $this->sealed?->requestDigest; return $digest !== null && $digest !== '' && $digest !== '0' ? $digest : null; }
 
     /** The sealed attempt's claim key, its exact identity; null when never sealed. */
-    public function claimKey(): ?string
-    {
-        $key = $this->sealed() ? ($this->attempt['claim_key'] ?? null) : null;
-        return is_string($key) ? $key : null;
-    }
+    public function claimKey(): ?string { return $this->sealed?->token->claimKey; }
 
-    /** The acceptance the original reply recorded for this renewal: its query and order_reference; null when none was recorded. */
+    /** The acceptance the original reply recorded for the sealed query: its query and order_reference; null when none was recorded. */
     public function acceptance(): ?array
     {
-        $acceptance = $this->sealed() ? ($this->attempt['renewal'] ?? null) : null;
+        $acceptance = $this->replyEvidence()['acceptance'] ?? null;
         return is_array($acceptance) ? $acceptance : null;
     }
 
-    /** The registrar order reference the original reply recorded for this renewal; null when none was recorded. */
+    /** The registrar order reference the original reply recorded for the sealed query; null when none was recorded. */
     public function orderReference(): ?string
     {
         $reference = $this->acceptance()['order_reference'] ?? null;
         return is_string($reference) ? $reference : null;
     }
 
-    /**
-     * Start of the sealed attempt's registrar read window: the seal time as it was recorded, in its stored zone, because
-     * proofs and identities keep that value; null when never sealed or unreadable.
-     */
-    public function windowStart(): ?\DateTimeImmutable
-    {
-        $at = $this->sealed() ? ($this->attempt['dispatch_attempted_at'] ?? null) : null;
-        try { return is_string($at) ? new \DateTimeImmutable($at) : null; } catch (\Exception) { return null; }
-    }
+    /** Start of the sealed attempt's registrar read window: its seal time, in the stored zone; null when never sealed. */
+    public function windowStart(): ?\DateTimeImmutable { return $this->sealed?->sealedAt; }
 
     /** End of the sealed attempt's registrar read window, in UTC: the attempt start plus the execution limit; null when never sealed. */
     public function windowEnd(): ?\DateTimeImmutable
     {
-        return $this->sealed() ? $this->startedAt?->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds') : null;
+        return $this->sealed ? $this->startedAt?->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds') : null;
     }
 
     /** True when a check of this sealed attempt retained a positive registrar observation. */
-    public function observed(): bool { return $this->sealed() && $this->row !== null && RenewalProof::held($this->row); }
+    public function observed(): bool { return isset($this->evidence['observation']); }
 
-    /** The sealed attempt's send state; null when never sealed. A recorded reply that settled the send state wins. */
-    public function sendState(): ?SendState
-    {
-        if (!$this->sealed()) { return null; }
-        $replied = is_array($this->attempt['execution'] ?? null) ? SendState::tryFrom((string) ($this->attempt['execution']['send_state'] ?? '')) : null;
-        if ($replied !== null && $replied !== SendState::PossiblySent) { return $replied; }
-        return SendState::tryFrom((string) ($this->attempt['send_state'] ?? '')) ?? SendState::PossiblySent;
-    }
+    /** The sealed attempt's send state; null when never sealed. A recorded reply that settled the send state is on the row. */
+    public function sendState(): ?SendState { return $this->sealed?->sendState; }
 
     /** The registrar cost the seal authorized; null when never sealed. */
     public function authorizedCost(): ?Money
     {
-        $cost = $this->sealed() ? ($this->attempt['authorized_cost'] ?? null) : null;
-        if (!is_array($cost) || !is_string($cost['amount'] ?? null) || !is_string($cost['currency'] ?? null)) { return null; }
-        try { return new Money($cost['amount'], $cost['currency']); } catch (\InvalidArgumentException) { return null; }
+        $s = $this->sealed;
+        if ($s?->authorizedAmount === null || $s->authorizedCurrency === null) { return null; }
+        try { return new Money($s->authorizedAmount, $s->authorizedCurrency); } catch (\InvalidArgumentException) { return null; }
     }
 
     /** The sealed send mode, ordinary or grace; null when never sealed. */
-    public function mode(): ?string
-    {
-        $mode = $this->sealed() ? ($this->attempt['renewal_mode'] ?? null) : null;
-        return is_string($mode) ? $mode : null;
-    }
+    public function mode(): ?string { return $this->sealed?->mode; }
 
     /** Negative proof: the final transport proved it stopped before the wire. No reply, settlement or answer gives this. */
     public function locallyRefused(): bool
-    { return $this->sealed() && $this->replyOutcome() === 'unsent'; }
+    {
+        $reply = $this->evidence['reply'] ?? null;
+        return $this->sealed?->sendState === SendState::DefinitelyUnsent && ($reply['source'] ?? null) === 'local_refusal' && ($reply['outcome'] ?? null) === 'unsent';
+    }
 
-    /** Whether the original reply was recorded: absent, recorded as null (lost), or recorded. */
+    /** Whether the original reply was recorded: absent, recorded as lost, or recorded. */
     public function replyRecord(): ExecutionRecord
     {
-        if (!array_key_exists('execution', $this->attempt)) { return ExecutionRecord::Absent; }
-        return $this->attempt['execution'] === null ? ExecutionRecord::RecordedNull : ExecutionRecord::Recorded;
+        $reply = $this->evidence['reply'] ?? null;
+        if ($reply === null) { return ExecutionRecord::Absent; }
+        return is_array($reply['evidence']['result'] ?? null) ? ExecutionRecord::Recorded : ExecutionRecord::RecordedNull;
     }
 
-    /** The recorded original reply as its writer saved it: disposition, send_state, reason and discrepancies; null when none. */
+    /** The recorded original reply as the driver gave it: disposition, send_state, reason and discrepancies; null when none. */
     public function reply(): ?array
-    { return is_array($this->attempt['execution'] ?? null) ? $this->attempt['execution'] : null; }
+    { $result = $this->replyEvidence()['result'] ?? null; return is_array($result) ? $result : null; }
+
+    /** The safe facts of a send that failed without a reply; null when none were recorded. */
+    public function sendFailure(): ?array
+    { $failure = $this->replyEvidence()['send_failure'] ?? null; return is_array($failure) ? $failure : null; }
 
     /** The recorded wire outcome: a registrar disposition, unsent (local refusal) or unknown; null when no reply was recorded. */
-    public function replyOutcome(): ?string
-    {
-        if (!array_key_exists('execution', $this->attempt)) { return null; }
-        $reply = $this->attempt['execution'];
-        if (!is_array($reply)) { return 'unknown'; }
-        if (($reply['send_state'] ?? null) === SendState::DefinitelyUnsent->value) { return 'unsent'; }
-        return is_string($reply['disposition'] ?? null) ? $reply['disposition'] : 'unknown';
-    }
+    public function replyOutcome(): ?string { return $this->evidence['reply']['outcome'] ?? null; }
 
     /** The positive proof a registrar read recorded for this attempt, settled or still under charge review; null before one. */
     public function readProof(): ?array
     {
-        $proof = $this->attempt['reconciliation'] ?? null;
+        $proof = ($this->evidence['settlement'] ?? $this->evidence['held'] ?? null)['evidence']['settlement'] ?? null;
         return is_array($proof) ? $proof : null;
     }
 
     /**
-     * The settlement recorded through a registrar read: outcome (succeeded), evidence and recorded_at; null before one
-     * is recorded. Captured proof still under charge review is not a settlement. This record keeps no read-resolved
-     * not_sent settlement.
+     * The audited not-processed answer recorded on the sealed attempt while no positive proof existed; null when none.
+     * It is return proof only, never local no-send proof. Positive proof retained after it voids it.
+     */
+    public function unprocessedAnswer(): ?array
+    {
+        $row = $this->evidence['answer'] ?? null;
+        if ($row === null || isset($this->evidence['observation']) || isset($this->evidence['held']) || isset($this->evidence['settlement'])) { return null; }
+        $answer = $row['evidence']['answer'] ?? null;
+        return is_array($answer) ? $answer : null;
+    }
+
+    /** True when a registrar read captured proof that waits for charge review and no settlement was recorded. */
+    public function heldForReview(): bool { return isset($this->evidence['held']) && !isset($this->evidence['settlement']); }
+
+    /**
+     * The settlement recorded on the sealed attempt: outcome, evidence (the proof the read or review settled on) and
+     * recorded_at; null before one is recorded. Captured proof still under charge review is not a settlement.
      */
     public function settlement(): ?array
     {
-        $proof = $this->readProof();
-        return $proof !== null && $this->state === 'succeeded'
-            ? ['outcome' => 'succeeded', 'evidence' => $proof, 'recorded_at' => self::recorded($this->completedAt)] : null;
+        $row = $this->evidence['settlement'] ?? null;
+        return $row ? ['outcome' => $row['outcome'], 'evidence' => $row['evidence']['settlement'] ?? null, 'recorded_at' => $row['recorded_at']] : null;
     }
 
     /** Operation-level local terminal proof, such as an unpaid or funds-deadline closure: outcome, evidence and recorded_at. */
     public function terminal(): ?array
     {
-        $proof = $this->attempt['terminal'] ?? null;
-        return is_array($proof) && $this->safeCode !== null
-            ? ['outcome' => $this->safeCode, 'evidence' => $proof, 'recorded_at' => self::recorded($this->completedAt)] : null;
+        $row = $this->terminalRow;
+        return $row ? ['outcome' => $row['outcome'], 'evidence' => $row['evidence'], 'recorded_at' => $row['recorded_at']] : null;
     }
 
-    private static function recorded(?\DateTimeImmutable $at): ?string
-    { return $at?->setTimezone(new \DateTimeZone(config('app.timezone') ?: 'UTC'))->format('Y-m-d H:i:s'); }
+    /**
+     * The retained facts that identify this attempt for an answer, approval or retry: the sealed attempt, its terms,
+     * its reply and terminal proof. Read claims and observations are left out, and read proof unless $withProof.
+     */
+    public function identity(bool $withProof = false): array
+    {
+        $s = $this->sealed;
+        return ['attempt' => $s ? [$s->token->attemptId, $s->token->claimKey, $s->sealedAt->format(DATE_ATOM), $s->requestDigest, $s->operationRevision,
+            $s->authorizedAmount, $s->authorizedCurrency, $s->mode] : null,
+            'reply' => $this->evidence['reply'] ?? null, 'terminal' => $this->terminalRow, 'proof' => $withProof ? $this->readProof() : null];
+    }
+
+    private function replyEvidence(): array
+    { $evidence = $this->evidence['reply']['evidence'] ?? null; return is_array($evidence) ? $evidence : []; }
 }

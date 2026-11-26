@@ -43,7 +43,7 @@ final class OperationTerminalProof
     {
         $a = $op->attempt ?? [];
         if(RegistrationRefusals::proved($op,$domain)){return true;}
-        if($op->state==='rejected'&&EnomAnswers::unprocessed($op,$domain)){return true;}
+        if($op->state==='rejected'&&EnomAnswers::unprocessed($op,$domain)&&RefundProof::answeredAttempt($op)){return true;}
         if($op->safe_code===UnpaidAcquisitionProof::CODE){return UnpaidAcquisitionProof::terminal($op,$domain);}
         return $op->authority_generation > 0 && is_string($op->account_fingerprint) && $op->state === 'rejected' && in_array($op->action, ['register', 'renew', 'transfer'], true) && $op->account_fingerprint === $domain->account_fingerprint
             && $op->registrar_key === $domain->registrar_key && $op->server_id === $domain->server_id && $op->service_id === $domain->service_id
@@ -51,20 +51,12 @@ final class OperationTerminalProof
             && (
                 ($op->action === 'transfer' && ($a['terminal'] ?? null) === ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation]
                     && !array_diff(array_keys($a), ['claim_key', 'seal', 'send_state', 'terminal', 'disposition', 'rejection_basis','test_call_refusals','capacity_deferrals'])
-                    &&OperationClaims::localDeferrals($a)) || $op->action === 'register' || ($op->action === 'renew' && self::renewalClosed($op)))
+                    &&OperationClaims::localDeferrals($a)) || $op->action === 'register' || ($op->action === 'renew' && RenewalAttempt::of($op)->closedBeforeSeal($op)))
             && (!array_key_exists('test_call_refusals',$a)||OperationClaims::testCallRefusalUnsent($op)||OperationClaims::testCallRefusalTerminal($op))
             && ($op->action === 'renew' || (($a['disposition'] ?? null) === 'rejected' && ($a['rejection_basis'] ?? null) === 'definitely_unsent'
             && ($a['send_state'] ?? null) === 'definitely_unsent' && ($a['seal'] ?? null) === 'absent'
             && !array_intersect(array_keys($a), ['execution', 'dispatch_attempted_at', 'provider_reference', 'evidence', 'registration'])
             && ($a['charge'] ?? null) === null && ($a['order_candidates'] ?? []) === []))
             && !array_intersect(array_keys($op->cost ?? []), ['actual', 'execution']) && !array_key_exists('dispatch_attempted_at', $op->policy ?? []);
-    }
-    /** An unpaid or funds-deadline renewal closure of this generation and invoice, recorded before any seal. */
-    public static function renewalClosed(Operation $op, ?RenewalAttempt $renewal = null): bool
-    {
-        $r = $renewal ?? RenewalAttempt::of($op); $t = $r->terminal()['evidence'] ?? [];
-        return $r->closedUnsent() && in_array($op->safe_code, ['renewal_cancelled_unpaid', FundsWaits::RENEWAL_CLOSED], true)
-            && ($t['operation_key'] ?? null) === $op->operation_key && ($t['generation'] ?? null) === $op->authority_generation
-            && ($t['invoice_id'] ?? null) === $op->invoice_id;
     }
 }

@@ -5,6 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts,StepKey};
 /** Built-in deployment policy. Staff owns catalogue acceptance and processing. */
 final class EnomTestRegistration
 {
@@ -17,7 +18,10 @@ final class EnomTestRegistration
     public static function recoveryEnabled(AccountBinding $binding): bool
     {
         if(!TestCatalogue::enabled($binding)){return false;}
-        foreach(Operation::where('server_id',$binding->serverId)->where('account_fingerprint',$binding->fingerprint)->whereIn('state',['pending','uncertain','running'])->cursor() as $op){
+        $open=Operation::where('server_id',$binding->serverId)->where('account_fingerprint',$binding->fingerprint)->whereIn('state',['pending','uncertain','running']);
+        // A renewal's seal is its attempt row, read without its evidence; other actions still keep theirs in the attempt JSON.
+        if(OperationAttempts::sealedMany((clone $open)->where('action','renew')->pluck('id')->all(),StepKey::renew())!==[]){return true;}
+        foreach($open->where('action','!=','renew')->cursor() as $op){
             try{if(($op->attempt['seal']??null)==='sealed'){return true;}}catch(\Throwable){continue;}
         }
         return false;

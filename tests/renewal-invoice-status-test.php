@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/reminders.php';
+require_once __DIR__.'/Support/renewal-attempts.php';
 use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
@@ -67,6 +68,10 @@ $returnedOp->refresh()->forceFill(['state'=>'rejected','safe_code'=>'refund_appr
 $returnedDomain=$returnedDomain->fresh();$history=RenewalCycles::lateNote($returnedOp->fresh());
 expect($history!==null,'History reads the returned payment');
 same(['status'=>'returned','note'=>$history],Paymenter\Extensions\Servers\Domains\Services\DomainStates::cycle($returnedDomain,Paymenter\Extensions\Servers\Domains\Services\DomainStateInputs::one($returnedDomain),$clock->now())['current']??null,'Next invoice reads the same settled return as History');
+// Damaged reply evidence on the settled renewal never turns its recorded return back into a review.
+sealRenewal($returnedOp,reply:RenewalReply::unknown(),at:$clock->now());
+DB::table(\Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema::EVIDENCE)->where(['operation_id'=>$returnedOp->id,'kind'=>'reply'])->update(['evidence'=>'returned-unreadable-fixture']);
+same(['status'=>'returned','note'=>$history],Paymenter\Extensions\Servers\Domains\Services\DomainStates::cycle($returnedDomain,Paymenter\Extensions\Servers\Domains\Services\DomainStateInputs::one($returnedDomain),$clock->now())['current']??null,'Unreadable attempt evidence keeps the settled return');
 
 echo "Current renewal invoice replaces the cancelled-invoice warning without changing history.\n";
 $nativeSuccessful=true;

@@ -71,22 +71,34 @@ Operation::updated(static function($row)use($op,$d){
 });
 same('held',$engine->run($op->id,$writer)->state,'Real local prewire refusal'); same($beforeWrites,$state->writes,'Typed refusal before exchange');
 same('definitely_unsent',renewalAttempt($op)->sendState()->value,'Retained typed summary');
-$attempt=$op->fresh()->attempt; $original=$op->fresh()->getRawOriginal();
-foreach(['execution_null','fallback','possible_send','extra_null_fact'] as $case){
-    $bad=$attempt;
-    if($case==='execution_null'){$bad['execution']=null;}
-    elseif($case==='fallback'){$bad['execution']['reason']='fallback';}
-    elseif($case==='possible_send'){$bad['execution']['send_state']='possibly_sent';}
-    else{$bad['provider_reference']=null;}
-    // Privileged fixture corruption probes independent interpretation of retained typed evidence.
-    Operation::withoutEvents(fn()=>$op->fresh()->update(['attempt'=>$bad]));
+$attempt=renewalRecord($op); $original=$op->fresh()->getRawOriginal();
+$sealedRow=(array)DB::table('domains_operation_attempts')->where('id',renewalAttempt($op)->attempt()->token->attemptId)->first();
+$replyRow=(array)DB::table('domains_operation_evidence')->where(['attempt_id'=>$sealedRow['id'],'kind'=>'reply'])->first();
+$replyEvidence=json_decode(Illuminate\Support\Facades\Crypt::decryptString($replyRow['evidence']),true);
+foreach(['reply_lost','fallback','possible_send','observed'] as $case){
+    // Privileged fixture corruption probes independent interpretation of the sealed attempt and its reply rows.
+    $reply=$replyEvidence;
+    if($case==='reply_lost'){DB::table('domains_operation_evidence')->where('id',$replyRow['id'])->update(['source'=>'unknown_reply','outcome'=>'unknown','evidence'=>Illuminate\Support\Facades\Crypt::encryptString('[]')]);}
+    elseif($case==='fallback'){$reply['result']['reason']='fallback';DB::table('domains_operation_evidence')->where('id',$replyRow['id'])->update(['evidence'=>Illuminate\Support\Facades\Crypt::encryptString(json_encode($reply))]);}
+    elseif($case==='possible_send'){DB::table('domains_operation_attempts')->where('id',$sealedRow['id'])->update(['send_state'=>'possibly_sent']);}
+    // A positive observation retained on the refused attempt outweighs its local refusal.
+    else{DB::transaction(fn()=>Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationWriter::at($clock->now())->recordObservation(renewalAttempt($op)->attempt()->token,['identity'=>'probe'],$clock->now()));}
     commerceReject(fn()=>$refunds->refundHeld($staff,$op->id,'service_cancelled'));
     DB::table('domains_operations')->where('id',$op->id)->update($original);
+    DB::table('domains_operation_attempts')->where('id',$sealedRow['id'])->update($sealedRow);DB::table('domains_operation_evidence')->where('id',$replyRow['id'])->update($replyRow);
+    DB::table('domains_operation_evidence')->where(['attempt_id'=>$sealedRow['id'],'kind'=>'observation'])->delete();
 }
+// The rows decide: a genuine prewire refusal still proves unsent with an empty JSON envelope.
+Operation::withoutEvents(fn()=>$op->fresh()->update(['attempt'=>[]]));
+try{Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireUnsent($op->fresh(),$d->fresh());$rowOnly=true;}catch(DomainException){$rowOnly=false;}
+DB::table('domains_operations')->where('id',$op->id)->update($original);expect($rowOnly,'A row-only prewire refusal proves unsent with an empty JSON envelope');
 $before=$credit(); $refunds->refundHeld($staff,$op->id,'service_cancelled');
-same($before+PricingRule::minor($op->amount),$credit(),'Proven prewire refusal credited'); same($attempt,$op->fresh()->attempt,'Sealed audit untouched');
+same($before+PricingRule::minor($op->amount),$credit(),'Proven prewire refusal credited'); same($attempt,renewalRecord($op),'Sealed audit untouched');
 // Retired cancelled debt is never dispatched on late payment. Credit once to resolve financial conflict.
 [$retired,$d,$b,$bill]=$makeRenewal(placeholderComFixtureName('refund-late-retired-placeholder.com'),false); $cycles->retireUnpaid($retired->id);
+$raw=$retired->fresh()->getRawOriginal();Operation::withoutEvents(fn()=>$retired->fresh()->update(['attempt'=>[]]));
+expect(Paymenter\Extensions\Servers\Domains\Services\RefundProof::retired($retired->fresh(),$d->fresh()),'A row-only unpaid closure stays retired with an empty JSON envelope');
+DB::table('domains_operations')->where('id',$retired->id)->update($raw);
 commerceReject(fn()=>(new FinancialAdjustments($clock))->append($staff,$retired->id,'mint_retired',$retired->amount,'payment_correction'));
 commerceReject(fn()=>(new FinancialAdjustments($clock))->append($staff,$retired->id,'reverse_retired','-'.$retired->amount,'payment_correction'));
 same('cancelled',$bill->fresh()->status,'Correction cannot fabricate a late retired payment');
@@ -105,7 +117,7 @@ same(null,$presenter->invoiceOutcome($staff,(int)$bill->id),'Another owner canno
 same(null,$presenter->invoiceOutcome($user,(int)$replacementBill->id),'An open Domains line has no closed outcome');
 same('paid',$bill->fresh()->status,'Native late-payment listener retains payment and marks retired invoice paid');
 commerceReject(fn()=>DB::transaction(function()use($d,$replacement){$l=HoldingLocks::take($d);RenewalFunding::requireCurrent($replacement->fresh(),$l);}));
-$before=$credit(); $oldAttempt=$retired->fresh()->attempt; $paidStatus=$bill->fresh()->status;
+$before=$credit(); $oldAttempt=renewalRecord($retired); $paidStatus=$bill->fresh()->status;
 same(['amount'=>$retired->amount,'currency'=>'USD'],$refunds->creditRejected($retired->id),'Late retired payment credited');
 same($before+PricingRule::minor($retired->amount),$credit(),'Late payment refund exact');
 $outcome=$presenter->invoiceOutcome($user,(int)$bill->id);
@@ -119,7 +131,7 @@ $domainGeneration=$retired->domain->authority_generation;
 DB::table('domains_domains')->where('id',$retired->domain_id)->update(['authority_generation'=>$domainGeneration+1]);
 same('renewal_cancelled_unpaid',$presenter->invoiceOutcome($user,(int)$bill->id)?->kind,'Later domain authority cannot erase an old invoice closure');
 DB::table('domains_domains')->where('id',$retired->domain_id)->update(['authority_generation'=>$domainGeneration]);
-same($oldAttempt,$retired->fresh()->attempt,'Original terminal unpaid proof unchanged'); same($paidStatus,$bill->fresh()->status,'Refund does not rewrite native paid status');
+expect($oldAttempt['terminal']!==null,'The retired renewal has terminal unpaid proof');same($oldAttempt,renewalRecord($retired),'Original terminal unpaid proof unchanged'); same($paidStatus,$bill->fresh()->status,'Refund does not rewrite native paid status');
 DB::transaction(function()use($d,$replacement,$retired){
     $l=HoldingLocks::take($d); expect(RefundPayment::retiredSettled($retired->fresh(),$l),'Exact refunded retired debt is resolved');
     same('paid_invoice',RenewalFunding::requireCurrent($replacement->fresh(),$l)['basis'],'Replacement rechecks its own funding after old debt credited');
@@ -236,11 +248,11 @@ $corrections->append($staff,$retry->id,'retry_reverse','-1.00','payment_correcti
 Operation::updated(static function($row)use(&$retryTarget,$retryDomain){if($row->id===$retryTarget&&$row->state==='running'){DB::table('services')->where('id',$retryDomain->service_id)->update(['status'=>'cancelled']);}});
 $writes=$state->writes;$root=$retry;
 for($number=0;$number<=3;$number++){
-    $retryTarget=$retry->id;same('held',$engine->run($retry->id,$writer)->state,'Typed refusal held before send');$sealed=$retry->fresh()->attempt;
+    $retryTarget=$retry->id;same('held',$engine->run($retry->id,$writer)->state,'Typed refusal held before send');$sealed=renewalRecord($retry);expect($sealed['attempt']!==null&&$sealed['reply']!==null,'The refused retry has a sealed attempt and reply');
     DB::table('services')->where('id',$retryDomain->service_id)->update(['status'=>'active']);
     same($retry->id,\Paymenter\Extensions\Servers\Domains\Services\RenewalRetries::recover($retry->id,$clock)->id,'Retry delay is enforced');
     $clock->instant=$clock->now()->modify('+16 minutes');$next=\Paymenter\Extensions\Servers\Domains\Services\RenewalRetries::recover($retry->id,$clock);
-    same($sealed,$retry->fresh()->attempt,'Retry never resets its sealed predecessor');
+    same($sealed,renewalRecord($retry),'Retry never resets its sealed predecessor');
     $ordinals = DB::table(\Paymenter\Extensions\Servers\Domains\Services\RenewalFundingLedger::TABLE)
         ->where('invoice_item_id', $retry->invoice_item_id)->where('source', 'item')->where('source_id', $retry->invoice_item_id)
         ->orderBy('retry_number')->pluck('retry_number')->map(static fn ($n) => (int) $n)->all();
@@ -259,6 +271,10 @@ for($number=0;$number<=3;$number++){
     $retry=$next;Cache::flush();
 }
 same($writes,$state->writes,'All local refusals leave provider writes unchanged');
+// The rows prove the last refusal unsent, so a retired attempt column that no longer decrypts never blocks its refund.
+DB::table('domains_operations')->where('id',$retry->id)->update(['attempt'=>'retired-unreadable-fixture']);
+$refunds->refundHeld($staff,$retry->id,'service_cancelled');
+same(['rejected','refund_approved'],[$retry->fresh()->state,$retry->fresh()->safe_code],'A row-proved unsent renewal refunds past an unreadable retired attempt column');
 // Exact old credit settlement automatically authorizes an ordinary replacement invoice, with no staff step.
 [$returned,$returnedDomain]=$makeRenewal(placeholderComFixtureName('renew-credit-replace-placeholder.com'));$clock->instant=new DateTimeImmutable('2027-10-17T12:00:00Z');$returned->update(['state'=>'held','safe_code'=>'renewal_funding_or_authority']);
 $refunds->refundHeld($staff,$returned->id,'service_cancelled');

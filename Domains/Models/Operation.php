@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Paymenter\Extensions\Servers\Domains\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 
 class Operation extends Model
@@ -15,8 +16,19 @@ class Operation extends Model
 
     protected $table = 'domains_operations';
     protected $guarded = [];
-    protected $hidden = ['account_fingerprint', 'payload', 'policy', 'cost', 'attempt', 'renewal_reserved_revision', 'renewal_previous_proof', 'renewal_proof', 'renewal_check', 'renewal_admission_until', 'transition_revision', 'funding', 'funding_reason', 'authorized_by', 'request_fingerprint', 'management_pending'];
-    protected $casts = ['transition_revision' => 'integer', 'renewal_reserved_revision' => 'integer', 'renewal_proof' => 'encrypted:array', 'renewal_check' => 'encrypted:array', 'renewal_admission_until' => 'immutable_datetime', 'retry_number'=>'integer', 'attempt' => 'encrypted:array', 'funding' => 'encrypted:array', 'authority_generation' => 'integer', 'payload' => 'encrypted:array', 'policy' => 'encrypted:array', 'cost' => 'encrypted:array', 'amount' => 'decimal:2', 'base_expires_at' => 'immutable_date', 'expected_expires_at' => 'immutable_date', 'confirmed_expires_at' => 'immutable_date', 'lease_expires_at' => 'immutable_datetime', 'started_at' => 'immutable_datetime', 'completed_at' => 'immutable_datetime'];
+    protected $hidden = ['account_fingerprint', 'payload', 'policy', 'cost', 'attempt', 'renewal_previous_proof', 'transition_revision', 'funding', 'funding_reason', 'authorized_by', 'request_fingerprint', 'management_pending'];
+    protected $casts = ['transition_revision' => 'integer', 'retry_number'=>'integer', 'attempt' => 'encrypted:array', 'funding' => 'encrypted:array', 'authority_generation' => 'integer', 'payload' => 'encrypted:array', 'policy' => 'encrypted:array', 'cost' => 'encrypted:array', 'amount' => 'decimal:2', 'base_expires_at' => 'immutable_date', 'expected_expires_at' => 'immutable_date', 'confirmed_expires_at' => 'immutable_date', 'lease_expires_at' => 'immutable_datetime', 'started_at' => 'immutable_datetime', 'completed_at' => 'immutable_datetime'];
+
+    /**
+     * The retained attempt record. A renewal's attempt lives in its attempt and evidence rows, so its retired column reads
+     * as empty and is never decrypted: an unreadable copy cannot block a refund, a save guard or any other reader.
+     * Writes still encrypt through the cast.
+     */
+    protected function attempt(): Attribute
+    {
+        return Attribute::get(fn (?string $value, array $row): ?array => ($row['action'] ?? null) === 'renew' ? []
+            : ($value === null ? null : $this->fromJson($this->fromEncryptedString($value))));
+    }
 
     protected static function booted(): void
     {
@@ -32,22 +44,16 @@ class Operation extends Model
             $dirty = array_keys($operation->getDirty());
             if ($operation->action === 'renew') {
                 $next = (int) $operation->getOriginal('transition_revision') + 1;
-                $newReply = in_array('attempt', $dirty, true) && array_key_exists('execution', $operation->attempt ?? [])
-                    && !array_key_exists('execution', $operation->getOriginal('attempt') ?? []);
-                if ($newReply || array_intersect($dirty, ['state', 'renewal_admission_until'])) {
+                if (in_array('state', $dirty, true)) {
                     $operation->transition_revision = $next;
                 } elseif (in_array('transition_revision', $dirty, true) && $operation->transition_revision !== $next) {
                     throw new \DomainException('Renewal revision must advance by one.');
                 }
-            }
-            if ($operation->getRawOriginal('renewal_proof') !== null && in_array('renewal_proof', $dirty, true)) {
-                throw new \DomainException('Renewal proof is retained.');
-            }
-            if (in_array('renewal_reserved_revision', $dirty, true)
-                && ($operation->getRawOriginal('renewal_reserved_revision') !== null || $operation->action !== 'renew'
-                    || $operation->funding_basis !== 'paid_invoice' || $operation->state !== 'running'
-                    || $operation->renewal_reserved_revision !== $operation->transition_revision)) {
-                throw new \DomainException('Renewal reservation is immutable.');
+                // The sealed attempt row freezes what it was sealed against: the desired state, start and request digest.
+                if (array_intersect($dirty, ['payload', 'started_at', 'request_fingerprint'])
+                    && \Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationAttempts::sealed((int) $operation->id, \Paymenter\Extensions\Servers\Domains\Operations\Authority\StepKey::renew()) !== null) {
+                    throw new \DomainException(in_array('payload', $dirty, true) ? 'Sealed desired state is frozen.' : 'Original attempt identity is frozen.');
+                }
             }
             if (array_intersect($dirty, ['id', 'domain_id', 'service_id', 'server_id', 'registrar_key', 'account_fingerprint', 'authority_generation', 'action', 'term', 'currency', 'amount', 'invoice_id', 'invoice_item_id', 'operation_key', 'funding_basis', 'authorized_by', 'funding_reason', 'retry_number', 'renewal_previous_proof'])) {
                 throw new \DomainException('Operation binding and action are immutable.');
@@ -162,9 +168,13 @@ class Operation extends Model
                     &&!array_intersect(array_keys($old),['execution','evidence','charge','order_candidates','provider_reference','registration','corrections','reconciliation','terminal']);
             }
             $balanceCap=\Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::capReset($operation);
-            $reservedRenewal = $operation->getRawOriginal('renewal_reserved_revision') !== null;
-            $safeAttemptReset = !$reservedRenewal && ($safeCapReset || $safeTestRetry || $balanceCap);
-            if ($reservedRenewal && ($new['send_state'] ?? null) !== ($old['send_state'] ?? null)) {
+            // A sealed paid renewal attempt holds reserved postings; its send state only changes through the attempt.
+            // Looked up only when a reset or a send-state change could depend on it.
+            $reset = $safeCapReset || $safeTestRetry || $balanceCap; $sendStateChanged = ($new['send_state'] ?? null) !== ($old['send_state'] ?? null);
+            $reservedRenewal = ($reset || $sendStateChanged) && $operation->action === 'renew' && $operation->funding_basis === 'paid_invoice'
+                && \Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationAttempts::sealed((int) $operation->id, \Paymenter\Extensions\Servers\Domains\Operations\Authority\StepKey::renew()) !== null;
+            $safeAttemptReset = !$reservedRenewal && $reset;
+            if ($reservedRenewal && $sendStateChanged) {
                 throw new \DomainException('Reserved renewal send state is immutable.');
             }
             \Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::guard($operation,$balanceCap);

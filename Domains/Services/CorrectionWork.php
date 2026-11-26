@@ -7,6 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol;
 use Paymenter\Extensions\Servers\Domains\Data\PrivacyMode;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Management\Changes\{ManagementCorrections, ManagementDeferred};
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 /** Deterministic, nonfinancial corrections to frozen details. Sealed requests are only observed. */
 final class CorrectionWork
 {
@@ -19,12 +20,16 @@ final class CorrectionWork
     {
         OperationClaims::outside();$plan=FreshTransaction::run(function()use($seed,$driver):?array{
             $l=HoldingLocks::take($seed);$d=$l['domain'];
+            $renewals=RenewalAttempt::loaded($l['operations']);
             foreach($l['operations'] as $original){
-                $required=array_unique([...array_keys($original->attempt['corrections']??[]),
+                // Unreadable renewal evidence contributes no observed corrections. The safe code can still require its own.
+                $observed=$original->action==='renew' ? (($renewals[$original->id]??null)?->readProof()['observed_corrections']??[])
+                    : ($original->attempt['reconciliation']['observed_corrections']??[]);
+                $required=array_unique([...($original->safe_code==='provider_auto_renew_unconfirmed'?['auto_renew']:[]),
+                    ...array_keys($original->attempt['corrections']??[]),
                     ...($original->attempt['evidence']['registration']['corrections']??[]),
                     ...($original->policy['reconciliation']['observed_corrections']??[]),
-                    ...($original->attempt['reconciliation']['observed_corrections']??[]),
-                    ...($original->safe_code==='provider_auto_renew_unconfirmed'?['auto_renew']:[])]);
+                    ...$observed]);
                 foreach($required as $section){
                     $inputs=match($section){
                         'auto_renew'=>[['auto_renew_off',[]]],

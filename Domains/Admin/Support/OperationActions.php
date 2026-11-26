@@ -183,7 +183,7 @@ final class OperationActions
     {
         try {
             $p=$op->policy??[];
-            if($op->action==='renew'&&($op->attempt['seal']??null)==='sealed'
+            if($op->action==='renew'
                 &&\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion::capturedChargeHeld($op)){return true;}
         } catch (\Throwable) { return false; }
         $now = app(Clock::class)->now()->getTimestamp();

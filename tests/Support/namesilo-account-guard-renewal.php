@@ -40,10 +40,10 @@ foreach(['domains_credentials','domains_verified_credentials',Paymenter\Extensio
         }catch(Paymenter\Extensions\Servers\Domains\Services\WriteHeld $error){same('namesilo_account_guard',$error->reason,'Local configuration refuses through the typed account guard');}
         $held=$runGuard($key);
         same(['queued','renewal_acceptance_required'],[$held->state,$held->safe_code],'Renewal configuration refusal stays retryable before admission');
-        expect($held->renewal_admission_until === null,'Unavailable local configuration creates no renewal admission');
+        expect(Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationAttempts::current((int)$held->id,Paymenter\Extensions\Servers\Domains\Operations\Authority\StepKey::renew())===null,'Unavailable local configuration creates no renewal admission');
         same($sent,$writes,'Local configuration refusal sends no paid request');same($reads,$wire->calls,'Local configuration refusal performs no provider reads');
         same(0,$accountGuard->reads,'Local configuration refusal never reads default contacts');
-        expect(!isset($held->attempt['dispatch_attempted_at']),'Local configuration refusal creates no possible-send seal');
+        expect(\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($held)->unsealed(),'Local configuration refusal creates no possible-send seal');
         same($financial,nativeFinancialSnapshot($renewal),'Local configuration refusal preserves native finance and holding state');
     }finally{Illuminate\Support\Facades\DB::table('settings')->where('id',$saved['id'])->update($saved);}
 }

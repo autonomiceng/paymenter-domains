@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\{Auth,Cache,DB,Queue};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\RenewalCode;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 use Paymenter\Extensions\Servers\Domains\Services\{Rdap,RenewalAcceptance,RuntimeComposition,RuntimeDispatch,RuntimePorts,RuntimeSchema,RuntimeWork,StaffOperationReview,StaffOperations,TransferPrecheck,WriteAcceptance,WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
@@ -19,7 +20,7 @@ $release=static function($op)use($staff,$clock):void {
 };
 [$op,$d,$b,$invoice]=$makeRenewal(placeholderComFixtureName('release-admission-placeholder.com'));[$engine,$writer,$completion]=$compose($b);
 $state->hold='unknown';same('held',$engine->run($op->id,$writer)->state,'Unconfirmed provider state holds before dispatch');
-same('renewal_state_unconfirmed',$op->fresh()->safe_code,'Exact admission refusal');same([],($op->fresh()->attempt??[]),'No original attempt');
+same('renewal_state_unconfirmed',$op->fresh()->safe_code,'Exact admission refusal');same(null,renewalAttempt($op),'No original attempt');
 Auth::login($staff);
 $notice=Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($op->fresh());
 same(['Release hold queues the test renewal to send to Enom. Fix the cause, then release the hold.','release'],[$notice['body']??null,$notice['action']??null],'Unsent admission hold names normal readmission');
@@ -39,11 +40,14 @@ foreach(RenewalCode::cases() as $code){
     else{$refuse($code->value);}
 }
 // A sealed attempt whose reply was lost, sealed through the renewal fixture builder.
-$lostReply=['reply'=>'lost'];
+$lostReply=['reply'=>'lost'];$sealedOnly=['seal'=>'sealed'];$closed=['terminal'=>'local'];
+$attemptRows=static function()use($op):array{
+    $steps=DB::table(OperationSchema::STEPS)->where('operation_id',$op->id)->pluck('id');$rows=static fn($query)=>$query->orderBy('id')->get()->map(fn($row)=>(array)$row)->all();
+    return [$rows(DB::table(OperationSchema::STEPS)->whereIn('id',$steps)),$rows(DB::table(OperationSchema::ATTEMPTS)->whereIn('step_id',$steps)),$rows(DB::table(OperationSchema::EVIDENCE)->where('operation_id',$op->id))];};
 foreach([
-    ['attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent']],
+    $closed,
     $lostReply,
-    ['attempt'=>['send_state'=>'possibly_sent']],
+    $sealedOnly,
     ['started_at'=>$clock->now()],['request_fingerprint'=>str_repeat('a',64)],
     ['lease_expires_at'=>$clock->now()->modify('+60 seconds')],['completed_at'=>$clock->now()],
     ['cost'=>['estimated'=>'8.00','currency'=>'USD']],['provider_order_id'=>'9002'],
@@ -52,7 +56,15 @@ foreach([
     $check=static function()use($op,$refuse,$evidence):void{$refuse('non-virgin '.implode(',',array_keys($evidence)));
         if(!Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::virgin($op->fresh())){expect(!isset(Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::for($op->fresh())['admission']),'Non-virgin request has no release instruction');}};
     // The temporary seal is removed with the rest of the row, so no later case runs on a leftover seal.
-    if($evidence===$lostReply){withSealedRenewal($op,static function()use($op,$check):void{same(Paymenter\Extensions\Servers\Domains\Data\ExecutionRecord::RecordedNull,renewalAttempt($op)?->replyRecord(),'The sealed renewal records its lost reply');$check();},at:$clock->now(),reply:RenewalReply::unknown());}else{$set($evidence);$check();}}
+    if($evidence===$lostReply){$rows=$attemptRows();
+        withSealedRenewal($op,static function()use($op,$check):void{same(Paymenter\Extensions\Servers\Domains\Data\ExecutionRecord::RecordedNull,renewalAttempt($op)?->replyRecord(),'The sealed renewal records its lost reply');$check();},at:$clock->now(),reply:RenewalReply::unknown());
+        same($rows,$attemptRows(),'The temporary seal puts back every earlier step, attempt and evidence row');}
+    // A sealed attempt with no reply yet is possibly sent.
+    elseif($evidence===$sealedOnly){withSealedRenewal($op,static fn()=>$check(),at:$clock->now());}
+    // Local terminal proof recorded before any seal.
+    elseif($evidence===$closed){DB::transaction(fn()=>Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationWriter::at($clock->now())->recordTerminal((int)$op->id,'renewal_cancelled_unpaid',['operation_key'=>$op->operation_key]));
+        try{$check();}finally{DB::table('domains_operation_evidence')->where(['operation_id'=>$op->id,'kind'=>'terminal'])->delete();}}
+    else{$set($evidence);$check();}}
 $restore();$payment=DB::table('invoice_transactions')->where('invoice_id',$invoice->id)->sole();
 DB::table('invoice_transactions')->where('id',$payment->id)->update(['amount'=>'0.00']);$refuse('stale payment despite paid label');
 DB::table('invoice_transactions')->where('id',$payment->id)->update(['amount'=>$payment->amount]);
@@ -60,9 +72,9 @@ $set(['funding'=>[...($op->fresh()->funding??[]),'refund'=>['amount'=>$op->amoun
 $restore();$d->service->update(['status'=>'cancelled']);$refuse('cancelled lifecycle');DB::table('services')->where('id',$op->service_id)->update(['status'=>'active']);
 $restore();$cancel=App\Models\ServiceCancellation::create(['service_id'=>$op->service_id,'type'=>'immediate','reason'=>'Synthetic renewal stop']);$refuse('immediate cancellation');$cancel->delete();
 $restore();
-$set(['renewal_admission_until'=>$clock->now()->modify('+360 seconds')]);
+DB::transaction(static fn()=>(new Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationWriter($clock))->claim((int)$op->id,Paymenter\Extensions\Servers\Domains\Operations\Authority\StepKey::renew(),$clock->now()->modify('+360 seconds')));
 $release($op);same('queued',$op->fresh()->state,'Staff release queues existing paid obligation');
-expect($op->fresh()->renewal_admission_until === null,'Release removes retained admission claim');
+expect(Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationAttempts::current((int)$op->id,Paymenter\Extensions\Servers\Domains\Operations\Authority\StepKey::renew())===null,'Release removes retained admission claim');
 expect(!isset($op->fresh()->policy['renewal_execution']),'Release removes stale hold guidance and alert flags');
 expect(!isset(Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::for($op->fresh())['admission']),'Queued request has no held-release instruction');
 same(0,$state->writes,'Staff release grants no send');

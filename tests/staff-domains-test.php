@@ -398,14 +398,19 @@ foreach(['renewal_cancelled_unpaid'=>'renew','acquisition_cancelled_unpaid'=>'re
     $unpaid=$saved($code,['action'=>$action,'state'=>'rejected','safe_code'=>$code,'cost'=>null,'funding'=>[],
         'attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent','disposition'=>'rejected','rejection_basis'=>'definitely_unsent'],
         'policy'=>['renewal'=>['cost_cap'=>['amount'=>'8.9500','currency'=>'USD']]]]);
+    // A renewal's closure proof is its terminal row, as the unpaid retirement records it.
+    if($action==='renew'){DB::transaction(fn()=>Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationWriter::at(new DateTimeImmutable('now',new DateTimeZone('UTC')))
+        ->recordTerminal((int)$unpaid->id,$code,['operation_key'=>$unpaid->operation_key,'generation'=>$unpaid->authority_generation,'invoice_id'=>null,'transactions'=>[]]));}
     same(['Not charged',null],$cost($unpaid),'Closed unpaid request was not charged: '.$code);
     if($action==='renew'){$unpaid=sealRenewal($unpaid);}else{$unpaid->attempt=['seal'=>'sealed','send_state'=>'unknown'];}
     same(null,$cost($unpaid)[0],'A send attempt keeps the cost Missing: '.$code);
 }
 // A finished renewal, so the sealed authorization is read without an unconfirmed send.
 $renewal->forceFill(['state'=>'succeeded'])->saveQuietly();
-foreach([['amount'=>'8.95'],['amount'=>'8.95','currency'=>'EUR'],['amount'=>8.95,'currency'=>'USD'],['amount'=>'private','currency'=>'USD']] as $authorized){
-    $renewal=sealRenewal($renewal,['authorized_cost'=>$authorized]);
+// The sealed attempt row holds the authorization; each case damages it on a fresh seal.
+foreach([['authorized_currency'=>null],['authorized_amount'=>null],['authorized_currency'=>'EUR'],['authorized_amount'=>'private']] as $authorized){
+    $renewal=sealRenewal($renewal);
+    DB::table(Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema::ATTEMPTS)->where('id',renewalAttempt($renewal)->attempt()->token->attemptId)->update($authorized);
     same([null,'No cost recorded. Check at the registrar.'],$cost($renewal),'Missing or invalid authorization never falls back to estimate or cap');
 }
 $renewal=sealRenewal($renewal,amount:'0.00');

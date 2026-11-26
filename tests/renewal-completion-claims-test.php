@@ -24,8 +24,8 @@ $warnings = [];
 app('events')->listen(Illuminate\Log\Events\MessageLogged::class, static function ($event) use (&$warnings): void {
     if ($event->message === 'Domains renewal reply not recorded.') { $warnings[] = [$event->level, $event->context]; }
 });
-$state->lost=true;$writes=$state->writes;same('uncertain',$engine->run($op->id,$writer)->state,'Missing reply remains uncertain');$attempt=$op->fresh()->attempt;
-expect(!array_key_exists('send_failure', $attempt), 'Unclassified failure retains no invented reason');
+$state->lost=true;$writes=$state->writes;same('uncertain',$engine->run($op->id,$writer)->state,'Missing reply remains uncertain');$attempt=\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($op->fresh())->identity();
+expect(\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($op->fresh())->sendFailure()===null, 'Unclassified failure retains no invented reason');
 same([['warning', ['operation_id' => $op->id, 'exception_class' => RuntimeException::class]]], $warnings, 'Unclassified failure logs only its type');
 $clock->instant=$clock->now()->modify('+25 hours');$state->lost=false;$state->expiry='2028-10-18';$state->charge='8.00';
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$renewBindings);
@@ -37,7 +37,7 @@ $review=new $reviewClass($staff->id,$op->server_id,null,'enom_answer',$reviewCla
 (new \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites($native,$sellers,$renewBindings))->run($review,['operation_id'=>$op->id,
     'attempt_hash'=>\Paymenter\Extensions\Servers\Domains\Services\EnomAnswers::identity($op->fresh()),'outcome'=>'accepted','order_reference'=>'9002','case_reference'=>'synthetic-renewal-case','evidence'=>'Exact account and sealed renewal attempt were processed as order 9002.','confirmed'=>true],$clock->now());
 same('succeeded',$completion->run($op->id)->state,'Supported renewal settles only through exact charge and expiry proof');
-same($attempt,array_diff_key($op->fresh()->attempt,['reconciliation'=>true]),'Original sealed renewal evidence remains unchanged');
+same($attempt,\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($op->fresh())->identity(),'Original sealed renewal evidence remains unchanged');
 expect(\Paymenter\Extensions\Servers\Domains\Services\RenewalAuthority::completed($op->fresh(),$d->fresh(),$b),'Staff-supported renewal proof anchors the next cycle');
 same($writes+1,$state->writes,'Support answer and reconciliation never send another renewal');
 echo "Renewal claim safety and staff answer passed\n"; $nativeSuccessful=true;

@@ -7,7 +7,7 @@ use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\{Artisan,DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Domains;
-use Paymenter\Extensions\Servers\Domains\Installation\SchemaVerifier;
+use Paymenter\Extensions\Servers\Domains\Installation\{SchemaVerifier,Verification};
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
 use Paymenter\Extensions\Servers\Domains\Services\{AdoptionSchema,Installation,DomainAuditSchema};
 
@@ -74,6 +74,16 @@ try { AdoptionSchema::verify(); throw new LogicException('Schema drift accepted'
 catch (RuntimeException $error) { same('Retained Domains schema mismatch: domains_adoptions', $error->getMessage(), 'Specific drift refusal'); }
 $after = Schema::getTableListing($database, false); sort($after); same($tables, $after, 'Failed verification also removes reference tables');
 Schema::table('domains_adoptions', static fn ($t) => $t->dropColumn('unexpected'));
+// A drifted ON UPDATE is refused by the full check, which then leaves no fresh verification receipt.
+Verification::run(); expect(Verification::current(), 'A clean full check records a fresh receipt');
+$claimedAt = static fn (string $extra): bool => DB::statement('ALTER TABLE `'.$prefix.OperationSchema::ATTEMPTS.'` MODIFY `claimed_at` DATETIME NULL DEFAULT NULL'.$extra);
+$claimedAt(' ON UPDATE CURRENT_TIMESTAMP');
+expect(!Verification::current(), 'Drift makes the receipt stale');
+try { Verification::run(); throw new LogicException('ON UPDATE drift accepted by the full check'); }
+catch (RuntimeException $error) { same('Retained Domains schema mismatch: '.OperationSchema::ATTEMPTS, $error->getMessage(), 'Full check refuses ON UPDATE drift'); }
+$claimedAt('');
+expect(!Verification::current(), 'A refused check invalidates the old receipt even after the schema is restored');
+Verification::run(); expect(Verification::current(), 'The restored definition verifies again');
 // A dropped or weakened reference refuses retained verification; restoring the exact reference passes again.
 $evidenceKeys = Schema::getForeignKeys(OperationSchema::EVIDENCE);
 same(2, count($evidenceKeys), 'Evidence references its operation and attempt');
@@ -108,6 +118,6 @@ $version = DB::selectOne('SELECT VERSION() AS version')->version;
 expect(str_starts_with($version, '11.4.5-MariaDB'), 'Pinned real MariaDB version');
 echo json_encode(['complete' => true, 'server_version' => $version, 'prefix' => $prefix,
     'retained_tables' => count($owned), 'verified_tables' => count($verified), 'reference_creates' => count($references),
-    'implicit_timestamp_defaults_off' => true,
+    'implicit_timestamp_defaults_off' => true, 'on_update_drift_refused' => true,
     'fresh' => true, 'reinstall' => true, 'upgrade' => true, 'cleanup_success_and_failure' => true])."\n";
 $nativeSuccessful = true;

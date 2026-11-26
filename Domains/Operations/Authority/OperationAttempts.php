@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Operations\Authority;
 
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\{Crypt, DB};
 use Paymenter\Extensions\Servers\Domains\Data\SendState;
 
@@ -11,6 +12,9 @@ final class OperationAttempts
 {
     /** The json_decode depth of stored evidence. The writer refuses deeper evidence before it is stored. */
     public const EVIDENCE_DEPTH = 32;
+
+    /** What evidenceMany() gives for a row that no longer decrypts. */
+    public const UNREADABLE = ['unreadable' => true];
 
     public static function step(int $operationId, StepKey $key, bool $lock = false): ?object
     {
@@ -96,14 +100,17 @@ final class OperationAttempts
 
     /**
      * The first evidence of each kind for the given operations in one read, keyed by operation id, then attempt id
-     * (0 for operation-level evidence), then kind.
+     * (0 for operation-level evidence), then kind. A row that no longer decrypts reads as UNREADABLE, so it never
+     * hides the evidence of another operation.
      */
     public static function evidenceMany(array $operationIds, array $kinds): array
     {
         if (!$operationIds || !$kinds) { return []; }
         $found = [];
         foreach (DB::table(OperationSchema::EVIDENCE)->whereIn('operation_id', $operationIds)->whereIn('kind', $kinds)->orderBy('id')->get() as $row) {
-            $found[(int) $row->operation_id][(int) ($row->attempt_id ?? 0)][$row->kind] ??= self::decoded($row);
+            $slot = &$found[(int) $row->operation_id][(int) ($row->attempt_id ?? 0)][$row->kind];
+            if ($slot === null) { try { $slot = self::decoded($row); } catch (DecryptException|\JsonException) { $slot = self::UNREADABLE; } }
+            unset($slot);
         }
         return $found;
     }
@@ -122,6 +129,17 @@ final class OperationAttempts
             ->where(['s.operation_id' => $operationId, 's.step_type' => $key->type, 's.sequence' => $key->sequence, 'e.operation_id' => $operationId, 'e.kind' => $kind])
             ->whereNotNull('a.sealed_at')->orderBy('e.id')->first(['e.source', 'e.outcome', 'e.observed_at', 'e.recorded_at', 'e.evidence']);
         return $row ? self::decoded($row) : null;
+    }
+
+    /** Ids of these operations whose sealed attempt on the step retained evidence of one kind, in one read. */
+    public static function sealedWithEvidence(array $operationIds, StepKey $key, string $kind): array
+    {
+        $ids = array_values(array_unique(array_map('intval', $operationIds)));
+        if (!$ids) { return []; }
+        return DB::table(OperationSchema::EVIDENCE.' as e')->join(OperationSchema::ATTEMPTS.' as a', 'a.id', '=', 'e.attempt_id')
+            ->join(OperationSchema::STEPS.' as s', 's.id', '=', 'a.step_id')
+            ->whereIn('s.operation_id', $ids)->where(['s.step_type' => $key->type, 's.sequence' => $key->sequence, 'e.kind' => $kind])
+            ->whereColumn('e.operation_id', 's.operation_id')->whereNotNull('a.sealed_at')->distinct()->pluck('s.operation_id')->map(static fn ($id) => (int) $id)->all();
     }
 
     /** Logical step and attempt facts for authority stamps. Evidence is left out, so a read's own proof keeps the stamp. */

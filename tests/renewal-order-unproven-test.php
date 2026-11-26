@@ -98,6 +98,20 @@ $after = $credit();
 expect($record($op, $full, 'not_processed') !== null, 'A second answer is refused');
 app(\Paymenter\Extensions\Servers\Domains\Services\Refunds::class)->creditRejected($op->id); $engine->run($op->id, $writer); $completion->run($op->id);
 same([$after, $writes, 'rejected'], [$credit(), $state->writes, $op->fresh()->state], 'No second credit, no second renewal');
+// The audited answer is return proof, never local-refusal proof, and it stays tied to the sealed attempt row.
+$refusedBy = static function (Closure $check): bool { try { $check(); return false; } catch (DomainException) { return true; } };
+$answered = $op->fresh();
+same($answered->policy['enom_answer'], renewalAttempt($answered)?->unprocessedAnswer(), 'The audited answer is retained on the sealed attempt');
+expect(!$refusedBy(fn () => Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireReturnable($answered, $answered->domain)), 'Not processed is return proof');
+expect($refusedBy(fn () => Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireUnsent($answered, $answered->domain)), 'Not processed grants no same-debt retry');
+// The return was fully settled as account credit, so the audited answer allows a replacement of this cycle. Automatic
+// recovery runs only before the cycle's expiry, so the check runs at a time inside it.
+$answeredAt = $clock->instant; $clock->instant = new DateTimeImmutable('2027-10-17T00:00:00Z');
+Paymenter\Extensions\Servers\Domains\Services\RenewalReplacements::recoverDomain($answered->domain, $clock); $clock->instant = $answeredAt;
+expect(Paymenter\Extensions\Servers\Domains\Services\RenewalReplacements::reviewed($answered->fresh(), $answered->domain), 'A fully credited audited return allows a replacement');
+Illuminate\Support\Facades\DB::transaction(fn () => Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationWriter::at($clock->now())->recordObservation(renewalAttempt($answered)->attempt()->token, ['identity' => 'late'], $clock->now()));
+expect($refusedBy(fn () => Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireReturnable($answered->fresh(), $answered->domain)), 'Positive proof on the sealed attempt voids the answer');
+expect(!Paymenter\Extensions\Servers\Domains\Services\RenewalReplacements::reviewed($answered->fresh(), $answered->domain), 'Positive proof on the sealed attempt voids the replacement');
 
 // 3. Not processed is refused once a check saw a matching charge or an advanced expiry.
 // Every case is checked before one assert, so a failure names each case that was not refused.
@@ -159,7 +173,7 @@ $seen['an advanced expiry before a deferred read'] = $refused($deferred);
 // whose reads all lag again is still refused.
 [$op, , , $completion] = $sent('renew-proof-kept-placeholder.com', '2027-10-18', 'another order');
 $readUntilStopped($op, $completion, 'kept'); $state->expiry = '10/18/2028 5:00:00 AM'; $state->fail = ReadCommand::Expiry;
-$first = $refused($op); $kept = isset($op->fresh()->renewal_proof); $state->expiry = '10/18/2027 5:00:00 AM'; $state->fail = null;
+$first = $refused($op); $kept = renewalObservation($op->fresh()) !== null; $state->expiry = '10/18/2027 5:00:00 AM'; $state->fail = null;
 $seen['a fresh later expiry kept for a lagging retry'] = $first && $kept && $refused($op);
 [$op, , , $completion] = $accepted('renew-proof-shapes-placeholder.com');
 $restoreAccepted = nativeRegistrarCheckpoint($clock, $state);

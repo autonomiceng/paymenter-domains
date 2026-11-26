@@ -58,7 +58,7 @@ $state->during = static function () use ($op, $completion, $state, $record, $sta
     $state->after = '2028-10-18'; $state->duringCommand = null;
 };
 Cache::flush(); $completion->run($op->id); $fresh = $op->fresh();
-$actual = [$inner, $polls($op), ($fresh->renewal_proof['identity'] ?? null) === RegistrarAnswers::identity($fresh), isset($fresh->renewal_check),
+$actual = [$inner, $polls($op), (renewalObservation($fresh)['identity'] ?? null) === RegistrarAnswers::identity($fresh), renewalRead($fresh) !== null,
     $credit() - $before, $fresh->state];
 same([['cron' => [0, 4], 'staff' => true, 'not_processed_refused' => true], 5, true, false, 0, $priorState], $actual,
     'A running check keeps other checks and Not processed out, then saves its poll and proof: '.json_encode($actual));
@@ -77,17 +77,17 @@ for ($i = 1; $i < OperationReconciliation::POLL_LIMIT; $i++) { $check($op, $comp
 // Fixture for a lost worker: the claim a real check took in its first locked step, restored after that check's save,
 // as if the worker had died during its last read.
 $lost = null; $state->after = '2028-10-18'; $state->duringCommand = ReadCommand::Order;
-$state->during = static function () use ($op, &$lost) { $lost = $op->fresh()->renewal_check ?? null; };
+$state->during = static function () use ($op, &$lost) { $lost = renewalRead($op->fresh()); };
 $check($op, $completion); $state->after = '2027-10-18';
-$fresh = $op->fresh(); $fresh->update(['renewal_check' => $lost, 'policy' => [...$fresh->policy, 'renewal_polls' => OperationReconciliation::POLL_LIMIT - 1]]);
+$fresh = $op->fresh(); setRenewalRead($fresh, $lost); $fresh->update(['policy' => [...$fresh->policy, 'renewal_polls' => OperationReconciliation::POLL_LIMIT - 1]]);
 $clock->instant = $clock->now()->modify('-10 minutes'); $calls = count($state->calls);
 Cache::flush(); $completion->run($op->id); $live = [is_array($lost), count($state->calls) - $calls, $polls($op), $staffCheck($op, $completion)];
 same([true, 0, OperationReconciliation::POLL_LIMIT - 1, true], $live, 'A live claim keeps the next checks from reading: '.json_encode($live));
 $clock->instant = $clock->now()->modify('+'.(OperationReconciliation::POLL_LIMIT * 600).' seconds'); $before = $credit();
 same([true, 0, 'pending'], [$record($op), $credit() - $before, $op->fresh()->state === 'rejected' ? 'rejected' : 'pending'], 'A lost check\'s saved proof refuses Not processed after its claim expires');
 $calls = count($state->calls); $check($op, $completion); $fresh = $op->fresh();
-same([true, OperationReconciliation::POLL_LIMIT, true, false, true], [count($state->calls) > $calls, $polls($op), $fresh->renewal_check['unresolved'] ?? null,
-    isset($fresh->renewal_check['token']), $record($op)],
+same([true, OperationReconciliation::POLL_LIMIT, true, false, true], [count($state->calls) > $calls, $polls($op), renewalRead($fresh)['unresolved'] ?? null,
+    isset(renewalRead($fresh)['token']), $record($op)],
     'The next check takes over the expired claim and counts its poll; the lost check stays unresolved and Not processed refused');
 // Only the locked projection fails. The clean read must release its claim even though Check status reports a refusal.
 MoneyWorkSchema::install();
@@ -107,11 +107,11 @@ App\Models\User::retrieved(static function ($owner) use ($user, &$remaining, &$c
 $state->duringCommand = ReadCommand::Expiry;
 $state->during = static function () use (&$remaining): void { $remaining = 2; };
 Cache::flush();
-$busy = $staffCheck($op, $completion); $afterBusy = $op->fresh();
+$busy = $staffCheck($op, $completion); $afterBusy = $op->fresh(); $claimAfterBusy = renewalRead($afterBusy);
 $state->duringCommand = null; $clock->instant = $clock->now()->modify('+10 minutes');
 $before = $credit(); $writes = $state->writes; $check($op, $completion);
 $refused = $record($op); $replay = $record($op);
-$actual = [$busy, $conflicts, !isset($afterBusy->renewal_check), $afterBusy->policy['renewal_polls'],
+$actual = [$busy, $conflicts, $claimAfterBusy === null, $afterBusy->policy['renewal_polls'],
     $refused, $replay, $credit() - $before, $state->writes - $writes];
 same([true, 2, true, OperationReconciliation::POLL_LIMIT - 1, false, true, PricingRule::minor($op->amount), 0], $actual,
     'A clean read followed by contention leaves the last poll available and permits a later credit once: '.json_encode($actual));

@@ -1,7 +1,9 @@
 <?php
 // Synthetic shared checkout/adoption deadlines; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/renewal-attempts.php';
 use Paymenter\Extensions\Servers\Domains\Services\RenewalFundingLedger;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 return static function ($op, $domain, $binding, Closure $compose, $clock, $state, Closure $setNow, Closure $nativeMoney): array {
@@ -12,13 +14,18 @@ return static function ($op, $domain, $binding, Closure $compose, $clock, $state
     });
     $reset = static function () use ($op, $original, $state, $setNow, $entry): void {
         DB::table(RenewalFundingLedger::TABLE)->where(['invoice_item_id' => $op->invoice_item_id, 'retry_number' => $op->retry_number])->delete();
+        // Each case starts with no attempt history: evidence, then attempts, then the step.
+        $steps = DB::table(OperationSchema::STEPS)->where('operation_id', $op->id)->pluck('id');
+        DB::table(OperationSchema::EVIDENCE)->where('operation_id', $op->id)->delete();
+        DB::table(OperationSchema::ATTEMPTS)->whereIn('step_id', $steps)->delete();
+        DB::table(OperationSchema::STEPS)->where('operation_id', $op->id)->delete();
         DB::table('domains_operations')->where('id', $op->id)->update($original);
         $setNow($entry); Cache::flush(); $state->calls = []; $state->writes = 0;
         $state->during = null; $state->duringCommand = null; $state->afterWrite = null;
     };
     $noSend = static function ($result, array $money) use ($nativeMoney, $state): void {
         expect(in_array($result->state, ['held','queued'], true), 'Deadline refusal keeps unsent renewal');
-        same([], $result->attempt ?? [], 'Deadline refusal creates no execution/seal proof');
+        same(null, renewalAttempt($result), 'Deadline refusal creates no execution/seal proof');
         same(null, $result->provider_order_id, 'Deadline refusal creates no order proof');
         expect(RenewalFundingLedger::entries($result) === ['item' => [], 'payment' => []] && !isset($result->funding['seal']), 'Deadline refusal never seals funding');
         same(0, $state->writes, 'Deadline refusal sends no renewal');
@@ -62,7 +69,7 @@ return static function ($op, $domain, $binding, Closure $compose, $clock, $state
     $result = $engine->run($op->id, $writer); $waiting = false;
     same('pending', $result->state, 'Timely admitted last request remains pending');
     same($state->order, $result->provider_order_id, 'Timely last response ID retained');
-    same($state->order, $result->attempt['renewal']['order_reference'], 'Original response reference retained in execution');
+    same($state->order, renewalAttempt($result)?->orderReference(), 'Original response reference retained in execution');
     same(1, $state->writes, 'One final admitted wire'); same($money, $nativeMoney(), 'Response persistence retains finance');
     $engine->run($op->id, $writer); same(1, $state->writes, 'Saved response never grants replay');
     // Read-only completion also charges capture waits to its stricter 250-second budget.

@@ -19,25 +19,26 @@ class RegistrarAnswers
         $old=$op->getOriginal('policy')['enom_answer']??null;$new=$op->policy['enom_answer']??null;
         if($old!==$new&&($old!==null||self::$writing!==[$op->id,$new])){throw new \DomainException('Registrar answer requires a current audited review.');}
     }
-    /** Unreadable saved attempt data is never eligible, answered or offered for an answer. */
+    /** Unreadable saved attempt data is never eligible, answered or offered for an answer: a renewal's attempt evidence, otherwise its attempt record. */
     public static function readable(Operation $op): bool
-    {try{$op->attempt;return true;}catch(\Illuminate\Contracts\Encryption\DecryptException){return false;}}
-    public static function identity(Operation $op): string
-    {$attempt=$op->attempt??[];unset($attempt['reconciliation']);return hash('sha256',json_encode([$op->operation_key,$op->account_fingerprint,$op->authority_generation,$attempt,$op->request_fingerprint],JSON_THROW_ON_ERROR));}
+    {try{$op->action==='renew'?RenewalAttempt::of($op):$op->attempt;return true;}catch(\Illuminate\Contracts\Encryption\DecryptException){return false;}}
+    /** The answered attempt: a renewal's sealed attempt rows, otherwise the retained record. Read proof is left out.
+     * $renewal: the renewal's attempt facts when the caller already read them. */
+    public static function identity(Operation $op, ?RenewalAttempt $renewal = null): string
+    {if($op->action==='renew'){$attempt=($renewal??RenewalAttempt::of($op))->identity();}else{$attempt=$op->attempt??[];unset($attempt['reconciliation']);}return hash('sha256',json_encode([$op->operation_key,$op->account_fingerprint,$op->authority_generation,$attempt,$op->request_fingerprint],JSON_THROW_ON_ERROR));}
     public static function capturedReference(Operation $op): ?string
     {
-        if (!self::readable($op)) { return null; }
+        if ($op->registrar_key !== 'enom' || $op->action !== 'register' || !self::readable($op)) { return null; }
         $a = $op->attempt ?? []; $id = $a['evidence']['registration']['orderReference'] ?? null;
-        return $op->registrar_key === 'enom' && $op->action === 'register' && ($a['seal'] ?? null) === 'sealed'
+        return ($a['seal'] ?? null) === 'sealed'
             && ($a['execution']['disposition'] ?? null) === 'unknown' && ($a['execution']['send_state'] ?? null) === 'sent'
             && is_string($id) && preg_match('/^[1-9][0-9]{0,19}$/D', $id) ? $id : null;
     }
     public static function eligible(Operation $op,\DateTimeImmutable $now): bool
     {
-        if(!self::readable($op)){return false;}
-        if($op->action==='transfer'){return TransferRejections::eligible($op);}
+        if($op->action==='transfer'){return self::readable($op)&&TransferRejections::eligible($op);}
         // A renewal's seal, acceptance and read proof come from its attempt reader.
-        $renewal=$op->action==='renew'?RenewalAttempt::of($op):null;
+        try{$renewal=$op->action==='renew'?RenewalAttempt::of($op):null;if(!$renewal){$op->attempt;}}catch(\Illuminate\Contracts\Encryption\DecryptException){return false;}
         try{$at=$renewal?$renewal->sentAt()??throw new \DomainException('Never sealed.'):new \DateTimeImmutable($op->attempt['dispatch_attempted_at']??'invalid');}catch(\Throwable){return false;}
         return in_array($op->registrar_key,['enom','namesilo'],true)&&in_array($op->action,['register','renew'],true)
             &&in_array($op->state,['running','pending','uncertain'],true)&&!($op->state==='running'&&$op->lease_expires_at!==null&&$op->lease_expires_at>$now)
@@ -59,9 +60,10 @@ class RegistrarAnswers
      * then record either answer. A staff restart resets the count, so the answer waits for checks to stop again. */
     public static function stoppedOrder(Operation $op): bool
     {
-        if(!self::readable($op)){return false;}
-        $a=RenewalAttempt::of($op);$reply=$a->reply();$id=$op->provider_order_id;
-        return $op->registrar_key==='enom'&&$op->action==='renew'&&is_string($id)&&preg_match('/^[1-9][0-9]{0,19}$/D',$id)
+        if($op->registrar_key!=='enom'||$op->action!=='renew'){return false;}
+        try{$a=RenewalAttempt::of($op);}catch(\Illuminate\Contracts\Encryption\DecryptException){return false;}
+        $reply=$a->reply();$id=$op->provider_order_id;
+        return is_string($id)&&preg_match('/^[1-9][0-9]{0,19}$/D',$id)
             &&$a->orderReference()===$id&&($reply['send_state']??null)==='sent'
             &&in_array($reply['disposition']??null,['accepted','accepted_with_discrepancy'],true)
             &&$a->readProof()===null&&!isset($op->cost['actual'])&&$op->confirmed_expires_at===null&&!RenewalCompletion::capturedChargeHeld($op)
@@ -202,6 +204,8 @@ class RegistrarAnswers
             if ($outcome === 'not_processed' && $op->action === 'renew') {
                 if (self::renewalProof($op, $d)) { throw new \DomainException(self::POSITIVE_PROOF); }
                 if (!$read?->allowsAnswer($op, $attempt->binding)) { throw new \DomainException(self::READ_UNRESOLVED); }
+                // The audited negative proof is appended on the exact sealed attempt, in the transaction that authorizes the return.
+                if (!$read->answerLocked($op, $answer)) { throw new \DomainException(self::POSITIVE_PROOF); }
                 $read->releaseLocked($op);
             }
             $policy=[...$op->policy,'enom_answer'=>$answer];

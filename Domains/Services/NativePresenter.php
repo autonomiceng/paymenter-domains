@@ -89,7 +89,7 @@ final readonly class NativePresenter
             ||$op->authority_generation<1||$op->provider_order_id!==null||$op->confirmed_expires_at!==null||$op->lease_expires_at!==null
             ||array_intersect(array_keys($op->cost??[]),['actual','execution'])||array_key_exists('dispatch_attempted_at',$op->policy??[])){return false;}
         // A renewal closure is read through the renewal attempt facts: closed unsent before any seal, for this generation and invoice.
-        if($op->action==='renew'){return OperationTerminalProof::renewalClosed($op,$renewal);}
+        if($op->action==='renew'){return ($renewal??RenewalAttempt::of($op))->closedBeforeSeal($op);}
         $a=$op->attempt??[];$t=$a['terminal']??[];
         if(($a['seal']??null)!=='absent'||($a['send_state']??null)!=='definitely_unsent'||($a['disposition']??null)!=='rejected'
             ||($a['rejection_basis']??null)!=='definitely_unsent'||($t['operation_key']??null)!==$op->operation_key

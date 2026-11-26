@@ -153,8 +153,12 @@ $duplicate=static function(Operation $original,string $key,?string $base=null)us
     $item=\App\Models\InvoiceItem::findOrFail($original->invoice_item_id)->getRawOriginal();unset($item['id']);$item['invoice_id']=$invoiceId;
     $itemId=DB::table('invoice_items')->insertGetId($item);$copyItems[]=$itemId;
     $copy=$original->replicate();$copy->operation_key=$key;$copy->invoice_id=$invoiceId;$copy->invoice_item_id=$itemId;
-    $attempt=$copy->attempt;$attempt['terminal']['operation_key']=$key;$attempt['terminal']['invoice_id']=$invoiceId;$copy->attempt=$attempt;
-    if($base!==null){$copy->base_expires_at=$base;}$copy->save();return $copy;
+    if($base!==null){$copy->base_expires_at=$base;}$copy->save();
+    // Each copy carries its own closure row, as its retirement would record it.
+    $terminal=[...(Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($original)->terminal()['evidence']??[]),'operation_key'=>$key,'invoice_id'=>$invoiceId];
+    DB::transaction(fn()=>Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationWriter::at(new DateTimeImmutable('now',new DateTimeZone('UTC')))
+        ->recordTerminal((int)$copy->id,'renewal_cancelled_unpaid',$terminal));
+    return $copy;
 };
 for($i=1;$i<=101;$i++){
     $copy=$duplicate($op->fresh(),$i===101?'owner-cycle-unexpected':$op->operation_key.':replacement:'.$i);$copies[]=$copy->id;
@@ -173,7 +177,7 @@ DB::table('domains_operations')->where('id',$copy->id)->update(['base_expires_at
 DB::table('domains_operations')->where('id',$op->id)->update(['safe_code'=>'needs_review']);
 same(['status'=>'review'],$bounded(fn()=>OwnedDomains::renewalCycle($d->fresh())),'Old debt outside the newest 100 blocks replacement');
 DB::table('domains_operations')->where('id',$op->id)->update(['safe_code'=>'renewal_cancelled_unpaid']);
-DB::table('domains_operations')->whereIn('id',$copies)->delete();
+DB::table(Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema::EVIDENCE)->whereIn('operation_id',$copies)->delete();DB::table('domains_operations')->whereIn('id',$copies)->delete();
 DB::table('invoice_items')->whereIn('id',$copyItems)->delete();DB::table('invoices')->whereIn('id',$copyInvoices)->delete();
 $response=$controller->renew($req($d,['years'=>'1']),$d->id);$replacement=Operation::where('domain_id',$d->id)->where('action','renew')->orderByDesc('id')->first();
 $replacementUrl=route('invoices.show',Invoice::findOrFail($replacement->invoice_id));
@@ -198,7 +202,7 @@ foreach([strtoupper($replacement->operation_key),strtoupper($op->operation_key),
 }
 same(['invoice'=>$replacementUrl],$bounded(fn()=>$cycle()),'Large unrelated history preserves the current invoice');
 $html=$page($d);expect(str_contains($html,'Pay invoice'),'Large history page still links the current invoice');
-DB::table('domains_operations')->whereIn('id',$copies)->delete();
+DB::table(Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema::EVIDENCE)->whereIn('operation_id',$copies)->delete();DB::table('domains_operations')->whereIn('id',$copies)->delete();
 DB::table('invoice_items')->whereIn('id',$copyItems)->delete();DB::table('invoices')->whereIn('id',$copyInvoices)->delete();
 
 // Late annual requests share the preview's expiry limit with the writer.

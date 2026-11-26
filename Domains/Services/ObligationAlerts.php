@@ -8,6 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\RenewalCode;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 use Paymenter\Extensions\Servers\Domains\Holding\Adoption\AdoptionRenewalEligibility;
 use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementCorrections;
 use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
@@ -201,15 +202,17 @@ final class ObligationAlerts
     /** A saved result whose charge still needs a person after a departure: the registrar charged more than the authorized
      * amount, or in another currency, whatever the saved reason says (a below-cost reason can hide an overcharge). A
      * charge within the authorized amount is booked margin, and a departure leaves no renewal to reprice. A finished
-     * renewal saves its review under renewal_execution, a reconciled request under reconciliation. With no retained
-     * charges the reason decides. Unreadable evidence keeps it. */
+     * renewal saves its review under renewal_execution and its authorized charge on the seal, a reconciled request both
+     * on the request. With no retained charges the reason decides. Unreadable evidence keeps it. */
     public static function moneyReview(Operation $op): bool
     {
         try {
             $r=$op->policy['reconciliation']??[]; $e=$op->policy['renewal_execution']??[];
             $reconciled=(bool)($r['staff_alert']??false); $renewed=(bool)($e['staff_alert']??false);
             if(!$reconciled&&!$renewed){return false;}
-            $authorized=$op->attempt['authorized_cost']??null; $actual=$op->cost['actual']??null;
+            $sealed=$op->action==='renew'?RenewalAttempt::of($op)->authorizedCost():null;
+            $authorized=$op->action==='renew'?($sealed?['amount'=>$sealed->amount,'currency'=>$sealed->currency]:null):($op->attempt['authorized_cost']??null);
+            $actual=$op->cost['actual']??null;
             if(!is_array($authorized)||!is_array($actual)){return $reconciled&&($r['reason']??null)==='actual_charge_changed'
                 ||$renewed&&in_array($e['reason']??null,['actual_cost_overrun','actual_charge_changed'],true);}
             if(($authorized['currency']??null)!==($actual['currency']??null)){return true;}

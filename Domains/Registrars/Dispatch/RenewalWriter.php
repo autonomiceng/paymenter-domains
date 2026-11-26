@@ -3,14 +3,14 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Dispatch;
 use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver,WriteReservation};
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AdmittedOperation, Disposition, DriverResult, Evidence, RenewalEvidence, RejectionBasis, Money, RequestContext, ResultReason, SendState};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AdmittedOperation, Disposition, DriverResult, Evidence, RenewalEvidence, RejectionBasis, Money, RequestContext, RequestDeadlineReached, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{RegistrationCommand, ResponseParser as EnomParser};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Environment as NameSiloEnvironment, Outcome, PurchaseMapping, ResponseParser as NameSiloParser};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalExecution;
 use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit, EnomTestWriteReservation, NameSiloAccountGuard, OperationClaims, ReadDeferred, RenewalAcceptance, WriteFeatures, WriteHeld};
-/** Named bounded protocol port; default composition supplies no sender. One call consumes one live grant.
- * The registrar command comes from that grant: the caller's descriptor only names it. */
+/** Named bounded protocol port; default composition supplies no sender. One call consumes one live grant, in the
+ * final transport callback. The registrar command comes from that grant: the caller's descriptor only names it. */
 final class RenewalWriter implements AdmittedRegistrarDriver
 {
     private readonly \SensitiveParameterValue $exchange;
@@ -51,9 +51,8 @@ final class RenewalWriter implements AdmittedRegistrarDriver
         OperationClaims::outside(); $this->binding->requireMatch($op->binding); $this->binding->requireMatch($context->binding);
         $engine = ($this->engine)();
         if (!$engine instanceof RenewalExecution || $op->query->action !== Action::Renew) { throw new \DomainException('No renewal engine scope.'); }
-        try { [$mode, $query, $binding] = $engine->consume($op, $context, $this); }
-        catch (RenewalUnsent) { return self::unsent($op->binding); }
-        $this->binding->requireMatch($binding);
+        [$mode, $query, $binding] = $engine->command($op, $context, $this); $this->binding->requireMatch($binding);
+        $spend = fn () => $engine->consume($op, $context, $this);
         try { $remaining = $context->claimRead($binding); if ($remaining < 1) { return self::unsent($binding); } }
         catch (\Throwable) { return self::unsent($binding); }
         $timeout = min(25000, $remaining);
@@ -61,7 +60,7 @@ final class RenewalWriter implements AdmittedRegistrarDriver
             $parts = explode('.', $query->name, 2); $command = $mode === 'grace' ? RegistrationCommand::GraceRenew : RegistrationCommand::Renew;
             $params = ['SLD' => $parts[0], 'TLD' => $parts[1], 'NumYears' => $query->years, 'UseCreditCard' => 'no'];
             if ($mode === 'grace') { $params = ['DomainName' => $query->name, 'NumYears' => 1, 'UseCreditCard' => 'no']; }
-            try{$body=$this->wire($binding,$context,($binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'https://reseller.enom.com/interface.asp':'https://resellertest.enom.com/interface.asp'),$command->value,$params,$timeout);}catch(RenewalUnsent){return self::unsent($binding);}
+            try{$body=$this->wire($binding,$context,($binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'https://reseller.enom.com/interface.asp':'https://resellertest.enom.com/interface.asp'),$command->value,$params,$timeout,$spend);}catch(RenewalUnsent){return self::unsent($binding);}
             $reply = (new EnomParser)->parse($command, self::body($body)); $ref = $reply->value('orderid');
             $grace = $command === RegistrationCommand::GraceRenew && $reply->value('reactivatedomainname.status') === 'true';
             if ($grace) {
@@ -77,18 +76,23 @@ final class RenewalWriter implements AdmittedRegistrarDriver
         // NameSilo support recommends the explicit flag; fresh completion readback remains mandatory.
         $mapping = PurchaseMapping::renew($query->name, $query->years, false);
         $environment = $binding->environment === \Paymenter\Extensions\Servers\Domains\Data\Environment::Live ? NameSiloEnvironment::Live : NameSiloEnvironment::Sandbox;
-        try{$body=$this->wire($binding,$context,$environment->origin().'/apibatch','renewDomain',self::parameters($query->name,$query->years),$timeout);}catch(RenewalUnsent){return self::unsent($binding);}
+        try{$body=$this->wire($binding,$context,$environment->origin().'/apibatch','renewDomain',self::parameters($query->name,$query->years),$timeout,$spend);}catch(RenewalUnsent){return self::unsent($binding);}
         $reply = (new NameSiloParser)->parse(self::body($body), $mapping, '');
         if ($reply->outcome !== Outcome::Success) { return self::unknown($binding); }
         return new DriverResult($binding, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,
             new Evidence(renewalExecution: new RenewalEvidence($query, null)));
     }
-    private function wire(AccountBinding $binding,RequestContext $ctx,string $origin,string $command,array $parameters,int $timeout): mixed
+    /** The grant is spent inside the claimed wire, after the capacity and deadline checks. The spend's locks can wait,
+     * so the slot is checked again and the timeout recomputed right before the exchange. */
+    private function wire(AccountBinding $binding,RequestContext $ctx,string $origin,string $command,array $parameters,int $timeout,\Closure $spend): mixed
     {
         $started=false;
-        try{return $ctx->withinClaimedWire($binding,function(int $remaining)use(&$started,$origin,$command,$parameters,$timeout){$started=true;return ($this->exchange->getValue())($origin,$command,$parameters,min($timeout,$remaining));});}
+        try{return $ctx->withinClaimedWire($binding,function()use(&$started,$ctx,$origin,$command,$parameters,$timeout,$spend){
+            $spend();$remaining=$ctx->wireRemaining();
+            if($remaining<1){throw new ReadDeferred('Wire slot ended before the exchange.');}
+            $started=true;return ($this->exchange->getValue())($origin,$command,$parameters,min($timeout,$remaining));});}
         catch(EnomTestCallLimit $e){if(!EnomTestWriteReservation::unsent($binding,'renewal')){throw $e;}throw new RenewalUnsent('TEST send refused before the wire.');}
-        catch(ReadDeferred $e){if(!$started||$this->unconsumed()){throw new RenewalUnsent('Wire capacity unavailable.');}throw new \RuntimeException('Renewal outcome unresolved.');}
+        catch(ReadDeferred|RequestDeadlineReached $e){if(!$started||$this->unconsumed()){throw new RenewalUnsent('Wire capacity unavailable.');}throw new \RuntimeException('Renewal outcome unresolved.');}
         catch(\Throwable $e){if($this->unconsumed()){throw new RenewalUnsent('Reserved send refused before the wire.');}throw $e;}
     }
     private static function unsent(AccountBinding $binding): DriverResult

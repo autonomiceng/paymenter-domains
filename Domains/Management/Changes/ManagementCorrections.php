@@ -20,7 +20,7 @@ final class ManagementCorrections
             || !in_array($d->status, ['registration_pending','transfer_pending','active'], true) || !in_array($l['service']->status, ['pending','active'], true)
             || (!in_array($op->action, ['register','transfer'], true)&&!($op->action==='renew'&&$action==='auto_renew_off')) || !in_array($op->state, ['pending','uncertain','succeeded'], true)
             || $op->account_fingerprint !== $d->account_fingerprint || $op->authority_generation !== $d->authority_generation
-            || ($op->attempt['seal'] ?? null) !== 'sealed' || isset($op->funding['refund']) || isset($op->attempt['transfer_terminal'])) { return false; }
+            || !CorrectionProgress::sealed($op) || isset($op->funding['refund']) || isset($op->attempt['transfer_terminal'])) { return false; }
         foreach($l['operations'] as $peer){
             if($peer->id>$op->id&&isset($peer->policy['management'])&&!isset($peer->policy['management']['correction'])
                 &&DomainManagement::capability($peer->action)===DomainManagement::capability($action)){

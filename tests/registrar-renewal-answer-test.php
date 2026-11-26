@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/Support/namesilo-no-id-registered.php';
 require_once __DIR__.'/Support/namesilo-account-guard.php';
+require_once __DIR__.'/Support/renewal-attempts.php';
 use Illuminate\Support\Facades\{Cache,Queue};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,Cost,FeedObserved,Query};
 use Paymenter\Extensions\Servers\Domains\Data\CostUnit;
@@ -33,7 +34,7 @@ same('8.9500',$ports->loadBatch([$quote],Context::Holder)[0][0]->costPrice($cloc
 $bill=$billing->invoice($holding->id,$user);
 $renewal=Operation::where('invoice_id',$bill->id)->sole();App\Helpers\ExtensionHelper::addPayment($bill,null,$renewal->amount);Cache::flush();
 $clock->instant=new DateTimeImmutable('2027-10-16T12:00:00Z');
-same('pending',$engine->run($renewal->id,$writer)->state,'No-ID acknowledged renewal is not completed');$renewal->refresh();$attempt=$renewal->attempt;
+same('pending',$engine->run($renewal->id,$writer)->state,'No-ID acknowledged renewal is not completed');$renewal->refresh();$attempt=renewalRecord($renewal);
 $wire->historyId='902';$wire->expiry='2028-10-18';$wire->historyAction='renewal';$wire->historyDate='2027-10-16 05:00:01';
 $clock->instant=$clock->now()->modify('+25 hours');
 expect(EnomAnswers::eligible($renewal,$clock->now()),'A sealed no-ID NameSilo renewal can receive support evidence');
@@ -43,13 +44,13 @@ $review=new Review($staff->id,$server->id,null,'enom_answer',Review::ticket($sta
 (new StaffSettingsWrites($native,$sellers,$renewBindings))->run($review,['operation_id'=>$renewal->id,'attempt_hash'=>EnomAnswers::identity($renewal),'outcome'=>'accepted',
     'order_reference'=>'902','processed_at'=>'2027-10-16T05:00:01-07:00','case_reference'=>'synthetic-renewal-case',
     'evidence'=>'Registrar confirmed the exact account, renewal, order and processing time with UTC offset.','confirmed'=>true],$clock->now());
-same($attempt,$renewal->fresh()->attempt,'Recording support evidence preserves the original renewal attempt');
+same($attempt,renewalRecord($renewal),'Recording support evidence preserves the original renewal attempt');
 same('2027-10-18',$holding->fresh()->provider_expires_at->format('Y-m-d'),'A support answer alone does not extend expiry');
 $wire->commands=[];$completion=new RenewalCompletion($renewBindings,$clock);
 $wire->expiry='2027-10-18';$wire->orderCredit=['credited_amount'=>'8.95','credited_date'=>'2027-10-16 05:01:00'];
 $creditedOrder=$completion->run($renewal->id);
 expect(in_array('orderDetails',$wire->commands,true),'Renewal recovery receives the exact credited NameSilo order');
-same(['pending',null],[$creditedOrder->state,$creditedOrder->renewal_proof??null],
+same(['pending',null],[$creditedOrder->state,renewalObservation($creditedOrder)],
     'A credited renewal order with unchanged expiry cannot establish positive renewal proof');
 $wire->commands=[];$wire->expiry='2028-10-18';$wire->orderCredit=[];Cache::flush();
 same('succeeded',$completion->run($renewal->id)->state,'Exact readback completes the supported renewal without history acceptance');

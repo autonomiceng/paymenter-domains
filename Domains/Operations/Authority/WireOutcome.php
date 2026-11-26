@@ -17,9 +17,9 @@ final readonly class WireOutcome
         return new self('reply', $state, $disposition, $evidence);
     }
 
-    /** The final transport proved it stopped before the wire. */
-    public static function localRefusal(string $reason): self
-    { return new self('local_refusal', SendState::DefinitelyUnsent, 'unsent', ['reason' => $reason]); }
+    /** The final transport proved it stopped before the wire. $evidence keeps the refusal's own facts beside its reason. */
+    public static function localRefusal(string $reason, array $evidence = []): self
+    { return new self('local_refusal', SendState::DefinitelyUnsent, 'unsent', [...$evidence, 'reason' => $reason]); }
 
     /** No reply, or one that cannot be tied to the request. The send stays possibly sent. */
     public static function unknown(array $evidence = []): self

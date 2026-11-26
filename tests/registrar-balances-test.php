@@ -41,7 +41,8 @@ $make=static function(string $name,?string $expiry='2026-11-20',?Account $accoun
 };
 $renew=static function(Domain $d,string $state='awaiting_payment',array $extra=[])use($user):Operation {
     $invoice=Invoice::create(['user_id'=>$user->id,'status'=>'pending','currency_code'=>'USD','due_at'=>'2027-05-01']);
-    if (isset($extra['renewal_reserved_revision'])) {
+    $reserved = (bool) ($extra['reserved'] ?? false); $refused = (bool) ($extra['refused'] ?? false); unset($extra['reserved'], $extra['refused']);
+    if ($reserved) {
         $line = $invoice->items()->create(['description' => 'Renewal', 'quantity' => 1, 'price' => '10.00']);
         \App\Helpers\ExtensionHelper::addPayment($invoice, null, '10.00');
         $payment = $invoice->transactions()->sole();
@@ -52,7 +53,11 @@ $renew=static function(Domain $d,string $state='awaiting_payment',array $extra=[
         'invoice_id'=>$invoice->id,'funding_basis'=>'paid_invoice','state'=>$state,'base_expires_at'=>$d->provider_expires_at,
         'payload'=>[],'policy'=>[],'attempt'=>[],'funding'=>[],...$extra]);
     if (isset($line)) {
-        RenewalFundingLedger::reserve($op->refresh(), ['item' => [$line->id => 1000], 'payment' => [$payment->id => 1000]]);
+        // The paid reservation belongs to the attempt sealed in the same transaction.
+        DB::transaction(static function () use ($op, $line, $payment, $extra, $refused): void {
+            RenewalFundingLedger::reserve($op->refresh(), ['item' => [$line->id => 1000], 'payment' => [$payment->id => 1000]]);
+            sealRenewal($op, $extra['attempt'] ?? [], amount: '8.00', reply: $refused ? RenewalReply::localRefusal() : null);
+        });
     }
     return $op;
 };
@@ -200,14 +205,24 @@ $proof=['safe_code'=>'renewal_definitely_unsent','lease_expires_at'=>null,'start
     'attempt'=>['claim_key'=>str_repeat('b',32),'seal'=>'sealed','dispatch_attempted_at'=>$clock->now()->format(DATE_ATOM),
         'send_state'=>'possibly_sent','authorized_cost'=>['amount'=>'8.00','currency'=>'USD'],'renewal_mode'=>'ordinary',
         'execution'=>['disposition'=>'rejected','send_state'=>'definitely_unsent','reason'=>'unsent','discrepancies'=>[]]],
-    'renewal_reserved_revision'=>2,'transition_revision'=>3,'cost'=>['estimated'=>'8.00','currency'=>'USD','unit'=>'term_total']];
-$validProof = $proof;
+    'reserved'=>true,'transition_revision'=>3,'cost'=>['estimated'=>'8.00','currency'=>'USD','unit'=>'term_total']];
+$validProof = [...$proof, 'refused' => true];
 $renew($proven,'held',$validProof);
 same('8.000000',$forecast()['total'],'Validated sealed prewire refusal remains open outside horizon');
 $proven->update(['billing_managed'=>false]);$unproven=$make(placeholderComFixtureName('balance-unproven-placeholder.com'),'2027-06-01');
 $proof['attempt']['execution']['discrepancies']=['unknown'];$renew($unproven,'held',$proof);
 same(0,$forecast()['count'],'Unvalidated sealed refusal cannot borrow definitely-unsent proof');
-$unproven->update(['billing_managed'=>false]);
+$unproven->update(['billing_managed'=>false]);$split=$make(placeholderComFixtureName('balance-split-placeholder.com'),'2027-06-01');
+$renew($split,'held',[...$validProof,'refused'=>false]);
+same(0,$forecast()['count'],'An unsent JSON copy cannot outweigh a sealed attempt still possibly sent');
+$split->update(['billing_managed'=>false]);
+// The attempt row, not its JSON copy, classifies a sealed send.
+foreach(['empty'=>[],'unsealed'=>['seal'=>'absent','send_state'=>'definitely_unsent']] as $case=>$copy){
+    $rowOnly=$make(placeholderComFixtureName('balance-row-'.$case.'-placeholder.com'),'2027-06-01');$sent=$renew($rowOnly,'held',[...$validProof,'refused'=>false]);
+    Operation::withoutEvents(fn()=>$sent->update(['attempt'=>$copy]));
+    same(0,$forecast()['count'],'A row-sealed send with an '.$case.' JSON copy is not an open obligation');
+    $rowOnly->update(['billing_managed'=>false]);
+}
 $ownerOff=$make(placeholderComFixtureName('balance-owner-off-placeholder.com'));$ownerOff->update(['renewal_policy'=>['owner_auto_renew'=>false]]);
 same(0,$forecast()['count'],'Owner Off excludes unissued renewals');$ownerDebt=$renew($ownerOff);
 same(1,$forecast()['count'],'Owner Off preserves issued unsent debt forecast');$ownerOff->update(['billing_managed'=>false]);
@@ -227,14 +242,14 @@ $cancel->update(['type'=>'immediate']);same(0,$forecast()['count'],'Immediate ca
 $off->update(['status'=>'retired']);same(0,$forecast()['count'],'Retired holding excluded');
 $off->update(['status'=>'active']);$off->service->update(['status'=>'cancelled']);same(0,$forecast()['count'],'Cancelled service excluded');
 $otherDomain=$make(placeholderComFixtureName('balance-other-placeholder.com'),'2026-11-01',$b);same(0,$forecast()['count'],'Forecast respects second server');$otherDomain->update(['billing_managed'=>false]);
-// One bounded forecast chunk batches cancellation and invoice reads for both obligation paths.
+// One bounded forecast chunk batches cancellation, invoice and attempt reads for both obligation paths, with several valid refusals.
 $queryCount=static function()use($forecast):int{DB::enableQueryLog();DB::flushQueryLog();$forecast();$n=count(DB::getQueryLog());DB::disableQueryLog();return $n;};
 DB::beginTransaction();
 $bounded=[];$bounded[]=$make(placeholderComFixtureName('forecast-bounded-first-placeholder.com'));$renew($bounded[0],'held',$validProof);
 $oneChunk=$queryCount();
-for($i=1;$i<25;$i++){$h=$make(placeholderComFixtureName('forecast-bounded-'.$i.'-placeholder.com'));$bounded[]=$h;$renew($h,$i%2?'awaiting_payment':'held',$i%2?[]:$proof);}
+for($i=1;$i<25;$i++){$h=$make(placeholderComFixtureName('forecast-bounded-'.$i.'-placeholder.com'));$bounded[]=$h;$renew($h,$i%2?'awaiting_payment':'held',$i%2?[]:($i%4?$proof:$validProof));}
 $manyChunk=$queryCount();same($oneChunk,$manyChunk,'Forecast read count stays bounded across one chunk of obligations');
-same(13,$forecast()['count'],'Issued and unproven sent obligations retain their distinct forecast semantics');
+same(19,$forecast()['count'],'Issued, refused and unproven sent obligations retain their distinct forecast semantics');
 // Retained adoption stops are loaded once for the same bounded chunk.
 Paymenter\Extensions\Servers\Domains\Services\AdoptionSchema::install();
 
@@ -250,16 +265,25 @@ $adoptStop=static function(Domain $h,bool $stop)use($clock,$user):void{
 };
 $adoptStop($bounded[0],false);$oneAdoption=$queryCount();
 foreach(array_slice($bounded,1) as $i=>$h){$adoptStop($h,$i===0);}
-same($oneAdoption,$queryCount(),'One chunk batches original adoption stops');same(12,$forecast()['count'],'Original adopted renewal stop blocks its issued obligation');
+same($oneAdoption,$queryCount(),'One chunk batches original adoption stops');same(18,$forecast()['count'],'Original adopted renewal stop blocks its issued obligation');
 for($i=25;$i<101;$i++){$h=$make(placeholderComFixtureName('forecast-bounded-'.$i.'-placeholder.com'));$bounded[]=$h;$renew($h);}
 expect($queryCount()<=2*$manyChunk+2,'Forecast read count grows by chunks across the 100-domain boundary');
-same(88,$forecast()['count'],'The next chunk includes every additional open obligation exactly once');
+same(94,$forecast()['count'],'The next chunk includes every additional open obligation exactly once');
 DB::rollBack();same(0,$forecast()['count'],'Forecast fixture rollback preserves prior holdings');
 // Several valid prewire refusals in one chunk read their attempt facts from the loaded rows, with no reads of their own.
 DB::beginTransaction();
 $first=$make(placeholderComFixtureName('forecast-refusal-0-placeholder.com'));$renew($first,'held',$validProof);$oneRefusal=$queryCount();
 for($i=1;$i<6;$i++){$renew($make(placeholderComFixtureName('forecast-refusal-'.$i.'-placeholder.com')),'held',$validProof);}
 same($oneRefusal,$queryCount(),'Valid prewire refusals add no forecast reads');same(6,$forecast()['count'],'Each valid prewire refusal stays an open obligation');
+DB::rollBack();
+// An unreadable reply counts its renewal as possibly spent in both paths; the account's readable renewals still forecast.
+DB::beginTransaction();
+$renew($make(placeholderComFixtureName('forecast-readable-due-placeholder.com')));
+$damaged=$renew($make(placeholderComFixtureName('forecast-damaged-reply-placeholder.com')),'held',$validProof);
+same([2,'16.000000'],[$forecast()['count'],$forecast()['total']],'A readable refusal and a due renewal both forecast');
+DB::table(\Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema::EVIDENCE)->where(['operation_id'=>$damaged->id,'kind'=>'reply'])->update(['evidence'=>'forecast-unreadable-fixture']);
+same([1,'8.000000',0],[$forecast()['count'],$forecast()['total'],$forecast()['unknown']],'An unreadable reply is possibly spent and the due renewal still forecasts');
+same('$8.00',RegistrarBalances::facts($a,$clock->now())['total'],'Staff balance still reads the account forecast');
 DB::rollBack();
 // Daily and manual reads use the same provider-login limiter, without requiring write activation.
 $readState=(object)['calls'=>0,'fail'=>false,'readers'=>[]];$registry=new RegistrarRegistry;

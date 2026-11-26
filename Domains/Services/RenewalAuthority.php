@@ -121,7 +121,8 @@ final readonly class RenewalAuthority
     {
         if ($domain->adoptionPending()) { return false; }
         $renewal = $op->action === 'renew' ? RenewalAttempt::of($op) : null;
-        $p = $renewal ? ($renewal->readProof() ?? []) : ($op->attempt['reconciliation'] ?? []);
+        // A renewal completes only on its settlement row; proof still held for charge review is not completion.
+        $p = $renewal ? ($renewal->settlement()['evidence'] ?? []) : ($op->attempt['reconciliation'] ?? []);
         try { if ($op->action === 'transfer' && (($p['transfer_status'] ?? null) !== 'completed'
             || !($base = $op->attempt['transfer_admission']['base_expiry'] ?? null) || ($p['base_expiry'] ?? null) !== $base
             || \Carbon\CarbonImmutable::parse($base)->addYearsNoOverflow($op->term)->format('Y-m-d') !== ($p['expiry'] ?? null))) { return false; } } catch (\Throwable) { return false; }

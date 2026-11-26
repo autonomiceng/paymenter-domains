@@ -137,8 +137,9 @@ $job()->failed(null);
 $check($readDates($staffPage())===[[$absenceAt],[$clock->now()->getTimestamp(),$answerAt]],
     'A later manual failure keeps the retained recheck date');
 // Phase B, registrar DNS: when the registry lists another registrar nothing serves the records, so Edit and Edit SRV are
-// muted by the row's own reason. While it lists ours the row has no such reason: Edit stays paused only by the
-// review's section notice, like every registrar change under review.
+// muted by the row's own reason. While it lists ours the row has no such reason: Edit stays paused only because the
+// sealed renewal is still open, as every registrar change waits for it. The review itself does not pause DNS.
+require_once __DIR__.'/Support/renewal-attempts.php';sealRenewal($renewal);
 $dnsButtons=static function()use($d,$departer,$actor):array{
     Illuminate\Support\Facades\Auth::setUser($departer);
     $html=Livewire\Livewire::actingAs($departer)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id])->html();
@@ -156,7 +157,7 @@ $check(!isset($other['Edit SRV'])||$other['Edit SRV']['disabled']&&$other['Edit 
 Illuminate\Support\Facades\DB::transaction(function()use($d):void{$fresh=$d->fresh();$p=$fresh->observation;$p['departure_check']['registry']['registrar']='eNom, LLC';$fresh->update(['observation'=>$p]);});
 $ours=$dnsButtons();
 $check(isset($ours['Edit'])&&!$ours['Edit']['reason'],'DNS Edit is not muted as stopped while the registry lists our registrar');
-$check(isset($ours['Edit'])&&$ours['Edit']['disabled'],'DNS Edit stays paused by the review while the registry lists our registrar');
+$check(isset($ours['Edit'])&&$ours['Edit']['disabled'],'DNS Edit waits for the open sealed renewal while the registry lists our registrar');
 // A blank registrar name names no other registrar, so DNS stays editable.
 Illuminate\Support\Facades\DB::transaction(function()use($d):void{$fresh=$d->fresh();$p=$fresh->observation;$p['departure_check']['registry']['registrar']=" \t ";$fresh->update(['observation'=>$p]);});
 $blank=$dnsButtons();

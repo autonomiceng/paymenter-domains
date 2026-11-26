@@ -9,6 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{ManagementRequest, ManagementResu
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Management\Changes\{CorrectionProgress, ManagementCorrections, ManagementDeferred, ManagementPreparation, ManagementPrivacy, ManagementProgress, ManagementSequence};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 /** Dormant engine boundary. All reads/writes outside locks; every request owns one durable attempt. */
 final class DomainManagement
@@ -432,12 +433,15 @@ final class DomainManagement
     /** A sent auth code email whose acceptance is unknown. It is never resent or marked sent; it only stops holding unrelated changes. */
     private static function unconfirmedEmail(Operation $op): bool
     { return $op->action==='auth_code_email'&&$op->state==='uncertain'&&($op->attempt['seal']??null)==='sealed'; }
+    /** An open renewal with nothing recorded on its attempt rows holds no registrar change; rows that no longer read hold it. */
+    private static function renewalUntouched(Operation $op): bool
+    { try { return RenewalAttempt::of($op)->untouched(); } catch (\Illuminate\Contracts\Encryption\DecryptException) { return false; } }
     private function unresolved(array $l, ?int $except = null, ?string $correction = null, ?string $action = null): ?Operation
     {
         $b = AccountBindings::binding($l['account']);
         foreach ($l['operations'] as $op) {
             if ($correction !== null && $op->operation_key === $correction && ManagementCorrections::pending($l, $action ?? '', $correction)) { continue; }
-            if($op->id!==$except&&$op->action==='renew'&&in_array($op->state,['awaiting_payment','queued','held'],true)&&($op->attempt??[])===[]){continue;}
+            if($op->id!==$except&&$op->action==='renew'&&in_array($op->state,['awaiting_payment','queued','held'],true)&&self::renewalUntouched($op)){continue;}
             if(in_array($action,self::BESIDE_EMAIL,true)&&self::unconfirmedEmail($op)){continue;}
             if ($op->id !== $except && !ManagementEvidence::resolved($op, $l['domain']) && !RenewalAuthority::resolved($op, $l['domain'], $b)) { return $op; }
         }

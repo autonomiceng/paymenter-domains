@@ -42,14 +42,14 @@ same(['uncertain', 'renewal_confirmation_required', 'unknown', 1],
     [$result->state, $result->safe_code, renewalReply($result)['outcome'], $state->writes], 'Lost paid renewal stays uncertain after one send');
 same(ExecutionRecord::RecordedNull, renewalAttempt($result)?->replyRecord(), 'The lost reply is saved as an explicit null reply');
 same($dispatchedAt->getTimestamp(), renewalSentAt($result)->getTimestamp(), 'The seal records the dispatch time');
-same(['category' => 'timeout', 'timeout_ms' => 24993], $result->attempt['send_failure'], 'Attempt retains safe failure metadata');
+same(['category' => 'timeout', 'timeout_ms' => 24993], renewalAttempt($result)?->sendFailure(), 'Attempt retains safe failure metadata');
 same([['warning', ['operation_id' => $op->id, 'exception_class' => SendFailure::class, 'category' => 'timeout', 'timeout_ms' => 24993]]],
     $logged, 'Lost reply logs safe facts only');
 require __DIR__.'/Support/staff-panel.php';
 staffPanel();
 Auth::setUser(staffUser(['admin.domains.view', 'admin.domains.manage', 'admin.domains.secrets-metadata']));
 Livewire\Livewire::test(ViewOperation::class, ['record' => $result->id])->assertSee('timeout')->assertSee('24993');
-$attempt = $op->fresh()->attempt;
+$attempt = renewalRecord($op);
 $money = nativeFinancialSnapshot($op->fresh());
 $reads = count($state->calls);
 $writes = $state->writes;
@@ -64,7 +64,7 @@ same('Enom', $result->policy['status_check']['registrar'], 'Staff action names t
 same($dispatchedAt->modify('+24 hours')->getTimestamp(),
     $result->policy['status_check']['answer_after'], 'Answer timing is tied to the original dispatch');
 same('uncertain', $result->state, 'Missing reply is not a failure proof');
-same($attempt, $result->attempt, 'Read checks preserve original attempt evidence');
+same($attempt, renewalRecord($result), 'Read checks preserve original attempt evidence');
 same($money, nativeFinancialSnapshot($result), 'Read checks preserve customer money and issued debt');
 // One read of the sealed attempt: the domain and its expiry, never history or a guessed order.
 same([ReadCommand::Info, ReadCommand::Renewal, ReadCommand::Info, ReadCommand::Expiry], array_slice($state->calls, $reads), 'One sealed-attempt read with no unaccepted history or speculative order reads');
