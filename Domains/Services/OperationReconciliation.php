@@ -157,8 +157,9 @@ final class OperationReconciliation
         $historyRead=!$callCapBlocked&&$attempt->query->action->value!=='transfer'&&$attempt->replyLost()
             &&($attempt->historyAcceptance?->covers($attempt,$this->clock->now())??false)&&($check->context?->exchanges()??0)>0;
         if (!$callCapBlocked) {
-            return $this->claims->locked($id,function($op,$domain)use ($read, $readStarted, $historyRead, $attempt, $check, $scan):Operation {
+            return $this->claims->locked($id,function($op,$domain)use ($read, $readStarted, $historyRead, $attempt, $check, $scan, $observed):Operation {
                 if (!$this->matchesRead($op, $domain, $read->stamp, $read->token)) { return $op; }
+                $this->retainPositiveObservation($read, $observed->facts);
                 $policy=TransferPolling::finished($op->policy,$readStarted);
                 if ($read->watch && $readStarted) {
                     $result = $read->followup && ($check->context?->completedReads() ?? 0) > 0 ? 'unknown' : 'unavailable';
@@ -203,10 +204,7 @@ final class OperationReconciliation
                 if(TransferPolling::applies($op)){$p=TransferPolling::finished($op->policy,$readStarted);$p['reconciliation']['staff_alert']=true;$p['reconciliation']['reason']='transfer_authority_changed';$op->update(['policy'=>$p]);}
                 return $op;
             }
-            if ($token && $facts->domain?->owned === true && $facts->domain->binding->matches($binding)
-                && $facts->domain->name === $attempt->query->name && $this->attempts->ownsRead($token)) {
-                $this->attempts->recordObservation($token->attempt, ['owned' => true, 'expiry' => $facts->domain->expiry?->value], $this->clock->now());
-            }
+            $this->retainPositiveObservation($read, $facts);
             $policy = TransferPolling::finished($op->policy,$readStarted); $policy['reconciliation']['polls'] = ($policy['reconciliation']['polls'] ?? 0) + 1; $check->counted = true;
             if ($observation->scan) { $policy['history_scan'] = $observation->scan->saved(); }
             $policy['reconciliation']['staff_alert']=true;
@@ -229,6 +227,20 @@ final class OperationReconciliation
             return $op;
         });
     }
+    /** Matching domain evidence can rule out a negative answer before there is enough proof to settle. */
+    private function retainPositiveObservation(AcquisitionRead $read, ?Evidence $facts): void
+    {
+        $domain = $facts?->domain;
+        $attempt = $read->attempt;
+        if (!$read->token || !$domain || !$domain->binding->matches($attempt->binding)
+            || $domain->name !== $attempt->query->name || !$this->attempts->ownsRead($read->token)) { return; }
+        $expiry = $domain->expiry?->value;
+        $expected = $attempt->expectedExpiry;
+        if ($domain->owned === true || ($expiry !== null && $expected && substr($expiry, 0, 10) === substr($expected->value, 0, 10))) {
+            $this->attempts->recordObservation($read->token->attempt, ['owned' => $domain->owned, 'expiry' => $expiry], $this->clock->now());
+        }
+    }
+
     /** Internal audited resume seam; staff authorization/route belongs to36. No send authority. */
     public function resume(int $id, string $reason, ?StaffOperationReview $review = null): Operation
     {
