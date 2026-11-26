@@ -49,8 +49,9 @@ class Operation extends Model
                 return $projection ? array_replace($stored ?? [], $projection) : $stored;
             },
             set: function (?array $value, array $row) use ($field): ?string {
-                $projection = $this->acquisitionEvidence($field, $row);
-                if ($projection) { $value = AcquisitionAttempt::retain($projection, $value); }
+                if ($attempt = $this->acquisition($row)) {
+                    $value = $attempt->keepOperationFacts($field, $this->acquisitionEvidence($field, $row), $value);
+                }
                 return $value === null ? null : $this->castAttributeAsEncryptedString($field, $this->asJson($value));
             },
         );

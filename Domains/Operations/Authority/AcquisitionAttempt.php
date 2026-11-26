@@ -32,6 +32,8 @@ final readonly class AcquisitionAttempt
             $original = $rows[$origin['origin_attempt_id']]['claim']['evidence'] ?? throw new \DomainException('Original acquisition claim unavailable.');
             $origin = [...$original, 'origin_attempt_id' => $origin['origin_attempt_id']];
         }
+        $origin['identity'] ??= isset($origin['origin_attempt_id']) ? OperationAttempts::claimKey($facts->token->stepId, $origin['origin_attempt_id'])
+            : $facts->token->claimKey;
         $history = [];
         ksort($rows);
         foreach ($rows as $attempt) {
@@ -97,6 +99,23 @@ final readonly class AcquisitionAttempt
             }
         }
         return array_diff_key($value ?? [], $projection) ?: null;
+    }
+
+    /** Legacy readers may carry the projection when saving other facts. No new authority belongs in those columns. */
+    public function keepOperationFacts(string $field, array $projection, ?array $value): ?array
+    {
+        $stored = $projection ? self::retain($projection, $value) : $value;
+        $reserved = match ($field) {
+            'attempt' => ['claim_key', 'dispatch_attempted_at', 'authorized_cost', 'registration_admission', 'transfer_admission',
+                'execution', 'send_failure', 'evidence', 'charge', 'order_candidates', 'registration', 'corrections', 'reconciliation',
+                'test_call_refusals', 'capacity_deferrals', ...($this->hasOriginalClaim() ? ['seal', 'send_state'] : [])],
+            'funding' => ['claim', 'seal'],
+            default => [],
+        };
+        if (array_intersect(array_keys($stored ?? []), $reserved)) {
+            throw new \DomainException('Acquisition evidence belongs to its operation attempt.');
+        }
+        return $stored;
     }
 
     /** Raw claim facts on a step-backed acquisition are contradictory. Refuse any stale worker that sees them. */

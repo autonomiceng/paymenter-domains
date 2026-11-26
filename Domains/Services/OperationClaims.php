@@ -76,23 +76,13 @@ final class OperationClaims
         self::outside();
         $route = Operation::findOrFail($id);
         if ($route->state === 'running') {
-            DB::transaction(function () use ($route): void {
-                $held = Domain::whereKey($route->domain_id)->lockForUpdate()->firstOrFail();
-                if ($held->adoptionPending()) { return; }
-                $all = Operation::where('domain_id', $route->domain_id)->orderBy('id')->lockForUpdate()->get();
-                $current = $all->firstWhere('id', $route->id);
-                if ($current?->state === 'running' && (!$current->lease_expires_at || $current->lease_expires_at <= $this->clock->now())) {
-                    $current->update(['state' => 'uncertain', 'safe_code' => 'stale_claim', 'lease_expires_at' => null]);
-                }
-            });
+            $this->retireExpiredWorker($route);
             return null;
         }
         if (!in_array($route->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) { return null; }
         return $this->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($startedAt): ?array {
             if ($op->state === 'running') {
-                if (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now()) {
-                    $op->update(['state' => 'uncertain', 'safe_code' => 'stale_claim', 'lease_expires_at' => null]);
-                }
+                $this->authority->expire($op);
                 return null; // Expiry is reconciliation work, even without a seal; never reclaim.
             }
             if (!in_array($op->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) { return null; }
@@ -124,26 +114,51 @@ final class OperationClaims
             $now = $this->clock->now();$claimStartedAt=($startedAt??$now)->setTimezone($now->getTimezone());
             if($claimStartedAt>$now||$claimStartedAt<$now->modify('-'.ExecuteOperation::EXECUTION_SECONDS.' seconds')) { $op->update(['state'=>'held','safe_code'=>'claim_authority_invalid']);return null; }
             $digest = self::digest($op, $domain);
-            try{$window=ExecutionWindow::start($op,$windowReason);}
-            catch(\Throwable){$op->update(['state'=>'held','safe_code'=>'claim_authority_invalid']);return null;}
-            if(($claimRetry||$balanceRetry)&&(!$window||$window>$now||$now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')>$window->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds'))){
-                // Orders off waits only for Orders, and validate() just proved they are on. A window that lapsed while they were off
-                // again opens anew here, as the tick's release would, without spending a try. Like that release, a transfer
-                // past its deadline is not reopened and holds instead.
-                $renewed=$contactRetry&&$windowReason==='processing'&&$window&&$window<=$now&&ContactProfileHold::releaseBlocked($op)===null
-                    &&($op->action!=='transfer'||TransferInputs::beforeDeadline($op,$now))
-                    ?ContactStepRetries::released($op,'processing',$now):null;
-                if($renewed===null){$op->update(['state'=>'held','safe_code'=>$window&&$op->started_at&&$window>$op->started_at?$windowReason:'write_rate_limited']);BalanceRetries::rateHeld($op,$now);return null;}
-                $op->policy=$renewed;$window=ExecutionWindow::start($op,$windowReason);
+            if (!$this->retryWindow($op, $claimRetry || $balanceRetry, $contactRetry, $now)) { return null; }
+            if (($claimRetry || $balanceRetry) && isset($op->attempt['claim_key'])
+                && ($op->request_fingerprint !== $digest || ($op->funding['claim'] ?? null) !== $paid)) {
+                $op->update(['state' => 'held', 'safe_code' => 'claim_authority_invalid']);
+                return null;
             }
-            if(($claimRetry||$balanceRetry)&&isset($op->attempt['claim_key'])&&($op->request_fingerprint!==$digest||($op->funding['claim']??null)!==$paid)){$op->update(['state'=>'held','safe_code'=>'claim_authority_invalid']);return null;}
-            if (!$this->startWorker($op, $claimRetry, $claimStartedAt, $digest, $paid, $now)) { return null; }
+            $this->startWorker($op, $claimRetry, $claimStartedAt, $digest, $paid, $now);
             return [$op, $domain, $binding];
         });
     }
 
+    private function retireExpiredWorker(Operation $route): void
+    {
+        DB::transaction(function () use ($route): void {
+            $domain = Domain::whereKey($route->domain_id)->lockForUpdate()->firstOrFail();
+            if ($domain->adoptionPending()) { return; }
+            $op = Operation::where('domain_id', $domain->id)->orderBy('id')->lockForUpdate()->get()->firstWhere('id', $route->id);
+            if ($op?->state === 'running') { $this->authority->expire($op); }
+        });
+    }
+
+    private function retryWindow(Operation $op, bool $needsWindow, bool $contactRetry, \DateTimeImmutable $now): bool
+    {
+        try {
+            $window = ExecutionWindow::start($op, $reason);
+        } catch (\Throwable) {
+            $op->update(['state' => 'held', 'safe_code' => 'claim_authority_invalid']);
+            return false;
+        }
+        if (!$needsWindow || ($window && $window <= $now && $now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')
+            <= $window->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds'))) { return true; }
+        // A contact retry that lost its window while orders were disabled receives a new one once orders return.
+        if ($contactRetry && $reason === 'processing' && $window && $window <= $now && ContactProfileHold::releaseBlocked($op) === null
+            && ($op->action !== 'transfer' || TransferInputs::beforeDeadline($op, $now))
+            && ($policy = ContactStepRetries::released($op, 'processing', $now)) !== null) {
+            $op->policy = $policy;
+            return true;
+        }
+        $op->update(['state' => 'held', 'safe_code' => $window && $op->started_at && $window > $op->started_at ? $reason : 'write_rate_limited']);
+        BalanceRetries::rateHeld($op, $now);
+        return false;
+    }
+
     private function startWorker(Operation $op, bool $retry, \DateTimeImmutable $start, string $digest,
-        array $paid, \DateTimeImmutable $now): bool
+        array $paid, \DateTimeImmutable $now): void
     {
         $system = BalanceRetry::from($op);
         $policy = $op->policy;
@@ -168,7 +183,6 @@ final class OperationClaims
         if ($system && $system->record['claim_key'] === null) { $policy['balance_retry'] = $system->claimed($op)->record; }
         $op->acquisitionWorker = $token;
         $op->update(['state' => 'running', 'safe_code' => null, 'policy' => $policy]);
-        return true;
     }
 
     /** Post-read/write bookkeeping needs only domain -> ordered operations, never financial authority again. */
@@ -287,8 +301,8 @@ final class OperationClaims
             $op = $all->firstWhere('id', $route->id);
             if ($held->adoptionPending()) { return $op; }
             if ($op->action === 'transfer' && $op->state === 'awaiting_code' && !TransferInputs::validCode($op->payload['epp'] ?? null)) { return $op; }
-            if ($op->state === 'running' && (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now())) {
-                $op->update(['state' => 'uncertain', 'safe_code' => 'stale_claim', 'lease_expires_at' => null]);
+            if ($op->state === 'running') {
+                $this->authority->expire($op);
             } elseif (in_array($op->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)
                 && (AcquisitionRetryProof::virgin($op)||(in_array($reason,ExecutionWindow::BALANCE_HOLDS,true)&&AcquisitionRetryProof::balanceRefusalRetryable($op))||($reason==='namesilo_account_guard'&&$op->registrar_key==='namesilo'&&AcquisitionRetryProof::capacityRetry($op))||(in_array($reason,['enom_test_call_cap','enom_test_transfer_call_cap','write_acceptance_required','nameservers_required',
                     'registry_details_unsupported','processing','write_disabled','usd_balance_required','enom_test_transfer_usd_balance_required','enom_test_setup_required','enom_test_transfer_setup_required',...WriteHeld::UNSENT_REFUSALS],true)&&AcquisitionRetryProof::testCallRetry($op)))) {

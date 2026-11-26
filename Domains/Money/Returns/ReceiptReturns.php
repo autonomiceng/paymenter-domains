@@ -109,7 +109,8 @@ final class ReceiptReturns
     public static function originalRefund(Operation $op): Operation
     {
         $original=clone $op;$refund=$op->funding['refund']??null;
-        $original->funding=['refund'=>$refund,'receipt_return_results'=>array_intersect_key(
+        $claim = array_intersect_key($op->funding ?? [], ['claim' => true, 'seal' => true]);
+        $original->funding=[...$claim,'refund'=>$refund,'receipt_return_results'=>array_intersect_key(
             $op->funding['receipt_return_results']??[],array_flip(array_column($refund['allocations']??[],'key')))];
         return $original;
     }

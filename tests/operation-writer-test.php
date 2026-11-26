@@ -17,8 +17,8 @@ $clock = new class implements Clock {
     public function __construct() { $this->instant = new DateTimeImmutable('2026-11-25T12:00:00+00:00'); }
     public function now(): DateTimeImmutable { return $this->instant; }
 };
-$operation = static fn (string $key): int => (int) DB::table('domains_operations')->insertGetId(['server_id' => 1, 'registrar_key' => 'enom',
-    'domain_id' => 1, 'service_id' => 1, 'operation_key' => $key, 'action' => 'renew', 'state' => 'queued', 'currency' => 'USD']);
+$operation = static fn (string $key, string $action = 'renew'): int => (int) DB::table('domains_operations')->insertGetId(['server_id' => 1, 'registrar_key' => 'enom',
+    'domain_id' => 1, 'service_id' => 1, 'operation_key' => $key, 'action' => $action, 'state' => 'queued', 'currency' => 'USD']);
 $writer = new OperationWriter($clock); $step = StepKey::renew();
 $in = static fn (Closure $work) => DB::transaction($work);
 $later = static fn (int $seconds) => $clock->now()->modify("+$seconds seconds");
@@ -177,6 +177,26 @@ try {
     }
     $kept = false; try { DB::table('domains_operations')->where('id', $raceId)->delete(); } catch (QueryException) { $kept = true; }
     expect($kept, 'An operation with attempts cannot be deleted');
+    foreach (['register', 'transfer'] as $action) {
+        DB::setDefaultConnection('writer_main');
+        $acquisitionId = $operation('writer-'.$action, $action);
+        $acquisition = new StepKey($action, 1);
+        $claim = $in(fn () => $writer->claim($acquisitionId, $acquisition, $later(60)));
+        DB::setDefaultConnection('writer_other');
+        same(Transition::Busy, $in(fn () => $writer->claim($acquisitionId, $acquisition, $later(60))), 'Other worker cannot claim the acquisition');
+        DB::setDefaultConnection('writer_main');
+        same(Transition::Applied, $in(fn () => $writer->seal($claim, $terms())), 'Claim owner seals the acquisition');
+        same(Transition::Applied, $in(fn () => $writer->consumeGrant($claim)), 'One worker consumes the grant');
+        DB::setDefaultConnection('writer_other');
+        same(Transition::Stale, $in(fn () => $writer->consumeGrant($claim)), 'Restarted worker cannot spend the grant again');
+        $read = $in(fn () => $writer->openRead($claim, $later(60)));
+        expect($read instanceof ReadToken, 'Another worker can read the original send');
+        DB::setDefaultConnection('writer_main');
+        same(Transition::Busy, $in(fn () => $writer->openRead($claim, $later(60))), 'Other worker cannot replace the active read');
+        same(Transition::Applied, $in(fn () => $writer->settle($read, 'succeeded', ['order' => '41'])), 'Only the read authority can settle');
+        DB::setDefaultConnection('writer_other');
+        same(Transition::Stale, $in(fn () => $writer->settle($read, 'succeeded', ['order' => '42'])), 'Settlement survives across independent connections');
+    }
 } finally { DB::setDefaultConnection('sqlite'); @unlink($file); }
 
 $nativeSuccessful = true;

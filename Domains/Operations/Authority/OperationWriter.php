@@ -32,7 +32,7 @@ final readonly class OperationWriter
             'claimed_at' => OperationAttempts::at($now), 'claim_until' => OperationAttempts::at($until), 'send_state' => SendState::DefinitelyUnsent->value]);
         $this->point($stepId, $id);
         if ($acquisition !== null) {
-            $this->append($operationId, $id, 'claim', 'local', 'claimed', $acquisition + ['identity' => $claim], 'claim');
+            $this->append($operationId, $id, 'claim', 'local', 'claimed', $acquisition, 'claim');
         }
         return new AttemptToken($operationId, $stepId, $id, $ordinal, $claim);
     }
@@ -176,8 +176,7 @@ final readonly class OperationWriter
         $facts = OperationAttempts::attempt($token, true);
         $outcome = $answer['outcome'];
         if (!$facts?->current || !$facts->sealed() || $facts->reading($this->clock->now())
-            || ($outcome === 'not_processed' && ($facts->readToken !== null || $facts->readUnresolved
-                || OperationAttempts::evidence($token->operationId, $token->attemptId, 'observation')))) { return Transition::Stale; }
+            || ($outcome === 'not_processed' && ($facts->readToken !== null || $facts->readUnresolved))) { return Transition::Stale; }
         $kind = $outcome === 'accepted' ? 'answer' : 'settlement';
         return $this->append($token->operationId, $token->attemptId, $kind, 'staff_answer', $outcome, ['answer' => $answer], $kind)
             ? Transition::Applied : Transition::Stale;

@@ -90,6 +90,12 @@ final class OperationAttempts
         return self::facts($token->operationId, $step, $row);
     }
 
+    /** The first claim remains the business identity for a retried acquisition. */
+    public static function claimKey(int $stepId, int $attemptId): ?string
+    {
+        return DB::table(OperationSchema::ATTEMPTS)->where(['id' => $attemptId, 'step_id' => $stepId])->value('claim_key');
+    }
+
     /** Decrypted evidence of one kind for an attempt, or for the operation when no attempt is given. */
     public static function evidence(int $operationId, ?int $attemptId, string $kind): ?array
     {
