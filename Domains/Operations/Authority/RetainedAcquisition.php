@@ -6,6 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Operations\Authority;
 use Illuminate\Support\Facades\{Crypt, DB};
 use Paymenter\Extensions\Servers\Domains\Data\SendState;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck;
 
 /** Moves a previously sealed acquisition into read-only attempt authority without changing its evidence identity. */
 final readonly class RetainedAcquisition
@@ -38,9 +39,17 @@ final readonly class RetainedAcquisition
         $record = new self($step, $a['claim_key'], $op->started_at, $sealed, $op->request_fingerprint, $state, $a,
             array_intersect_key($f, ['claim' => true, 'seal' => true]));
         return DB::transaction(function () use ($op, $writer, $record): AcquisitionAttempt {
+            $check = $op->policy['status_check'] ?? [];
+            $positive = ($check['facts']['owned'] ?? false) === true && is_int($check['at'] ?? null)
+                && RegistrarCheck::attempted($op);
             $writer->adoptAcquisition((int) $op->id, $op->transition_revision, $record);
             self::clear($op);
-            return AcquisitionAttempt::of((int) $op->id, $op->action, true);
+            $adopted = AcquisitionAttempt::of((int) $op->id, $op->action, true);
+            if ($positive && $writer->recordObservation($adopted->facts->token, $check['facts'],
+                new \DateTimeImmutable('@'.$check['at'])) !== Transition::Applied) {
+                throw new \DomainException('Could not retain the saved registrar observation.');
+            }
+            return $adopted;
         });
     }
 
