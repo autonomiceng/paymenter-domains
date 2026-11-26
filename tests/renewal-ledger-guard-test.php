@@ -37,6 +37,18 @@ try {
 same(null, RenewalFundingLedger::reservation($reservedOp), 'No renewal postings can autocommit after an engine rollback');
 expect($refused, 'The allocation writer refuses the discarded savepoint');
 
+DB::beginTransaction();
+try {
+    RenewalFundingLedger::reserve($reservation);
+    $ledger = RenewalFundingLedger::forInvoiceItems([$reservedOp->invoice_item_id]);
+    $partial = Operation::findOrFail($reservedOp->id, ['id', 'action', 'funding_basis', 'invoice_id', 'invoice_item_id']);
+    expect(RenewalFundingLedger::reservation($reservedOp, $ledger) == $reservation, 'The batch retains the original attempt postings');
+    same(null, RenewalFundingLedger::reservation($partial), 'A lookup without the attempt number cannot claim the original postings');
+    same(null, RenewalFundingLedger::reservation($partial, $ledger), 'A batch lookup without the attempt number cannot claim the original postings');
+} finally {
+    DB::rollBack();
+}
+
 [$op,$d,,$invoice]=$makeRenewal('retired-loss-guard-placeholder.com',false);
 $cycles->retireUnpaid($op->id);
 $gateway=Gateway::create(['extension'=>'RetiredLoss','name'=>'Synthetic loss','type'=>'gateway','enabled'=>true]);

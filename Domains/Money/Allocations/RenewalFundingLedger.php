@@ -38,7 +38,8 @@ final class RenewalFundingLedger
 
     public static function reservation(Operation $op, ?self $ledger = null): ?RenewalReservation
     {
-        if ($op->action !== 'renew' || $op->funding_basis !== 'paid_invoice' || !$op->invoice_id || !$op->invoice_item_id) { return null; }
+        if ($op->action !== 'renew' || $op->funding_basis !== 'paid_invoice'
+            || !$op->invoice_id || !$op->invoice_item_id || $op->retry_number === null) { return null; }
         $rows = $ledger === null
             ? DB::table(RenewalAllocationSchema::TABLE)->where(['invoice_item_id' => $op->invoice_item_id, 'retry_number' => $op->retry_number])->get()
             : $ledger->byItem->get($op->invoice_item_id, collect())->where('retry_number', $op->retry_number);
