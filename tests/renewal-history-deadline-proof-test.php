@@ -65,7 +65,7 @@ $historyBindings = new AccountBindings($registry); $completion = new RenewalComp
 $state->after = '2027-10-18'; $clock->instant = $sent->modify('+25 hours'); Cache::flush();
 $before = $credit(); $writes = $state->writes;
 $completion->run($op->id);
-same([1, 'uncertain', null], [$wire->details, $op->fresh()->state, $op->fresh()->attempt['reconciliation'] ?? null], 'A matching charge arrived too late to complete the renewal');
+same([1, 'uncertain', null], [$wire->details, $op->fresh()->state, \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($op)->settlement()], 'A matching charge arrived too late to complete the renewal');
 $proof = renewalObservation($op);
 $wire->unavailable = true;
 for ($i = 1; $i < OperationReconciliation::POLL_LIMIT; $i++) {

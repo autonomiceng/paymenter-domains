@@ -35,7 +35,7 @@ Cache::flush();
 same('queued', $engine->run($second->id, $writer)->state, 'Another paid Enom renewal waits for the provider repeat-renewal window');
 same($writes, $state->writes, 'Same-day renewal sends no Extend');
 same($reads, count($state->calls), 'Known local wait spends no provider reads');
-same([], (array) $second->fresh()->attempt, 'Waiting obligation stays unsealed');
+same(false, \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($second->fresh())->sealed(), 'Waiting obligation stays unsealed');
 same($money, nativeFinancialSnapshot($second), 'Waiting preserves paid debt, customer money and expiry');
 $clock->instant = $confirmedAt->modify('+24 hours -1 second'); Cache::flush();
 same('queued', $engine->run($second->id, $writer)->state, 'No send just before the repeat-renewal window ends');

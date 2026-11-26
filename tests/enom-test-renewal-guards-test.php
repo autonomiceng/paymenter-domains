@@ -101,7 +101,7 @@ $recent=static fn():int=>EnomTestSendLimit::usage('account-enom')['day'];
 resetWire(['reply'=>$ack]);config(['domains.enom_test_sends_per_day'=>$recent()]);
 $state->during=static fn()=>EnomTestSendLimit::admit(Environment::Test,'account-enom','GetDomainInfo');Cache::flush();
 $readOp=$bound(fn()=>$readEngine->run($readOp->id,$readWriter))->fresh();
-same(['held','enom_test_renewal_call_cap',[]],[$readOp->state,$readOp->safe_code,(array)$readOp->attempt],'A refused read holds the renewal unsealed and releasable');same([],$extends(),'No Extend after a refused read');
+same(['held','enom_test_renewal_call_cap',null],[$readOp->state,$readOp->safe_code,renewalAttempt($readOp)],'A refused read holds the renewal unsealed and releasable');same([],$extends(),'No Extend after a refused read');
 // (a) The Extend itself is refused: sealed, armed and not consumed, so proven unsent and refundable.
 config(['domains.enom_test_sends_per_day'=>1000]);
 [$limitOp,,$limitBinding]=$make('renew-limit-write-placeholder.com');[$limitEngine,$limitWriter]=$wired($limitBinding);

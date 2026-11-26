@@ -125,13 +125,11 @@ final class RenewalExecution
         if ($until < $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+25 seconds')) { throw new \DomainException('Renewal admission expired.'); }
         $reservedContext->requireReservedCapacity();$claim = $token->claimKey; $digest = hash('sha256', json_encode([$op->operation_key, $op->policy['renewal'], $op->payload], JSON_THROW_ON_ERROR));
         $now = $this->clock->now();
-        $attempt = ['claim_key' => $claim, 'seal' => 'sealed', 'dispatch_attempted_at' => $now->format(DATE_ATOM),
-            'send_state' => 'possibly_sent', 'authorized_cost' => ['amount' => $ready->cost->amount, 'currency' => 'USD'],
-            'renewal_mode' => $ready->status->value];
         // The sealed attempt records the post-seal revision; for a paid renewal it identifies the reserved postings.
         if ($op->funding_basis === 'paid_invoice') { RenewalFundingLedger::reserve($op, $funding['entries']); $reservation = []; }
         else { $reservation = ['funding' => [...($op->funding ?? []), 'claim' => $funding, 'seal' => $funding]]; }
-        $op->update([...$reservation, 'attempt' => $attempt, 'state' => 'running', 'started_at' => $now, 'lease_expires_at' => $now->modify('+360 seconds'),
+        // The seal is the attempt row; the operation keeps its run state, start and request digest.
+        $op->update([...$reservation, 'state' => 'running', 'started_at' => $now, 'lease_expires_at' => $now->modify('+360 seconds'),
             'request_fingerprint' => $digest]);
         if ($this->attempts->seal($token, new SealTerms($op->transition_revision, $digest, $ready->cost, $ready->status->value, $now->modify('+360 seconds'))) !== Transition::Applied) {
             throw new \DomainException('Renewal claim changed.');
@@ -179,14 +177,12 @@ final class RenewalExecution
             try { $result?->binding->requireMatch($descriptor->binding); } catch (\Throwable) { $result = null; }
             // The reply belongs to the exact attempt this grant sealed. A replaced attempt or an earlier reply projects nothing.
             if ($this->attempts->recordReply($token, self::outcome($result, $failure, $descriptor)) !== Transition::Applied) { return $op; }
-            $a = $op->attempt; $a['execution'] = $result?->jsonSerialize();
-            if ($failure && !$result) { $a['send_failure'] = $failure->facts(); }
             $facts = $result?->evidence()->renewalExecution;
-            if ($facts && $facts->query->matches($descriptor->query)) { $a['renewal'] = ['query' => ['name' => $facts->query->name, 'years' => $facts->query->years], 'order_reference' => $facts->orderReference]; }
             $unsent = $result?->sendState === SendState::DefinitelyUnsent;
             $transition = RenewalDecision::reply($op->state, $op->safe_code, $result?->sendState, $result?->disposition,
                 $context->deadline > $this->clock->now());
-            $op->update(['attempt' => $a, 'provider_order_id' => $facts?->orderReference, ...$transition, 'lease_expires_at' => null,
+            // The recorded reply advances the renewal's revision once, whether or not its state changes.
+            $op->update(['transition_revision' => $op->transition_revision + 1, 'provider_order_id' => $facts?->orderReference, ...$transition, 'lease_expires_at' => null,
                 'policy' => [...$op->policy, 'renewal_execution' => ['staff_alert' => true, 'reason' => $unsent ? 'renewal_definitely_unsent' : 'awaiting_unique_charge', 'refundable_later' => $unsent && $this->hasPayment($op, $l)]]]); return $op;
         }) ?? Operation::findOrFail($id);
     }

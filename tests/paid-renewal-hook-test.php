@@ -49,7 +49,7 @@ require __DIR__.'/Support/staff-panel.php';
 staffPanel();
 Auth::setUser(staffUser(['admin.domains.view', 'admin.domains.manage', 'admin.domains.secrets-metadata']));
 Livewire\Livewire::test(ViewOperation::class, ['record' => $result->id])->assertSee('timeout')->assertSee('24993');
-$attempt = $op->fresh()->attempt;
+$attempt = renewalRecord($op);
 $money = nativeFinancialSnapshot($op->fresh());
 $reads = count($state->calls);
 $writes = $state->writes;
@@ -64,7 +64,7 @@ same('Enom', $result->policy['status_check']['registrar'], 'Staff action names t
 same($dispatchedAt->modify('+24 hours')->getTimestamp(),
     $result->policy['status_check']['answer_after'], 'Answer timing is tied to the original dispatch');
 same('uncertain', $result->state, 'Missing reply is not a failure proof');
-same($attempt, $result->attempt, 'Read checks preserve original attempt evidence');
+same($attempt, renewalRecord($result), 'Read checks preserve original attempt evidence');
 same($money, nativeFinancialSnapshot($result), 'Read checks preserve customer money and issued debt');
 // One read of the sealed attempt: the domain and its expiry, never history or a guessed order.
 same([ReadCommand::Info, ReadCommand::Renewal, ReadCommand::Info, ReadCommand::Expiry], array_slice($state->calls, $reads), 'One sealed-attempt read with no unaccepted history or speculative order reads');

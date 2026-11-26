@@ -215,10 +215,10 @@ final readonly class RenewalCycles
             'after' => ['invoice' => 'cancelled', 'operation' => 'rejected']];
         $invoice->update(['status' => 'cancelled']);
         $op->update(['state' => 'rejected', 'safe_code' => 'renewal_cancelled_unpaid', 'completed_at' => $clock->now(),
-            'policy' => [...($op->policy ?? []), 'unpaid_retirement' => $audit],
-            'attempt' => ['seal' => 'absent', 'send_state' => 'definitely_unsent', 'disposition' => 'rejected', 'rejection_basis' => 'definitely_unsent',
-                'terminal' => ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'invoice_id' => $invoice->id, 'transactions' => []]]]);
-        if ((new OperationWriter($clock))->recordTerminal((int) $op->id, 'renewal_cancelled_unpaid', $op->attempt['terminal'])
+            'policy' => [...($op->policy ?? []), 'unpaid_retirement' => $audit]]);
+        // The closure proof is the terminal row alone.
+        $terminal = ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'invoice_id' => $invoice->id, 'transactions' => []];
+        if ((new OperationWriter($clock))->recordTerminal((int) $op->id, 'renewal_cancelled_unpaid', $terminal)
             !== Transition::Applied) { throw new \DomainException('Renewal already has terminal proof.'); }
         return $op;
     }

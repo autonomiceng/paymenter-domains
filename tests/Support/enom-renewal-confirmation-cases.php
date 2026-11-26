@@ -17,7 +17,7 @@ $stopKey=$stopReview::ticket($staff->id,$stopDomain->id,'stop',$stopReview::stam
 (new $stopReview($clock))->run($staff,$stopDomain->id,'stop',$stopKey,'Stop future cycles and retain the paid issued renewal');
 $before=$money();same($op->invoice_id,$billing->invoice($stopDomain->id,$user)->id,'Future stop retains issued paid debt');
 config(['domains.enom_writes.renewal'=>false]);(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);same([],$GLOBALS['enomWire']['forms'],'Off sends no requests');
-same(['queued','renewal_acceptance_required',[]],[$op->fresh()->state,$op->fresh()->safe_code,(array)$op->fresh()->attempt],'Read-only recovery keeps disabled renewal queued and unsealed: '.json_encode([$op->fresh()->state,$op->fresh()->safe_code,(array)$op->fresh()->attempt]));same($before,$money(),'Disabled renewal preserves paid money');config(['domains.enom_writes.renewal'=>true]);
+same(['queued','renewal_acceptance_required',false],[$op->fresh()->state,$op->fresh()->safe_code,\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($op->fresh())->sealed()],'Read-only recovery keeps disabled renewal queued and unsealed: '.json_encode([$op->fresh()->state,$op->fresh()->safe_code]));same($before,$money(),'Disabled renewal preserves paid money');config(['domains.enom_writes.renewal'=>true]);
 $write('test_renewal',['accept'=>false]);Cache::flush();(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);same([],$GLOBALS['enomWire']['forms'],'Missing action acceptance refuses before preflight');
 same([false,false],array_values(array_intersect_key(Paymenter\Extensions\Servers\Domains\Services\RenewalBillingSettings::read($server->id),['scheduled'=>1,'manual'=>1])),'Renewals off stops new invoices too');same('queued',$op->fresh()->state,'A paid renewal waits, it is not lost');
 $write('test_renewal',['accept'=>true,'verified'=>true]);$server->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>true,'type'=>'boolean']);
@@ -27,16 +27,16 @@ Cache::flush();$used=DB::table(EnomTestSendLimitSchema::SENDS)->count();
 same(['GetDomainInfo','GetExtendInfo','Check','GetDomainInfo','GetRenew','GetBalance','GetDomainInfo','GetExtendInfo','Check','GetDomainInfo','GetRenew','GetBalance','Extend'],$commands,'Two bounded six-read assessments and one Extend: '.json_encode([$op->fresh()->state,$op->fresh()->safe_code,$commands]));
 same('pending',$op->fresh()->state,'Paid renewal acknowledged once');same($used+13,DB::table(EnomTestSendLimitSchema::SENDS)->count(),'Extend counted once among the 13 sends');same($before,$money(),'Renewal dispatch changes no native financial bytes');
 $extend=end($GLOBALS['enomWire']['forms']);same(['1','no'],[$extend['NumYears'],$extend['UseCreditCard']],'One annual renewal without card');
-$s->after=true;$s->bill=(new DateTimeImmutable($op->fresh()->attempt['dispatch_attempted_at']))->setTimezone(new DateTimeZone('America/Denver'))->format('n/j/Y g:i:s A');
+$s->after=true;$s->bill=(\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($op->fresh())->sentAt())->setTimezone(new DateTimeZone('America/Denver'))->format('n/j/Y g:i:s A');
 foreach([['2027-10-21','10.00'],['2028-10-20','10.00'],['2028-10-21','invalid']] as [$expiry,$charge]){
     $s->confirmed=$expiry;$s->charge=$charge;Cache::flush();(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);
     same('pending',$op->fresh()->state,'Missing full-year expiry or valid charge cannot complete');same($before,$money(),'Incomplete confirmation keeps paid money unchanged');
 }
 $s->confirmed='2028-10-21';$s->charge='10.00';
-config(['domains.enom_test_sends_per_day'=>$recentSends()+4]);$count=count($GLOBALS['enomWire']['forms']);$attempt=$op->fresh()->attempt;$polls=$op->fresh()->policy['renewal_polls']??0;
+config(['domains.enom_test_sends_per_day'=>$recentSends()+4]);$count=count($GLOBALS['enomWire']['forms']);$attempt=\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($op->fresh())->identity(true);expect($attempt['attempt']!==null&&$attempt['reply']!==null,'The capped renewal has a sealed attempt and reply');$polls=$op->fresh()->policy['renewal_polls']??0;
 Cache::flush();(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);
 same(['GetDomainInfo','GetRenew','GetDomainInfo','GetDomainExp'],array_column(array_slice($GLOBALS['enomWire']['forms'],$count),'Command'),'Mid-confirmation cap retains fresh four-read prefix without reordering');
-same(['pending',$attempt,$polls],[$op->fresh()->state,$op->fresh()->attempt,$op->fresh()->policy['renewal_polls']??0],'Partial capped confirmation keeps original attempt and covered-poll count');same($before,$money(),'Partial confirmation never refunds or resends');
+same(['pending',$attempt,$polls],[$op->fresh()->state,\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($op->fresh())->identity(true),$op->fresh()->policy['renewal_polls']??0],'Partial capped confirmation keeps original attempt and covered-poll count');same($before,$money(),'Partial confirmation never refunds or resends');
 config(['domains.enom_test_sends_per_day'=>1000]);
 Cache::flush();$count=count($GLOBALS['enomWire']['forms']);(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);
 same('succeeded',$op->fresh()->state,'Unique renewal charge and full-year owned expiry complete cycle');same(['GetDomainInfo','GetRenew','GetDomainInfo','GetDomainExp','GetOrderDetail'],array_column(array_slice($GLOBALS['enomWire']['forms'],$count),'Command'),'Captured renewal uses exactly five reconciliation reads');

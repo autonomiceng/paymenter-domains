@@ -6,7 +6,10 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
 use Paymenter\Extensions\Servers\Domains\Services\LiveReservations;
 Operation::updating(static function(Operation $op):void {
-    if((int)$op->id===($GLOBALS['nsOperation']??null)&&($op->getOriginal('attempt')['seal']??'absent')!=='sealed'&&($op->attempt['seal']??null)==='sealed'){
+    // A renewal seals on its attempt row in the save that starts it running; other writes seal in their JSON record.
+    $sealing=$op->action==='renew'?$op->getOriginal('state')!=='running'&&$op->state==='running'
+        :($op->getOriginal('attempt')['seal']??'absent')!=='sealed'&&($op->attempt['seal']??null)==='sealed';
+    if((int)$op->id===($GLOBALS['nsOperation']??null)&&$sealing){
         expect($GLOBALS['nsTransport']->reservation->unconsumed((int)$op->id),'Exact durable reservation must exist before engine seal is saved');
     }
 });
@@ -16,8 +19,9 @@ function curl_exec($h): bool {
     $url=$GLOBALS['nsOptions'][CURLOPT_URL];parse_str(parse_url($url,PHP_URL_QUERY),$p);unset($p['key'],$p['version'],$p['type']);
     $cmd=basename(parse_url($url,PHP_URL_PATH));$GLOBALS['nsPhysical'][]=$cmd;
     if(AdmittedTransport::feature($cmd)!=='catalogue'){
-        $op=Operation::findOrFail($GLOBALS['nsOperation']);same('sealed',$op->attempt['seal'],'Durable engine seal precedes physical send');
-        expect(isset($op->attempt['dispatch_attempted_at']),'Dispatch marker precedes physical send');
+        $op=Operation::findOrFail($GLOBALS['nsOperation']);$renewal=$op->action==='renew'?\Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($op):null;
+        same('sealed',$renewal?($renewal->sealed()?'sealed':'absent'):$op->attempt['seal'],'Durable engine seal precedes physical send');
+        expect($renewal?$renewal->sentAt()!==null:isset($op->attempt['dispatch_attempted_at']),'Dispatch marker precedes physical send');
         same(false,$GLOBALS['nsTransport']->reservation->unconsumed((int)$op->id),'Exact grant consumed at physical handoff');
         if($op->funding_basis==='paid_invoice'){$funded = $op->action === 'renew' ? \Paymenter\Extensions\Servers\Domains\Services\RenewalFundingLedger::funded($op) : isset($op->funding['seal']);
             expect($funded,'Native funding sealed before paid send');}

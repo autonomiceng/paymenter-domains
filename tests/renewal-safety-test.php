@@ -127,7 +127,7 @@ foreach (['unpaid', 'cancelled', 'paused', 'cost', 'unknown', 'disabled', 'autho
     same($case === 'unpaid' ? 'awaiting_payment' : (in_array($case,['rate','boundary','disabled','balance','balance_unknown','second_balance','second_balance_unknown','quote_deadline','seal_reversal'],true)?'queued':'held'), $engine->run($op->id, $writer)->state, 'Unsafe '.$case.' retained');
     same($writes, $state->writes, 'Unsafe '.$case.' sends nothing'); $held = $op->fresh();
     if ($cause = ['paused' => 'renewal_spend_paused', 'cancelled' => 'renewal_funding_or_authority'][$case] ?? null) { same($cause, $held->safe_code, 'Renewal hold keeps its cause: '.$case); }
-    same([], $held->attempt ?? [], 'Refusal precedes seal'); if ($case !== 'unpaid') { same(!in_array($case,['rate','boundary','disabled','balance','balance_unknown','second_balance','second_balance_unknown','quote_deadline','seal_reversal'],true), $held->policy['renewal_execution']['refundable_later'], 'Paid debt retained for26'); }
+    same(null, renewalAttempt($held), 'Refusal precedes seal'); if ($case !== 'unpaid') { same(!in_array($case,['rate','boundary','disabled','balance','balance_unknown','second_balance','second_balance_unknown','quote_deadline','seal_reversal'],true), $held->policy['renewal_execution']['refundable_later'], 'Paid debt retained for26'); }
     else { App\Helpers\ExtensionHelper::addPayment($invoice, null, $op->amount); same('pending', $engine->run($op->id,$writer)->state, 'Late native settlement executes after an early unpaid check'); }
     if ($case === 'disabled') { same('pending', $runRenewal($held,$b)->state, 'Enabling execution recovers the same paid obligation'); }
     $expectedReads = match ($case) {
@@ -163,7 +163,7 @@ foreach (['term', 'wrong_term', 'order_expiry', 'charge', 'owner', 'id', 'second
     if ($case === 'drift') { $state->charge = '9.00'; }
     if ($case === 'wrong_term') { $state->years = 2; }
     if ($case === 'order_expiry') { $state->orderExpiry = '2028-10-19'; }
-    if ($case === 'auto_drift') { $state->auto = '1'; }
+    if ($case === 'auto_drift') { $state->auto = '1'; $state->charge = '8.00'; }
     if (in_array($case, ['second_owner', 'second_id'], true)) {
         $state->duringCommand = ReadCommand::Renewal;
         $state->during = static function () use ($state, $case) { if ($case === 'second_owner') { $state->owner = 'foreign'; } else { $state->id = '999'; } };
@@ -179,7 +179,15 @@ foreach (['term', 'wrong_term', 'order_expiry', 'charge', 'owner', 'id', 'second
     $state->duringCommand = null; $state->orderExpiry = null;
     same(in_array($case, ['drift', 'auto_drift'], true) ? 'succeeded' : 'pending', $done->state, 'Completion '.$case.' proof policy');
     if ($case === 'drift') { same(true, $d->fresh()->renewal_policy['automatic_spend_paused'], 'Incurred actual overrun pauses future spending'); same('9.00', $done->cost['actual']['amount'], 'Actual charge retained'); }
-    elseif ($case === 'auto_drift') { same(['auto_renew'], $done->attempt['reconciliation']['observed_corrections'], 'Enom auto-renew drift is correction evidence, not a completion veto'); }
+    elseif ($case === 'auto_drift') {
+        same(['auto_renew'], \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($done)->settlement()['evidence']['observed_corrections'], 'Enom auto-renew drift is correction evidence, not a completion veto');
+        // The settled renewal's read proof schedules its own auto-renew correction; scheduling makes no registrar call.
+        $scheduled = \Paymenter\Extensions\Servers\Domains\Services\CorrectionWork::produce($d->fresh(),
+            new \Paymenter\Extensions\Servers\Domains\Services\DomainManagement($bindings, $clock, new \Paymenter\Extensions\Servers\Domains\Services\WriteFeatures(management: true), true),
+            new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Management($b, static fn () => throw new LogicException('Scheduling makes no management exchange')));
+        same(['auto_renew_off', 'queued', $op->operation_key], [$scheduled?->action, $scheduled?->state, $scheduled?->policy['management']['correction'] ?? null],
+            'A settled Enom renewal with auto-renew on schedules its auto-renew correction');
+    }
     else { same('2027-10-18', $d->fresh()->provider_expires_at->format('Y-m-d'), 'Ambiguous proof never stamps expiry'); }
 }
 echo "Renewal refusal, one-attempt grants, fresh rechecks and completion safety passed\n"; $nativeSuccessful = true;

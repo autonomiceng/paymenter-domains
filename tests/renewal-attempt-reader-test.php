@@ -3,11 +3,12 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php';
 
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\{ExecutionRecord, Money, SendState};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter, SealTerms, StepKey, WireOutcome};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationSchema, OperationWriter, SealTerms, StepKey, WireOutcome};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 use Paymenter\Extensions\Servers\Domains\Services\{FoundationSchema, WriteMoney};
 
@@ -118,4 +119,18 @@ $rows = Operation::whereKey([$settled, $unpaid, $register])->get(); DB::enableQu
 $page = RenewalAttempt::loaded($rows); $count = count(DB::getQueryLog()); DB::disableQueryLog();
 same([2, [$settled, $unpaid], true], [$count, array_keys($page), $page[$unpaid]->closedUnsent()], 'A page reads its loaded renewals in two reads');
 same([$facts[$settled]->settlement(), $facts[$settled]->sentAt()->format(DATE_ATOM), $facts[$settled]->claimKey()], [$one->settlement(), $one->sentAt()->format(DATE_ATOM), $one->claimKey()], 'One renewal reads the same facts');
+// An unreadable renewal between two readable ones is left out of the same two reads; of() refuses it alone.
+$reply = DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $lost, 'kind' => 'reply'])->first();
+DB::table(OperationSchema::EVIDENCE)->where('id', $reply->id)->update(['evidence' => 'unreadable-fixture']);
+$rows = Operation::whereKey([$settled, $lost, $unpaid])->orderBy('id')->get(); DB::enableQueryLog(); DB::flushQueryLog();
+$page = RenewalAttempt::loaded($rows); $count = count(DB::getQueryLog()); DB::disableQueryLog();
+same([2, [$settled, $unpaid]], [$count, array_keys($page)], 'Only the unreadable renewal is left out, with no extra read');
+try { RenewalAttempt::of(Operation::findOrFail($lost)); $refused = false; } catch (DecryptException) { $refused = true; }
+DB::table(OperationSchema::EVIDENCE)->where('id', $reply->id)->update(['evidence' => $reply->evidence]);
+expect($refused, 'The unreadable renewal alone refuses its read');
+// The sealed attempt row freezes the renewal's desired state, start and request digest without any attempt JSON.
+foreach (['payload' => ['changed' => true], 'started_at' => $done, 'request_fingerprint' => str_repeat('e', 64)] as $column => $value) {
+    try { Operation::findOrFail($open)->update([$column => $value]); throw new RuntimeException($column.' changed after the seal'); }
+    catch (DomainException $e) { same($column === 'payload' ? 'Sealed desired state is frozen.' : 'Original attempt identity is frozen.', $e->getMessage(), 'A sealed renewal keeps its '.$column); }
+}
 echo "Renewal attempt reader passed.\n"; $nativeSuccessful = true;

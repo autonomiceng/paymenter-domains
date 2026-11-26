@@ -28,6 +28,7 @@ final class BalanceForecast
             $adoptions=$adoptionIds->isEmpty()?collect():Adoption::whereKey($adoptionIds)->get()->keyBy('id');
             $invoices=Invoice::whereKey($domains->flatMap(fn($d)=>$d->operations->pluck('invoice_id'))->filter()->unique())->get()->keyBy('id');
             // The chunk's renewal seals, replies and observations come from two reads; no read per renewal.
+            // A renewal whose evidence no longer decrypts is left out and reads below as possibly spent.
             $attempts = RenewalAttempt::loaded($domains->flatMap(fn ($d) => $d->operations->where('action', 'renew')));
             // Paid postings are reserved in the same transaction as the attempt seal.
             $reservedItems = $domains->flatMap(fn ($d) => $d->operations->where('state', 'held')->where('safe_code', 'renewal_definitely_unsent'))
@@ -41,7 +42,7 @@ final class BalanceForecast
                 $ops=$d->operations->filter(fn($o)=>$o->action==='renew'&&$o->account_fingerprint===$d->account_fingerprint
                     &&$o->registrar_key===$d->registrar_key&&(int)$o->server_id===(int)$d->server_id&&$o->authority_generation===$d->authority_generation);
                 $open=$ops->filter(fn($o)=>in_array($o->state,['awaiting_payment','queued','held','running'],true)
-                    &&$o->safe_code!=='renewal_cancelled_unpaid'&&!RenewalReplacements::reviewed($o,$d)&&!isset($o->funding['refund'])&&!self::cancelledInvoice($o,$invoices)&&!self::sent($o,$d,$ledger,$attempts[$o->id]));
+                    &&$o->safe_code!=='renewal_cancelled_unpaid'&&!RenewalReplacements::reviewed($o,$d)&&!isset($o->funding['refund'])&&!self::cancelledInvoice($o,$invoices)&&!self::sent($o,$d,$ledger,$attempts[$o->id]??null));
                 // Forecast the earlier known invoice due date or confirmed registrar expiry. Unsent open
                 // obligations count even outside 30 days; overdue unsent renewals count as due now.
                 // No known date or cost means unknown, never zero.
@@ -58,7 +59,7 @@ final class BalanceForecast
                 if(RenewalStop::stopped($stop)){continue;}
                 $expiry=$d->provider_expires_at?->format('Y-m-d');
                 $cycle=$ops->filter(fn($o)=>$o->base_expires_at?->format('Y-m-d')===$expiry);
-                if($cycle->contains(fn($o)=>self::sent($o,$d,$ledger,$attempts[$o->id])||in_array($o->state,['succeeded','rejected','cancelled'],true)
+                if($cycle->contains(fn($o)=>self::sent($o,$d,$ledger,$attempts[$o->id]??null)||in_array($o->state,['succeeded','rejected','cancelled'],true)
                     ||$o->safe_code==='renewal_cancelled_unpaid'||self::cancelledInvoice($o,$invoices)||RenewalReplacements::reviewed($o,$d))){continue;}
                 $due=$expiry&&$timing?BillingCalendar::dates($d->provider_expires_at,$timing['issue'],$timing['due'])['due']:null;
                 // A retained invoice may provide the only known date; it is never derived from native service expiry.
@@ -82,8 +83,10 @@ final class BalanceForecast
     }
     private static function cancelledInvoice($op,$invoices): bool
     {return $op->invoice_id!==null&&$invoices->get($op->invoice_id)?->status==='cancelled';}
-    private static function sent($op,Domain $domain,RenewalFundingLedger $ledger,RenewalAttempt $attempt): bool
+    private static function sent($op,Domain $domain,RenewalFundingLedger $ledger,?RenewalAttempt $attempt): bool
     {
+        // Unreadable evidence never proves a renewal unsent: count it as possibly spent, like an unknown send.
+        if($attempt===null){return true;}
         // A sealed local prewire refusal is still unsent, but only with the full retained proof.
         if($op->state==='held'&&$op->safe_code==='renewal_definitely_unsent'){
             try{RefundProof::requireUnsent($op,$domain,$ledger,$attempt);return false;}catch(\DomainException){}

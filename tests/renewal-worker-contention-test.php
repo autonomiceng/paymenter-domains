@@ -47,26 +47,25 @@ try {
     $duringAdmission = $afterExpiry = null;
     $state->during = static function () use ($runSecond, &$duringAdmission): void {
         $other = $runSecond();
-        $duringAdmission = [$other->state, $other->transition_revision, (array) $other->attempt];
+        $duringAdmission = [$other->state, $other->transition_revision, renewalAttempt($other)?->sealed() ?? false];
     };
     $state->afterWrite = static function () use ($clock, $runSecond, &$afterExpiry): void {
         $clock->instant = $clock->now()->modify('+361 seconds');
         $other = $runSecond();
-        $afterExpiry = [$other->state, $other->transition_revision, $other->attempt];
+        $afterExpiry = [$other->state, $other->transition_revision, renewalAttempt($other)?->sealed() ?? false];
     };
     $money = nativeFinancialSnapshot($op->fresh());
     $reply = $first->run($op->id, $firstWriter);
-    same(['awaiting_payment', 3, []], $duringAdmission, 'The second worker preserves the current admission');
-    same(['uncertain', 5, array_diff_key($reply->attempt, ['execution' => true, 'renewal' => true])], $afterExpiry, 'Expired reservation is quarantined before the first reply');
+    same(['awaiting_payment', 3, false], $duringAdmission, 'The second worker preserves the current admission');
+    same(['uncertain', 5, true], $afterExpiry, 'Expired reservation is quarantined before the first reply');
     same(['uncertain', 'stale_claim', 'accepted', 6], [$reply->state, $reply->safe_code, renewalReply($reply)['outcome'], $reply->transition_revision],
         'Late acknowledgement observes the original reservation without reviving it');
     same(['item' => [$op->invoice_item_id => PricingRule::minor($op->amount)],
         'payment' => [$invoice->transactions()->sole()->id => PricingRule::minor($op->amount)]],
         RenewalFundingLedger::entries($reply), 'One original invoice line and signed payment are reserved');
-    commerceReject(static fn () => $reply->fresh()->update(['attempt' => [...$reply->attempt, 'claim_key' => 'replacement']]));
-    commerceReject(static fn () => $reply->fresh()->update(['attempt' => [...$reply->attempt, 'send_state' => 'definitely_unsent']]));
+    // The sealed attempt row is the reservation; the renewal keeps no attempt JSON beside it.
     $sealed = OperationAttempts::sealed((int) $op->id, StepKey::renew());
-    same([4, 2, $reply->attempt], [$sealed->operationRevision, $sealed->token->ordinal, $reply->fresh()->attempt],
+    same([4, 2, null], [$sealed->operationRevision, $sealed->token->ordinal, $reply->fresh()->getRawOriginal('attempt')],
         'The original reservation and observations remain immutable after a late reply');
     same(['accepted', true], [OperationAttempts::evidence((int) $op->id, $sealed->token->attemptId, 'reply')['outcome'], $sealed->grantConsumedAt !== null],
         'The sealed attempt keeps its one spent grant and late reply');

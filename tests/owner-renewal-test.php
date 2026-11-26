@@ -153,11 +153,11 @@ $duplicate=static function(Operation $original,string $key,?string $base=null)us
     $item=\App\Models\InvoiceItem::findOrFail($original->invoice_item_id)->getRawOriginal();unset($item['id']);$item['invoice_id']=$invoiceId;
     $itemId=DB::table('invoice_items')->insertGetId($item);$copyItems[]=$itemId;
     $copy=$original->replicate();$copy->operation_key=$key;$copy->invoice_id=$invoiceId;$copy->invoice_item_id=$itemId;
-    $attempt=$copy->attempt;$attempt['terminal']['operation_key']=$key;$attempt['terminal']['invoice_id']=$invoiceId;$copy->attempt=$attempt;
     if($base!==null){$copy->base_expires_at=$base;}$copy->save();
     // Each copy carries its own closure row, as its retirement would record it.
+    $terminal=[...(Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt::of($original)->terminal()['evidence']??[]),'operation_key'=>$key,'invoice_id'=>$invoiceId];
     DB::transaction(fn()=>Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationWriter::at(new DateTimeImmutable('now',new DateTimeZone('UTC')))
-        ->recordTerminal((int)$copy->id,'renewal_cancelled_unpaid',$attempt['terminal']));
+        ->recordTerminal((int)$copy->id,'renewal_cancelled_unpaid',$terminal));
     return $copy;
 };
 for($i=1;$i<=101;$i++){
