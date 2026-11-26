@@ -8,20 +8,28 @@ use App\Models\Invoice;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
 
-// Exercise the real monotonic branch and cleanup independently of the synthetic wait clock.
-$systemClock = new \Paymenter\Extensions\Servers\Domains\Data\SystemClock;
+// Exercise the real monotonic branch and cleanup independently of the synthetic wait clock. The test sets wall time
+// through the framework clock and elapsed time through the clock's source, so a wall step during entry is visible.
+$elapsed = 0; $systemClock = new \Paymenter\Extensions\Servers\Domains\Data\SystemClock(static function () use (&$elapsed): int { return $elapsed; });
 $entryDeadline = \Paymenter\Extensions\Servers\Domains\Services\EntryDeadline::class;
-foreach ([270, 250] as $seconds) {
-    $before = $systemClock->now();
-    $deadline = $entryDeadline::run($systemClock, static function ($deadline) use ($systemClock) {
-        try { $systemClock->withinExecution(static fn () => null); expect(false, 'Entry work must run in monotonic scope'); }
-        catch (LogicException $error) { same('Nested execution clock scope.', $error->getMessage(), 'Real execution scope active'); }
-        same('UTC', $deadline->getTimezone()->getName(), 'Absolute deadline is UTC');
-        return $deadline;
-    }, $seconds);
-    expect($deadline >= $before->modify('+'.$seconds.' seconds')
-        && $deadline <= $systemClock->now()->modify('+'.$seconds.' seconds'), 'Deadline captures real entry with explicit budget');
-}
+$framework = Carbon\CarbonImmutable::getTestNow(); $entry = new DateTimeImmutable('2026-10-18T12:00:00Z'); $utc = new DateTimeZone('UTC');
+try {
+    foreach ([270, 250] as $seconds) {
+        Carbon\CarbonImmutable::setTestNow($entry); $elapsed = 0;
+        $deadline = $entryDeadline::run($systemClock, static function ($deadline) use ($systemClock, $entry, $utc, &$elapsed) {
+            try { $systemClock->withinExecution(static fn () => null); expect(false, 'Entry work must run in monotonic scope'); }
+            catch (LogicException $error) { same('Nested execution clock scope.', $error->getMessage(), 'Real execution scope active'); }
+            same('UTC', $deadline->getTimezone()->getName(), 'Absolute deadline is UTC');
+            // The wall clock steps back an hour while 1.5 seconds pass: the execution clock counts only elapsed time.
+            Carbon\CarbonImmutable::setTestNow($entry->modify('-1 hour')); $elapsed = 1500000000;
+            same($entry->modify('+1500 milliseconds')->format('Y-m-d\\TH:i:s.u'), $systemClock->now()->setTimezone($utc)->format('Y-m-d\\TH:i:s.u'),
+                'Execution clock follows elapsed time across a wall step');
+            return $deadline;
+        }, $seconds);
+        same($entry->modify('+'.$seconds.' seconds')->format('Y-m-d\\TH:i:s.u'), $deadline->format('Y-m-d\\TH:i:s.u'), 'Deadline is the entry instant plus the explicit budget');
+        same($entry->modify('-1 hour')->format(DATE_ATOM), $systemClock->now()->setTimezone($utc)->format(DATE_ATOM), 'Clock returns to wall time after entry');
+    }
+} finally { Carbon\CarbonImmutable::setTestNow($framework); }
 try { $entryDeadline::run($systemClock, static fn () => throw new RuntimeException('synthetic scope failure')); }
 catch (RuntimeException $error) { same('synthetic scope failure', $error->getMessage(), 'Entry exception propagates'); }
 same('released', $entryDeadline::run($systemClock, static fn () => 'released'), 'Exception releases execution scope');

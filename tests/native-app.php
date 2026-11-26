@@ -64,6 +64,7 @@ if ($snapshot !== '') {
     $sql = file_get_contents($snapshot);
     same((string)getenv('PAYMENTER_TEST_DATABASE_SHA256'), hash('sha256', $sql), 'Migrated fixture snapshot retains admitted bytes');
     Illuminate\Support\Facades\DB::connection()->getPdo()->exec($sql);
+    NativeFixtureRandom::resumeSnapshot($sql);
     // Migration boot normally initializes the grammar before tests build schema inspectors.
     Illuminate\Support\Facades\DB::connection()->useDefaultSchemaGrammar();
     // foreignIdFor() boots models during migration, while fixture auditing is disabled.
@@ -81,4 +82,5 @@ if ($snapshot !== '') {
 $pdo=Illuminate\Support\Facades\DB::connection()->getPdo();
 $GLOBALS['nativeFixtureDatabase']=['pdo'=>$pdo,'changes'=>(int)$pdo->query('SELECT total_changes()')->fetchColumn(),
     'schema'=>(int)$pdo->query('PRAGMA schema_version')->fetchColumn()];
+nativeFixtureClockFollow();
 unset($nativeSetup);

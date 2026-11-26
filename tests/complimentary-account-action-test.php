@@ -60,13 +60,13 @@ ComplimentaryAccounts::set($user->id,$staff,false,'Repeated end',$clock,Complime
 $line($staff,PHP_INT_MAX)->assertActionHidden('turnOn')->assertActionHidden('turnOff');
 $refused(fn()=>ComplimentaryAccounts::set(PHP_INT_MAX,$staff,true,'Unknown customer',$clock),'Domain funding permission required.');
 same($disabled,$rows(),'Unknown customer cannot create an audit entry');
-// Actual SystemClock writes: the confirm shows the real instant of the change, even when Paymenter restores its PHP zone from settings and the app zone differs.
+// Actual SystemClock writes, bracketed by the framework clock it reads: the confirm shows the real instant of the change, even when Paymenter restores its PHP zone from settings and the app zone differs.
 $priorTimezone=date_default_timezone_get();$priorAppZone=config('app.timezone');
 try{
  foreach(['America/Los_Angeles','UTC']as$zone){date_default_timezone_set($zone);config(['app.timezone'=>$zone]);
   app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new \Paymenter\Extensions\Servers\Domains\Data\SystemClock);
   $on=(bool)(ComplimentaryAccounts::current($user->id)['enabled']??false);
-  $start=time();$changed=$line($staff,$user->id)->callAction($on?'turnOff':'turnOn',['reason'=>'Storage timezone check'])->assertHasNoActionErrors();$end=time();
+  $start=now()->getTimestamp();$changed=$line($staff,$user->id)->callAction($on?'turnOff':'turnOn',['reason'=>'Storage timezone check'])->assertHasNoActionErrors();$end=now()->getTimestamp();
   expect(preg_match_all('/datetime="([^"]+)"/',$last($changed),$shown)===1,'Actual action renders one change time: '.$zone);
   $at=new DateTimeImmutable($shown[1][0]);same('+00:00',$at->format('P'),'The change time is given in UTC: '.$zone);
   expect($start<=$at->getTimestamp()&&$at->getTimestamp()<=$end,'Actual action renders the real instant of the change: '.$zone);
