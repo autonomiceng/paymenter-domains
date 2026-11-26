@@ -170,14 +170,16 @@ with its history intact. The installer does not convert it. The demo crosses thi
 boundary once, by a fresh install:
 
 1. Pause sales, renewals and processing, then drain workers until no claim, send or
-   registrar read is running.
+   registrar read is running. On the original installation, reconcile every sealed or
+   uncertain attempt against the registrar and payment ledger using the original order
+   or charge identifiers. Any unresolved attempt blocks the swap.
 2. Keep the matching database dump, package archive and encryption keys from before the
    swap. Rehearse that restore before replacing anything.
 3. List every money, provider and audit fact that must carry forward: paid invoices,
-   credits, refunds, registrar orders and charges, sealed or uncertain attempts and staff
-   reviews. Verify each against the provider and the ledger, and record it privately.
+   credits, refunds, registrar orders and charges, reconciliation outcomes and staff reviews.
+   Verify each against the provider and the ledger, and record it privately.
 4. Replace the demo with a fresh install of the new package. Recreate only the reviewed
-   facts from step 3, and resolve any uncertain attempt before reopening.
+   facts from step 3 before reopening.
 5. Confirm the full check records a fresh verification receipt. A reinstall of the same
    package must keep every attempt and evidence row.
 
