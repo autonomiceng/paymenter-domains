@@ -39,7 +39,8 @@ class Operation extends Model
     protected function funding(): Attribute { return $this->retainedEvidence('funding'); }
     protected function policy(): Attribute { return $this->retainedEvidence('policy'); }
 
-    private function retainedEvidence(string $field): Attribute
+    /** @return Attribute */
+    private function retainedEvidence(string $field)
     {
         return Attribute::make(
             get: function (?string $value, array $row) use ($field): ?array {
