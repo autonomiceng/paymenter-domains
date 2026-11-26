@@ -172,17 +172,23 @@ for($i=1;$i<=110;$i++){
 }
 foreach($batch as $table=>$rows){foreach(array_chunk($rows,50) as $chunk){DB::table($table)->insert($chunk);}}
 $repairs=static fn():int=>DB::table('domains_obligation_alerts')->where('code','refund_repair')->count();$repairsBefore=$repairs();
-// Inspecting settled history reads invoice payments and peer credits in batches, without moving money. Each domain still reads its own requests.
-$historyQueries=0;$countHistory=true;
-DB::listen(static function($query)use(&$historyQueries,&$countHistory):void {
+// Inspecting settled history reads invoice payments and peer credits in batches, without moving money. Each domain still reads its own requests, in these two shapes only.
+$requests=['select * from domains_operations where domains_operations.domain_id = ? and domains_operations.domain_id is not null and action in (?, ?)',
+    'select exists(select * from domains_operations where domains_operations.domain_id = ? and domains_operations.domain_id is not null and safe_code = ?) as exists'];
+$historyQueries=$requestReads=0;$countHistory=true;
+DB::listen(static function($query)use(&$historyQueries,&$requestReads,&$countHistory,$requests):void {
     $sql=str_replace(['"','`','[',']'],'',$query->sql);
-    if($countHistory&&preg_match('/^select .* from (?:invoices|invoice_transactions|domains_operations)\b/i',$sql)&&!str_contains($sql,'domain_id = ?')){$historyQueries++;}
+    if(!$countHistory||!preg_match('/^select .* from (?:invoices|invoice_transactions|domains_operations)\b/i',$sql)){return;}
+    if(in_array($sql,$requests,true)){$requestReads++;}else{$historyQueries++;}
 });
 $settledCash=$cash();$retirement->inspectMany($settled);$countHistory=false;
-expect($historyQueries>0&&$historyQueries<=8,'Settled history inspection batches invoice, payment and peer reads; queries='.$historyQueries);
+expect($historyQueries>0&&$historyQueries<=8&&$requestReads<=2*count($settled),'Settled history inspection batches invoice, payment and peer reads; queries='.$historyQueries.', request reads='.$requestReads);
 same($settledCash,$cash(),'Inspecting the settled cursor history moves no money');
-$behind=$new(placeholderComFixtureName('late-behind-placeholder.com'),paid:false);$shut($behind);ExtensionHelper::addPayment($behind->invoice_id,null,amount:$behind->amount);ExtensionHelper::addPayment($parts->invoice_id,null,amount:'0.25');$before=$cash();
-foreach(range(1,3) as $pass){$refunds->creditRetired($account);}
-same($plus($before,$behind->amount,'0.25'),$cash(),'Every order gets its turn behind 100 settled ones');
+$behind=$new(placeholderComFixtureName('late-behind-placeholder.com'),paid:false);$shut($behind);ExtensionHelper::addPayment($behind->invoice_id,null,amount:$behind->amount);$before=$cash();
+// The first pass fills a whole page with older orders; a payment on one of them after it waits for the pass that starts again from the beginning.
+$refunds->creditRetired($account);ExtensionHelper::addPayment($parts->invoice_id,null,amount:'0.25');$refunds->creditRetired($account);
+same($plus($before,$behind->amount),$cash(),'Every order gets its turn behind 100 settled ones');
+$refunds->creditRetired($account);
+same($plus($before,$behind->amount,'0.25'),$cash(),'After the last page the cursor starts again and credits the older order');
 same($repairsBefore,$repairs(),'Settled orders pass the closed-order check, so staff get no money-return check');
 echo "Unpaid hold, refused orders and late money passed.\n";$nativeSuccessful=true;
