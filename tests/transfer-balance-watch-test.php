@@ -8,7 +8,7 @@ require __DIR__.'/Support/transfer-completion-enom-fixture.php';
 use Illuminate\Support\Facades\{Cache,DB,Mail,Queue};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{HistoryAcceptance,RequestOrigin};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountReadBudget,BalanceSchema,EnomTestSendLimitSchema,ExecutionWindow,HistoryAcceptances,ObligationAlerts,OperationClaims,PricingRule,ReminderSchema,ReminderSchedules,Reminders,RenewalAcceptance,RuntimeComposition,RuntimeDispatch,RuntimePorts,RuntimeSchema,RuntimeWork,TransferInputs,TransferPolling,TransferPrecheck,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountReadBudget,BalanceSchema,EnomTestSendLimitSchema,HistoryAcceptances,ObligationAlerts,OperationClaims,PricingRule,ReminderSchema,ReminderSchedules,Reminders,RenewalAcceptance,RuntimeComposition,RuntimeDispatch,RuntimePorts,RuntimeSchema,RuntimeWork,TransferInputs,TransferPolling,TransferPrecheck,WriteFeatures};
 RuntimeSchema::install();BalanceSchema::install();EnomTestSendLimitSchema::install();ReminderSchema::install();Queue::fake();
 app()->instance(AccountBindings::class,$freshBindings);app()->instance(Clock::class,$clock);app()->instance(OperationClaims::class,$claims);app()->instance(TransferInputs::class,$inputs);
 $advance=static function(int $seconds)use($clock):void {
@@ -36,7 +36,7 @@ activeCommerceFacts($clock->now(),$clock->now()->modify('+1 day'),$cataloguePort
 $runtime->operation($op->id);$sent=$op->fresh();
 same('sealed',$sent->attempt['seal'],'Restored funds seal the original claim automatically');
 same(['TP_CreateOrder'],$state->calls,'Restored funds submit exactly one transfer');
-$window=ExecutionWindow::start($sent)->getTimestamp();$deadline=TransferPolling::deadline($sent);
+$window=TransferPolling::start($sent);$deadline=TransferPolling::deadline($sent);
 HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,9*86400,'enom_transfer_v1'));
 $observe->name=$sent->domain->domain;$observe->fault='pending';$observe->charge=$sent->attempt['authorized_cost']['amount'];
 $observe->billDate=(new DateTimeImmutable($sent->attempt['dispatch_attempted_at']))->setTimezone(new DateTimeZone('America/Denver'))->format('m/d/Y g:i:s A');

@@ -6,6 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Operations\Authority;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Paymenter\Extensions\Servers\Domains\Data\SendState;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Services\ContactProfileHold;
 
 /** Acquisition evidence as seen by checkout, staff, profile and refund readers. */
 final readonly class AcquisitionAttempt
@@ -28,6 +29,48 @@ final readonly class AcquisitionAttempt
         return self::fromRows($facts, $action, OperationAttempts::evidenceMany([$id], self::KINDS, $lock)[$id] ?? []);
     }
 
+    /** A seal or a retired continuation of a proved-unsent staff release needs the durable purchase proof. */
+    public static function dispositionCandidate(Operation $op, bool $lock = false): bool
+    {
+        $attempt = $op->acquisitionAttemptFacts();
+        if ($attempt?->sealed()) { return true; }
+        if (!$attempt?->released) { return false; }
+        $window = AcquisitionResult::window($op, $lock);
+        return $window?->expiryReason === 'acquisition_definitely_unsent'
+            && AcquisitionResult::ownsAttempt($op, $window, $attempt, $lock);
+    }
+
+    /** The latest purchase and its complete lineage prove no purchase left the registrar client. */
+    public static function purchaseRefusal(Operation $op, bool $lock = false): ?AttemptFacts
+    {
+        $key = self::key($op->action);
+        if (!$key || !$op->exists || $op->acquisitionStepAbsent()) { return null; }
+        try {
+            if (!self::dispositionCandidate($op, $lock)) { return null; }
+            $id = (int) $op->id;
+            $latest = OperationAttempts::latest($id, $key, $lock);
+            if (!$latest || OperationAttempts::unsentPurchase($id, $key, $lock) !== true
+                || self::conflicts($op)
+                || array_intersect_key($op->receiptFunding(), ['claim' => true, 'seal' => true])
+                || array_intersect_key($op->cost ?? [], ['actual' => true, 'execution' => true])
+                || $op->provider_order_id !== null || $op->confirmed_expires_at !== null
+                || array_key_exists('dispatch_attempted_at', $op->operationPolicy())) { return null; }
+            $rows = OperationAttempts::evidenceMany([$id], self::KINDS, $lock)[$id] ?? [];
+            foreach ($rows as $evidence) {
+                if (isset($evidence['decision']) || in_array(OperationAttempts::UNREADABLE, $evidence, true)) { return null; }
+            }
+            $attempt = self::fromRows($latest, $op->action, $rows);
+            $claim = $attempt->rows['claim']['evidence'] ?? [];
+            $admission = $attempt->rows['admission']['evidence'] ?? [];
+            $funding = $attempt->origin['funding'] ?? null;
+            if (($claim['identity'] ?? null) !== $latest->token->claimKey || !is_string($attempt->origin['digest'] ?? null)
+                || !is_array($funding) || !$attempt->hasOriginalClaim()
+                || ($latest->sealed() && ($attempt->origin['digest'] !== $latest->requestDigest || ($admission['funding'] ?? null) !== $funding))
+                || !ContactProfileHold::allowsPurchaseDisposition($op, $lock)) { return null; }
+            return $latest;
+        } catch (DecryptException|\JsonException|\DomainException|\ValueError|\DateException) { return null; }
+    }
+
     /** One bad attempt must fail closed at its own reader without hiding the other rows. */
     public static function many(array $facts, bool $lock = false): array
     {
@@ -47,7 +90,6 @@ final readonly class AcquisitionAttempt
         foreach ($rows as $id => $attempt) {
             $evidence = $id === $facts->token->attemptId ? $attempt : array_intersect_key($attempt, self::HISTORY_KINDS);
             if (in_array(OperationAttempts::UNREADABLE, $evidence, true)) { throw new DecryptException('Acquisition attempt evidence is unreadable.'); }
-            foreach ($attempt['claim']['evidence']['history'] ?? [] as $kind => $events) { $history[$kind] = $events; }
             if (isset($attempt['capacity']['recorded_at'])) { $history['capacity_deferrals'][] = $attempt['capacity']['recorded_at']; }
             if (($attempt['test_capacity']['outcome'] ?? null) === 'fresh') {
                 $history['test_call_refusals'][] = $attempt['test_capacity']['evidence'];
@@ -65,6 +107,19 @@ final readonly class AcquisitionAttempt
 
     public function originId(): int { return $this->origin['origin_attempt_id'] ?? $this->facts->token->attemptId; }
 
+    public function contactRecheckSince(): ?\DateTimeImmutable
+    {
+        $claim = $this->rows['claim'];
+        return ($claim['evidence']['contact_recheck'] ?? false) === true
+            ? new \DateTimeImmutable($claim['recorded_at']) : null;
+    }
+
+    /** Immutable bounds on the active purchase seal. */
+    public function sealedWindow(): ?array
+    {
+        return $this->facts->current && $this->sealed() ? ($this->rows['admission']['evidence']['window'] ?? null) : null;
+    }
+
     public function hasOriginalClaim(): bool
     { return ($this->rows['test_capacity']['outcome'] ?? null) !== 'fresh'; }
 
@@ -73,7 +128,7 @@ final readonly class AcquisitionAttempt
     /** The caller validated the exact refusal execution against the funding and holding. */
     public function locallyRefused(array $execution): bool
     {
-        if (!$this->sealed()) { return false; }
+        if (!$this->facts->sealed()) { return false; }
         if ($reply = $this->rows['reply'] ?? null) {
             return $this->facts->sendState === SendState::DefinitelyUnsent
                 && $reply['source'] === 'local_refusal' && $reply['outcome'] === 'unsent';

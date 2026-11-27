@@ -3,9 +3,9 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
-use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission, AcquisitionResult};
 /** A paid order held at its contact step with nothing sent goes back to the queue by itself, through the same checks as
  * staff Release. Orders off resumes whenever Orders are on; other causes get a few spaced tries. Then the hold stays for
  * staff, with Cancel and refund. Nothing here cancels or refunds. */
@@ -73,11 +73,13 @@ final class ContactStepRetries
             $policy=self::released($op,(string)$op->safe_code,$now);
             if($policy===null||!self::due($op,$now)){return false;}
             try{$op->setRelation('domain',$l['domain']);HeldRelease::require($op,$l,$now);}catch(\Throwable){return false;}
-            $op->update(['state'=>'queued','safe_code'=>null,'lease_expires_at'=>null,'policy'=>$policy]);
+            AcquisitionResult::admit($op, AcquisitionAdmission::ContactRetry, AcquisitionResult::revision($op),
+                $op->acquisitionAttemptFacts()?->token, $now,
+                static fn () => $op->update(['state'=>'queued','safe_code'=>null,'lease_expires_at'=>null,'policy'=>$policy]));
             return true;
         });
     }
-    /** The policy with the automatic release from $from recorded at $now, which opens the order's send window. Null when History is full. */
+    /** The policy with the automatic retry recorded for staff. Null when History is full. */
     public static function released(Operation $op,string $from,\DateTimeImmutable $now): ?array
     {
         $history=$op->policy['staff_actions']??[];

@@ -12,7 +12,7 @@ use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\{Auth,Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,EnomTestRegistration,ManagementEvidence,ObservationWork,OperationFailure,OperationTerminalProof,StaffOperationReview,StaffOperations,StaffOperationWrites,StaffReviewRefused,StaffSyncReview,TransferInputs,TransferPolling};
+use Paymenter\Extensions\Servers\Domains\Services\{ContactProfileHold,DomainManagement,EnomTestRegistration,ManagementEvidence,ObservationWork,OperationFailure,OperationTerminalProof,RefundProof,StaffOperationReview,StaffOperations,StaffOperationWrites,StaffReviewRefused,StaffSyncReview,TransferInputs,TransferPolling};
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 use Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns;
 use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
@@ -140,9 +140,9 @@ final class OperationActions
             // Release needs what the customer still owes, so a hold here would have no way back.
             'hold'=>StaffOperationWrites::canHold($op)&&self::customerOwes($op)===null,
             'release'=>HeldRelease::offered($op,app(Clock::class)->now()),
-            // A contact step hold offers it only while nothing went to NameSilo; the writer repeats that proof under locks.
             'refund'=>$op->state==='held'&&$op->funding_basis==='paid_invoice'
-                &&($op->safe_code!==\Paymenter\Extensions\Servers\Domains\Services\ContactProfileHold::CODE||\Paymenter\Extensions\Servers\Domains\Services\ContactProfileHold::unsent($op)),
+                &&($op->action==='transfer' ? self::transferRefundOffered($op)
+                    : self::registrationRefundOffered($op)),
             // A closed unpaid order released its name, so Refunds can never credit it. Late money goes through the payment review.
             // Complimentary orders have no payment for the refund sweep; retry only their unfinished closure.
             'credit'=>$op->state==='rejected'&&!ReceiptReturns::settled($op)&&!ReceiptReturns::releasedUnreadable($op)&&(($op->funding_basis==='paid_invoice'&&$op->safe_code!==UnpaidAcquisitionProof::CODE)
@@ -157,6 +157,30 @@ final class OperationActions
                 :DomainManagement::canReconcile($op,app(Clock::class)->now()),
             default=>false};
     }
+    private static function registrationRefundOffered(Operation $op): bool
+    {
+        try {
+            if (\Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionAttempt::dispositionCandidate($op)) {
+                RefundProof::requireUnsent($op, $op->domain);
+                return true;
+            }
+            return $op->safe_code !== ContactProfileHold::CODE || ContactProfileHold::unsent($op);
+        } catch (\Throwable) { return false; }
+    }
+
+    private static function transferRefundOffered(Operation $op): bool
+    {
+        try {
+            $unsent = RefundProof::paidTransferPurchaseUnsent($op);
+            if ($unsent === null) {
+                return $op->safe_code !== ContactProfileHold::CODE || ContactProfileHold::unsent($op);
+            }
+            if (!$unsent || !RefundProof::transferDispositionAvailable($op)) { return false; }
+            RefundProof::requireUnsent($op, $op->domain);
+            return true;
+        } catch (\Throwable) { return false; }
+    }
+
     /** Presentation only: the writer repeats returnability under HoldingLocks. */
     public static function complimentaryCloseBlocked(Operation $op):bool
     {
@@ -189,7 +213,7 @@ final class OperationActions
         $now = app(Clock::class)->now()->getTimestamp();
         if (TransferPolling::followupScheduled($op, $now)) { return false; }
         if(($p['reconciliation']['reason']??null)==='transfer_deadline_passed'||($p['reconciliation']['final_check']??null)==='done'){return true;}
-        if (TransferPolling::applies($op) && $now >= TransferPolling::cutoff($op)) { return true; }
+        if (TransferPolling::applies($op) && (($cutoff = TransferPolling::cutoff($op)) === null || $now >= $cutoff)) { return true; }
         if(TransferPolling::expected($op)){return false;}
         return ($p['renewal_polls']??0)>=\Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT||($p['reconciliation']['polls']??0)>=\Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT;
     }

@@ -6,11 +6,11 @@ namespace Paymenter\Extensions\Servers\Domains\Operations\Authority;
 
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, SealPreflight, WriteGate};
-use Paymenter\Extensions\Servers\Domains\Data\{Action, AdmittedOperation, BalanceRetry, DispatchReadiness, RequestContext};
+use Paymenter\Extensions\Servers\Domains\Data\{Action, AdmittedOperation, DispatchReadiness, RequestContext};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{ContactSetup, ExecutionWindow, FundsWaits, ProfileAuthorityMismatch,
-    ReadDeferred, RuntimeIneligible, RuntimeReason, WriteAcceptance, WriteHeld};
+use Paymenter\Extensions\Servers\Domains\Services\{ContactProfileHold, ContactSetup, ProfileAuthorityMismatch,
+    ReadDeferred, RuntimeIneligible, RuntimeReason, TransferInputs, WriteAcceptance, WriteHeld};
 
 /** Final preflight and just-in-time authority for a reserved acquisition exchange. */
 final readonly class AcquisitionDispatch
@@ -20,31 +20,34 @@ final readonly class AcquisitionDispatch
     {
         return $this->authority->locked((int) $claimed->id, function ($op, $domain, $all, $funding, $server, $account) use ($claimed, $ready, $entry, $preflight, $writer, $wire): ?Operation {
             if (!AcquisitionAttempt::sameClaim($op, $claimed)) { return null; }
-            if (FundsWaits::elapsed($op,$this->clock->now())) {
-                if (AcquisitionRetryProof::unsealed($op)&&($op->attempt['send_state']??null)==='definitely_unsent') {
-                    $this->releasePreSeal($claimed);
-                    $op->reloadAcquisitionAttempt();
-                    $op->update(['state'=>'held','safe_code'=>'registrar_balance_insufficient','lease_expires_at'=>null]);
-                }
-                return null;
-            }
             if ($this->authority->expire($op) || !AcquisitionRetryProof::unsealed($op)) { return null; }
+            $op->setRelation('domain', $domain);
+            $savedContact = ContactProfileHold::savedForRecovery($op, true) !== null;
             try {
                 self::requireSameEvidence($op, $claimed); self::requireNoSendEvidence($op);
                 [$binding, $paid] = $this->authority->validate($op, $domain, $all, $funding, $server, $account);
+                if ($op->registrar_key === 'namesilo' && $op->contactRecheckSince() !== null && !$savedContact) {
+                    throw new WriteHeld(ContactProfileHold::CODE);
+                }
+                if ($savedContact && ($op->funding['claim'] ?? null) !== $paid) {
+                    throw new \DomainException('Contact funding changed.');
+                }
+                $cutoff = null;
+                if ($op->action === 'transfer') {
+                    $now = $this->clock->now();
+                    $cutoff = TransferInputs::deadline($op, $now);
+                    if ($cutoff === null || $cutoff <= $now) { throw new WriteHeld('transfer_setup_review_required'); }
+                }
                 ContactSetup::requireReady($op);
                 $preflight?->requireAtSeal($op, $domain, $ready);
                 $writer?->requireAtSeal($op, $domain, $ready);
                 $wire?->requireReservedCapacity();$now = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'));
                 $ready->requireCurrent($binding, AcquisitionAuthority::query($op, $domain), AcquisitionAuthority::payloadDigest($op), $now);
-                $window=ExecutionWindow::start($op,$windowReason)??throw new \DomainException('Missing execution window.');
-                $windowEnd=$window->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds');
-                if($op->started_at&&$window>$op->started_at&&$windowEnd<$now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')){
-                    throw new WriteHeld($windowReason??'namesilo_account_guard');
-                }
-                $lastSend = min($windowEnd,
+                $window = AcquisitionResult::window($op, true) ?? throw new \DomainException('Missing acquisition window.');
+                if (!$window->fits($now)) { throw new WriteHeld($window->blockedReason($now)); }
+                $lastSend = min($window->end,
                     $entry->setTimezone(new \DateTimeZone('UTC'))->modify('+'.(ExecuteOperation::EXECUTION_SECONDS - ExecuteOperation::FINISH_SECONDS).' seconds'));
-                if ($ready->observedAt < $window || $op->request_fingerprint !== AcquisitionAuthority::digest($op, $domain)
+                if ($ready->observedAt < $window->start || $op->request_fingerprint !== AcquisitionAuthority::digest($op, $domain)
                     || !$op->lease_expires_at || $op->lease_expires_at < $now->modify('+'.(ExecuteOperation::REQUEST_SECONDS + ExecuteOperation::CLEANUP_SECONDS).' seconds')
                     || $lastSend < $now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')
                     || $ready->validUntil < $now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')) {
@@ -52,12 +55,14 @@ final readonly class AcquisitionDispatch
                 }
             } catch (ReadDeferred $error) {throw $error;} catch (\Throwable $error) {
                 $reason=$error instanceof WriteHeld?$error->reason:
-                    ($error instanceof RuntimeIneligible&&$error->reason===RuntimeReason::ProcessingOff&&BalanceRetry::from($op)?->window?'processing':'seal_authority_invalid');
+                    ($error instanceof RuntimeIneligible && $error->reason === RuntimeReason::ProcessingOff
+                        ? 'processing' : 'seal_authority_invalid');
                 $this->releasePreSeal($claimed);
                 $op->reloadAcquisitionAttempt();
                 $op->update(['state' => 'held', 'safe_code' => $reason, 'lease_expires_at' => null]); return null;
             }
-            $this->persistSeal($op, $claimed, $ready, $lastSend, $paid);
+            $until = min($lastSend, $op->lease_expires_at, $ready->validUntil, $wire?->deadline ?? $lastSend, $cutoff ?? $lastSend, $window->effectiveEnd());
+            $this->persistSeal($op, $claimed, $ready, $until, $paid, $window);
             // A retry's backoff paces only this send. Once it may be sent, status checks keep their own schedule.
             if (array_key_exists('balance_retry', $op->policy ?? [])) {
                 DB::table('domains_runtime_operations')->where('operation_id', $op->id)->where('due_at', '>', $now->getTimestamp())->update(['due_at' => $now->getTimestamp()]);
@@ -67,7 +72,7 @@ final readonly class AcquisitionDispatch
     }
 
     private function persistSeal(Operation $op, Operation $claimed, DispatchReadiness $ready, \DateTimeImmutable $until,
-        array $paid): void
+        array $paid, AcquisitionWindow $window): void
     {
         $cost = ['amount' => $ready->cost->amount, 'currency' => $ready->cost->currency];
         $admission = $ready->query->action === Action::Register
@@ -76,7 +81,7 @@ final readonly class AcquisitionDispatch
         $token = $claimed->acquisitionWorker;
         $revision = $op->transition_revision + 1;
         if ($this->attempts->seal($token, new SealTerms($revision, $op->request_fingerprint, $ready->cost, $op->action, $until),
-            ['funding' => $paid, ...$admission]) !== Transition::Applied) {
+            ['funding' => $paid, 'window' => $window->seal($op->action === 'transfer'), ...$admission]) !== Transition::Applied) {
             throw new \DomainException('Acquisition claim changed.');
         }
         $op->acquisitionWorker = $token;
@@ -97,12 +102,19 @@ final readonly class AcquisitionDispatch
     public function withProfileAuthority(Operation $claimed,\Closure $work): mixed
     {
         return $this->authority->locked((int) $claimed->id, function ($op, $domain, $all, $funding, $server, $account) use ($claimed,$work): mixed {
-            [$binding] = $this->authority->validate($op, $domain, $all, $funding, $server, $account);
-            if (!self::sameEvidence($op, $claimed)) { throw new ProfileAuthorityMismatch('Operation evidence changed.'); }
+            [$binding, $paid] = $this->authority->validate($op, $domain, $all, $funding, $server, $account);
+            if (!self::sameEvidence($op, $claimed) || ($op->funding['claim'] ?? null) !== $paid
+                || $op->authority_generation !== $claimed->authority_generation || $op->authority_generation !== $domain->authority_generation
+                || ($claimed->relationLoaded('domain') && $claimed->domain->user_id !== $domain->user_id)) {
+                throw new ProfileAuthorityMismatch('Operation evidence changed.');
+            }
             ContactSetup::requireReady($op);
             if (!AcquisitionAttempt::sameClaim($op, $claimed) || !AcquisitionRetryProof::unsealed($op) || $op->lease_expires_at <= $this->clock->now()
-                || AcquisitionAuthority::payloadDigest($op) !== AcquisitionAuthority::payloadDigest($claimed)) { throw new ProfileAuthorityMismatch('Profile claim unavailable.'); }
-            return $work($binding, (int) $domain->user_id);
+                || $op->request_fingerprint !== AcquisitionAuthority::digest($op, $domain)
+                || AcquisitionAuthority::payloadDigest($op) !== AcquisitionAuthority::payloadDigest($claimed)) {
+                throw new ProfileAuthorityMismatch('Profile claim unavailable.');
+            }
+            return $work($binding, (int) $domain->user_id, $op);
         });
     }
 
@@ -151,7 +163,9 @@ final readonly class AcquisitionDispatch
     /** Independent presence guard: null charge/refund/candidate facts are still uncertainty. */
     public static function requireNoSendEvidence(Operation $op): void
     {
-        if (array_diff(array_keys($op->attempt ?? []), ['claim_key', 'seal', 'send_state', 'capacity_deferrals', 'test_call_refusals', 'dispatch_attempted_at', 'authorized_cost', 'registration_admission', 'transfer_admission'])
+        $attempt = $op->attempt ?? [];
+        if (!AcquisitionRetryProof::settledRefusalHistory($attempt)
+            || array_diff(array_keys($attempt), ['claim_key', 'seal', 'send_state', ...AcquisitionRetryProof::LOCAL_REFUSAL_HISTORY, 'dispatch_attempted_at', 'authorized_cost', 'registration_admission', 'transfer_admission'])
             || array_key_exists('refund', $op->funding ?? []) || array_key_exists('actual', $op->cost ?? [])
             || array_key_exists('execution', $op->cost ?? []) || array_key_exists('dispatch_attempted_at', $op->policy ?? [])) {
             throw new \DomainException('Prior operation evidence blocks dispatch.');

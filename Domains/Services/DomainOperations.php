@@ -7,6 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver, Clo
 use Paymenter\Extensions\Servers\Domains\Data\{BalanceRetry, AccountBinding, AdmittedOperation, Disposition, DriverResult, Money, RejectionBasis, ResultReason, SendState, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionResult, AcquisitionRetryProof, OperationAttempts};
 use Paymenter\Extensions\Servers\Domains\Transfer\Input\TransferPreflight;
 
 /** Dormant internal facade; no installed queue registration, completion or refund policy. */
@@ -20,7 +21,7 @@ final class DomainOperations
     public function __serialize(): array { throw new \LogicException('Dispatch scopes cannot be persisted.'); }
     public function __debugInfo(): array { return []; }
 
-    /** Real bridges in slice20 MUST consume the live descriptor/context exactly once immediately before send. */
+    /** Authorize one worker under the financial locks. The transport spends its physical reservation at cURL. */
     public function consume(AdmittedOperation $operation, RequestContext $context, WriteAcceptance $acceptance, ?WriteFeatures $features = null, ?\Paymenter\Extensions\Servers\Domains\Contracts\RegistrationTransport $transport = null): array
     {
         OperationClaims::outside();
@@ -50,22 +51,40 @@ final class DomainOperations
         $entry = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'));
         OperationClaims::outside();
         $route = Operation::findOrFail($id);
+        $expired = AcquisitionRetryProof::expiredClaim($route, $entry);
+        if (ExecutionWindow::pastTransferCutoff($route, $entry) && ($expired || AcquisitionRetryProof::interruptedHold($route))) {
+            return $this->claims->holdUnclaimed($id, 'transfer_setup_review_required');
+        }
+        if (AcquisitionRetryProof::ordersOffHold($route)) {
+            $this->claims->readmitOrdersOff($id);
+            $route->refresh();
+        }
         if(BalanceRetries::pending($route)){if(!$this->claims->readmitBalance($id)){return $route->fresh();}$route=$route->fresh();}
-        if ($route->action === 'transfer' && !TransferInputs::validCode($route->payload['epp'] ?? null)) { return $route; }
+        if ($route->action === 'transfer' && !TransferInputs::validCode($route->payload['epp'] ?? null)) {
+            return $expired ? $this->claims->holdUnclaimed($id, 'transfer_setup_review_required') : $route;
+        }
+        $recover = AcquisitionRetryProof::localRecovery($route, $entry) || ContactProfileHold::forReadmission($route, $entry) !== null;
         if ($this->writer instanceof RegistrationBridge) { $this->writer->checkComposition($this->preflight); }
         if ($this->writer instanceof WriteGate) {
             try {
                 $this->writer->requireEnabled(\Paymenter\Extensions\Servers\Domains\Data\Action::from($route->action));
                 // Missing/invalid owner setup is not an acquisition attempt or a rate reservation.
-                if ($this->writer instanceof RegistrationBridge && !AcquisitionSetup::ready($route)) { return $route; }
-                if (in_array($route->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) { $this->writer->reserve(); }
+                if ($this->writer instanceof RegistrationBridge && !AcquisitionSetup::ready($route)) {
+                    return $expired ? $this->claims->holdUnclaimed($id, 'claim_authority_invalid') : $route;
+                }
+                if ($recover || in_array($route->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) { $this->writer->reserve(); }
             }
             catch (WriteHeld $held) {
                 if($held->reason==='write_rate_limited'&&!BalanceRetry::from($route)?->window){return $route;}
                 return $this->claims->holdUnclaimed($id,$held->reason);
             }
         }
-        if (EnomTestRegistration::applies($route)||EnomTestTransfer::applies($route)) {
+        $admission = $route;
+        if ($recover && $route->registrar_key === 'enom') {
+            $admission = clone $route;
+            $admission->state = 'queued';
+        }
+        if (EnomTestRegistration::applies($admission)||EnomTestTransfer::applies($admission)) {
             try {
                 $account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$route->server_id)->first();
                 if(!$account) { return $this->claims->holdUnclaimed($id,'write_acceptance_required'); }
@@ -85,7 +104,10 @@ final class DomainOperations
     {
         $route=Operation::findOrFail($id);
         $balanceRetry=BalanceRetry::from($route)?->window!==null;
-        if(!$balanceRetry&&$this->writer instanceof RegistrationBridge&&in_array($route->state,['queued','awaiting_payment','awaiting_code'],true)){
+        $guardBeforeClaim = !$balanceRetry && $this->writer instanceof RegistrationBridge
+            && (in_array($route->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)
+                || AcquisitionRetryProof::localRecovery($route, $this->clock->now()) && !ContactProfileHold::savedForRecovery($route));
+        if($guardBeforeClaim){
             try{$this->writer->guardAccount($this->clock,$entry->modify('+'.(ExecuteOperation::EXECUTION_SECONDS-ExecuteOperation::FINISH_SECONDS).' seconds'));}
             catch(ReadDeferred){return $route->fresh();}
             catch(WriteHeld $held){return $this->claims->holdUnclaimed($id,$held->reason);}
@@ -97,6 +119,9 @@ final class DomainOperations
         try {
             if($testPurchase!==null){$binding->requireMatch($testPurchase);}
             $deadline = $entry->modify('+'.(ExecuteOperation::EXECUTION_SECONDS - ExecuteOperation::FINISH_SECONDS).' seconds');
+            if (!$guardBeforeClaim && !$balanceRetry && $this->writer instanceof RegistrationBridge && $op->contactRecheckSince() !== null) {
+                $this->writer->guardAccount($this->clock, $deadline);
+            }
             $context = new RequestContext($binding, RequestOrigin::Background, $deadline, new RequestBudget($op->action === 'transfer' ? 12 : ExecuteOperation::REQUEST_LIMIT), $this->clock, Runtime::limiter());
             $ready = $this->preflight->inspect($op, $domain, $context);
             if ($this->preflight instanceof TransferPreflight) {
@@ -107,8 +132,17 @@ final class DomainOperations
             if($testPurchase!==null){EnomTestCalls::assertPurchaseCurrent($binding);EnomTestCalls::reservePurchase($binding,$ready->cost);}
             if ($context->budget->remaining() < 1) { throw new \DomainException('No dispatch request budget remains.'); }
             // Each physical call has its own 25-second cap. Sealing must not spend that call's time.
-            $dispatchDeadline = min($deadline, $ready->validUntil);
-            if ($dispatchDeadline < $this->clock->now()->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')) { throw new WriteHeld('pre_send_interrupted'); }
+            $now = $this->clock->now();
+            $window = AcquisitionResult::window($op) ?? throw new \DomainException('Missing acquisition window.');
+            if (!$window->fits($now)) { throw new WriteHeld($window->blockedReason($now)); }
+            $dispatchDeadline = min($deadline, $ready->validUntil, $window->effectiveEnd());
+            if (min($deadline, $ready->validUntil) < $now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')) {
+                throw new WriteHeld('pre_send_interrupted');
+            }
+            if ($op->action === 'transfer') {
+                $cutoff = TransferInputs::deadline($op, $this->clock->now());
+                if (!$cutoff || $cutoff <= $this->clock->now()) { throw new WriteHeld('transfer_setup_review_required'); }
+            }
             $context = new RequestContext($binding, RequestOrigin::Background, $dispatchDeadline, $context->budget, $this->clock, Runtime::limiter());
             return $context->withReservedWire(function()use(&$op,$ready,$context,$binding,&$result,$entry):Operation {
             if($this->writer instanceof RegistrationBridge){$this->writer->reservePurchase($op,$ready);}
@@ -129,11 +163,16 @@ final class DomainOperations
         } catch (LiveReservationLimit) {
             return $this->interrupted($op,$binding,$result,'write_rate_limited');
         } catch (EnomTestCallLimit) {
+            if (ExecutionWindow::pastTransferCutoff($op, $this->clock->now())) { return $this->interrupted($op, $binding, $result); }
             return $this->claims->holdTestCallCap($op);
         } catch (ReadDeferred) {
+            if ($op->acquisitionAttemptFacts()?->sealed()) { return $this->interrupted($op, $binding, $result); }
             return $this->claims->defer($op);
         } catch (WriteHeld $held) {
-            return $this->interrupted($op,$binding,$result,$held->reason,$held->cost);
+            return $this->interrupted($op,$binding,$result,$held->reason,$held->cost,catalogueUnavailable:$held->catalogueUnavailable);
+        } catch (RuntimeIneligible $error) {
+            return $this->interrupted($op, $binding, $result,
+                $error->reason === RuntimeReason::ProcessingOff ? 'processing' : null);
         } catch (\Paymenter\Extensions\Servers\Domains\Data\SendFailure $error) {
             return $this->interrupted($op,$binding,$result,failure:$error);
         } catch (\Throwable) {
@@ -141,12 +180,15 @@ final class DomainOperations
             return $this->interrupted($op,$binding,$result); // Completion never repeats a send.
         }
     }
-    private function interrupted(Operation $op,AccountBinding $binding,?DriverResult $result,?string $reason=null,?Money $cost=null,?\Paymenter\Extensions\Servers\Domains\Data\SendFailure $failure=null): Operation
+    private function interrupted(Operation $op,AccountBinding $binding,?DriverResult $result,?string $reason=null,?Money $cost=null,?\Paymenter\Extensions\Servers\Domains\Data\SendFailure $failure=null, bool $catalogueUnavailable=false): Operation
     {
-        $unsent=$this->writer instanceof RegistrationBridge&&$this->writer->unconsumed((int)$op->id);
+        $unsent = $this->writer instanceof RegistrationBridge && ($this->writer->unconsumed((int) $op->id)
+            || ($op->registrar_key === 'enom' && $result === null && $op->acquisitionWorker !== null
+                && ($attempt = OperationAttempts::attempt($op->acquisitionWorker))?->sealed()
+                && $attempt->grantConsumedAt === null));
         if($unsent){$result=new DriverResult($binding,Disposition::Rejected,
             SendState::DefinitelyUnsent,ResultReason::Unsent,
             rejectionBasis:RejectionBasis::DefinitelyUnsent);}
-        return $this->claims->finish($op,$result,$reason,$cost,locallyUnsent:$unsent,failure:$failure);
+        return $this->claims->finish($op,$result,$reason,$cost,locallyUnsent:$unsent,failure:$failure,catalogueUnavailable:$catalogueUnavailable);
     }
 }

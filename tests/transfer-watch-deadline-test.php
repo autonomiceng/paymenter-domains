@@ -20,7 +20,7 @@ same('succeeded', $settlement['outcome'] ?? null, 'The original attempt retains 
 same(null, $attempt->readToken, 'The final check closed its read claim');
 same(null, $op->fresh()->getRawOriginal('attempt'), 'Settlement leaves no copy on the obligation');
 same($sent,$state->calls,'Final check never sends another transfer');same($start->getTimestamp(),$op->fresh()->started_at->getTimestamp(),'Original deadline unchanged');
-// Restore the envelope format an installed transfer recorded before the attempt tables owned acquisition.
+// An old projection cannot supply a missing purchase seal or schedule.
 $op = $prepare('retained-transfer');
 $started = $op->started_at;
 $old = $op->attempt;
@@ -37,15 +37,11 @@ DB::transaction(function () use ($op, $old, $started, $step, $operationId): void
     DB::table(OperationSchema::ATTEMPTS)->where('step_id', $step->id)->delete();
     DB::table(OperationSchema::STEPS)->where('id', $step->id)->delete();
 });
-$identity = \Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers::identity($op->fresh());
+$raw = $op->fresh()->getRawOriginal('attempt');
 $legacy = $reconcile->run($operationId);
-same('succeeded', $legacy->state, 'A retained transfer completes through its original sealed attempt');
-same($identity, \Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers::identity($legacy), 'Import retains the exact evidence identity');
-$imported = OperationAttempts::sealed($operationId, new StepKey('transfer', 1));
-expect($imported !== null && $imported->grantConsumedAt === null, 'The retained seal was adopted without inferring grant consumption');
-same('succeeded', OperationAttempts::evidence($operationId, $imported->token->attemptId, 'settlement')['outcome'] ?? null,
-    'Read settlement is retained with the imported seal');
-same(null, $legacy->getRawOriginal('attempt'), 'Import leaves one owner for the retained envelope');
+same([$op->state, null, [], $raw], [$legacy->state, TransferPolling::deadline($legacy), $observe->calls, $legacy->getRawOriginal('attempt')],
+    'Missing seal bounds preserve the request for review with no scheduled provider read');
+same(null, OperationAttempts::sealed($operationId, new StepKey('transfer', 1)), 'A status check imports no replacement seal');
 $op=$prepare('final-capacity');$start=$op->started_at;
 HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,8*86400,'namesilo_transfer_v1'));
 $clock->instant=new DateTimeImmutable('@'.TransferPolling::deadline($op));$budget=new AccountReadBudget($clock);

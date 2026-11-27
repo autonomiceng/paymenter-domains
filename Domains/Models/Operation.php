@@ -19,6 +19,8 @@ class Operation extends Model
     public ?Tld $catalogueTld = null;
     /** Exact worker authority, set by the claim or seal transaction and never persisted. */
     public ?AttemptToken $acquisitionWorker = null;
+    /** A fresh shortfall from this worker can continue a balance episode interrupted only by its own claim. */
+    public ?\DateTimeImmutable $fundsRetryAt = null;
     /** @var array{facts: AttemptFacts, action: string, start: ?\DateTimeImmutable}|array{}|null */
     private ?array $acquisitionRow = null;
     private AcquisitionAttempt|\Throwable|null $acquisitionAttempt = null;
@@ -106,6 +108,12 @@ class Operation extends Model
         return $this->decodeEvidence($this->attributes['funding'] ?? null) ?? [];
     }
 
+    /** Operation policy without projected registrar attempt history. */
+    public function operationPolicy(): array
+    {
+        return $this->decodeEvidence($this->attributes['policy'] ?? null) ?? [];
+    }
+
     public function getOriginal($key = null, $default = null)
     {
         if ($this->validatingUpdate && in_array($key, ['attempt', 'funding', 'policy'], true)) {
@@ -131,6 +139,12 @@ class Operation extends Model
         ]);
     }
 
+    /** Step absence loaded by withAcquisitionStep while the holding's writers are serialized. */
+    public function acquisitionStepAbsent(): bool
+    {
+        return $this->noAcquisitionStep;
+    }
+
     private function acquisitionEvidence(string $field, array $row): array
     {
         $attempt = $this->acquisition($row);
@@ -153,6 +167,12 @@ class Operation extends Model
 
     public function acquisitionAttemptFacts(): ?AttemptFacts
     { return $this->acquisitionRow($this->attributes)['facts'] ?? null; }
+
+    public function acquisitionSealWindow(): ?array
+    { return $this->acquisition($this->attributes)?->sealedWindow(); }
+
+    public function contactRecheckSince(): ?\DateTimeImmutable
+    { return $this->acquisition($this->attributes)?->contactRecheckSince(); }
 
     private function acquisition(array $row): ?AcquisitionAttempt
     {

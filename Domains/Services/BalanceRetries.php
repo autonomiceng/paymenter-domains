@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\RegistrarDriver;
 use Paymenter\Extensions\Servers\Domains\Data\{BalanceRetry,DriverResult,Disposition,Money,RequestContext};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionAttempt;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission, AcquisitionAttempt, AcquisitionResult, AcquisitionRetryProof};
 /** Scheduling and the cheap first read. Readmission itself belongs to OperationClaims' ordered financial locks. */
 final class BalanceRetries
 {
@@ -31,7 +31,9 @@ final class BalanceRetries
     }
     public static function legacyHold(Operation $op): bool
     {
-        return $op->state==='held'&&$op->safe_code===self::LEGACY_CODE&&isset($op->attempt['claim_key'])&&($op->policy['balance_retry']['window_at']??null)===null;
+        return $op->state==='held'&&$op->safe_code===self::LEGACY_CODE&&!isset($op->policy['balance_retry']['window_at'])
+            &&($prior=$op->acquisitionAttemptFacts())!==null&&!$prior->sealed()&&AcquisitionRetryProof::releasedForReadmission($op,$prior)
+            &&($op->action!=='register'||!AcquisitionRetryProof::catalogueRetry($op));
     }
     private static function reads(Operation $op): int {return (int)($op->policy['read_retries']??0);}
     public static function candidate(Operation $op): bool
@@ -50,7 +52,6 @@ final class BalanceRetries
         $reads=self::reads($op);$read=in_array($op->safe_code,self::READ_CODES,true)||$reads>0&&$op->safe_code==='write_rate_limited';
         $reads=$read?$reads+1:(in_array($op->safe_code,self::BALANCE_CODES,true)?0:$reads);$stopped=$read&&$reads>=self::READ_LIMIT;
         $policy=[...$op->policy,'balance_retry'=>$retry->record];unset($policy['read_retries']);if($reads>0){$policy['read_retries']=$reads;}
-        if(in_array($op->safe_code,self::BALANCE_CODES,true)&&!isset($policy['funds_wait_at'])){$policy['funds_wait_at']=$now->format(DATE_ATOM);}
         $op->update(['policy'=>$policy,'safe_code'=>$stopped&&$op->safe_code==='write_rate_limited'?'registrar_read_failed':$op->safe_code]);
         DB::table('domains_runtime_operations')->updateOrInsert(['operation_id'=>$op->id],['due_at'=>$now->getTimestamp()+$retry->delay()]);
         if($read&&!$stopped||$retry->cost===null&&$op->safe_code!=='registrar_balance_insufficient'&&!$stopped){return;} // A stored check alone proves no shortfall.
@@ -66,7 +67,9 @@ final class BalanceRetries
     /** Our own rate guard proves nothing was sent, so nobody needs to act: it waits on the same timed retry as a balance hold. Called locked. */
     public static function rateHeld(Operation $op,\DateTimeImmutable $now): void
     {
-        if($op->safe_code!=='write_rate_limited'||!self::supported($op)||!isset($op->attempt['claim_key'])||BalanceRetry::from($op)!==null){return;}
+        if ($op->safe_code !== 'write_rate_limited' || !self::supported($op) || BalanceRetry::from($op) !== null
+            || !AcquisitionRetryProof::capacityRetry($op) || !($window = AcquisitionResult::window($op))
+            || in_array($window->origin, [AcquisitionAdmission::TestCapacity->value, AcquisitionAdmission::StaffRelease->value], true)) { return; }
         // A contact step that sent nothing has no balance question; its bounded retries own it (ContactStepRetries).
         if(ContactProfileHold::unsent($op,retry:true)){return;}
         $op->update(['policy'=>[...$op->policy,'balance_retry'=>BalanceRetry::held($op,$now,null)->admitted($op,$now)->record]]);

@@ -25,9 +25,10 @@ trait CreditsRejectedRequests
                 return;
             }
             if ($op->state !== 'held' || array_key_exists('refund', $op->funding ?? [])) { throw new \DomainException('Only held unpaid-to-provider requests may be closed.'); }
-            RefundProof::requireUnsent($op, $l['domain']); RefundPayment::requireCurrent($op, $l);
+            $refused = RefundProof::requireUnsent($op, $l['domain']); RefundPayment::requireCurrent($op, $l);
             $testUnsent=OperationClaims::testCallRefusalUnsent($op);
-            $claimedUnsent=$op->action==='transfer'&&OperationTerminalProof::unsentClaim($op,$l['domain'],$l['operations']);
+            $claimedUnsent=($refused !== null || $op->action==='transfer')
+                && OperationTerminalProof::unsentClaim($op,$l['domain'],$l['operations']);
             if ($op->action === 'transfer' && (($op->attempt ?? []) !== [] || $op->safe_code === 'transfer_not_registered')&&!$testUnsent&&!$claimedUnsent) {
                 throw new \DomainException('A fresh registry404 disposition is unavailable; retain this hold.');
             }
@@ -40,7 +41,7 @@ trait CreditsRejectedRequests
             if(in_array($op->action,['register','transfer'],true)&&$op->funding_basis==='paid_invoice'){
                 $op->update(['policy'=>[...($op->policy??[]),'held_order_refund'=>true]]);
             }
-            if (in_array($op->action,['register','transfer'],true)&&(($op->attempt??[])===[]||($op->action==='transfer'&&($testUnsent||$claimedUnsent)))) {
+            if (in_array($op->action,['register','transfer'],true)&&(($op->attempt??[])===[]||$claimedUnsent||($op->action==='transfer'&&$testUnsent))) {
                 OperationTerminalProof::recordUnsent($op, $l['domain'], $this->clock->now());
                 if($claimedUnsent&&!OperationTerminalProof::safe($op,$l['domain'])){throw new \DomainException('Terminal identity mismatch.');}
             }

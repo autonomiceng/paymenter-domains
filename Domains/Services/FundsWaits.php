@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Enums\InvoiceTransactionStatus;
 use Illuminate\Support\Facades\{Cache,DB,Schema};
-use Paymenter\Extensions\Servers\Domains\Data\BalanceRetry;
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter, Transition};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
@@ -25,13 +24,32 @@ final class FundsWaits
             return (($deadline=LateRenewalQuote::deadline($op))!==null&&$deadline<=$now)
                 ||(isset($op->policy['funds_wait_until'])&&new \DateTimeImmutable($op->policy['funds_wait_until'])<=$now);
         }
-        if(!in_array($op->action,['register','transfer'],true)){return false;}
-        $retry=BalanceRetry::from($op);
-        // Legacy holds have no first-hold timestamp. The attempt start is a conservative upper bound.
-        $at=isset($op->policy['funds_wait_at'])?new \DateTimeImmutable($op->policy['funds_wait_at']):
-            (in_array($op->safe_code,BalanceRetries::BALANCE_CODES,true)?($retry?new \DateTimeImmutable($retry->record['held_at']):($op->started_at??$op->updated_at)):null);
-        return $at!==null&&$at<=$now->modify('-'.self::WAIT_DAYS.' days');
+        $at = self::started($op);
+        return $at !== null && $at <= $now->modify('-'.self::WAIT_DAYS.' days');
     }
+
+    public static function started(Operation $op): ?\DateTimeImmutable
+    {
+        if (!self::balanceHold($op)) { return null; }
+        // Legacy current holds without a timestamp start no earlier than the retained hold's last update.
+        $at = $op->policy['funds_wait_at'] ?? null;
+        return $at !== null ? new \DateTimeImmutable($at) : $op->updated_at?->toDateTimeImmutable();
+    }
+
+    /** A balance check that needs another read does not establish a shortfall. */
+    public static function balanceHold(Operation $op): bool
+    {
+        return in_array($op->action, ['register', 'transfer'], true)
+            && $op->state === 'held' && $op->safe_code === 'registrar_balance_insufficient';
+    }
+
+    private static function due(Operation $op, \DateTimeImmutable $now): bool
+    {
+        $waiting = $op->action === 'renew' ? in_array($op->state, ['held', 'queued', 'awaiting_payment'], true)
+            : self::balanceHold($op);
+        return $waiting && self::elapsed($op, $now);
+    }
+
     /** Same unsent closure for a collection deadline and a cancelled receipt already in flight. */
     public static function closeRenewal(Operation $op,array $l,\DateTimeImmutable $now,?array $receipts=null): void
     {
@@ -94,21 +112,18 @@ final class FundsWaits
     private static function close(Operation $op,\DateTimeImmutable $now,bool $alerts): void
     {
         try{
-            if(!self::elapsed($op,$now)){return;}
+            if(!self::due($op,$now)){return;}
             $decision=MoneyDecisions::run(new MoneyRequest($op->domain()->firstOrFail(),self::KIND,(int)$op->id),function(array $l)use($op,$now):?bool {
                 $current=$l['operations']->firstWhere('id',$op->id);
-                if(!$current||!in_array($current->state,$current->action==='renew'?['held','queued','awaiting_payment']:['held','queued'],true)||!self::elapsed($current,$now)){return null;}
+                if(!$current||!self::due($current,$now)){return null;}
                 if($current->action==='renew'){
                     self::closeRenewal($current,$l,$now);
                     return true;
                 }
-                // Queued retries still carry their original claim. Normalize only the proof copy, preserving all evidence.
-                $proof=clone $current;$proof->state='held';$proof->safe_code='registrar_balance_insufficient';
-                RefundProof::requireUnsent($proof,$l['domain']);
-                if($proof->funding_basis==='complimentary'){ComplimentaryInvoices::require($proof,$l);}else{RefundPayment::requireCurrent($proof,$l);}
-                if(isset($proof->attempt['claim_key'])&&!OperationTerminalProof::unsentClaim($proof,$l['domain'],$l['operations'])){throw new \DomainException('Funds hold outcome needs review.');}
-                OperationTerminalProof::recordUnsent($proof, $l['domain'], $now);
-                $current->reloadAcquisitionAttempt();
+                RefundProof::requireUnsent($current,$l['domain']);
+                if($current->funding_basis==='complimentary'){ComplimentaryInvoices::require($current,$l);}else{RefundPayment::requireCurrent($current,$l);}
+                if(isset($current->attempt['claim_key'])&&!OperationTerminalProof::unsentClaim($current,$l['domain'],$l['operations'])){throw new \DomainException('Funds hold outcome needs review.');}
+                OperationTerminalProof::recordUnsent($current, $l['domain'], $now);
                 $current->update(['state'=>'rejected','safe_code'=>'registrar_balance_insufficient','completed_at'=>$now]);
                 AcquisitionRetirement::retainClosure($current,$l['transactions']->where('invoice_id',$current->invoice_id),
                     $l['invoices']->firstWhere('id',$current->invoice_id)?->status,$now);
@@ -118,6 +133,7 @@ final class FundsWaits
             });
             if($decision->outcome===MoneyOutcome::Deferred){return;}
             if($decision->error){throw $decision->error;}
+            if($decision->value!==true){return;}
             // A complimentary receipt has no customer payment to return.
             if($op->funding_basis!=='complimentary'){app(Refunds::class)->creditRejected((int)$op->id);}
             if($alerts){DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','funds_wait_review')->whereNull('resolved_at')->update(['resolved_at'=>$now->getTimestamp()]);}

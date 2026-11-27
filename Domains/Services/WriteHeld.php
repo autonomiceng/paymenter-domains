@@ -8,11 +8,19 @@ final class WriteHeld extends \DomainException
     public const FINAL_REFUSALS = ['name_unavailable', 'premium_name', 'order_not_supported'];
     /** Raised by preflight reads and order checks, before the seal, so nothing reached the registrar. */
     public const UNSENT_REFUSALS = [...self::FINAL_REFUSALS, 'registrar_price_missing', 'registrar_price_increased', 'registrar_read_failed', 'registrar_balance_insufficient'];
-    public function __construct(public readonly string $reason, public readonly ?\Paymenter\Extensions\Servers\Domains\Data\Money $cost = null)
+    public function __construct(public readonly string $reason, public readonly ?\Paymenter\Extensions\Servers\Domains\Data\Money $cost = null,
+        public readonly bool $catalogueUnavailable = false)
     {
-        if (!in_array($reason, ['namesilo_account_guard', 'transfer_not_registered', 'write_disabled', 'processing', 'write_acceptance_required', 'write_rate_limited', 'contact_profile_proof_required', 'nameservers_required', 'registry_details_unsupported', 'usd_balance_required','enom_test_transfer_usd_balance_required', 'enom_test_setup_required', ...self::UNSENT_REFUSALS], true)) {
+        if (!in_array($reason, ['namesilo_account_guard', 'transfer_not_registered', 'transfer_setup_review_required', 'pre_send_interrupted',
+            'write_disabled', 'processing', 'write_acceptance_required', 'write_rate_limited', 'contact_profile_proof_required', 'nameservers_required',
+            'registry_details_unsupported', 'usd_balance_required','enom_test_transfer_usd_balance_required', 'enom_test_setup_required', ...self::UNSENT_REFUSALS], true)) {
             throw new \InvalidArgumentException('Invalid write hold.');
         }
         parent::__construct('Registrar write is held.');
+    }
+
+    public static function catalogueGap(): self
+    {
+        return new self('write_acceptance_required', catalogueUnavailable: true);
     }
 }

@@ -97,7 +97,20 @@ $available=false;$result=$lowEngine->execute($low->id);
 same(['held','name_unavailable','absent'],[$result->state,$result->safe_code,$result->attempt['seal']],'Changed availability keeps its own unsent hold');
 same($before,$writer->calls,'Changed availability sends nothing');
 $noAudit=clone $result;$noAudit->policy=array_diff_key($result->policy,['balance_retry'=>true,'staff_actions'=>true]);
-expect(!OperationClaims::balanceRefusalRetryable($noAudit),'An unrelated unsent claim needs its original recovery path');
+expect(OperationClaims::balanceRefusalRetryable($noAudit),'The stored balance admission survives loss of the old audit fields');
+$restoreBalance=nativeFixtureCheckpoint();$balanceQuery=$query;
+try {
+    config(['domains.enom_writes.registration'=>true]);
+    $unrelated=$new(placeholderComFixtureName('unrelated-unsent-claim-placeholder.com'));
+    config(['domains.enom_writes.registration'=>false]);
+    $query=OperationClaims::query($unrelated,$unrelated->domain);
+    $unrelated=$lowEngine->execute($unrelated->id);
+    same(['held','name_unavailable','absent'],[$unrelated->state,$unrelated->safe_code,$unrelated->attempt['seal']],'A first claim can encounter the same refusal');
+    expect(!OperationClaims::balanceRefusalRetryable($unrelated),'An unrelated unsent claim needs its original recovery path');
+} finally {
+    $query=$balanceQuery;
+    $restoreBalance();
+}
 $wrongReason=clone $result;$wrongReason->safe_code='claim_authority_invalid';
 expect(!OperationClaims::balanceRefusalRetryable($wrongReason),'Balance history cannot bypass an authority refusal');
 $available=true;$funds='100.00';$clock->instant=$clock->now()->modify('+600 seconds');
