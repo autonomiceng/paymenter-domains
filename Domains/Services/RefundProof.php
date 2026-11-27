@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Money\Allocations\RenewalFundingLedger;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionAttempt;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, OperationAttempts};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 /** Payment-return proof. Sent finality never grants definitely-unsent proof or retry authority. */
@@ -123,9 +123,17 @@ final class RefundProof
             throw new \DomainException('Sealed attempt is not proven prewire refusal.');
         }
     }
-    /** A renewal's not-processed answer was recorded on its sealed attempt while no positive proof existed, and nothing positive was retained since. */
+    /** Positive proof retained on the sealed attempt voids a not-processed answer for payment returns. */
     public static function answeredAttempt(Operation $op): bool
     {
+        if ($step = AcquisitionAttempt::key($op->action)) {
+            $id = (int) $op->id;
+            $lock = DB::transactionLevel() > 0;
+            $attempt = OperationAttempts::sealed($id, $step, $lock);
+            if (!$attempt) { return true; }
+            $evidence = OperationAttempts::evidenceMany([$id], ['observation'], $lock);
+            return !isset($evidence[$id][$attempt->token->attemptId]['observation']);
+        }
         if ($op->action !== 'renew') { return true; }
         $answer = RenewalAttempt::of($op)->unprocessedAnswer();
         return $answer !== null && $answer === ($op->policy['enom_answer'] ?? null);
