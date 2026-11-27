@@ -2,6 +2,8 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Management\Changes;
+use Illuminate\Contracts\Encryption\DecryptException;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
@@ -56,16 +58,18 @@ final class ManagementProgress
             ->selectRaw('MAX(id)')->groupBy('action');
         // At most three rows per action; pending selection is independent of finished history.
         $candidates=(clone $scope)->where(fn($q)=>$q->whereIn('id',$latest)->orWhereIn('id',$retained)->orWhereIn('id',$pending))->orderByDesc('id')->limit(3*count(self::ACTIONS))->get();
-        Operation::loadManagementAttempts($candidates);
+        $related = self::sequenceOperations($d, $candidates);
+        Operation::loadManagementAttempts([...$candidates, ...$related]);
+        $configuration = null;
         foreach($candidates as $op){
             $key=self::setting($op->action);
             try {
                 if(!isset($op->policy['management']) || isset($op->policy['management']['sequence_parent'])){continue;}
-                $row=self::sequence($op,$d,self::row($op,$d));
+                $row=self::sequence($op, $d, self::row($op, $d), $related, $configuration);
                 $priority=$row['pending']?2:($op->safe_code==='management_retired'?0:1);
             } catch (\DomainException) {
                 $row=['id'=>(int)$op->id,'pending'=>true,'slow'=>false,'tone'=>'warning','text'=>self::UNREADABLE];$priority=2;
-            } catch (\Illuminate\Contracts\Encryption\DecryptException) {
+            } catch (DecryptException) {
                 $row=['id'=>(int)$op->id,'pending'=>false,'slow'=>false,'unreadable'=>true,'text'=>self::UNREADABLE];
                 $priority=2;
             }
@@ -113,11 +117,28 @@ final class ManagementProgress
         return $row;
     }
 
+    /** Load the visible requests' children and prerequisites together. */
+    private static function sequenceOperations(Domain $domain, Collection $candidates): Collection
+    {
+        $keys = [];
+        foreach ($candidates as $candidate) {
+            try { $plan = $candidate->policy['management'] ?? []; }
+            catch (DecryptException) { continue; } // The row projection reports its unreadable policy.
+            if (isset($plan['sequence_parent'])) { continue; }
+            $steps = $plan['sequence']['steps'] ?? [];
+            if (is_array($steps) && count($steps) <= 50) {
+                array_push($keys, ...array_filter(array_column($steps, 'key'), 'is_string'));
+            }
+            if (is_string($plan['prerequisite']['key'] ?? null)) { $keys[] = $plan['prerequisite']['key']; }
+        }
+        return $keys ? $domain->operations()->whereIn('operation_key', array_unique($keys))->get()->keyBy('operation_key') : collect();
+    }
+
     /** Retained sequence facts only: an unsent parent must not hide its prerequisite's outcome. */
-    private static function sequence(Operation $op, Domain $d, array $row): array
+    private static function sequence(Operation $op, Domain $d, array $row, Collection $related, ?string &$configuration): array
     {
         if (isset($op->policy['management']['sequence']) && !isset($op->attempt['management_terminal'])) {
-            $done=0;$members=ManagementSequence::members($op,ManagementSequence::retained($op,$d));$blocked=null;
+            $done=0;$members=ManagementSequence::members($op, $related);$blocked=null;
             foreach ($members as $child) {
                 if ($child->state==='succeeded' && ManagementEvidence::resolved($child,$d)) { $done++; }
                 elseif ($blocked===null) { $blocked=$child; }
@@ -128,7 +149,7 @@ final class ManagementProgress
             $prefix=$request.$done.' of '.$total.($total===1?' change':' changes').' verified. ';
             // A later settings change cannot finish this request, but a fresh save still replaces it when the rest was never sent.
             if ((int)$d->service->user_id!==(int)$d->user_id
-                || $op->policy['management']['sequence']['configuration']!==ManagementSequence::currentConfiguration($d) && !ManagementSequence::unsent($op,$members)) {
+                || $op->policy['management']['sequence']['configuration']!==($configuration ??= ManagementSequence::currentConfiguration($d)) && !ManagementSequence::unsent($op,$members)) {
                 return [...$row,'text'=>$prefix.'The account or ownership changed. Contact support to finish the remaining changes.','tone'=>'warning'];
             }
             if ($blocked?->state==='queued' && $row['slow']) {
@@ -143,9 +164,10 @@ final class ManagementProgress
         }
         $key=$op->policy['management']['prerequisite']['key']??null;
         if ($op->action!=='contacts' || !is_string($key) || isset($op->attempt['management_terminal'])) { return $row; }
-        $step=$d->operations()->where('operation_key',$key)->where('action','contact_profile')
-            ->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->first();
-        if (!$step || ($step->policy['management']['sequence_parent']??null)!==$op->operation_key) { return $row; }
+        $step = $related->get($key);
+        if (!$step || $step->action !== 'contact_profile' || $step->authority_generation !== $d->authority_generation
+            || $step->account_fingerprint !== $d->account_fingerprint
+            || ($step->policy['management']['sequence_parent'] ?? null) !== $op->operation_key) { return $row; }
         $verified=$step->state==='succeeded' && ManagementEvidence::resolved($step,$d);
         if ($verified && $op->state==='succeeded' && ManagementEvidence::resolved($op,$d)) {
             return [...$row,'text'=>'Contact details verified.'];

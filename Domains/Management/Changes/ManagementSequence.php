@@ -122,9 +122,10 @@ final class ManagementSequence
     }
     public static function currentConfiguration(\Paymenter\Extensions\Servers\Domains\Models\Domain $d): string
     {
-        return self::configuration(['domain'=>$d,'server'=>\App\Models\Server::findOrFail($d->server_id),
+        $server = \App\Models\Server::findOrFail($d->server_id);
+        return self::configuration(['domain'=>$d,'server'=>$server,
             'account'=>\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$d->server_id)->sole(),
-            'settings'=>\App\Models\Server::findOrFail($d->server_id)->settings()->orderBy('id')->get()]);
+            'settings'=>$server->settings()->orderBy('id')->get()]);
     }
     private static function createPlan(array $data,array $plan): Operation
     {
