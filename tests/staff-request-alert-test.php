@@ -12,8 +12,8 @@ use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 staffPanel();staffAlertFixture();
 $viewer=staffUser([Staff::VIEW]);$blind=staffUser(['admin.domains.dns.view']);
-$notices=static fn($user,string $title)=>NativeNotification::where('user_id',$user->id)->where('title',$title)->get()->map(static fn($row)=>[$row->body,$row->url])->all();
 $link=static fn($op)=>route('filament.admin.resources.registrar-requests.view',['record'=>$op->id]);
+$notices=static fn($user,string $title,$op)=>NativeNotification::where('user_id',$user->id)->where('title',$title)->where('url',$link($op))->get()->map(static fn($row)=>[$row->body,$row->url])->all();
 $noRequestNotice=static function($op,string $case)use($viewer,$link):void {
     same([],NativeNotification::where('user_id',$viewer->id)->where('url',$link($op))
         ->whereIn('title',['Registrar request needs a check','Registrar request failed'])->pluck('title')->all(),$case.' sends no request-specific staff notice');
@@ -25,6 +25,15 @@ $op=$submit($d,$driver,'lock',['locked'=>false]);
 same('uncertain',$management->run($op->id,$driver)->state,'The lost response leaves the send uncertain');
 same([],\Paymenter\Extensions\Servers\Domains\Services\ManagementReadRecovery::latest($op->fresh()),'No completed registrar read exists yet');
 $noRequestNotice($op,'Uncertain send before a registrar read');
+$state->apply = false;
+$state->locked = true;
+$clock->instant = $clock->now()->modify('+16 minutes');
+same('uncertain', $management->reconcile($op->id, $driver)->state, 'The first readback cannot confirm the lost reply');
+$lostReply = $op;
+$lostReplyNotices = static fn () => NativeNotification::where('user_id', $viewer->id)->where('url', $link($lostReply))->count();
+same(1, $lostReplyNotices(), 'The first completed inconclusive readback notifies staff');
+same('uncertain', $management->reconcile($op->id, $driver)->state, 'A subsequent readback is still inconclusive');
+same(1, $lostReplyNotices(), 'The same request still has just one notice');
 // A failed preparation is held without sending and retries by itself.
 [$d,$driver]=$holding(placeholderComFixtureName('request-alert-retry-placeholder.com'));
 $state->fault='GetDomainInfo';$op=$submit($d,$driver,'lock',['locked'=>false]);
@@ -40,14 +49,14 @@ $noRequestNotice($plain,'Changed acquisition without management policy');
 [$d,$driver]=$holding(placeholderComFixtureName('request-alert-unknown-placeholder.com'));
 $state->fault='SetRegLock';$op=$submit($d,$driver,'lock',['locked'=>false]);
 same('uncertain',$management->run($op->id,$driver)->state,'Fixture: the lock change is unconfirmed after its read');
-same([['Transfer lock for '.$d->domain.' is under review.',$link($op)]],$notices($viewer,'Registrar request needs a check'),'Staff get one notice that links to the request');
-same([],$notices($blind,'Registrar request needs a check'),'Staff who cannot open requests get no notice');
+same([['Transfer lock for '.$d->domain.' is under review.',$link($op)]],$notices($viewer,'Registrar request needs a check',$op),'Staff get one notice that links to the request');
+same([],$notices($blind,'Registrar request needs a check',$op),'Staff who cannot open requests get no notice');
 $state->fault='';$clock->instant=$clock->now()->modify('+16 minutes');Cache::flush();
 same('uncertain',$management->reconcile($op->id,$driver)->state,'Fixture: a later read still cannot confirm it');
-same(1,count($notices($viewer,'Registrar request needs a check')),'A later read of the same request does not notify again');
+same(1,count($notices($viewer,'Registrar request needs a check',$op)),'A later read of the same request does not notify again');
 // A registrar refusal: Failed.
 [$d2,$driver]=$holding(placeholderComFixtureName('request-alert-refused-placeholder.com'));
 $state->fault='refused';$refused=$submit($d2,$driver,'lock',['locked'=>false]);
 same('rejected',$management->run($refused->id,$driver)->state,'Fixture: the registrar refuses the change');
-same([['Transfer lock for '.$d2->domain.' failed.',$link($refused)]],$notices($viewer,'Registrar request failed'),'A failed request notifies once with its link');
+same([['Transfer lock for '.$d2->domain.' failed.',$link($refused)]],$notices($viewer,'Registrar request failed',$refused),'A failed request notifies once with its link');
 $nativeSuccessful=true;echo "Staff request alert passed.\n";

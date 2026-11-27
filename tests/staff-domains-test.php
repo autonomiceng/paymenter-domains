@@ -300,8 +300,10 @@ $excluded=[
         'expired','expiry_unconfirmed','state_unconfirmed'], // Adoption Review::LABELS presenter.
     'PublicRegistryReader.php'=>['no_expiry','facts','endpoint_failed','deferred'], // Result reason, distinct safe_code.
     'DnsResolverSettings.php'=>['dns_rcode_'], // DNS response prefix, formatted locally.
-    'DomainManagement.php'=>['owner_request','staff_correction','nameservers','lock','auto_renew_off','privacy','contacts','dns','ds','glue',
-        'ds_add','glue_add','glue_update','privacy_enable','privacy_disable','privacy_purchase'], // Audit reasons and capability names.
+    'DomainManagement.php'=>['nameservers','lock','auto_renew_off','privacy','contacts','dns','ds','glue',
+        'ds_add','glue_add','glue_update','privacy_enable','privacy_disable','privacy_purchase'], // Capability names.
+    'ManagementRequests.php'=>['owner_request','staff_correction'], // Audit reasons.
+    'ManagementAuthority.php'=>['legacy','ordinary','recovery'], // Read reservation modes.
     'ManagementProgress.php'=>['contacts','dns','privacy','ds','glue','privacy_enable','privacy_disable','privacy_purchase','ds_add','glue_add','glue_update','under_review','failed','disposed'], // Grouped settings and status keys.
 
     'NativeServiceRefusal.php'=>['identity','price'], // Structured log fields.

@@ -14,9 +14,20 @@ final class RequestAlerts
     private const WORDS=['under_review'=>['Registrar request needs a check',' is under review.'],'failed'=>['Registrar request failed',' failed.']];
     public static function changed(Operation $op): void
     {
+        if ($op->wasChanged(['state', 'attempt'])) { self::notify($op); }
+    }
+
+    /** A committed ledger readback can leave the operation state unchanged. */
+    public static function readback(Operation $op): void
+    {
+        if (!$op->wasChanged(['state', 'attempt'])) { self::notify($op); }
+    }
+
+    private static function notify(Operation $op): void
+    {
         try{
             // Staff who mark a change as failed already know; History says who and why.
-            if(!$op->wasChanged(['state','attempt'])||!isset($op->policy['management'])||ManagementEvidence::staffFailed($op)){return;}
+            if(!isset($op->policy['management'])||ManagementEvidence::staffFailed($op)){return;}
             $status=RequestStatus::key(RequestStatus::readsAs($op->state,$op->safe_code));
             if(!isset(self::WORDS[$status])){return;}
             // Automatic checks and retries are still working on these, so staff have nothing to do yet.

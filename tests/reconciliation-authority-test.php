@@ -2,9 +2,15 @@
 // Enom 444f31c uncertain disposition/automatic-refresh; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
+require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
+require_once __DIR__.'/Support/staff-panel.php';
 $fixtureReadyRegistration = true;
 require __DIR__.'/Support/reconciliation-fixture.php';
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\{Auth, Crypt, DB};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts;
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationAttempts;
+use Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck;
 same(5,Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT,'Shared engine poll limit stays five');
 foreach (['generation', 'cancelled', 'reversal', 'changed', 'paused'] as $race) {
     [$op, $binding] = $prepare(placeholderComFixtureName('authority-'.$race.'-placeholder.com'));
@@ -48,4 +54,28 @@ try { $reconcile->run($op->id); expect(false, 'Persistence failure propagated');
 same('pending', App\Models\Service::find($op->service_id)->status, 'Native activation rolled back with operation/domain decision');
 same('pending', $op->fresh()->state, 'Operation remains unresolved after failed atomic completion');
 same(null, $op->fresh()->domain->provider_expires_at, 'No partial anchor after persistence failure');
+
+// A retained request with an invalid claim key cannot be adopted, even when its registrar and funding still match.
+[$op] = $prepare(placeholderComFixtureName('legacy-adoption-refused-placeholder.com'), 'captured');
+$legacy = [...$op->attempt, 'claim_key' => 'invalid'];
+restoreAcquisitionFixture([...$op->getRawOriginal(), 'attempt' => Crypt::encryptString(json_encode($legacy, JSON_THROW_ON_ERROR)),
+    'funding' => Crypt::encryptString(json_encode($op->funding, JSON_THROW_ON_ERROR)),
+    'started_at' => OperationAttempts::at($op->started_at), 'request_fingerprint' => $op->request_fingerprint]);
+$clock->instant = $clock->now()->modify('+1 second');
+$result = $reconcile->run($op->id);
+same([], $observation->calls, 'A refused adoption grants no registrar read');
+same(['uncertain', true, 'attempt_adoption_refused'], [$result->state, $result->policy['reconciliation']['staff_alert'],
+    $result->policy['reconciliation']['reason']], 'Staff can see why the original attempt could not be checked');
+$check = RegistrarCheck::status($result);
+app()->instance(Clock::class, $clock);
+Auth::setUser(staffUser(['admin.domains.view']));
+$notice = RequestFacts::notice($result);
+same(['unavailable', 'attempt_adoption_refused', false], [$check['outcome'] ?? null, $check['reason'] ?? null,
+    $check['read_attempted'] ?? null], 'The result distinguishes a local refusal from a registrar check');
+expect((bool) preg_match('/\b(?:saved|local|original)\b.*\battempt\b/i', implode(' ', RegistrarCheck::words($check))),
+    'The status result explains the refusal of the saved attempt');
+expect((bool) preg_match('/\b(?:saved|local|original)\b.*\battempt\b/i', ($notice['title'] ?? '').' '.($notice['body'] ?? '')),
+    'The staff notice explains the local refusal');
+same([null, null], [$notice['action'] ?? null, $notice['primary'] ?? null], 'The local refusal offers no registrar next step');
+
 echo "Reconciliation authority, cancellation, payment reversal and bounded alerts passed\n"; $nativeSuccessful = true;

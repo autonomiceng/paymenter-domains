@@ -12,7 +12,7 @@ final readonly class AttemptFacts
         public ?\DateTimeImmutable $claimUntil, public ?\DateTimeImmutable $sealedAt, public ?int $operationRevision,
         public ?string $requestDigest, public SendState $sendState, public ?\DateTimeImmutable $grantConsumedAt,
         public ?string $authorizedAmount, public ?string $authorizedCurrency, public ?string $mode,
-        public ?string $readToken, public ?\DateTimeImmutable $readUntil, public bool $readUnresolved) {}
+        public ?string $readToken, public ?\DateTimeImmutable $readUntil, public bool $readUnresolved, public ?\DateTimeImmutable $claimedAt) {}
 
     public function sealed(): bool { return $this->sealedAt !== null; }
 

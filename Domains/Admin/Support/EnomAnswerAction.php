@@ -19,7 +19,7 @@ final class EnomAnswerAction
     public static function button(Operation $op): string {return $op->action==='transfer'?self::label($op):'Record answer';}
     /** Unreadable saved attempt data never offers Not processed, nor does a renewal a check already saw charged or extended. */
     private static function accepted(Operation $op,?RenewalAttempt $renewal): bool
-    {return !Answers::readable($op)||Answers::capturedReference($op)!==null
+    {return !Answers::readable($op)||Answers::capturedReference($op)!==null||Answers::acquisitionProof($op)
         ||($op->action==='renew'?($renewal??RenewalAttempt::of($op))->acceptance()!==null:isset($op->attempt['registration'])||isset($op->attempt['renewal']))&&!Answers::stoppedOrder($op)
         ||$op->action==='renew'&&Answers::stoppedOrder($op)&&Answers::renewalProof($op,$op->domain()->firstOrFail());}
     /** One request's answer. The stamp is the settings review the page opened on. Step 1 is what support said, step 2 the ticket.

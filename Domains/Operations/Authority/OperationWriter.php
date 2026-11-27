@@ -3,8 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Operations\Authority;
 
-use Illuminate\Database\UniqueConstraintViolationException;
-use Illuminate\Support\Facades\{Crypt, DB};
+use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\SendState;
 
@@ -15,6 +14,8 @@ use Paymenter\Extensions\Servers\Domains\Data\SendState;
  */
 final readonly class OperationWriter
 {
+    use WritesOperationEvidence, WritesManagementEvidence;
+
     public function __construct(private Clock $clock) {}
 
     /** A new pre-seal claim. A live claim is busy; a sealed attempt keeps the step, so no second claim exists. */
@@ -179,7 +180,7 @@ final readonly class OperationWriter
         $outcome = $answer['outcome'];
         if (!$facts?->current || !$facts->sealed() || $facts->reading($this->clock->now())
             || ($outcome === 'not_processed' && (($facts->readToken !== null && $facts->readUntil === null)
-                || $this->hasSettlementEvidence($token)))) { return Transition::Stale; }
+                || OperationAttempts::hasAcquisitionSettlementEvidence($token, lock: true)))) { return Transition::Stale; }
         $kind = $outcome === 'accepted' ? 'answer' : 'settlement';
         if (!$this->append($token->operationId, $token->attemptId, $kind, 'staff_answer', $outcome, ['answer' => $answer], $kind)) {
             return Transition::Stale;
@@ -300,16 +301,9 @@ final readonly class OperationWriter
     {
         self::requireTransaction(); $a = $read->attempt;
         if (!$this->readCurrent($read)) { return Transition::Stale; }
-        if ($this->hasSettlementEvidence($a)) { return Transition::Stale; }
+        if (OperationAttempts::hasAcquisitionSettlementEvidence($a, lock: true)) { return Transition::Stale; }
         return $this->append($a->operationId, $a->attemptId, 'answer', 'staff_answer', 'not_processed', $answer, 'settlement')
             ? Transition::Applied : Transition::Stale;
-    }
-
-    /** A negative answer must see any retained proof, even if its payload is unreadable. */
-    private function hasSettlementEvidence(AttemptToken $token): bool
-    {
-        return DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $token->operationId, 'attempt_id' => $token->attemptId])
-            ->whereIn('kind', ['observation', 'held', 'settlement', 'answer'])->lockForUpdate()->first(['id']) !== null;
     }
 
     /** Operation-level local terminal proof, such as a never-sent unpaid closure. Recorded once. */
@@ -332,33 +326,4 @@ final readonly class OperationWriter
     private function bump(int $stepId): void
     { DB::table(OperationSchema::STEPS)->where('id', $stepId)->update(['revision' => DB::raw('revision + 1')]); }
 
-    /**
-     * One row per authority identity; false when that identity already has evidence. The plain read can miss a row
-     * committed after the caller's snapshot, so the unique authority key decides.
-     */
-    private function append(int $operationId, ?int $attemptId, string $kind, string $source, string $outcome, array $evidence,
-        string $identity, ?\DateTimeImmutable $observedAt = null): bool
-    {
-        $key = hash('sha256', implode('|', [$operationId, $attemptId ?? '-', $identity]));
-        if (DB::table(OperationSchema::EVIDENCE)->where('authority_key', $key)->exists()) { return false; }
-        // json_decode counts one level more than json_encode, so this is the deepest evidence the reader accepts.
-        $encoded = json_encode($evidence, JSON_THROW_ON_ERROR, OperationAttempts::EVIDENCE_DEPTH - 1);
-        $now = $this->clock->now();
-        try {
-            DB::table(OperationSchema::EVIDENCE)->insert(['operation_id' => $operationId, 'attempt_id' => $attemptId, 'source' => $source,
-                'kind' => $kind, 'outcome' => $outcome, 'observed_at' => $observedAt ? OperationAttempts::at($observedAt) : null,
-                'recorded_at' => OperationAttempts::at($now), 'authority_key' => $key,
-                'evidence' => Crypt::encryptString($encoded)]);
-        } catch (UniqueConstraintViolationException $e) {
-            // The driver message names the violated key; the statement text always names the column.
-            if (!str_contains((string) ($e->errorInfo[2] ?? ''), 'authority_key')) { throw $e; }
-            return false;
-        }
-        return true;
-    }
-
-    private static function requireTransaction(): void
-    {
-        if (DB::transactionLevel() < 1) { throw new \LogicException('Operation writes require the caller\'s locked transaction.'); }
-    }
 }

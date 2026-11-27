@@ -10,6 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainEditActions,DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationSchema, OperationWriter, Transition};
 use Paymenter\Extensions\Servers\Domains\Presentation\State;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainManagement,DomainObservation,ObservationSchema,OwnedDomains,OwnerPorts};
 use Paymenter\Extensions\Servers\Domains\Services\{StaffOperationReview,StaffOperations};
@@ -53,12 +54,20 @@ try {
     expect(!isset(DomainEditActions::for($d->fresh())['rows']['DNS records']),'A waiting SRV change holds DNS and SRV edits');
 } finally { DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'succeeded']); }
 // A stopped SRV change reads as failed, never as done.
-$sealed=DB::table('domains_operations')->where('id',$op->id)->value('attempt');
-DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'rejected','attempt'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode([...$op->fresh()->attempt,'management_terminal'=>['actor_id'=>$actor->id]]))]);
+DB::transaction(static function () use ($op, $actor, $clock): void {
+    $locked = Operation::whereKey($op->id)->lockForUpdate()->firstOrFail();
+    $at = $clock->now();
+    same(Transition::Applied, OperationWriter::at($at)->recordTerminal((int) $locked->id, 'management_retired',
+        ['approval'=>['actor_id'=>(int) $actor->id, 'at'=>$at->format(DATE_ATOM)]]), 'Fixture records a stopped SRV disposition');
+    DB::table('domains_operations')->where('id', $locked->id)->update(['state'=>'rejected']);
+});
 try {
     $srvRow=$row($view()->html(),'SRV records');
     expect(str_contains($srvRow,State::Failed->label())&&!str_contains($srvRow,State::Completed->label()),'A stopped SRV change reads Failed, not Completed: '.$srvRow);
-} finally { DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'succeeded','attempt'=>$sealed]); }
+} finally {
+    DB::table(OperationSchema::EVIDENCE)->where('operation_id', $op->id)->where('kind', 'terminal')->delete();
+    DB::table('domains_operations')->where('id', $op->id)->update(['state'=>'succeeded']);
+}
 same(['Edit','Edit SRV'],array_map(fn($action)=>$action->getLabel(),DomainEditActions::for($d->fresh())['rows']['DNS records']),'Both record edits return after the change finishes');
 
 echo "Staff native DNS and SRV record edits passed.\n";$nativeSuccessful=true;

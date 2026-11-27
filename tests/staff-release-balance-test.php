@@ -403,8 +403,8 @@ same($retry,$legacy->policy['balance_retry'],'Closing retains immutable retry hi
 same((float)$beforeCredit+(float)$legacy->amount,(float)$credit(),'Pre-claim cancellation credits the paid order');
 $refunds->creditRejected((int)$legacy->id);same((float)$beforeCredit+(float)$legacy->amount,(float)$credit(),'Pre-claim credit is idempotent');
 $lowEngine->execute((int)$legacy->id);same($beforeSend,$writer->calls,'Closed retry cannot send');
-$foreign=clone $legacy;$attempt=$foreign->attempt;$attempt['terminal']['generation']++;$foreign->attempt=$attempt;
-commerceReject(fn()=>$foreign->save());
+$foreign=clone $legacy;$attempt=$foreign->attempt;$attempt['terminal']['generation']++;
+commerceReject(fn()=>$foreign->update(['attempt'=>$attempt]));
 $dirty=clone $legacy;$dirty->cost=[...$dirty->cost,'actual'=>null];commerceReject(fn()=>$dirty->save());
 echo "Automatic balance recovery, manual acceptance recovery and shared reconciliation windows passed.\n";
 $nativeSuccessful=true;

@@ -414,6 +414,12 @@ final class RequestFacts
     {
         $facts ??= self::for($op);
         if ($facts['unreadable']??false) { return ['title'=>DomainFacts::UNREADABLE,'tone'=>'danger']; }
+        $savedCheck = $op->policy['status_check'] ?? [];
+        if ((($savedCheck['reason'] ?? null) === RegistrarCheck::ADOPTION_REFUSED
+                || (($savedCheck['outcome'] ?? null) === 'awaiting_answer' && in_array($op->action, ['register', 'transfer'], true)))
+            && (($check = RegistrarCheck::status($op))['reason'] ?? null) === RegistrarCheck::ADOPTION_REFUSED) {
+            return ['title' => RegistrarCheck::words($check)['title'].'.', 'tone' => 'warning'];
+        }
         $domain=$op->domain;
         if($op->state==='uncertain'&&\Paymenter\Extensions\Servers\Domains\Services\CapturedChargeReview::hasProof($op)){
             $approve=OperationActions::relevant('approve_charge',$op);

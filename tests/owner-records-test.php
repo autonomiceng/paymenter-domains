@@ -64,7 +64,7 @@ foreach($cases as$action=>$payload){
 // Preserve proven SRV HostIDs server-side through an edited browser row, never in HTML.
 $known=$d->operations()->where('action','srv')->sole();$attempt=$known->attempt;$attempt['management_reads'][0]['facts']['records'][0]['host_id']=31;
 // Fixture-only encrypted evidence augmentation through SQL, avoiding any production evidence mutation path.
-$known->attempt=$attempt;Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$known->id)->update(['attempt'=>$known->getAttributes()['attempt']]);
+fixtureManagementReadback($known, $attempt['management_reads'][0]);
 $html=$page();expect(str_contains($html,'Register your own nameservers, like ns1.example.com, with their IP addresses.'),'Glue records intro is one sentence');expect(!str_contains($html,'host_id')&&!str_contains($html,'HostID'),'Provider IDs stay out of HTML');
 $form=storefrontDom($html);$formPath='//form[contains(@action,"/manage/srv")]';
 $renderDigest=$form->query($formPath.'//input[@name="preimage_digest"]')->item(0)->getAttribute('value');
@@ -73,7 +73,7 @@ $record['_source']=$form->query($formPath.'//input[@name="records[0][_source]"]'
 // A confirmed readback arriving after render inserts a different identity before source 0.
 $earlier=[...$attempt['management_reads'][0]['facts']['records'][0],'service'=>'aaa','host_id'=>19];
 $attempt['management_reads'][0]['facts']['records'][]=$earlier;
-$known->attempt=$attempt;Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$known->id)->update(['attempt'=>$known->getAttributes()['attempt']]);
+fixtureManagementReadback($known, $attempt['management_reads'][0]);
 $state->srv[]=$earlier;$current=$owners->present($d->fresh())->management['srv'];
 same(['aaa','sip'],array_column($current['records'],'service'),'New confirmed record shifts displayed source indexes');
 same(ManagementPayload::digest($attempt['management_reads'][0]['facts']['records'],'srv'),$current['digest'],'Form and identity lookup digest the same canonical row set');

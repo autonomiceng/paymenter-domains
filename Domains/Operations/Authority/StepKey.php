@@ -11,5 +11,7 @@ final readonly class StepKey
         if (!preg_match('/^[a-z_]{1,32}$/D', $type) || $sequence < 1) { throw new \InvalidArgumentException('Invalid operation step.'); }
     }
 
+    public static function management(): self { return new self('management', 1); }
+
     public static function renew(): self { return new self('renew', 1); }
 }

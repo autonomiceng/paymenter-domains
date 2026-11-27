@@ -2,9 +2,10 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/owner-records.php';
-use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Services\ObservationSchema;
 use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationSchema};
 ObservationSchema::install();
 [$d,$driver]=$holding(placeholderComFixtureName('dns-summary-placeholder.com'));
 storefrontViews();
@@ -54,7 +55,10 @@ $next=[$wanted[0],['name'=>'www','type'=>'A','address'=>'8.8.4.4','mx_pref'=>10]
 $op=$submit($d,$driver,'dns',['records'=>$next,'preimage_digest'=>\Paymenter\Extensions\Servers\Domains\Services\ManagementPayload::digest([$wanted[0]])]);
 $newer=[['name'=>'@','type'=>'A','address'=>'1.1.1.1','mx_pref'=>10]];
 $state->afterWrite=static function()use(&$op,$d,$driver,$clock,$newer):void {
-    $op->fresh()->update(['lease_expires_at'=>$clock->now()->modify('-1 second')]);
+    $attempt = $op->fresh()->managementAttempt()->facts;
+    $updated = DB::table(OperationSchema::ATTEMPTS)->where('id', $attempt->token->attemptId)
+        ->update(['claim_until'=>OperationAttempts::at($clock->now()->modify('-1 second'))]);
+    same(1, $updated, 'Race fixture expires the write lease on the sealed attempt');
     ObservationRecords::save($d->fresh(),['dns'=>['state'=>'complete','records'=>$newer],'srv'=>['state'=>'complete','records'=>[]],
         'ds'=>['state'=>'complete','records'=>[]],'glue'=>['state'=>'partial','records'=>[]]],$clock->now(),$driver->observationCapabilities());
 };

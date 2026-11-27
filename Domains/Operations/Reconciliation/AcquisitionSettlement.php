@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Operations\Reconciliation;
 
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter, Transition};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionChargeMatch, OperationWriter, Transition};
 use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryInvoices, HoldingObservationWork, InvoiceFunding,
     ObservationProjection, RegistrationDns, RenewalStop, WriteMoney};
 
@@ -26,10 +26,11 @@ final class AcquisitionSettlement
         $policy['reconciliation']['observed_corrections'] = $proof['observed_corrections']; $policy['reconciliation']['staff_alert'] = $difference || $staffCorrections || $below;
         $policy['reconciliation']['reason'] = $below ? 'below_cost' : ($difference ? 'actual_charge_changed' : ($corrections ? 'correction_required' : 'confirmed'));
         $op->update(['state' => 'succeeded', 'safe_code' => $corrections ? 'registration_correction_required' : ($difference ? 'actual_charge_changed' : null),
-            ...($read->token ? [] : ['attempt' => [...$op->attempt, 'reconciliation' => $proof]]), 'cost' => [...($op->cost ?? []), 'actual' => $cost],
+            'cost' => [...($op->cost ?? []), 'actual' => $cost],
             'policy' => $policy, 'provider_order_id' => $proof['order_reference'], 'confirmed_expires_at' => $proof['expiry'],
             'completed_at' => $now, 'lease_expires_at' => null]);
-        if ($read->token && $writer->settle($read->token, 'succeeded', ['reconciliation' => $proof]) !== Transition::Applied) {
+        if ($writer->settle($read->token, 'succeeded', ['reconciliation'=>$proof, 'charge_match'=>AcquisitionChargeMatch::Exact->value])
+            !== Transition::Applied) {
             throw new \DomainException('Acquisition settlement authority changed.');
         }
         $domain->update(['status' => 'active', 'provider_expires_at' => $proof['expiry'], 'provider_order_id' => $proof['order_reference'],

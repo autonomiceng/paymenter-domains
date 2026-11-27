@@ -1,6 +1,7 @@
 <?php
 // Synthetic Enom 444f31c management fixtures; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/management-attempts.php';
 require __DIR__.'/reconciliation-fixture.php';
 require_once __DIR__.'/reserved-fixtures.php';
 use Illuminate\Support\Facades\{Cache,DB,Queue};

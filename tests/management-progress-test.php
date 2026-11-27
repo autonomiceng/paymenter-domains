@@ -108,8 +108,13 @@ app()->terminate();same('succeeded',$d->operations()->where('action','lock')->or
 $damaged=$d->operations()->where('action','lock')->orderByDesc('id')->first();
 Cache::flush();$nameservers=$submit($d,$driver,'nameservers',['nameservers'=>['ns3.example.net','ns4.example.net']]);
 foreach (['attempt','policy'] as $field) {
-    $raw=$damaged->getRawOriginal($field);$before=$state->calls;
-    DB::table('domains_operations')->where('id',$damaged->id)->update([$field=>'unreadable synthetic ciphertext']);
+    $before=$state->calls;
+    $corrupt = $field === 'attempt'
+        ? [DB::table('domains_operation_evidence')->where(['operation_id'=>$damaged->id, 'kind'=>'management_readback']), 'evidence']
+        : [DB::table('domains_operations')->where('id',$damaged->id), $field];
+    [$row, $column] = $corrupt;
+    $raw = $row->sole()->$column;
+    $row->update([$column=>'unreadable synthetic ciphertext']);
     try {
         $rows=$controller->status($request,$d->id)->getData(true);
         same($damaged->id,$rows['lock']['id'],'Unreadable newest change never falls back to an older result');
@@ -121,7 +126,7 @@ foreach (['attempt','policy'] as $field) {
         $page=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id]);
         expect(str_contains($page->html(),$rows['lock']['text']),'Staff page shows the unreadable change');
         same($before,$state->calls,'Unreadable status and pages perform no registrar calls');
-    } finally { DB::table('domains_operations')->where('id',$damaged->id)->update([$field=>$raw]); }
+    } finally { $row->update([$column=>$raw]); }
 }
 // Unreadable financial history is not a management change; unreadable changes remain visible.
 $registration=$d->operations()->where('action','register')->firstOrFail();

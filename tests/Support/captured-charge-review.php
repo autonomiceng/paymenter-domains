@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/renewal-execution.php';
 require __DIR__.'/staff-panel.php';require __DIR__.'/renewal-runtime.php';
+require_once __DIR__.'/fixture-cases.php';
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Illuminate\Support\Facades\{Cache, DB};
@@ -33,7 +34,10 @@ config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enab
 $rights=['admin.domains.view','admin.domains.costs','admin.domains.manage','admin.domains.fund','admin.invoices.update','admin.domains.operations.resume_reads','admin.domains.operations.recheck','admin.domains.operations.approve_charge'];
 $staff=staffUser($rights);$role=$staff->role;$failures=[];$check=static function(bool $ok,string $message)use(&$failures):void{if(!$ok){$failures[]=$message;}};
 $chargeCases=['changed'=>['20.00','actual_charge_changed'],'overrun'=>['16.00','actual_cost_overrun']];
-try{foreach(array_intersect_key($chargeCases,[$capturedCase=>true])as$case=>[$limit,$reason]){
+$cases = [];
+foreach ($capturedCase === 'captured' ? $chargeCases : [] as $case => [$limit, $reason]) {
+    $cases[$case] = static function () use ($case, $limit, $reason, $bindings, $clock, $makeRenewal, $cycles, $review,
+        $staff, $state, $compose, $renewBindings, $renewalRuntime, $check, $role, $rights, &$failures): void {
  app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$bindings);config(['domains.enom_identity.environment'=>null]);
  [$seed,$d,$b]=$makeRenewal(placeholderComFixtureName('captured-'.$case.'-placeholder.com'),false);$cycles->retireUnpaid($seed->id);
  $clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');$review($d);
@@ -123,11 +127,12 @@ try{foreach(array_intersect_key($chargeCases,[$capturedCase=>true])as$case=>[$li
  $changed=$done->policy;$changed['captured_charge_observations'][0]['proof']['charge']['amount']='1.00';
  try{$op->fresh()->update(['policy'=>$changed]);expect(false,'Retained observation must be protected');}catch(DomainException){}
  same($writes,$state->writes,'No staff review resends Extend');
+    };
 }
-}catch(Throwable $error){throw new RuntimeException($error->getMessage().' at '.implode(' > ',array_map(static fn($frame)=>($frame['file']??'').':'.($frame['line']??0),$error->getTrace())),0,$error);}
-expect($failures===[],implode('; ',$failures));
 $accept=static fn($binding)=>HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,9*86400,'enom_renewal_v1'));
-if($capturedCase==='history'){
+if ($capturedCase === 'history') {
+$cases['current-history'] = static function () use ($bindings, $clock, $makeRenewal, $cycles, $review, $staff, $state,
+    $compose, $renewBindings, $renewalRuntime, $accept): void {
 // Accepted renewal history can prove a captured charge after a lost reply. Eligibility and approval accept it alike, with no other send.
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$bindings);config(['domains.enom_identity.environment'=>null]);
 [$seed,$d,$b]=$makeRenewal(placeholderComFixtureName('captured-history-placeholder.com'),false);$cycles->retireUnpaid($seed->id);
@@ -151,8 +156,9 @@ Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->asse
 $done=$op->fresh();same(['succeeded','2029-10-18'],[$done->state,$d->fresh()->provider_expires_at->format('Y-m-d')],'History approval completes only the proved expiry');
 same($rawProof,[renewalRecord($done),$done->getRawOriginal('cost')],'History approval preserves original encrypted bytes');same($writes,$state->writes,'History approval sends nothing');
 expect($d->fresh()->renewal_policy['automatic_spend_paused'],'History approval keeps future spending paused');DB::transaction(fn()=>HistoryAcceptances::revokeLocked($b,Action::Renew));
-}
-if($capturedCase==='expired-history'){
+};
+$cases['expired-history'] = static function () use ($bindings, $clock, $makeRenewal, $cycles, $review, $staff, $state,
+    $compose, $renewBindings, $renewalRuntime, $accept): void {
 // History that stops covering the attempt cannot approve, even from an open dialog, and an audited read after that is used up as unavailable.
 $clockBefore=$clock->instant;app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$bindings);config(['domains.enom_identity.environment'=>null]);
 [$seed,$d,$b]=$makeRenewal(placeholderComFixtureName('captured-history-expired-placeholder.com'),false);$cycles->retireUnpaid($seed->id);
@@ -177,7 +183,13 @@ $notice=\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice
 same(null,$notice['action'],'Expired history offers no read that cannot settle the charge');expect(str_contains($notice['body'],'Ask Enom if this renewal went through.'),'Expired history names the next step');
 same([$rawProof,'uncertain',true],[[renewalRecord($fresh),$fresh->getRawOriginal('cost')],$fresh->state,$d->fresh()->renewal_policy['automatic_spend_paused']],'Expired history keeps the frozen proof, cost, hold and spending pause');
 same($writes,$state->writes,'Expired history sends nothing');DB::transaction(fn()=>HistoryAcceptances::revokeLocked($b,Action::Renew));$clock->instant=$clockBefore;
+};
 }
+if ($cases) {
+    nativeFixtureCases($cases, compact('bindings', 'clock', 'state', 'cycles', 'staff', 'role'));
+    expect($failures === [], implode('; ', $failures));
+}
+
 if($capturedCase==='controls'){
 // Ordinary exact-charge paid completion still uses its frozen two-year total and no staff approval.
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$bindings);config(['domains.enom_identity.environment'=>null]);

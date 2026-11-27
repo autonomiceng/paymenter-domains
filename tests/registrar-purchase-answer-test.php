@@ -4,15 +4,18 @@ declare(strict_types=1);
 require __DIR__.'/Support/namesilo-registration-fixture.php';
 require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 require_once __DIR__.'/Support/native-financial-snapshot.php';
+require __DIR__.'/Support/WireLimit.php';
 use App\Models\Credit;
-use Illuminate\Support\Facades\{Crypt, DB};
-use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{Environment,ExecutionRecord};
+use Filament\Schemas\Schema;
+use Illuminate\Support\Facades\{Auth, Crypt, DB};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{EnomAnswerAction, RequestFacts};
+use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,ReadLimiter};
+use Paymenter\Extensions\Servers\Domains\Data\{Environment,ExecutionRecord,HistoryAcceptance};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client,Driver};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport,TransportResponse};
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationWriter, ReadToken, StepKey, Transition};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,HistoryAcceptances,OperationReconciliation,ReconciliationEvidence,Refunds,RegistrarCheck,RenewalAuthority,StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,HistoryAcceptances,OperationReconciliation,ReconciliationEvidence,Refunds,RegistrarCheck,RenewalAuthority,Runtime,StaffSettingsReview as Review,StaffSettingsWrites};
 app()->instance(Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);
 $staff=commerceUser();$role=App\Models\Role::create(['name'=>'Purchase answers','permissions'=>['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.enom_answer','admin.domains.manage','admin.invoices.update']]);$staff->update(['role_id'=>$role->id]);
 $settings=new StaffSettingsWrites($native,$sellers,$bindings);
@@ -20,18 +23,21 @@ $review=static fn($op)=>new Review($staff->id,$op->server_id,null,'enom_answer',
 $input=static fn($op,$outcome)=>['operation_id'=>$op->id,'attempt_hash'=>EnomAnswers::identity($op),'outcome'=>$outcome,
     'order_reference'=>$outcome==='accepted'?'9001':'','processed_at'=>'2026-10-18T05:00:01-07:00',
     'case_reference'=>'synthetic-purchase-case','evidence'=>'Registrar confirmed the account, domain, sealed attempt, exact order number and processing time with UTC offset.','confirmed'=>true];
-$wireState=(object)['name'=>'','calls'=>[],'fault'=>''];
+$wireState=(object)['name'=>'','calls'=>[],'fault'=>'','orders'=>[],'during'=>null];
 $wire=new class($wireState) implements DeadlineTransport {
     public function __construct(private $s){}
     public function send($e,$c,$r,#[SensitiveParameter] string $key):TransportResponse{throw new LogicException;}
     public function sendWithin($e,$c,$r,#[SensitiveParameter] string $key,int $ms):TransportResponse{
         same(0,Illuminate\Support\Facades\DB::transactionLevel(),'Readback stays outside financial locks');$s=$this->s;$s->calls[]=$r->command;
+        if ($s->during !== null) { $hook = $s->during; $s->during = null; $hook(); }
+        $order = $r->parameters()['order_number'] ?? null;
         $reply=match($r->command){
-            'orderDetails'=>['order_number'=>$s->fault==='id'?'9002':'9001','order_date'=>$s->fault==='time'?'2026-10-18 05:00:02':'2026-10-18 05:00:01','total'=>'99.00',
+            'orderDetails'=>$order === '9002' && $s->fault === 'incomplete' ? ['code'=>280] : [
+                'order_number'=>$s->fault==='id'?'9002':$order,'order_date'=>$s->fault==='time'?'2026-10-18 05:00:02':'2026-10-18 05:00:01','total'=>'99.00',
                 'order_details'=>[['description'=>($s->fault==='name'?'other.example.com':$s->name).' - registration','years_qty'=>$s->fault==='term'?'2':'1',
-                    'status'=>$s->fault==='status'?'Credited':'Processed','subtotal'=>'99.00']]],
-            'listOrders'=>['order'=>[]],
-            'getDomainInfo'=>$s->fault==='unowned' ? ['code'=>280] : ['created'=>'2026-10-18','expires'=>$s->fault==='expiry'?'2026-10-18':'2027-10-18','status'=>'Active','auto_renew'=>'No','private'=>'No','locked'=>'Yes'],
+                    'status'=>$s->fault==='status' || $order === '9002' ? 'Credited' : 'Processed','subtotal'=>'99.00']]],
+            'listOrders'=>['order'=>array_map(static fn($id)=>['order_number'=>$id],$s->orders)],
+            'getDomainInfo'=>($s->orders || $s->fault==='unowned') ? ['code'=>280] : ['created'=>'2026-10-18','expires'=>$s->fault==='expiry'?'2026-10-18':'2027-10-18','status'=>'Active','auto_renew'=>'No','private'=>'No','locked'=>'Yes'],
             default=>throw new LogicException('Exact support order must not enumerate history'),
         }+['code'=>300,'detail'=>'synthetic'];
         return new TransportResponse(200,json_encode(['request'=>['operation'=>$r->command],'reply'=>$reply]));
@@ -66,8 +72,34 @@ foreach(['accepted','not_processed','invalid_claim','expired_read','inherited_re
             'started_at' => OperationAttempts::at($op->started_at), 'request_fingerprint' => $op->request_fingerprint]);
         $op->refresh();
         $policy = $op->policy;
-        $policy['status_check']['attempt_identity'] = EnomAnswers::identity($op);
+        $policy['status_check'] = [...$policy['status_check'], 'outcome'=>'awaiting_answer', 'registrar'=>'NameSilo',
+            'answer_after'=>$clock->now()->getTimestamp(), 'attempt_identity'=>EnomAnswers::identity($op)];
         $op->update(['policy' => $policy]);
+        // The saved result predates adoption validation and is still bound to this exact legacy attempt.
+        $clock->instant = $clock->now()->modify('+31 days');
+        $wireState->calls = [];
+        $viewer = Auth::user();
+        Auth::setUser($staff);
+        $notice = RequestFacts::notice($op->fresh());
+        if ($viewer !== null) { Auth::setUser($viewer); }
+        $refusal = RegistrarCheck::words(['reason'=>RegistrarCheck::ADOPTION_REFUSED]);
+        expect(str_contains($notice['title'] ?? '', $refusal['title']), 'The first staff view explains the local refusal for a saved registrar next step');
+        same([null, null, false, []], [$notice['action'] ?? null, $notice['primary'] ?? null,
+            EnomAnswers::ready($op, $clock->now()), $wireState->calls], 'The first view offers no registrar next step and makes no call');
+        $check = RegistrarCheck::status($op->fresh());
+        same(['unavailable', RegistrarCheck::ADOPTION_REFUSED, null], [$check['outcome'] ?? null, $check['reason'] ?? null,
+            $check['answer_after'] ?? null], 'The projected check shows a local refusal');
+        same($policy, $op->fresh()->policy, 'Viewing a saved registrar result does not rewrite it');
+
+        // The lost reply is now outside the TEST history window, where the worker would ask NameSilo for an answer.
+        $op = $reconcile->run($op->id);
+        Auth::setUser($staff);
+        $notice = RequestFacts::notice($op);
+        if ($viewer !== null) { Auth::setUser($viewer); }
+        expect((bool) preg_match('/\b(?:saved|local|original)\b.*\battempt\b/i', ($notice['title'] ?? '').' '.($notice['body'] ?? '')),
+            'The staff notice gives the local refusal for a NameSilo lost reply');
+        same([null, null, false, []], [$notice['action'] ?? null, $notice['primary'] ?? null,
+            EnomAnswers::ready($op, $clock->now()), $wireState->calls], 'The refusal offers no support step and makes no registrar call');
         $snapshot = static fn () => [$op->fresh()->getRawOriginal(), $op->domain->fresh()->getRawOriginal(),
             Credit::where('user_id', $op->domain->user_id)->sum('amount'),
             OperationAttempts::sealed((int) $op->id, new StepKey('register', 1))];
@@ -153,4 +185,64 @@ foreach(['accepted','not_processed','invalid_claim','expired_read','inherited_re
     }
     $engine->execute($op->id);same($calls,$registration->calls,'Support never repeats registerDomain');
 }
+// A prior empty check allows a support answer. A later matching charge must survive missing ownership,
+// competing or unreadable order details, and a concurrent check that loses the read claim.
+$failures = [];
+foreach (['credited', 'incomplete', 'overlap', 'status-change', 'read-limit'] as $scenario) {
+    $clock->instant = new DateTimeImmutable('2026-10-18T12:00:00Z'); $makeEngine($binding, $exchange);
+    $registration->mode = 'unknown';
+    $op = $runRegistration($nsNew(placeholderComFixtureName('support-charge-'.$scenario.'-placeholder.com')));
+    $clock->instant = $clock->now()->modify('+25 hours');
+    HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,172800,'namesilo_registration_v1'));
+    $wireState->name = $op->domain->domain; $wireState->orders = []; $wireState->fault = 'unowned';
+    $reconcile->run($op->id); $op->refresh();
+    expect(RegistrarCheck::attempted($op), 'The empty first check is bound to the original attempt');
+    $policy = $op->policy;
+    $policy['reconciliation']['polls'] = OperationReconciliation::POLL_LIMIT - 1;
+    $op->update(['policy'=>$policy]);
+    $complete = in_array($scenario, ['overlap', 'status-change'], true);
+    $wireState->orders = $complete || $scenario === 'read-limit' ? ['9001'] : ['9001','9002'];
+    $wireState->fault = $scenario;
+    if ($scenario === 'overlap') {
+        $wireState->during = static function () use ($op, $reconcile, &$failures): void {
+            $policy = $op->fresh()->policy;
+            if ($reconcile->run($op->id)->policy !== $policy) { $failures[] = 'Busy check changed the active reader’s policy'; }
+        };
+    }
+    if ($scenario === 'status-change') {
+        $wireState->during = static fn () => $op->fresh()->update(['safe_code'=>'staff_review']);
+    }
+    if ($scenario === 'read-limit') {
+        app()->instance(Runtime::class, new stdClass);
+        app()->instance(ReadLimiter::class, $limiter = new WireLimit(2));
+    }
+    try { $result = $reconcile->run($op->id); }
+    finally {
+        if ($scenario === 'read-limit') {
+            app()->offsetUnset(Runtime::class);
+            app()->offsetUnset(ReadLimiter::class);
+            same(2, $limiter->released, 'Order history returned before the ownership read reached its limit');
+            same(3, $limiter->calls, 'The ownership read was refused at admission');
+        }
+    }
+    $sealed = OperationAttempts::sealed((int) $op->id, new StepKey('register', 1));
+    $charge = OperationAttempts::evidence((int) $op->id, $sealed->token->attemptId, 'acquisition_charge');
+    $match = $complete ? 'exact' : 'ambiguous';
+    if (($charge['outcome'] ?? null) !== $match || array_column($charge['evidence']['orders'] ?? [], 'reference') !== ['9001']) {
+        $failures[] = 'Matching charge lost: '.$scenario;
+    }
+    if (OperationAttempts::evidence((int) $op->id, $sealed->token->attemptId, 'settlement') !== null) {
+        $failures[] = 'Charge alone settled the registration: '.$scenario;
+    }
+    $action = EnomAnswerAction::make($result, Review::stamp($op->server_id, null));
+    $outcomes = $action->getSchema(Schema::make(new class extends Livewire\Component implements Filament\Schemas\Contracts\HasSchemas {
+        use Filament\Schemas\Concerns\InteractsWithSchemas;
+    }))->getFlatFields(withHidden: true)['outcome']->getOptions();
+    if (array_keys($outcomes) !== ['accepted']) { $failures[] = 'Staff offered a negative answer: '.$scenario; }
+    try { $settings->run($review($result), $input($result, 'not_processed'), $clock->now()); }
+    catch (DomainException) { /* A matching charge rules out an audited negative answer. */ }
+    $after = $result->fresh();
+    if ($after->state !== $result->state || isset($after->funding['refund'])) { $failures[] = 'Matching charge allowed a refund: '.$scenario; }
+}
+expect($failures === [], implode(PHP_EOL, $failures));
 echo "NameSilo support answers retain account, attempt, exact order/time and original financial evidence.\n";$nativeSuccessful=true;

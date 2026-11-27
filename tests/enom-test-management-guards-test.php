@@ -43,6 +43,12 @@ expect(Policy::stored($live)&&!Policy::accepted($live),'New Live consent still r
 $engine=new DomainManagement($bindings,$clock,new WriteFeatures(management:true),true,testManagement:true);
 foreach(['domains.enom_writes.management'=>false,'domains.enom_catalogue.enabled'=>false,'domains.enom_identity.environment'=>'live'] as $key=>$value){$old=config($key);config([$key=>$value]);commerceReject(fn()=>$engine->request($user,$d->id,'lock',['locked'=>false],hash('sha256',$key),$driver));config([$key=>$old]);}
 $op=$engine->request($user,$d->id,'lock',['locked'=>false],hash('sha256','proof'),$driver);$valid=['seal'=>'sealed','send_state'=>'definitely_unsent','management_claim'=>str_repeat('a',32),'management_test_unsent'=>true];
+foreach (['management_unsent', 'management_test_unsent'] as $marker) {
+    $forged = $op->replicate(['operation_key']);
+    $forged->forceFill(['operation_key' => 'manage:'.$d->id.':'.hash('sha256', $marker), 'state' => 'held',
+        'safe_code' => 'enom_test_management_call_cap', 'attempt' => [...array_diff_key($valid, ['management_test_unsent' => true]), $marker => true]]);
+    commerceReject(fn () => $forged->save());
+}
 // A copied marker never creates proof without the exact live operation reservation.
 $op->state='held';$op->safe_code='enom_test_management_call_cap';$op->attempt=$valid;commerceReject(fn()=>ManagementEvidence::guard($op));$op->refresh();
 $refuse=static function(Closure $f):void{try{$f();throw new LogicException('Reservation should refuse');}catch(EnomTestCallLimit){}};
@@ -52,13 +58,24 @@ Reservation::run($b,'management',(int)$op->id,function()use($b,$op,$valid,$refus
     $op->state='held';$op->safe_code='enom_test_management_call_cap';$op->attempt=$valid;
     commerceReject(fn()=>ManagementEvidence::guard($op)); // no original sealed transition
     $op->attempt=['seal'=>'sealed','send_state'=>'possibly_sent'];$op->syncOriginalAttribute('attempt');
-    $op->attempt=$valid;ManagementEvidence::guard($op);
-    foreach(['management_test_unsent'=>false,'seal'=>'absent','send_state'=>'possibly_sent','management_reads'=>null,'management_ack'=>null] as $key=>$value){$op->attempt=[$key=>$value]+$valid;commerceReject(fn()=>ManagementEvidence::guard($op));}
-    $op->attempt=$valid;expect(ManagementEvidence::idle($op),'Only clean nonfinancial proof is idle');
-    foreach(['management_reads'=>[],'management_ack'=>[]] as $key=>$value){$op->attempt=[$key=>$value]+$valid;expect(!ManagementEvidence::idle($op),'Read or acknowledgement cannot be proven unsent');}
-    $op->attempt=$valid;$op->provider_order_id='900';commerceReject(fn()=>ManagementEvidence::guard($op));$op->provider_order_id=null;
-    foreach(['state'=>'uncertain','safe_code'=>'other','funding_basis'=>'paid_invoice'] as $key=>$value){$old=$op->$key;$op->$key=$value;commerceReject(fn()=>ManagementEvidence::guard($op));$op->$key=$old;}
-    $day=Reservation::prepare($b,'management');same('',$day,'TEST arms the scope without a day');Reservation::consume($b,'management',$day);expect(!Reservation::unconsumed($b,'management',(int)$op->id),'Consumed wire cannot become unsent');commerceReject(fn()=>ManagementEvidence::guard($op));
+    $op->attempt=$valid;commerceReject(fn()=>ManagementEvidence::guard($op)); // Only the writer may retain the proof.
+    $op->syncOriginalAttribute('attempt');
+    ManagementEvidence::guard($op);
+    expect(ManagementEvidence::idle($op), 'Writer-retained nonfinancial proof is idle');
+    $op->attempt = [...$valid, 'management_test_unsent' => false];
+    commerceReject(fn () => ManagementEvidence::guard($op));
+    foreach (['seal' => 'absent', 'send_state' => 'possibly_sent', 'management_reads' => [], 'management_ack' => []] as $key => $value) {
+        $op->attempt = [...$valid, $key => $value];
+        expect(!ManagementEvidence::idle($op), 'Invalid attempt field cannot prove idle: '.$key);
+    }
+    $op->attempt = $valid;
+    foreach (['provider_order_id' => '900', 'state' => 'uncertain', 'funding_basis' => 'paid_invoice'] as $key => $value) {
+        $original = $op->$key;
+        $op->$key = $value;
+        expect(!ManagementEvidence::idle($op), 'Invalid request field cannot prove idle: '.$key);
+        $op->$key = $original;
+    }
+    $day=Reservation::prepare($b,'management');same('',$day,'TEST arms the scope without a day');Reservation::consume($b,'management',$day);expect(!Reservation::unconsumed($b,'management',(int)$op->id),'Consumed wire cannot become unsent');
     $refuse(fn()=>Reservation::reserve($b,'management'));expect(!Reservation::unconsumed($b,'management',(int)$op->id),'Consumed is sticky for the scope');
 });
 same(0,DB::table(EnomTestSendLimitSchema::SENDS)->count(),'Arming and consuming the scope record no send; the limiter counts at the wire');

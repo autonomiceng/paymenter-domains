@@ -27,3 +27,12 @@ DNS/SRV/DS readback, duplicate intent/worker, cap refusal, partial inventory, re
 acceptance, lost replies, a separate PHP restart, unchanged native money and
 redaction. These fixtures establish composition; actual TEST management, disposable
 zone/public DNS behavior and production database concurrency require a provider run.
+
+
+`management-deadline-test.php` shares one native holding across six named entry and claim-wait cases.
+It also covers late preparation, the retained paid acknowledgement and expiry of a read deadline.
+`management-read-contention-test.php` interleaves two readers with spare budget. A live claim
+blocks its competitor. After expiry, its successor confirms the change once and owns the saved readback.
+`management-send-recovery-test.php` covers retained envelopes with unknown earlier usage, audited
+recovery, pacing and restart. `management-durable-sequence-test.php` proves separate DNS step seals,
+preimage and record identity across a partial batch and retry.

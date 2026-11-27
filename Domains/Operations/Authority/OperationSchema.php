@@ -131,7 +131,8 @@ final class OperationSchema extends TableSchema
     public static function verify(): void
     {
         parent::verify();
-        if (DB::table('domains_operations')->whereIn('action', ManagementProgress::ACTIONS)->whereNull('management_pending')->exists()) {
+        if (DB::table('domains_operations')->whereIn('action', ManagementProgress::ACTIONS)
+            ->where('state', 'held')->whereNotNull('attempt')->whereNull('management_pending')->exists()) {
             throw new \RuntimeException('Retained management operation has no progress state.');
         }
     }

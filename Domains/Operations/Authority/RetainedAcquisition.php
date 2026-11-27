@@ -22,13 +22,17 @@ final readonly class RetainedAcquisition
         public array $funding,
     ) {}
 
-    /** The caller already verified the original evidence under the operation and funding locks. */
-    public static function adopt(Operation $op, OperationWriter $writer, \DateTimeImmutable $now): ?AcquisitionAttempt
+    /** Read-only preflight for offering a check or a registrar answer. */
+    public static function adoptable(Operation $op, \DateTimeImmutable $now): bool
     {
-        if ($current = AcquisitionAttempt::of((int) $op->id, $op->action, true)) { return $current; }
+        if ($current = $op->acquisitionAttemptFacts()) { return $current->sealed() && !$current->released; }
+        return self::legacyRecord($op, $now) !== null;
+    }
+
+    private static function legacyRecord(Operation $op, \DateTimeImmutable $now): ?self
+    {
         $step = AcquisitionAttempt::key($op->action);
         $a = $op->attempt ?? [];
-        $f = $op->funding ?? [];
         if (!$step || ($a['seal'] ?? null) !== 'sealed' || !is_string($a['claim_key'] ?? null)
             || !preg_match('/^[a-f0-9]{32}$/D', $a['claim_key']) || !is_string($op->request_fingerprint)
             || !preg_match('/^[a-f0-9]{64}$/D', $op->request_fingerprint) || $op->started_at === null
@@ -36,8 +40,15 @@ final readonly class RetainedAcquisition
             || !($state = SendState::tryFrom($a['send_state'])) || isset($a['reconciliation'])) { return null; }
         $sealed = new \DateTimeImmutable($a['dispatch_attempted_at']);
         if ($sealed < $op->started_at || $sealed >= $now) { return null; }
-        $record = new self($step, $a['claim_key'], $op->started_at, $sealed, $op->request_fingerprint, $state, $a,
-            array_intersect_key($f, ['claim' => true, 'seal' => true]));
+        return new self($step, $a['claim_key'], $op->started_at, $sealed, $op->request_fingerprint, $state, $a,
+            array_intersect_key($op->funding ?? [], ['claim' => true, 'seal' => true]));
+    }
+
+    /** The caller already verified the original evidence under the operation and funding locks. */
+    public static function adopt(Operation $op, OperationWriter $writer, \DateTimeImmutable $now): ?AcquisitionAttempt
+    {
+        if ($current = AcquisitionAttempt::of((int) $op->id, $op->action, true)) { return $current; }
+        if (!($record = self::legacyRecord($op, $now))) { return null; }
         return DB::transaction(function () use ($op, $writer, $record): AcquisitionAttempt {
             $observation = RegistrarCheck::legacyObservation($op);
             $writer->adoptAcquisition((int) $op->id, $op->transition_revision, $record);

@@ -76,6 +76,57 @@ final class OperationAttempts
         return $attempts;
     }
 
+    /** The latest management attempt of each operation, including released pre-seal history. */
+    public static function latestManagement(array $operationIds, bool $lock = false): array
+    {
+        if (!$operationIds) { return []; }
+        $rows = DB::table(OperationSchema::STEPS.' as s')->join(OperationSchema::ATTEMPTS.' as a', 'a.step_id', '=', 's.id')
+            ->whereIn('s.operation_id', $operationIds)->where(['s.step_type' => 'management', 's.sequence' => 1])
+            ->where(fn ($q) => $q->whereNull('s.current_attempt_id')->orWhereColumn('a.id', 's.current_attempt_id'))
+            ->when($lock, fn ($q) => $q->lockForUpdate())->orderByDesc('a.ordinal')
+            ->get(['a.*', 's.operation_id as step_operation_id', 's.current_attempt_id as step_current_attempt_id']);
+        $attempts = [];
+        foreach ($rows as $row) {
+            $id = (int) $row->step_operation_id;
+            $step = (object) ['id' => $row->step_id, 'current_attempt_id' => $row->step_current_attempt_id];
+            $attempts[$id] ??= self::facts($id, $step, $row);
+        }
+        return $attempts;
+    }
+
+    /** Ordered facts for the management projection. Paced recovery keeps a separate, unbounded audit trail. */
+    public static function managementEvidence(array $operationIds, bool $lock = false): array
+    {
+        if (!$operationIds) { return []; }
+        $reserve = ManagementEvidenceKind::ReserveRead->value;
+        $readback = ManagementEvidenceKind::Readback->value;
+        // Lock the aggregate's inputs too so the bounds cannot use an earlier transaction snapshot.
+        $recovery = DB::table(OperationSchema::EVIDENCE)->whereIn('operation_id', $operationIds)
+            ->where(fn ($q) => $q->where(['kind' => $reserve, 'outcome' => 'recovery'])->orWhere('kind', $readback))
+            ->when($lock, fn ($q) => $q->lockForUpdate())
+            ->groupBy('attempt_id')->select('attempt_id')
+            ->selectRaw('MIN(CASE WHEN kind = ? THEN id END) AS first_reservation', [$reserve])
+            ->selectRaw('MAX(CASE WHEN kind = ? THEN id END) AS last_reservation', [$reserve])
+            ->selectRaw('COUNT(CASE WHEN kind = ? THEN 1 END) AS recovery_count', [$reserve])
+            ->selectRaw('MAX(CASE WHEN kind = ? THEN id END) AS last_readback', [$readback]);
+        // Fast reads precede the first recovery reservation. A failed recovery adds no readback.
+        $rows = DB::table(OperationSchema::EVIDENCE.' as e')->whereIn('e.operation_id', $operationIds)
+            ->leftJoinSub($recovery, 'r', 'r.attempt_id', '=', 'e.attempt_id')
+            ->whereIn('e.kind', [...array_column(ManagementEvidenceKind::cases(), 'value'), 'management_failed', 'admission', 'reply', 'claim', 'terminal'])
+            ->where(fn ($q) => $q->whereNull('r.first_reservation')->orWhereNotIn('e.kind', [$reserve, $readback])
+                ->orWhereColumn('e.id', '<', 'r.first_reservation')->orWhereColumn('e.id', 'r.last_reservation')
+                ->orWhereColumn('e.id', 'r.last_readback'))
+            ->when($lock, fn ($q) => $q->lockForUpdate())->orderBy('e.id')->get(['e.*', 'r.recovery_count']);
+        $found = [];
+        foreach ($rows as $row) {
+            try { $proof = self::decoded($row); }
+            catch (DecryptException|\JsonException) { $proof = self::UNREADABLE; }
+            $found[(int) $row->operation_id][] = ['kind' => $row->kind, 'attempt_id' => (int) $row->attempt_id,
+                'recovery_count' => (int) $row->recovery_count, ...$proof];
+        }
+        return $found;
+    }
+
     /** Of the given operations, those whose step has a sealed attempt. */
     public static function sealedOperations(array $operationIds, StepKey $key): array
     {
@@ -110,6 +161,14 @@ final class OperationAttempts
         return self::facts($token->operationId, $step, $row);
     }
 
+    /** A negative answer must see any retained proof, even if its payload is unreadable. */
+    public static function hasAcquisitionSettlementEvidence(AttemptToken $token, bool $lock = false): bool
+    {
+        return DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $token->operationId, 'attempt_id' => $token->attemptId])
+            ->whereIn('kind', ['observation', 'acquisition_charge', 'held', 'settlement', 'answer'])
+            ->when($lock, fn ($q) => $q->lockForUpdate())->first(['id']) !== null;
+    }
+
     /** Decrypted evidence of one kind for an attempt, or for the operation when no attempt is given. */
     public static function evidence(int $operationId, ?int $attemptId, string $kind): ?array
     {
@@ -140,8 +199,11 @@ final class OperationAttempts
     private static function decoded(object $row): array
     {
         return ['source' => $row->source, 'outcome' => $row->outcome, 'observed_at' => self::time($row->observed_at)?->format(DATE_ATOM),
-            'recorded_at' => self::time($row->recorded_at)?->format(DATE_ATOM), 'evidence' => json_decode(Crypt::decryptString($row->evidence), true, self::EVIDENCE_DEPTH, JSON_THROW_ON_ERROR)];
+            'recorded_at' => self::time($row->recorded_at)?->format(DATE_ATOM), 'evidence' => self::decodeEvidence($row->evidence)];
     }
+
+    public static function decodeEvidence(string $ciphertext): array
+    { return json_decode(Crypt::decryptString($ciphertext), true, self::EVIDENCE_DEPTH, JSON_THROW_ON_ERROR); }
 
     /** The first evidence of one kind on the step's sealed attempt, in one read. */
     public static function sealedEvidence(int $operationId, StepKey $key, string $kind): ?array
@@ -179,7 +241,7 @@ final class OperationAttempts
             $step->current_attempt_id !== null && (int) $step->current_attempt_id === (int) $row->id, $row->released_at !== null,
             self::time($row->claim_until), self::time($row->sealed_at), $row->operation_revision === null ? null : (int) $row->operation_revision,
             $row->request_digest, SendState::from($row->send_state), self::time($row->grant_consumed_at), $row->authorized_amount,
-            $row->authorized_currency, $row->mode, $row->read_token, self::time($row->read_until), (bool) $row->read_unresolved);
+            $row->authorized_currency, $row->mode, $row->read_token, self::time($row->read_until), (bool) $row->read_unresolved, self::time($row->claimed_at));
     }
 
     /**

@@ -7,6 +7,7 @@ require __DIR__.'/staff-panel.php';
 use Illuminate\Support\Facades\{Auth, Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, Staff};
 use Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationWriter, Transition};
 staffPanel();
 $viewer=staffUser([Staff::VIEW]);
 $pages=static function($d, ?array $expected, string $why, bool $formsExpected=true) use($owners,$user,$clock): void {
@@ -29,14 +30,21 @@ $budget=new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($cl
 $observer=new \Paymenter\Extensions\Servers\Domains\Services\DomainObservation($readBindings,$clock,$budget);
 
 // The projection boundary is history size, not repeated request admission. Retire one real
-// unsent request, then copy that native encrypted row through its model guards with unique
-// identities. Every copied row retains the real terminal proof and remains rejected.
-$history=static function($d,$driver,string $why)use($submit,$management,$user,$state):void {
+// unsent request, then recreate the retired rows and their operation-level proof.
+$history=static function($d,$driver,string $why)use($submit,$management,$user,$state,$clock):void {
     $calls=$state->calls;$idle=$submit($d,$driver,'lock',['locked'=>false]);
     $retired=$management->retire($user,$idle->id);same('rejected',$retired->state,$why);
+    $proof = OperationAttempts::evidence((int) $retired->id, null, 'terminal');
+    same('management_retired', $proof['outcome'] ?? null, 'Native retirement records terminal proof');
+    $writer = OperationWriter::at($clock->now());
     $native=nativeFinancialSnapshot($retired);$seq=0;
     while($d->operations()->count()<=100){
-        $copy=$retired->replicate();$copy->operation_key='manage:'.$d->id.':'.hash('sha256','page-history-'.$d->id.'-'.++$seq);$copy->save();
+        $copy=$retired->replicate();$copy->operation_key='manage:'.$d->id.':'.hash('sha256','page-history-'.$d->id.'-'.++$seq);
+        DB::transaction(static function () use ($copy, $writer, $proof): void {
+            $copy->save();
+            same(Transition::Applied, $writer->recordTerminal((int) $copy->id, $proof['outcome'], $proof['evidence']),
+                'Each history row has its own retirement proof');
+        });
         same('rejected',$copy->fresh()->state,$why);same($retired->attempt,$copy->fresh()->attempt,'History row preserves real retirement evidence');
     }
     same(101,$d->operations()->count(),'History exceeds the exact reconstruction bound');

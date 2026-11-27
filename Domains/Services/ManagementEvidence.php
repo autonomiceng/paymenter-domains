@@ -6,7 +6,6 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
 final class ManagementEvidence
 {
-    private static ?array $unsent=null;
     /** Staff marked an unconfirmed free change as failed. */
     public const STAFF_FAILED='management_staff_failed';
     public static function staffFailed(Operation $op): bool
@@ -14,16 +13,6 @@ final class ManagementEvidence
         return $op->state==='rejected'&&$op->safe_code===self::STAFF_FAILED&&$op->funding_basis==='non_billable_management'&&$op->invoice_id===null
             &&$op->completed_at!==null&&($op->attempt['seal']??null)==='sealed'&&isset($op->attempt['management_staff_outcome']);
     }
-    /** Only the current worker's exact, armed, unconsumed transport grant proves no send. */
-    public static function retainUnsent(Operation $op,\Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol $driver): void
-    {
-        $b=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->sole());
-        if($b->registrarKey!=='namesilo'||!$driver->bindsTo($b)||!$driver->unconsumed((int)$op->id)||self::$unsent!==null){throw new \DomainException('Live unsent reservation required.');}
-        self::$unsent=[(int)$op->id,$op->attempt['management_claim']??null];
-        try{$op->update(['state'=>'held','safe_code'=>'management_definitely_unsent','lease_expires_at'=>null,
-            'attempt'=>[...$op->attempt,'management_unsent'=>true]]);}finally{self::$unsent=null;}
-    }
-
     public static function resolved(Operation $op,Domain $d): bool
     {
         $p=$op->policy['management']??null;$r=ManagementReadRecovery::latest($op);
@@ -43,9 +32,14 @@ final class ManagementEvidence
     public static function idle(Operation $op): bool
     {
         $a=$op->attempt??[];if(!self::deferrals($a)){return false;}
-        if(($a['management_unsent']??false)===true){return $op->registrar_key==='namesilo'&&isset($op->policy['management'])&&$op->funding_basis==='non_billable_management'
-            &&in_array($op->state,['held','rejected'],true)&&($a['seal']??null)==='sealed'&&($a['send_state']??null)==='possibly_sent'
-            &&isset($a['management_claim'],$a['dispatch_attempted_at'])&&$op->provider_order_id===null&&!array_key_exists('management_reads',$a)&&!array_key_exists('management_ack',$a);}
+        if (($a['management_unsent'] ?? false) === true) {
+            // Retirement can project the original refusal without creating an attempt row.
+            $sendState = $op->managementAttempt()?->facts ? 'definitely_unsent' : 'possibly_sent';
+            return $op->registrar_key === 'namesilo' && isset($op->policy['management']) && $op->funding_basis === 'non_billable_management'
+                && in_array($op->state, ['held', 'rejected'], true) && ($a['seal'] ?? null) === 'sealed' && ($a['send_state'] ?? null) === $sendState
+                && isset($a['management_claim'], $a['dispatch_attempted_at']) && $op->provider_order_id === null
+                && !array_key_exists('management_reads', $a) && !array_key_exists('management_ack', $a);
+        }
         if(($a['management_test_unsent']??false)===true){return isset($op->policy['management'])&&$op->funding_basis==='non_billable_management'
             &&in_array($op->state,['held','rejected'],true)&&($a['seal']??null)==='sealed'&&($a['send_state']??null)==='definitely_unsent'
             &&$op->provider_order_id===null&&!array_key_exists('management_reads',$a)&&!array_key_exists('management_ack',$a);}
@@ -73,7 +67,7 @@ final class ManagementEvidence
         if($op->state==='held' && $op->safe_code==='management_unconfirmed' && $op->funding_basis==='non_billable_management'
             && self::idle($op) && ($op->attempt['seal']??null)==='absent' && isset($op->attempt['management_claim'])
             && count($op->attempt['management_deferrals']??[])===5){
-            $op->update(['state'=>'rejected','safe_code'=>'management_preparation_failed','completed_at'=>$now,'lease_expires_at'=>null]);
+            $op->update(['state'=>'rejected','safe_code'=>'management_preparation_failed','completed_at'=>$now,...($op->managementAttempt() ? [] : ['lease_expires_at'=>null])]);
         }
     }
     /** The exact closed result of finishExhausted(): five unsent preparation tries, never sealed or sent. */
@@ -89,21 +83,22 @@ final class ManagementEvidence
     { return $op->state==='queued'&&$op->safe_code==='management_deferred'&&self::idle($op)&&isset($op->attempt['management_claim'])&&count($op->attempt['management_deferrals']??[])>0&&count($op->attempt['management_deferrals'])<=5; }
     public static function guard(Operation $op): void
     {
+        if ($op->managementAttempt()) {
+            if ($op->getRawOriginal('state') === 'succeeded' && $op->isDirty(['state', 'completed_at'])) {
+                throw new \DomainException('Management completion frozen.');
+            }
+            return;
+        }
         ManagementReadRecovery::guard($op);
         $old=$op->getOriginal('attempt')??[];$new=$op->attempt??[];
         if(array_key_exists('management_unsent',$old)&&($new['management_unsent']??null)!==$old['management_unsent']){throw new \DomainException('Unsent management proof frozen.');}
-        if(!array_key_exists('management_unsent',$old)&&array_key_exists('management_unsent',$new)){
-            if(self::$unsent!==[(int)$op->id,$new['management_claim']??null]||$new['management_unsent']!==true||!self::idle($op)
-                ||($old['seal']??null)!=='sealed'||$op->state!=='held'||$op->safe_code!=='management_definitely_unsent'){
+        foreach (['management_unsent', 'management_test_unsent'] as $key) {
+            if (!array_key_exists($key, $old) && array_key_exists($key, $new)) {
                 throw new \DomainException('Unsent management reservation required.');
             }
         }
-
-        if(array_key_exists('management_test_unsent',$old)&&($new['management_test_unsent']??null)!==$old['management_test_unsent']){throw new \DomainException('Unsent management proof frozen.');}
-        if(!array_key_exists('management_test_unsent',$old)&&array_key_exists('management_test_unsent',$new)){
-            $b=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->firstOrFail());
-            if($new['management_test_unsent']!==true||$op->funding_basis!=='non_billable_management'||($old['seal']??null)!=='sealed'||($new['seal']??null)!=='sealed'||($new['send_state']??null)!=='definitely_unsent'||array_key_exists('management_reads',$new)||array_key_exists('management_ack',$new)||$op->provider_order_id!==null||$op->state!=='held'||$op->safe_code!=='enom_test_management_call_cap'
-                ||!EnomTestWriteReservation::unconsumed($b,'management',(int)$op->id)){throw new \DomainException('Unsent management reservation required.');}
+        if (array_key_exists('management_test_unsent', $old) && ($new['management_test_unsent'] ?? null) !== $old['management_test_unsent']) {
+            throw new \DomainException('Unsent management proof frozen.');
         }
         $x=$old['management_deferrals']??[];$y=$new['management_deferrals']??[];if(!self::deferrals($new)||count($y)<count($x)||array_slice($y,0,count($x))!==$x){throw new \DomainException('Management deferrals frozen.');}
         if(isset($old['management_refusal'])&&($new['management_refusal']??null)!==$old['management_refusal']){throw new \DomainException('Management refusal frozen.');}

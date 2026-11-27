@@ -4,6 +4,7 @@ declare(strict_types=1);
 $fixtureEnding = 'example.com';
 require __DIR__.'/Support/reconciliation-fixture.php';
 require_once __DIR__.'/Support/reserved-fixtures.php';
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, StepKey};
 use Paymenter\Extensions\Servers\Domains\Data\{DateEvidence, Disposition, DriverResult, Evidence, ExpiryPrecision, HistoryAcceptance, RegistrationEvidence, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{CataloguePreview, Driver, EnomTestReconciliationReader};
@@ -33,6 +34,9 @@ same('succeeded', $result->state, 'History completes accepted execution without 
 expect(in_array(ReadCommand::Orders, $observation->calls, true), 'Null-reference execution reads Enom history');
 same('accepted_history', $result->attempt['reconciliation']['source'], 'Completion uses accepted history rather than captured order');
 same('9001', $result->provider_order_id, 'Unique history supplies the missing order reference');
+$step = OperationAttempts::sealed((int) $op->id, new StepKey('register', 1));
+$settled = OperationAttempts::evidence((int) $op->id, $step->token->attemptId, 'settlement');
+same('exact', $settled['evidence']['charge_match'] ?? null, 'Settlement identifies the exact charge match');
 same($writes, $writer->calls, 'Null-reference history recovery never replays a write');
 same($money, $nativeMoney(), 'Null-reference history recovery preserves native finance');
 // Null-reference acceptance never substitutes for a covering, unique history proof.
@@ -62,6 +66,12 @@ foreach (['no-acceptance', 'window', 'zero', 'multiple'] as $fault) {
     }
     $result = $reconcile->run($op->id); $engine->execute($op->id); $result = $result->fresh();
     same('pending', $result->state, 'Null-reference history refuses completion: '.$fault);
+    if ($fault === 'multiple') {
+        $step = OperationAttempts::sealed((int) $op->id, new StepKey('register', 1));
+        $charges = OperationAttempts::evidence((int) $op->id, $step->token->attemptId, 'acquisition_charge');
+        same('ambiguous', $charges['outcome'] ?? null, 'Competing original orders keep a distinct observation');
+        same(null, OperationAttempts::evidence((int) $op->id, $step->token->attemptId, 'settlement'), 'An ambiguous match has no settlement');
+    }
     same([null, null, null, null, $op->domain->domain], [$result->cost['actual'] ?? null, $result->confirmed_expires_at,
         $result->domain->provider_expires_at, $result->domain->renewal_policy['billing_anchor'] ?? null,
         $result->domain->reservation_name], 'Refused history retains reservation without charge or expiry anchor: '.$fault);

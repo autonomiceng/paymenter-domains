@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/management.php';
+require_once __DIR__.'/Support/fixture-cases.php';
 use App\Models\Invoice;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
@@ -40,33 +41,39 @@ $noSend = static function ($op, array $money) use ($nativeMoney, $state): void {
     same([], array_values(array_filter(array_column($state->calls, 0), fn ($c) => !str_starts_with($c, 'Get'))), 'No physical write');
     same($money, $nativeMoney(), 'Native finance unchanged on refusal');
 };
+[$deadlineDomain, $deadlineDriver] = $holding(placeholderComFixtureName('management-boundary-placeholder.com'));
+$cases = [];
 foreach ([245, 246] as $elapsed) {
-    [$d, $driver] = $holding(placeholderComFixtureName('management-boundary-'.$elapsed.'-placeholder.com'));
-    $op = $submit($d, $driver, 'lock', ['locked'=>false]); $money = $nativeMoney();
-    $state->during = static fn () => $clock->instant = $clock->now()->modify('+'.$elapsed.' seconds');
-    $result = $management->run($op->id, $driver, RequestOrigin::Background);
-    if ($elapsed === 245) { same('succeeded', $result->state, 'Exactly 25 seconds before finish cap admits one write'); }
-    else { $noSend($result, $money); }
+    $cases['background-'.$elapsed] = static function () use ($deadlineDomain, $deadlineDriver, $submit, $nativeMoney, $state, $clock, $management, $noSend, $elapsed): void {
+        $op = $submit($deadlineDomain, $deadlineDriver, 'lock', ['locked'=>false]); $money = $nativeMoney();
+        $state->during = static fn () => $clock->instant = $clock->now()->modify('+'.$elapsed.' seconds');
+        $result = $management->run($op->id, $deadlineDriver, RequestOrigin::Background);
+        if ($elapsed === 245) { same('succeeded', $result->state, 'Exactly 25 seconds before finish cap admits one write'); }
+        else { $noSend($result, $money); }
+    };
 }
-foreach ([44, 46] as $wait) {
-    [$d, $driver] = $holding(placeholderComFixtureName('management-wait-'.$wait.'-placeholder.com'));
-    $op = $submit($d, $driver, 'lock', ['locked'=>false]); $entry = $clock->now(); $money = $nativeMoney();
-    $waiting = true;
-    $state->during = static fn () => $clock->instant = $clock->now()->modify('+200 seconds');
-    $result = $management->run($op->id, $driver, RequestOrigin::Background); $waiting = false;
-    same($entry->modify('+'.$wait.' seconds')->format(DATE_ATOM), $result->started_at->format(DATE_ATOM), 'Claim wait precedes durable start');
-    if ($wait === 44) { same('succeeded', $result->state, 'Claim wait plus slow preflight fits'); }
-    else { $noSend($result, $money); }
+foreach ([44, 46] as $waitSeconds) {
+    $cases['claim-wait-'.$waitSeconds] = static function () use ($deadlineDomain, $deadlineDriver, $submit, $nativeMoney, $state, $clock, $management, $noSend, $waitSeconds, &$waiting, &$wait): void {
+        $op = $submit($deadlineDomain, $deadlineDriver, 'lock', ['locked'=>false]); $entry = $clock->now(); $money = $nativeMoney();
+        $wait = $waitSeconds; $waiting = true;
+        $state->during = static fn () => $clock->instant = $clock->now()->modify('+200 seconds');
+        try { $result = $management->run($op->id, $deadlineDriver, RequestOrigin::Background); }
+        finally { $waiting = false; }
+        same($entry->modify('+'.$waitSeconds.' seconds')->format(DATE_ATOM), $result->started_at->format(DATE_ATOM), 'Claim wait precedes durable start');
+        if ($waitSeconds === 44) { same('succeeded', $result->state, 'Claim wait plus slow preflight fits'); }
+        else { $noSend($result, $money); }
+    };
 }
-// Interactive dispatch has an explicit 250-second entry budget, including subsecond headroom.
 foreach ([225000000, 225000001] as $micros) {
-    [$d, $driver] = $holding(placeholderComFixtureName('management-interactive-'.$micros.'-placeholder.com'));
-    $op = $submit($d, $driver, 'lock', ['locked'=>false]); $money = $nativeMoney();
-    $state->during = static fn () => $clock->instant = $clock->now()->modify('+'.$micros.' microseconds');
-    $result = $management->run($op->id, $driver);
-    if ($micros === 225000000) { same('succeeded', $result->state, 'Interactive full-request boundary admitted'); }
-    else { $noSend($result, $money); }
+    $cases['interactive-'.$micros] = static function () use ($deadlineDomain, $deadlineDriver, $submit, $nativeMoney, $state, $clock, $management, $noSend, $micros): void {
+        $op = $submit($deadlineDomain, $deadlineDriver, 'lock', ['locked'=>false]); $money = $nativeMoney();
+        $state->during = static fn () => $clock->instant = $clock->now()->modify('+'.$micros.' microseconds');
+        $result = $management->run($op->id, $deadlineDriver);
+        if ($micros === 225000000) { same('succeeded', $result->state, 'Interactive full-request boundary admitted'); }
+        else { $noSend($result, $money); }
+    };
 }
+nativeFixtureCases($cases, compact('clock', 'state', 'deadlineDomain', 'deadlineDriver', 'management'));
 // A second physical preparation read cannot acquire a new window.
 [$d, $driver] = $holding(placeholderComFixtureName('management-late-preflight-placeholder.com')); $state->privacy = true;
 $op = $submit($d, $driver, 'privacy_enable'); $money = $nativeMoney();

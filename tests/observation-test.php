@@ -4,6 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/Support/management.php';
 require __DIR__.'/Support/observation-work.php';
 use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationSchema,ObservationWork};
 ObservationSchema::install(); $budget=new AccountReadBudget($clock); $observer=new DomainObservation($readBindings,$clock,$budget);
 [$d,$driver,$original]=$holding(placeholderComFixtureName('observed-old-holder-placeholder.com'));
@@ -70,7 +71,10 @@ Illuminate\Support\Facades\Cache::flush();$a=$submit($d,$driver,'nameservers',['
 $b=$submit($d,$driver,'nameservers',['nameservers'=>['ns7.example.com','ns8.example.com']]);
 same('management_retired',$a->fresh()->safe_code,'A new choice retires the earlier unsent request');
 // Retained work from before per-setting retirement can still contain both queued choices.
-DB::table('domains_operations')->where('id',$a->id)->update($legacy);
+DB::transaction(static function () use ($a, $legacy): void {
+    DB::table('domains_operations')->where('id', $a->id)->update($legacy);
+    DB::table(OperationSchema::EVIDENCE)->where(['operation_id'=>$a->id, 'kind'=>'terminal'])->delete();
+});
 same('succeeded',$management->run($b->id,$driver)->state,'Later request executes first');Illuminate\Support\Facades\Cache::flush();same('succeeded',$management->run($a->id,$driver)->state,'Earlier request executes last');
 $observer->run($d->id);same($a->operation_key,$d->fresh()->observation['sections']['nameservers']['operation_key'],'Projection follows durable readback sequence, not creation ID');
 // A real management preparation interleaving cannot be held by a background projection save.
