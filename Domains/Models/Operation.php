@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Models;
 
 use Illuminate\Database\Eloquent\Casts\Attribute;
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\{Builder, Model};
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AttemptFacts, AttemptToken, OperationAttempts, OperationSchema};
 
 class Operation extends Model
 {
@@ -13,6 +16,14 @@ class Operation extends Model
 
     /** Transaction-local capability evidence; never an attribute, relationship or persisted authority. */
     public ?Tld $catalogueTld = null;
+    /** Exact worker authority, set by the claim or seal transaction and never persisted. */
+    public ?AttemptToken $acquisitionWorker = null;
+    /** @var array{facts: AttemptFacts, action: string, start: ?\DateTimeImmutable}|array{}|null */
+    private ?array $acquisitionRow = null;
+    private AcquisitionAttempt|\Throwable|null $acquisitionAttempt = null;
+    private bool $acquisitionLoaded = false;
+    private bool $noAcquisitionStep = false;
+    private bool $validatingUpdate = false;
 
     protected $table = 'domains_operations';
     protected $guarded = [];
@@ -28,8 +39,200 @@ class Operation extends Model
      */
     protected function attempt(): Attribute
     {
-        return Attribute::get(fn (?string $value, array $row): ?array => ($row['action'] ?? null) === 'renew' ? []
-            : ($value === null ? null : $this->fromJson($this->fromEncryptedString($value))));
+        return $this->retainedEvidence('attempt');
+    }
+
+    protected function funding(): Attribute { return $this->retainedEvidence('funding'); }
+    protected function policy(): Attribute { return $this->retainedEvidence('policy'); }
+
+    /** @return Attribute */
+    private function retainedEvidence(string $field)
+    {
+        return Attribute::make(
+            get: function (?string $value, array $row) use ($field): ?array {
+                return $this->projectEvidence($field, $value, $row);
+            },
+            set: function (?array $value, array $row) use ($field): ?string {
+                if ($attempt = $this->acquisition($row)) {
+                    $value = $attempt->keepOperationFacts($field, $this->acquisitionEvidence($field, $row), $value);
+                }
+                return $value === null ? null : $this->castAttributeAsEncryptedString($field, $this->asJson($value));
+            },
+        );
+    }
+
+    private function projectEvidence(string $field, ?string $value, array $row): ?array
+    {
+        if ($field === 'attempt' && ($row['action'] ?? null) === 'renew') { return []; }
+        $stored = $this->decodeEvidence($value);
+        $projection = $this->acquisitionEvidence($field, $row);
+        return $projection ? array_replace($stored ?? [], $projection) : $stored;
+    }
+
+    private function decodeEvidence(?string $value): ?array
+    {
+        return $value === null ? null : $this->fromJson($this->fromEncryptedString($value));
+    }
+
+    /** Receipt returns are owned by the operation, independently of claim and seal funding. */
+    public function receiptFunding(): array
+    {
+        return $this->decodeEvidence($this->attributes['funding'] ?? null) ?? [];
+    }
+
+    public function getOriginal($key = null, $default = null)
+    {
+        if ($this->validatingUpdate && in_array($key, ['attempt', 'funding', 'policy'], true)) {
+            // The save checks compare both versions against the same retained attempt.
+            return $this->projectEvidence($key, Arr::get($this->original, $key, $default), $this->original);
+        }
+        return parent::getOriginal($key, $default);
+    }
+
+    /** Read step presence with the operation when the caller has a current view of the ledger. */
+    public function scopeWithAcquisitionStep(Builder $query): Builder
+    {
+        return $query->addSelect(['has_acquisition_step' => DB::table(OperationSchema::STEPS)
+            ->select('id')->whereColumn('operation_id', 'domains_operations.id')
+            ->whereIn('step_type', ['register', 'transfer'])->where('sequence', 1)
+            ->whereColumn('step_type', 'domains_operations.action')->limit(1)]);
+    }
+
+    private function acquisitionEvidence(string $field, array $row): array
+    {
+        $attempt = $this->acquisition($row);
+        if (!$attempt) { return []; }
+        return match ($field) {
+            'attempt' => $attempt->attempt(),
+            'funding' => $attempt->funding(),
+            'policy' => ($answer = $attempt->answer()) ? ['enom_answer' => $answer] : [],
+        };
+    }
+
+    private function acquisitionRow(array $row): array
+    {
+        if ($this->noAcquisitionStep
+            || !isset($row['id'], $row['action'], $row['transition_revision'])
+            || AcquisitionAttempt::key($this->getRawOriginal('action') ?? $row['action']) === null) { return []; }
+        $id = (int) $row['id'];
+        return $this->acquisitionRow ??= OperationAttempts::latestAcquisitions([$id])[$id] ?? [];
+    }
+
+    private function acquisition(array $row): ?AcquisitionAttempt
+    {
+        if (!($facts = $this->acquisitionRow($row))) { return null; }
+        if (!$this->acquisitionLoaded) {
+            $id = (int) $row['id'];
+            $this->acquisitionAttempt = AcquisitionAttempt::many([$id => $facts])[$id];
+            $this->acquisitionLoaded = true;
+        }
+        if ($this->acquisitionAttempt instanceof \Throwable) { throw $this->acquisitionAttempt; }
+        return $this->acquisitionAttempt;
+    }
+
+    /** Batch the attempt rows for staff readers. Date-only readers need no encrypted evidence. */
+    public static function loadAcquisitionAttempts(iterable $operations, bool $withEvidence = true, bool $lock = false): void
+    {
+        $pending = [];
+        foreach ($operations as $op) {
+            if ($op->noAcquisitionStep) { continue; }
+            if (!$op->acquisitionLoaded && $op->getRawOriginal('id') !== null
+                && AcquisitionAttempt::key((string) $op->getRawOriginal('action')) !== null) {
+                $pending[(int) $op->id][] = $op;
+            }
+        }
+        $rows = OperationAttempts::latestAcquisitions(array_keys($pending), $lock);
+        $attempts = $withEvidence ? AcquisitionAttempt::many($rows, $lock) : [];
+        foreach ($pending as $id => $models) {
+            foreach ($models as $op) {
+                $op->acquisitionRow = $rows[$id] ?? [];
+                $op->acquisitionAttempt = $attempts[$id] ?? null;
+                $op->acquisitionLoaded = $withEvidence;
+            }
+        }
+    }
+
+    /** Called after a writer transition on this model's locked operation. */
+    public function reloadAcquisitionAttempt(): void
+    {
+        $this->acquisitionRow = null;
+        $this->acquisitionAttempt = null;
+        $this->acquisitionLoaded = false;
+        $this->noAcquisitionStep = false;
+    }
+
+    public function setRawAttributes(array $attributes, $sync = false)
+    {
+        $this->reloadAcquisitionAttempt();
+        $this->noAcquisitionStep = array_key_exists('has_acquisition_step', $attributes) && $attributes['has_acquisition_step'] === null;
+        unset($attributes['has_acquisition_step']);
+        return parent::setRawAttributes($attributes, $sync);
+    }
+
+    protected function startedAt(): Attribute
+    {
+        return Attribute::get(function ($value, array $row) {
+            $acquisition = $this->acquisitionRow($row);
+            $start = $acquisition ? $acquisition['start'] : $value;
+            return $start === null ? null : $this->asDateTime($start)->toImmutable();
+        })->withoutObjectCaching();
+    }
+
+    protected function requestFingerprint(): Attribute
+    {
+        return Attribute::get(fn ($value, array $row) => ($attempt = $this->acquisition($row)) ? $attempt->digest() : $value);
+    }
+
+    protected function leaseExpiresAt(): Attribute
+    {
+        return Attribute::get(function ($value, array $row) {
+            $facts = $this->acquisitionRow($row)['facts'] ?? null;
+            if (!$facts) { return $value === null ? null : $this->asDateTime($value)->toImmutable(); }
+            return ($row['state'] ?? null) === 'running' && $facts->current && $facts->claimUntil !== null
+                ? $this->asDateTime($facts->claimUntil)->toImmutable() : null;
+        })->withoutObjectCaching();
+    }
+
+    protected function performUpdate(Builder $query)
+    {
+        $this->validatingUpdate = true;
+        try {
+            return AcquisitionAttempt::key((string) $this->getRawOriginal('action'))
+                ? $this->updateAcquisition($query) : parent::performUpdate($query);
+        } finally {
+            $this->validatingUpdate = false;
+        }
+    }
+
+    private function updateAcquisition(Builder $query): bool
+    {
+        $dirty = $this->getDirty();
+        $identity = array_intersect_key($dirty, array_flip(['started_at', 'request_fingerprint', 'lease_expires_at']));
+        $payload = array_key_exists('payload', $dirty);
+        $claimFacts = [];
+        foreach (array_intersect_key($dirty, ['attempt' => true, 'funding' => true]) as $field => $value) {
+            // The setter strips projected facts. A receipt-only update has no claim authority to write.
+            $facts = AcquisitionAttempt::operationClaimFacts($field, $this->decodeEvidence($value))
+                + AcquisitionAttempt::operationClaimFacts($field, $this->decodeEvidence($this->getRawOriginal($field)));
+            if ($facts) { $claimFacts[$field] = $facts; }
+        }
+        if (!$identity && !$payload && !$claimFacts) { return parent::performUpdate($query); }
+
+        $connection = $this->getConnection();
+        $write = function () use ($query, $identity, $payload, $claimFacts): bool {
+            // The attempt writer holds the same operation lock. Read through old snapshots before saving.
+            $this->newModelQuery()->whereKey($this->getKeyForSaveQuery())->lockForUpdate()->firstOrFail(['id']);
+            $this->reloadAcquisitionAttempt();
+            self::loadAcquisitionAttempts([$this], lock: true);
+            if ($attempt = $this->acquisition($this->original)) {
+                if ($identity || ($payload && $attempt->sealed())) {
+                    throw new \DomainException('Acquisition authority belongs to its operation attempt.');
+                }
+                foreach ($claimFacts as $field => $facts) { $attempt->guardOperationClaimFacts($field, $facts); }
+            }
+            return parent::performUpdate($query);
+        };
+        return $connection->transactionLevel() ? $write() : $connection->transaction($write);
     }
 
     protected static function booted(): void
@@ -44,6 +247,13 @@ class Operation extends Model
         });
         static::updating(static function (self $operation): void {
             $dirty = array_keys($operation->getDirty());
+            if (AcquisitionAttempt::key($operation->action) && $operation->acquisition($operation->attributes)) {
+                $next = (int) $operation->getRawOriginal('transition_revision') + 1;
+                if (in_array('state', $dirty, true)) { $operation->transition_revision = $next; }
+                elseif (in_array('transition_revision', $dirty, true) && $operation->transition_revision !== $next) {
+                    throw new \DomainException('Acquisition revision must advance by one.');
+                }
+            }
             if ($operation->action === 'renew') {
                 $next = (int) $operation->getOriginal('transition_revision') + 1;
                 if (in_array('state', $dirty, true)) {
@@ -107,80 +317,10 @@ class Operation extends Model
                 }
             }
             $old = $operation->getOriginal('attempt') ?? []; $new = $operation->attempt ?? [];
-            $oldRefusals=$old['test_call_refusals']??[];$newRefusals=$new['test_call_refusals']??[];
-            if(!is_array($oldRefusals)||!array_is_list($oldRefusals)||!is_array($newRefusals)||!array_is_list($newRefusals)
-                ||count($newRefusals)>100||count($newRefusals)<count($oldRefusals)||array_slice($newRefusals,0,count($oldRefusals))!==$oldRefusals) {
-                throw new \DomainException('TEST call refusal history is append-only and bounded.');
+            if (($old['test_call_refusals'] ?? []) !== ($new['test_call_refusals'] ?? [])) {
+                throw new \DomainException('TEST call refusal history belongs to the operation attempt.');
             }
-            foreach($newRefusals as $refusal) {
-                if(!is_array($refusal)||array_keys($refusal)!==['phase','refused_at','dispatch_attempted_at','authorized_cost']
-                    ||!in_array($refusal['phase']??null,['preflight','purchase'],true)||!is_string($refusal['refused_at']??null)) {
-                    throw new \DomainException('TEST call refusal evidence is invalid.');
-                }
-                try { if((new \DateTimeImmutable($refusal['refused_at']))->format(DATE_ATOM)!==$refusal['refused_at']) { throw new \DomainException('TEST call refusal time is invalid.'); } }
-                catch(\Throwable) { throw new \DomainException('TEST call refusal time is invalid.'); }
-                if($refusal['phase']==='preflight') {
-                    if($refusal['dispatch_attempted_at']!==null||$refusal['authorized_cost']!==null) { throw new \DomainException('Preflight refusal cannot have sealed evidence.'); }
-                } elseif(!is_string($refusal['dispatch_attempted_at'])||!is_array($refusal['authorized_cost'])
-                    ||array_keys($refusal['authorized_cost'])!==['amount','currency']||!is_string($refusal['authorized_cost']['amount']??null)
-                    ||$refusal['authorized_cost']['currency']!=='USD') { throw new \DomainException('Purchase refusal evidence is invalid.'); }
-            }
-            $oldFunding=$operation->getOriginal('funding')??[];$newFunding=$operation->funding??[];
-            $expectedFunding=$oldFunding;unset($expectedFunding['claim'],$expectedFunding['seal']);
-            $phase=($old['seal']??null)==='sealed'?'purchase':'preflight';$lastRefusal=$newRefusals?end($newRefusals):null;
-            $deferrals=$old['capacity_deferrals']??[];
-            $validDeferrals=!array_key_exists('capacity_deferrals',$old)||(is_array($deferrals)&&array_is_list($deferrals)&&count($deferrals)<=5
-                &&!array_filter($deferrals,static fn($at)=>!is_string($at)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/D',$at)));
-            $safeCapReset=$operation->getOriginal('state')==='running'&&$operation->state==='held'&&in_array($operation->safe_code,['enom_test_call_cap','enom_test_transfer_call_cap'],true)
-                &&in_array($operation->action,['register','transfer'],true)&&$operation->started_at===null&&$operation->request_fingerprint===null&&$operation->lease_expires_at===null
-                &&$operation->provider_order_id===null&&!array_key_exists('actual',$operation->cost??[])&&!array_key_exists('execution',$operation->cost??[])
-                &&!array_key_exists('dispatch_attempted_at',$operation->policy??[])
-                &&is_array($lastRefusal)&&$lastRefusal===['phase'=>$phase,'refused_at'=>$lastRefusal['refused_at']??null,
-                    'dispatch_attempted_at'=>$phase==='purchase'?($old['dispatch_attempted_at']??null):null,
-                    'authorized_cost'=>$phase==='purchase'?($old['authorized_cost']??null):null]
-                &&$new===['test_call_refusals'=>$newRefusals,...array_intersect_key($old,['capacity_deferrals'=>true])]
-                &&$newRefusals===array_merge($oldRefusals,[$lastRefusal])
-                &&$newFunding===$expectedFunding;
-            // A proven-unsent TEST refusal can be staff-released and freshly claimed with a new
-            // execution window. Preserve its refusal/deferral histories while rotating authority.
-            $retryDeferrals=$old['capacity_deferrals']??[];
-            $retryFunding=$newFunding;unset($retryFunding['claim'],$retryFunding['seal']);
-            $freshClaim=$newFunding['claim']??null;
-            $safeTestRetry=$operation->getOriginal('state')==='queued'&&$operation->state==='running'&&$operation->safe_code===null
-                &&in_array($operation->action,['register','transfer'],true)&&$operation->registrar_key==='enom'&&$oldRefusals!==[]&&$oldRefusals===$newRefusals
-                &&in_array($operation->getOriginal('safe_code'),[null,'write_rate_limited'],true)
-                &&($old['seal']??null)==='absent'&&($old['send_state']??null)==='definitely_unsent'
-                &&(!isset($old['claim_key'])||(is_string($old['claim_key'])&&preg_match('/^[a-f0-9]{32}$/D',$old['claim_key'])&&($new['claim_key']??null)!==$old['claim_key']))
-                &&is_array($retryDeferrals)&&array_is_list($retryDeferrals)&&count($retryDeferrals)<=5
-                &&!array_filter($retryDeferrals,static fn($at)=>!is_string($at)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/D',$at))
-                &&$new===['test_call_refusals'=>$oldRefusals,...array_intersect_key($old,['capacity_deferrals'=>true]),
-                    'claim_key'=>$new['claim_key']??null,'seal'=>'absent','send_state'=>'definitely_unsent']
-                &&is_string($new['claim_key']??null)&&preg_match('/^[a-f0-9]{32}$/D',$new['claim_key'])
-                &&$operation->started_at!==null&&is_string($operation->request_fingerprint)&&preg_match('/^[a-f0-9]{64}$/D',$operation->request_fingerprint)
-                &&$operation->lease_expires_at!==null&&$retryFunding===$expectedFunding&&is_array($freshClaim)
-                &&(!array_key_exists('claim',$oldFunding)||$freshClaim===$oldFunding['claim']);
-            if($safeCapReset) {
-                $allowed=$phase==='purchase'
-                    ?['test_call_refusals','claim_key','seal','send_state','capacity_deferrals','dispatch_attempted_at','authorized_cost',$operation->action==='transfer'?'transfer_admission':'registration_admission']
-                    :['test_call_refusals','claim_key','seal','send_state','capacity_deferrals'];
-                $safeCapReset=($old['send_state']??null)===($phase==='purchase'?'possibly_sent':'definitely_unsent')
-                    &&($phase==='purchase'?($old['seal']??null)==='sealed'&&isset($old['dispatch_attempted_at'],$old['authorized_cost'],$old[$operation->action==='transfer'?'transfer_admission':'registration_admission']):($old['seal']??null)==='absent')
-                    &&($phase!=='purchase'||\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::purchaseUnconsumed($operation->account_fingerprint,(int)$operation->id))
-                    &&$validDeferrals&&!array_diff(array_keys($old),$allowed)
-                    &&!array_intersect(array_keys($old),['execution','evidence','charge','order_candidates','provider_reference','registration','corrections','reconciliation','terminal']);
-            }
-            $balanceCap=\Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::capReset($operation);
-            // A sealed paid renewal attempt holds reserved postings; its send state only changes through the attempt.
-            // Looked up only when a reset or a send-state change could depend on it.
-            $reset = $safeCapReset || $safeTestRetry || $balanceCap; $sendStateChanged = ($new['send_state'] ?? null) !== ($old['send_state'] ?? null);
-            $reservedRenewal = ($reset || $sendStateChanged) && $operation->action === 'renew' && $operation->funding_basis === 'paid_invoice'
-                && \Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationAttempts::sealed((int) $operation->id, \Paymenter\Extensions\Servers\Domains\Operations\Authority\StepKey::renew()) !== null;
-            $safeAttemptReset = !$reservedRenewal && $reset;
-            if ($reservedRenewal && $sendStateChanged) {
-                throw new \DomainException('Reserved renewal send state is immutable.');
-            }
-            \Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::guard($operation,$balanceCap);
-            if($newRefusals!==$oldRefusals&&!$safeCapReset) { throw new \DomainException('TEST call refusal history requires a proven-unsent cap reset.'); }
+            \Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::guard($operation);
             if (!array_key_exists('registration_admission', $old) && array_key_exists('registration_admission', $new)
                 && (($old['seal'] ?? null) !== 'absent' || ($new['seal'] ?? null) !== 'sealed' || $operation->action !== 'register')) {
                 throw new \DomainException('Registration admission can only be recorded at the original seal.');
@@ -188,18 +328,18 @@ class Operation extends Model
             if (!array_key_exists('transfer_admission', $old) && array_key_exists('transfer_admission', $new)
                 && (($old['seal'] ?? null) !== 'absent' || ($new['seal'] ?? null) !== 'sealed' || $operation->action !== 'transfer')) { throw new \DomainException('Transfer admission requires the original seal.'); }
             foreach (['transfer_admission', 'transfer_terminal', 'claim_key', 'dispatch_attempted_at', 'authorized_cost', 'renewal_mode', 'renewal', 'registration_admission', 'execution', 'send_failure', 'evidence', 'charge', 'order_candidates', 'registration', 'corrections', 'reconciliation', 'terminal', 'transfer_timeout'] as $key) {
-                if (!$safeAttemptReset&&array_key_exists($key, $old) && (!array_key_exists($key, $new) || $new[$key] !== $old[$key])) {
+                if (array_key_exists($key, $old) && (!array_key_exists($key, $new) || $new[$key] !== $old[$key])) {
                     throw new \DomainException('Attempt evidence is write-once.');
                 }
             }
-            if (!$safeAttemptReset&&isset($old['claim_key']) && $operation->isDirty(['started_at', 'request_fingerprint'])) { throw new \DomainException('Original attempt identity is frozen.'); }
+            if (isset($old['claim_key']) && $operation->isDirty(['started_at', 'request_fingerprint'])) { throw new \DomainException('Original attempt identity is frozen.'); }
             if (isset($old['reconciliation']) && $operation->isDirty(['provider_order_id', 'confirmed_expires_at', 'completed_at'])&&!\Paymenter\Extensions\Servers\Domains\Services\CapturedChargeReview::completionAllowed($operation)) { throw new \DomainException('Completion evidence is frozen.'); }
             if (($old['seal'] ?? null) === 'sealed' && $operation->isDirty('payload')) {
                 throw new \DomainException('Sealed desired state is frozen.');
             }
             foreach (['claim', 'seal', 'refund_authorization', 'refund'] as $key) {
                 $before = $operation->getOriginal('funding') ?? []; $after = $operation->funding ?? [];
-                if (!$safeAttemptReset&&array_key_exists($key, $before) && (!array_key_exists($key, $after) || $after[$key] !== $before[$key])) {
+                if (array_key_exists($key, $before) && (!array_key_exists($key, $after) || $after[$key] !== $before[$key])) {
                     throw new \DomainException('Claim funding evidence is frozen.');
                 }
             }
@@ -227,7 +367,7 @@ class Operation extends Model
                 || count($next) > 20 || count($next) < count($history) || array_slice($next, 0, count($history)) !== $history) {
                 throw new \DomainException('Financial adjustments are append-only.');
             }
-            if (!$safeAttemptReset&&($old['seal'] ?? null) === 'sealed' && ($new['seal'] ?? null) !== 'sealed') {
+            if (($old['seal'] ?? null) === 'sealed' && ($new['seal'] ?? null) !== 'sealed') {
                 throw new \DomainException('Dispatch seals cannot be removed.');
             }
         });

@@ -16,8 +16,8 @@ $registry->register('enom', ['token'], $verify, static function ($binding, $cred
 });
 $readBindings = new AccountBindings($registry); $reconcile = new OperationReconciliation($claims, $readBindings, $clock);
 // Captured acceptance can retain execution facts without an order reference; history must still run.
-[$op, $binding] = $prepare(reservedFixtureName('history.example.com'), 'absent');
-$op = $claims->finish($op, new DriverResult($binding, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,
+[$op, $binding, $sealed] = $prepare(reservedFixtureName('history.example.com'), 'absent');
+$op = $claims->finish($sealed, new DriverResult($binding, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,
     new Evidence(registration: new RegistrationEvidence(\Paymenter\Extensions\Servers\Domains\Services\OperationClaims::query($op, $op->domain),
         null, new DateEvidence('2027-10-18', ExpiryPrecision::Date, 'synthetic_purchase'), null, []))));
 HistoryAcceptances::save(new HistoryAcceptance($binding, 'America/Los_Angeles', 0, 86400, 'enom_registration_v1'));
@@ -37,8 +37,8 @@ same($writes, $writer->calls, 'Null-reference history recovery never replays a w
 same($money, $nativeMoney(), 'Null-reference history recovery preserves native finance');
 // Null-reference acceptance never substitutes for a covering, unique history proof.
 foreach (['no-acceptance', 'window', 'zero', 'multiple'] as $fault) {
-    [$op, $binding] = $prepare(reservedFixtureName('null-history-'.$fault.'.example.com'), 'absent');
-    $op = $claims->finish($op, new DriverResult($binding, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,
+    [$op, $binding, $sealed] = $prepare(reservedFixtureName('null-history-'.$fault.'.example.com'), 'absent');
+    $op = $claims->finish($sealed, new DriverResult($binding, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,
         new Evidence(registration: new RegistrationEvidence(\Paymenter\Extensions\Servers\Domains\Services\OperationClaims::query($op, $op->domain),
             null, new DateEvidence('2027-10-18', ExpiryPrecision::Date, 'synthetic_purchase'), null, []))));
     App\Models\Server::findOrFail($binding->serverId)->settings()->where('key', HistoryAcceptances::KEY)->delete();

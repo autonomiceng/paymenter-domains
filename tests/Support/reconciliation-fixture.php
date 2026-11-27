@@ -94,5 +94,5 @@ $prepare = static function (string $name, string $mode = 'accepted', ?\Paymenter
     }
     $observation->name = $name; $observation->years = $op->term; $observation->expiryYears = null; $observation->reference = '9001';
     $observation->fault = ''; $observation->billDate = '10/18/2026 6:00:01 AM'; $observation->calls = []; $observation->during = null;
-    return [$op->fresh(), $binding];
+    return [$op->fresh(), $binding, $sealed];
 };

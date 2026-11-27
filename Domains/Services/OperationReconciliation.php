@@ -3,31 +3,37 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{NameserverEvidence, RequestBudget, RequestContext, RequestOrigin};
-use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Contracts\TransferPoller;
+use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence, Evidence, NameserverEvidence, RequestBudget, RequestContext, RequestOrigin, TransferStatus};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter, ReadToken, RetainedAcquisition};
+use Paymenter\Extensions\Servers\Domains\Operations\Reconciliation\{AcquisitionObservation, AcquisitionRead, AcquisitionSettlement};
 use Paymenter\Extensions\Servers\Domains\Registrars\{Enom, NameSilo};
 use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementCorrections;
+use Paymenter\Extensions\Servers\Domains\Transfer\Execution\TransferObservation;
 /** Observation never replays a write. No rejection/refund can be inferred from an empty read. */
 final class OperationReconciliation
 {
     public const POLL_LIMIT=5;
     public const READ_SECONDS=250;
-    public function __construct(private readonly OperationClaims $claims, private readonly AccountBindings $bindings, private readonly Clock $clock) {}
+    private readonly OperationWriter $attempts;
+    public function __construct(private readonly OperationClaims $claims, private readonly AccountBindings $bindings, private readonly Clock $clock)
+    { $this->attempts = new OperationWriter($clock); }
     public function run(int $id): Operation
     {
         OperationClaims::outside();
         $op = Operation::findOrFail($id);
         if (!$this->eligible($op)) { return $op; }
         $check = new RegistrarCheck($this->clock);
-        return $check->finish($this->read($id, $check));
+        return $this->read($id, $check);
     }
-    private function read(int $id, RegistrarCheck $check): Operation
+    private function capture(int $id, RegistrarCheck $check): ?AcquisitionRead
     {
         OperationClaims::outside();
-        $capture = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($check): ?array {
+        return $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($check): ?AcquisitionRead {
             if (!$this->eligible($op)) { return null; }
             $watch=TransferPolling::applies($op);$now=$this->clock->now()->getTimestamp();
-            if ($watch && TransferPolling::reading($op, $now)) { return null; }
+            if (TransferPolling::reading($op, $now)) { return null; }
             $check->capture($op);
             $manual=$watch&&($op->policy['reconciliation']['manual_check']??false);
             if($watch&&!TransferPolling::due($op,$now)){$check->deferred='scheduled';return null;}
@@ -52,181 +58,197 @@ final class OperationReconciliation
                     if ($op->action !== 'transfer' && $attempt->replyLost()) { self::askRegistrar($check, $op, $attempt); }
                     return null;
                 }
-                if($watch){TransferPolling::reserve($op,$now);$op->refresh();}
                 $requestedNameservers = null;
                 if ($op->action === 'transfer' && $op->registrar_key === 'namesilo' && ($op->payload['nameservers'] ?? [])) {
                     try { $requestedNameservers = NameserverEvidence::requested($op->payload['nameservers'], 'transfer_request', new \DateTimeImmutable($op->attempt['dispatch_attempted_at'])); }
                     catch (\Throwable) { /* Invalid submitted data is not a nameserver fact. */ }
                 }
-                $until = $op->policy['reconciliation']['reading_until'] ?? null;
-                if ($watch && !$manual) {
-                    $cutoff = TransferPolling::cutoff($op);
-                    $until = min($until ?? $cutoff, $cutoff);
-                }
-                return [$attempt, self::stamp($op, $domain), self::contract($attempt), $requestedNameservers, $watch, $watch&&TransferPolling::light($op,$now), $followup, $until];
+                $deadline = $now + self::READ_SECONDS;
+                if ($watch && !$manual) { $deadline = min($deadline, TransferPolling::cutoff($op)); }
+                $until = new \DateTimeImmutable('@'.$deadline);
+                $sealed = RetainedAcquisition::adopt($op, $this->attempts, $this->clock->now());
+                if ($sealed && (!$sealed->sealed() || $deadline <= $now)) { return null; }
+                if ($watch) { TransferPolling::reserve($op, $now); $op->refresh(); }
+                $stamp = self::stamp($op, $domain);
+                $contract = self::contract($attempt);
+                $light = $watch && TransferPolling::light($op, $now);
+                $read = $sealed ? $this->attempts->openRead($sealed->facts->token, $until) : null;
+                if ($read !== null && !$read instanceof ReadToken) { $check->discard(); return null; }
+                return new AcquisitionRead($attempt, $stamp, $contract, $requestedNameservers, $watch, $light, $followup, $until, $read);
             } catch (\Throwable) {
                 if($watch){$p=$op->policy;$p['reconciliation']['staff_alert']=true;$p['reconciliation']['reason']='transfer_authority_changed';if(TransferPolling::expired($op,$now)){$p['reconciliation']['final_check']='done';}$op->update(['policy'=>$p]);}
                 return null;
             }
         });
-        if (!$capture) { return Operation::findOrFail($id); }
-        [$attempt, $stamp, $contract, $requestedNameservers, $watch, $light, $followup, $until] = $capture; $proof = null; $nameservers = null; $covered = false; $transferConflict = false; $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
-        $callCapBlocked = false; $pendingAnomaly = false; $privacyBlocked = false; $scan = null;
-        $limiter=$watch?new TransferReadBudget($this->clock,Runtime::limiter()):null;
+    }
+
+    private function read(int $id, RegistrarCheck $check): Operation
+    {
+        $capture = $this->capture($id, $check);
+        if (!$capture) { return $check->finish(Operation::findOrFail($id)); }
+        $read = $capture->token;
         try {
-            $deadline = $this->clock->now()->modify('+'.self::READ_SECONDS.' seconds');
-            if ($until !== null) { $deadline = min($deadline, new \DateTimeImmutable('@'.$until)); }
-            $context = $check->context = new RequestContext($attempt->binding, RequestOrigin::Background, $deadline, new RequestBudget(25), $this->clock, $limiter ?? Runtime::limiter(), deferOnReservationLimit: $watch);
-            $read=function()use($attempt,$context,$light,$followup){
-                $reader=$this->bindings->reader($attempt->binding->serverId);
-                if ($followup) {
-                    if ($reader instanceof Enom\EnomTestReconciliationReader) {
-                        return $reader->reconcile($attempt, $context, overdue: true);
-                    }
-                    if (!$reader instanceof Enom\Driver && !$reader instanceof NameSilo\Driver) {
-                        throw new \DomainException('Transfer status reader unavailable.');
-                    }
-                    return $reader->pollTransfer($attempt, $context, overdue: true);
-                }
-                return $light&&$reader instanceof \Paymenter\Extensions\Servers\Domains\Contracts\TransferPoller
-                    ?$reader->pollTransfer($attempt,$context):$reader->reconcile($attempt,$context);
-            };
-            $result=$limiter?$limiter->run($attempt->binding,$read):$read();
-            $result->requireAttempt($attempt);
-            if ($sample = $result->result()->evidence()->billZoneSample) { EnomBillZones::record($attempt->binding, $sample); }
-            // Scan progress is reusable after the deadline; financial conclusions still require an in-time read.
-            $facts = $result->result()->evidence(); $scan = $facts->historyScan;
-            if ($this->clock->now() < $context->deadline) {
-                $nameservers = $facts->domain?->nameservers ?? $requestedNameservers;
-                $covered = $facts->domain?->owned === true && $facts->domain->expiry !== null
-                    && ($facts->historyComplete || ($attempt->executionFacts && $attempt->providerReference !== null && count($facts->candidates) > 0));
-                $transfer = $facts->transfer;
-                $privacyBlocked = $transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::NeedsAction && $facts->transferPrivacyBlocked;
-                $pendingAnomaly=count($facts->candidates)>1 || ($attempt->expectedCharge!==null && count($facts->candidates)===1
-                    && $facts->candidates[0]->charge!==null && ($facts->candidates[0]->charge->currency!==$attempt->expectedCharge->currency
-                        || self::decimal($facts->candidates[0]->charge->amount)!==self::decimal($attempt->expectedCharge->amount)));
-                $transferConflict = in_array($transfer, [\Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Rejected, \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::NeedsAction], true)
-                    && ($facts->domain?->owned === true || count($facts->candidates) > ($attempt->binding->registrarKey === 'enom' && $transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Rejected ? 1 : 0));
-                // One Enom charge can be a failed fee. It proves neither finality nor a settled refund.
-                if ($attempt->query->action->value === 'transfer' && $transfer !== \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown) { $covered = true; }
-                $proof = $followup && $pendingAnomaly ? null : ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
-                $check->observe($attempt,$facts,$proof!==null);
+            return $check->finish($this->readCaptured($id, $check, $capture), $read);
+        } catch (\Throwable $error) {
+            if ($read !== null) {
+                FreshTransaction::run(function () use ($id, $read): void {
+                    Operation::whereKey($id)->lockForUpdate()->firstOrFail();
+                    $this->attempts->closeRead($read);
+                });
             }
+            throw $error;
+        }
+    }
+
+    private function exchange(AcquisitionRead $read, RegistrarCheck $check): Evidence
+    {
+        $attempt = $read->attempt;
+        $limiter = $read->watch ? new TransferReadBudget($this->clock, Runtime::limiter()) : null;
+        $context = $check->context = new RequestContext($attempt->binding, RequestOrigin::Background, $read->until,
+            new RequestBudget(25), $this->clock, $limiter ?? Runtime::limiter(), deferOnReservationLimit: $read->watch);
+        $work = function () use ($read, $attempt, $context) {
+            $reader = $this->bindings->reader($attempt->binding->serverId);
+            if ($read->followup) {
+                if ($reader instanceof Enom\EnomTestReconciliationReader) { return $reader->reconcile($attempt, $context, overdue: true); }
+                if (!$reader instanceof Enom\Driver && !$reader instanceof NameSilo\Driver) {
+                    throw new \DomainException('Transfer status reader unavailable.');
+                }
+                return $reader->pollTransfer($attempt, $context, overdue: true);
+            }
+            return $read->light && $reader instanceof TransferPoller ? $reader->pollTransfer($attempt, $context) : $reader->reconcile($attempt, $context);
+        };
+        $result = $limiter ? $limiter->run($attempt->binding, $work) : $work();
+        $result->requireAttempt($attempt);
+        $facts = $result->result()->evidence();
+        if ($sample = $facts->billZoneSample) { EnomBillZones::record($attempt->binding, $sample); }
+        return $facts;
+    }
+
+    private function readCaptured(int $id, RegistrarCheck $check, AcquisitionRead $read): Operation
+    {
+        $observed = new AcquisitionObservation();
+        $callCapBlocked = false;
+        try {
+            $facts = $this->exchange($read, $check);
+            // Scan progress is reusable after the deadline. Positive proof still needs an in-time read.
+            $now = $this->clock->now();
+            $observed = $now < $read->until ? AcquisitionObservation::from($read, $facts, $now) : new AcquisitionObservation($facts->historyScan);
+            if ($now < $read->until) { $check->observe($read->attempt, $facts, $observed->proof !== null); }
         } catch (ReadDeferred|LiveReservationLimit) {
             $check->deferred = 'read_limit';
-            return $watch?$this->deferred($id,$stamp,($check->context?->exchanges() ?? 0) === 0, $followup):Operation::findOrFail($id);
+            return $read->watch ? $this->deferred($id, $read->stamp, ($check->context?->exchanges() ?? 0) === 0, $read->followup, $read->token):Operation::findOrFail($id);
         } catch (EnomTestCallLimit $error) {
             $check->deferred = $error->reason === 'send_guard' ? 'send_guard' : 'send_limit';
             // Enom’s daily guard runs after limiter admission, before the physical exchange.
-            if($watch){return $this->deferred($id,$stamp,($check->context?->exchanges() ?? 0) === 0, $followup);}
+            if ($read->watch){return $this->deferred($id, $read->stamp, ($check->context?->exchanges() ?? 0) === 0, $read->followup, $read->token);}
             $callCapBlocked = true;
         } catch (\Throwable) {} // Safe retained alert; transport/contract failures do not manufacture facts.
-        $readStarted=!$watch||($check->context?->exchanges() ?? 0) > 0;
+        $readStarted=!$read->watch||($check->context?->exchanges() ?? 0) > 0;
+        return $observed->covered ? $this->finishObserved($id, $read, $observed, $check, $readStarted)
+            : $this->finishUnavailable($id, $read, $observed, $check, $readStarted, $callCapBlocked);
+    }
+
+    private function finishUnavailable(int $id, AcquisitionRead $read, AcquisitionObservation $observed, RegistrarCheck $check,
+        bool $readStarted, bool $callCapBlocked): Operation
+    {
+        $attempt = $read->attempt;
+        $scan = $observed->scan;
         // An order history read of a lost reply counts toward the read limit even when it cannot confirm the order.
-        $historyRead=!$covered&&!$callCapBlocked&&$attempt->query->action->value!=='transfer'&&$attempt->replyLost()
+        $historyRead=!$callCapBlocked&&$attempt->query->action->value!=='transfer'&&$attempt->replyLost()
             &&($attempt->historyAcceptance?->covers($attempt,$this->clock->now())??false)&&($check->context?->exchanges()??0)>0;
-        if (!$covered) {
-            if (!$callCapBlocked) {
-                return $this->claims->locked($id,function($op,$domain)use($stamp,$watch,$readStarted,$historyRead,$attempt,$check,$scan,$followup):Operation {
-                    if(!$this->eligible($op)||self::stamp($op,$domain)!==$stamp){return $op;}
-                    $policy=TransferPolling::finished($op->policy,$readStarted);
-                    if ($watch && $readStarted) {
-                        $result = $followup && ($check->context?->completedReads() ?? 0) > 0 ? 'unknown' : 'unavailable';
-                        $policy = TransferFollowup::record($op, $policy, $this->clock->now()->getTimestamp(), $result);
-                    }
-                    if($scan){$policy['history_scan']=$scan->saved();}
-                    // Every completed history read counts; a scan that resolved more orders runs its next check sooner.
-                    if($historyRead){
-                        $policy['reconciliation']['polls']=($policy['reconciliation']['polls']??0)+1;$check->counted=true;$check->continued=(bool)$scan?->progressed;
-                        $limit=$policy['reconciliation']['polls']>=self::POLL_LIMIT;
-                        $policy['reconciliation']['reason']=$limit?'poll_limit_reached':'original_attempt_unresolved';
-                        if($limit){self::askRegistrar($check,$op,$attempt);}
-                    }
-                    if($watch){$policy['reconciliation']['staff_alert']=true;$policy['reconciliation']['reason']=($policy['reconciliation']['final_check']??null)==='done'?'transfer_deadline_passed':'transfer_status_unavailable';}
-                    elseif(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap','enom_test_reconciliation_send_guard'],true)){$policy['reconciliation']['reason']='reconciliation_required';$op->safe_code='reconciliation_required';}
-                    if($op->action==='transfer'){$policy['reconciliation']['read_failed']=true;}
-                    $op->update(['policy'=>$policy]);return $op;
-                });
-            }
-            return $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($stamp, $check): Operation {
-                if (!self::eligible($op) || self::stamp($op, $domain) !== $stamp) { return $op; }
-                $policy = $op->policy;
-                $policy['reconciliation']['staff_alert'] = true;
-                $policy['reconciliation']['reason'] = $check->deferred==='send_guard'?'enom_test_reconciliation_send_guard':($op->action==='transfer'?'enom_test_transfer_reconciliation_call_cap':'enom_test_reconciliation_call_cap');
-                $op->update(['safe_code' => $policy['reconciliation']['reason'], 'policy' => $policy]);
-                return $op;
+        if (!$callCapBlocked) {
+            return $this->claims->locked($id,function($op,$domain,$all,$funding,$server,$account)use ($read, $readStarted, $historyRead, $attempt, $check, $scan, $observed):Operation {
+                $this->retainPositiveObservation($op, $domain, $account, $read, $observed);
+                if (!$this->matchesRead($op, $domain, $read->stamp, $read->token)) { return $op; }
+                $policy=TransferPolling::finished($op->policy,$readStarted);
+                if ($read->watch && $readStarted) {
+                    $result = $read->followup && ($check->context?->completedReads() ?? 0) > 0 ? 'unknown' : 'unavailable';
+                    $policy = TransferFollowup::record($op, $policy, $this->clock->now()->getTimestamp(), $result);
+                }
+                if($scan){$policy['history_scan']=$scan->saved();}
+                // Every completed history read counts; a scan that resolved more orders runs its next check sooner.
+                if($historyRead){
+                    $policy['reconciliation']['polls']=($policy['reconciliation']['polls']??0)+1;$check->counted=true;$check->continued=(bool)$scan?->progressed;
+                    $limit=$policy['reconciliation']['polls']>=self::POLL_LIMIT;
+                    $policy['reconciliation']['reason']=$limit?'poll_limit_reached':'original_attempt_unresolved';
+                    if($limit){self::askRegistrar($check,$op,$attempt);}
+                }
+                if($read->watch){$policy['reconciliation']['staff_alert']=true;$policy['reconciliation']['reason']=($policy['reconciliation']['final_check']??null)==='done'?'transfer_deadline_passed':'transfer_status_unavailable';}
+                elseif(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap','enom_test_reconciliation_send_guard'],true)){$policy['reconciliation']['reason']='reconciliation_required';$op->safe_code='reconciliation_required';}
+                if($op->action==='transfer'){$policy['reconciliation']['read_failed']=true;}
+                $op->update(['policy'=>$policy]);return $op;
             });
         }
-        $operation = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof, $nameservers, $transfer, $transferConflict, $pendingAnomaly, $readStarted, $privacyBlocked, $check, $scan, $facts, $followup): Operation {
-            if (!$this->eligible($op) || self::stamp($op, $domain) !== $stamp) { return $op; }
+        return $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($read, $check): Operation {
+            if (!$this->matchesRead($op, $domain, $read->stamp, $read->token)) { return $op; }
+            $policy = $op->policy;
+            $policy['reconciliation']['staff_alert'] = true;
+            $policy['reconciliation']['reason'] = $check->deferred==='send_guard'?'enom_test_reconciliation_send_guard':($op->action==='transfer'?'enom_test_transfer_reconciliation_call_cap':'enom_test_reconciliation_call_cap');
+            $op->update(['safe_code' => $policy['reconciliation']['reason'], 'policy' => $policy]);
+            return $op;
+        });
+    }
+
+    private function finishObserved(int $id, AcquisitionRead $read, AcquisitionObservation $observation, RegistrarCheck $check, bool $readStarted): Operation
+    {
+        return $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($read, $observation, $check, $readStarted): Operation {
+            $attempt = $read->attempt;
+            $token = $read->token;
+            $this->retainPositiveObservation($op, $domain, $account, $read, $observation);
+            if (!$this->matchesRead($op, $domain, $read->stamp, $token)) { return $op; }
             try {
-                $binding = $this->authority($op, $domain, $all, $funding, $server, $account, $followup);
-                if (self::contract(ReconciliationEvidence::attempt($op, $domain, $binding)) !== $contract) { return $op; }
+                $binding = $this->authority($op, $domain, $all, $funding, $server, $account, $read->followup);
+                if (self::contract(ReconciliationEvidence::attempt($op, $domain, $binding)) !== $read->contract) { return $op; }
                 $binding->requireMatch($attempt->binding);
             } catch (\Throwable) {
                 if(TransferPolling::applies($op)){$p=TransferPolling::finished($op->policy,$readStarted);$p['reconciliation']['staff_alert']=true;$p['reconciliation']['reason']='transfer_authority_changed';$op->update(['policy'=>$p]);}
                 return $op;
             }
             $policy = TransferPolling::finished($op->policy,$readStarted); $policy['reconciliation']['polls'] = ($policy['reconciliation']['polls'] ?? 0) + 1; $check->counted = true;
-            if ($scan) { $policy['history_scan'] = $scan->saved(); }
+            if ($observation->scan) { $policy['history_scan'] = $observation->scan->saved(); }
             $policy['reconciliation']['staff_alert']=true;
             if(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap','enom_test_reconciliation_send_guard'],true)){$op->safe_code='reconciliation_required';}
-            if ($op->action === 'transfer') {
-                if ($readStarted) {
-                    $policy = TransferFollowup::record($op, $policy, $this->clock->now()->getTimestamp(), $transfer->value,
-                        $facts->domain?->owned === true || $facts->candidates !== []);
-                }
-                $policy['reconciliation']['transfer_privacy_blocked'] = $privacyBlocked;
-                $policy['reconciliation']['transfer_status'] = $transfer->value; $policy['reconciliation']['read_at'] = $this->clock->now()->getTimestamp(); unset($policy['reconciliation']['read_failed']);
-                if ($op->state === 'held') { $op->update(['state' => 'uncertain', 'safe_code' => 'reconciliation_required']); }
-                if ($transferConflict) {
-                    $policy['reconciliation']['reason'] = $transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Rejected ? 'transfer_rejection_contradiction' : 'transfer_status_contradiction';
-                    $op->update(['policy' => $policy]); return $op;
-                }
-                if ($transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::NeedsAction) {
-                    $policy['reconciliation']['reason'] = TransferPolling::expired($op,$this->clock->now()->getTimestamp()) ? 'transfer_deadline_passed' : 'transfer_needs_action';
-                    $op->update(['state' => 'held', 'safe_code' => 'transfer_needs_action', 'policy' => $policy]); return $op;
-                }
-                if ($transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Rejected) {
-                    // Status and empty history do not establish irrevocable finality or a settled failed fee.
-                    $policy['reconciliation']['reason'] = 'transfer_rejection_unreconciled';
-                    $op->update(['state' => 'uncertain', 'policy' => $policy]); return $op;
-                }
-            }
-            if (!$proof && !$pendingAnomaly && $op->action==='transfer' && $transfer===\Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Pending) {
+            $transfer = $observation->transfer();
+            if ($op->action === 'transfer' && TransferObservation::apply($op, $observation, $policy, $readStarted, $this->clock->now()->getTimestamp())) { return $op; }
+            if (!$observation->proof && !$observation->chargeAnomaly && $op->action==='transfer' && $transfer===TransferStatus::Pending) {
                 $expired=TransferPolling::expired($op,$this->clock->now()->getTimestamp());
                 $policy['reconciliation']['reason']=$expired?'transfer_deadline_passed':'transfer_pending';
                 $policy['reconciliation']['staff_alert']=$expired;
                 $op->update(['policy'=>$policy]);return $op;
             }
-            if (!$proof) {
-                $policy['reconciliation']['reason'] = $op->action==='transfer' ? ($pendingAnomaly?'transfer_charge_unexpected':($transfer===\Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown?'transfer_status_unavailable':'transfer_completion_unconfirmed'))
+            if (!$observation->proof) {
+                $policy['reconciliation']['reason'] = $op->action==='transfer' ? ($observation->chargeAnomaly?'transfer_charge_unexpected':($transfer===TransferStatus::Unknown?'transfer_status_unavailable':'transfer_completion_unconfirmed'))
                     : ($policy['reconciliation']['polls'] >= self::POLL_LIMIT ? 'poll_limit_reached' : 'original_attempt_unresolved');
                 $op->update(['policy' => $policy]); return $op;
             }
-            $funding->completeInitial($op, $domain); // Persistence failures roll back the whole native/domain decision.
-            $cost = $proof['charge']; $expected = $attempt->expectedCharge;
-            $difference = $expected && ($expected->currency !== 'USD' || rtrim($expected->amount, '0') !== rtrim($cost['amount'], '0'));
-            $corrections = ($op->attempt['corrections'] ?? $op->attempt['evidence']['registration']['corrections'] ?? []) !== [] || $proof['observed_corrections'] !== [];
-            $below = $op->funding_basis!=='complimentary' && strcmp(self::decimal($cost['amount']), self::decimal($op->amount)) > 0;
-            $nameserversHeld=RenewalStop::blocksExisting($funding->initialFacts($domain))||($domain->renewal_policy['automatic_spend_paused']??false);
-            $staffCorrections=$op->action==='register'?array_diff(RegistrationDns::corrections($op,$proof['observed_corrections']),$nameserversHeld?[]:['nameservers'])!==[]:$corrections;
-            $policy['reconciliation']['observed_corrections'] = $proof['observed_corrections']; $policy['reconciliation']['staff_alert'] = $difference || $staffCorrections || $below;
-            $policy['reconciliation']['reason'] = $below ? 'below_cost' : ($difference ? 'actual_charge_changed' : ($corrections ? 'correction_required' : 'confirmed'));
-            $op->update(['state' => 'succeeded', 'safe_code' => $corrections ? 'registration_correction_required' : ($difference ? 'actual_charge_changed' : null),
-                'attempt' => [...$op->attempt, 'reconciliation' => $proof], 'cost' => [...($op->cost ?? []), 'actual' => $cost],
-                'policy' => $policy, 'provider_order_id' => $proof['order_reference'], 'confirmed_expires_at' => $proof['expiry'],
-                'completed_at' => $this->clock->now(), 'lease_expires_at' => null]);
-            $domain->update(['status' => 'active', 'provider_expires_at' => $proof['expiry'], 'provider_order_id' => $proof['order_reference'],
-                'provider_domain_id' => $proof['provider_domain_id'], 'confirmed_revision' => $domain->confirmed_revision + 1,
-                'renewal_policy' => [...($domain->renewal_policy ?? []), 'billing_anchor' => ['expiry' => $proof['expiry'], 'operation_key' => $op->operation_key]],
-                'observation' => ObservationProjection::acquired($domain, $op->operation_key, $nameservers), 'last_synced_at' => $this->clock->now()]);
-            HoldingObservationWork::queueInitial($domain,$this->clock->now());
-            ComplimentaryInvoices::complete($op);
+            if ($token && !$this->attempts->ownsRead($token)) { return $op; }
+            AcquisitionSettlement::complete($op, $domain, $funding, $read, $observation, $policy, $this->attempts, $this->clock->now());
             return $op;
         });
-        return $operation;
     }
+    /** Read takeover preserves timely evidence. A rejection closes the attempt to new observations. */
+    private function retainPositiveObservation(Operation $op, Domain $holding, Account $account, AcquisitionRead $read,
+        AcquisitionObservation $observation): void
+    {
+        $domain = $observation->facts?->domain;
+        $attempt = $read->attempt;
+        if ($op->state === 'rejected' || !$read->token || !$observation->observedAt || !$domain
+            || !$domain->binding->matches($attempt->binding) || $domain->name !== $attempt->query->name
+            || $holding->domain !== $attempt->query->name
+            || $op->operation_key !== $attempt->operationKey || $op->authority_generation !== $attempt->authorityGeneration
+            || $holding->authority_generation !== $attempt->authorityGeneration
+            || $op->account_fingerprint !== $attempt->binding->fingerprint
+            || $holding->account_fingerprint !== $attempt->binding->fingerprint) { return; }
+        try { $binding = AccountBindings::binding($account); }
+        catch (\DomainException|\InvalidArgumentException|\ValueError) { return; }
+        if (!$binding->matches($attempt->binding)) { return; }
+        $expiry = $domain->expiry?->value;
+        $expected = $attempt->expectedExpiry;
+        if ($domain->owned === true || ($expiry !== null && $expected && substr($expiry, 0, 10) === substr($expected->value, 0, 10))) {
+            $this->attempts->recordObservation($read->token->attempt, ['owned' => $domain->owned, 'expiry' => $expiry], $observation->observedAt);
+        }
+    }
+
     /** Internal audited resume seam; staff authorization/route belongs to36. No send authority. */
     public function resume(int $id, string $reason, ?StaffOperationReview $review = null): Operation
     {
@@ -251,16 +273,16 @@ final class OperationReconciliation
         }, $review?->actorId);
     }
     /** Staff ask the registrar to check this attempt and can record its answer 24 hours after the send. */
-    private static function askRegistrar(RegistrarCheck $check, Operation $op, \Paymenter\Extensions\Servers\Domains\Data\AttemptEvidence $attempt): void
+    private static function askRegistrar(RegistrarCheck $check, Operation $op, AttemptEvidence $attempt): void
     {
         $check->awaitingAnswer = $attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo';
         $check->answerAfter = (new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp();
     }
     /** Retry zero-wire capacity refusals promptly; preserve pacing after a read and any existing anomaly. */
-    private function deferred(int $id,string $stamp,bool $noWire,bool $followup): Operation
+    private function deferred(int $id,string $stamp,bool $noWire,bool $followup, ?ReadToken $token): Operation
     {
-        return $this->claims->locked($id,function($op,$domain)use($stamp,$noWire,$followup):Operation {
-            if(!$this->eligible($op)||self::stamp($op,$domain)!==$stamp){return $op;}
+        return $this->claims->locked($id,function($op,$domain)use($stamp,$noWire,$followup,$token):Operation {
+            if (!$this->matchesRead($op, $domain, $stamp, $token)) { return $op; }
             $p=TransferPolling::defer($op->policy,$this->clock->now()->getTimestamp(),$noWire);$r=$p['reconciliation']??[];
             if ($followup && !$noWire) {
                 $p = TransferFollowup::record($op, $p, $this->clock->now()->getTimestamp(), 'incomplete');
@@ -275,6 +297,12 @@ final class OperationReconciliation
             $op->update(['policy'=>$p]);return $op; // Preserve an existing anomaly or old-registrar action notice.
         });
     }
+    private function matchesRead(Operation $op, Domain $domain, string $stamp, ?ReadToken $token): bool
+    {
+        return $this->eligible($op) && self::stamp($op, $domain) === $stamp
+            && (!$token || $this->attempts->ownsRead($token, allowExpired: true));
+    }
+
     private function eligible(Operation $op): bool
     {
         if (!in_array($op->action, ['register', 'transfer'], true)) { return false; }
@@ -312,10 +340,9 @@ final class OperationReconciliation
         if ($followup) { TransferFollowup::requireClaim($op, $domain, $paid); }
         return $binding;
     }
-    private static function decimal(string $amount): string { return str_pad(explode('.', $amount)[0], 18, '0', STR_PAD_LEFT).str_pad(explode('.', $amount)[1] ?? '', 6, '0'); }
     private static function stamp(Operation $op, Domain $domain): string {
         $facts = static fn ($model) => array_map(static fn ($key) => $model->getAttribute($key), array_keys($model->getAttributes()));
         return hash('sha256', json_encode([$facts($op), $facts($domain)], JSON_THROW_ON_ERROR));
     }
-    private static function contract($attempt): string { return json_encode($attempt->historyAcceptance, JSON_THROW_ON_ERROR); }
+    private static function contract(AttemptEvidence $attempt): string { return json_encode($attempt->historyAcceptance, JSON_THROW_ON_ERROR); }
 }

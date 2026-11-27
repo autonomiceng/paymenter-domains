@@ -43,7 +43,7 @@ class ListDomains extends RecordListPage
             Value::state($h['state'], Reader::Staff, PaidUncertainty::line($h)),
             $h['url'] ? Sheet::link('paid_request_'.$h['server_id'], $h['label'], $h['url']) : null)], null, 'paid-orders-'.$h['server_id']), PaidUncertainty::holds());
     }
-    protected function query(): Builder { return parent::query()->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition']); }
+    protected function query(): Builder { return parent::query()->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition' => fn ($q) => $q->withAcquisitionStep()]); }
     protected function columns(): array
     {
         return [

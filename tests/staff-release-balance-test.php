@@ -1,6 +1,7 @@
 <?php
 // Automatic balance holds and remaining staff releases say what will happen. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 // Native invoices, claims and the actual Filament action must agree; reuse the existing offline fixture.
 $fixtureRegistrars = ['enom'];
 $fixtureReadyRegistration = true;
@@ -171,7 +172,12 @@ foreach(['payment','missing_claim','authority','legacy_authority','configuration
     $changed=$order->fresh();
     $saved=$changed->funding;$savedPayload=$changed->payload;$before=$writer->calls;
     if($fault==='payment'){App\Models\InvoiceTransaction::create(['invoice_id'=>$changed->invoice_id,'amount'=>'1.00','fee'=>'0.00','status'=>'succeeded']);}
-    if($fault==='missing_claim'){$f=$saved;unset($f['claim']);DB::table('domains_operations')->where('id',$changed->id)->update(['funding'=>Illuminate\Support\Facades\Crypt::encryptString(json_encode($f))]);}
+    if ($fault === 'missing_claim') {
+        changeAcquisitionEvidence($changed, 'claim', static function (array $facts): array {
+            unset($facts['funding']);
+            return $facts;
+        });
+    }
     if(in_array($fault,['authority','legacy_authority'],true)){DB::table('domains_domains')->where('id',$changed->domain_id)->update(['billing_managed'=>false]);}
     if($fault==='configuration'){App\Models\Server::whereKey($changed->server_id)->update(['enabled'=>false]);}
     if($fault==='setup'){\Paymenter\Extensions\Servers\Domains\Services\ContactSetup::recoveryWrite(fn()=>$changed->update(['payload'=>[...$savedPayload,'setup_required'=>true]]));}
@@ -271,7 +277,7 @@ same(['held','registrar_price_increased','absent'],[$priceHeld->state,$priceHeld
 expect(!isset($priceHeld->attempt['test_call_refusals'])&&!isset($priceHeld->policy['balance_retry']),'Price hold has no earlier cap or balance recovery');
 same('paid',App\Models\Invoice::find($priceHeld->invoice_id)->status,'Price hold retains the paid invoice');
 foreach(['seal','send_state','funding','extra'] as $fault){
-    $unsafe=clone $priceHeld;$attempt=$unsafe->attempt;
+    $unsafe=legacyAcquisitionFixture($priceHeld);$attempt=$unsafe->attempt;
     if($fault==='seal'){$attempt['seal']='sealed';}
     if($fault==='send_state'){$attempt['send_state']='possibly_sent';}
     if($fault==='funding'){$funding=$unsafe->funding;unset($funding['claim']);$unsafe->funding=$funding;}
@@ -338,7 +344,7 @@ same($money,$priceMoney(),'Automatic price retries retain invoice and payment ro
 same($original[0],$automatic->fresh()->attempt['claim_key'],'Successful readmission retains its original claim');
 // Retained negative proof, paid funding and the original hold reason are mandatory.
 foreach(['possibly_sent','sealed','execution','complimentary','staff_hold'] as $fault){
-    $unsafe=clone $priceProof;$unsafe->state='held';$unsafe->safe_code='registrar_price_increased';
+    $unsafe=legacyAcquisitionFixture($priceProof);$unsafe->state='held';$unsafe->safe_code='registrar_price_increased';
     if($fault==='possibly_sent'){$a=$unsafe->attempt;$a['send_state']='possibly_sent';$unsafe->attempt=$a;}
     if($fault==='sealed'){$a=$unsafe->attempt;$a['seal']='sealed';$unsafe->attempt=$a;}
     if($fault==='execution'){$a=$unsafe->attempt;$a['execution']=null;$unsafe->attempt=$a;}

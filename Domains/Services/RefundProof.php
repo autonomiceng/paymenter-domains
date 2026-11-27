@@ -2,8 +2,10 @@
 // Enom 444f31c/d1392a8 Refunds, stricter retained evidence; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Money\Allocations\RenewalFundingLedger;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionAttempt;
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 /** Payment-return proof. Sent finality never grants definitely-unsent proof or retry authority. */
@@ -45,13 +47,17 @@ final class RefundProof
         if (array_diff(array_keys($a), $allowed)) { throw new \DomainException('Unresolved attempt facts prevent refund.'); }
         if ($sealed) {
             $funded = isset($f['claim'], $f['seal']) && $f['claim'] === $f['seal'];
-            // Slice25 commits possibly_sent at seal; ONLY its exact typed local prewire result can override it.
             $claimKey = $a['claim_key'] ?? null;
-            if (!in_array($op->safe_code, ['acquisition_definitely_unsent', 'refund_approved'], true) || !$acquisition || ($a['send_state'] ?? null) !== 'possibly_sent'
+            if (!in_array($op->safe_code, ['acquisition_definitely_unsent', 'refund_approved'], true) || !$acquisition
+                || !in_array($a['send_state'] ?? null, ['possibly_sent', 'definitely_unsent'], true)
                 || ($a['execution'] ?? null) !== self::REFUSAL
                 || !is_string($claimKey) || !preg_match('/^[a-f0-9]{32}$/D', $claimKey)
                 || !$op->started_at || !$op->request_fingerprint || !isset($a['dispatch_attempted_at'], $a['authorized_cost'])
                 || !isset($a[$op->action==='transfer'?'transfer_admission':'registration_admission']) || !$funded) {
+                throw new \DomainException('Sealed attempt is not proven prewire refusal.');
+            }
+            $attempt = AcquisitionAttempt::of((int) $op->id, $op->action, lock: DB::transactionLevel() > 0);
+            if ($attempt && !$attempt->locallyRefused(self::REFUSAL)) {
                 throw new \DomainException('Sealed attempt is not proven prewire refusal.');
             }
         } elseif (($a['seal'] ?? null) !== 'absent' || ($a['send_state'] ?? null) !== 'definitely_unsent'

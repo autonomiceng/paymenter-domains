@@ -4,6 +4,9 @@ declare(strict_types=1);
 $fixtureEnding='example.com';
 require __DIR__.'/Support/registration-fixture.php';
 require_once __DIR__.'/Support/reserved-fixtures.php';
+require_once __DIR__.'/Support/fixture-checkpoint.php';
+use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
 $createOperation=$new;
 $new=static function(string $name,bool $paid=true,bool $setup=true,string $action='register',int $term=1)use($createOperation){
     return $createOperation(reservedFixtureName($name),$paid,$setup,$action,$term);
@@ -20,7 +23,8 @@ $purchaseRefusal='<interface-response><RRPCode>541</RRPCode><RRPText>Data manage
     .'<RequestDateTime>11/7/2026 6:42:36 AM</RequestDateTime><debug/></interface-response>';
 
 // Each response starts from the same untouched paid fixture. Only test setup restores its raw operation row.
-$negative=$new('saved-response.example.com'); $virgin=$negative->getRawOriginal();
+$negative = $new('saved-response.example.com');
+$restore = nativeFixtureCheckpoint();
 $refunds=new \Paymenter\Extensions\Servers\Domains\Services\Refunds($clock);
 // Error evidence survives the real driver, sealed finish and later recovery without authorizing a replay or credit.
 $diagnostics=[];
@@ -63,7 +67,8 @@ foreach ([...$badCounts,'refusal','contradictory','lost'] as $case) {
     same(null,$refunds->creditRejected($result->id),'Ambiguous reply cannot enter the credit path');
     commerceReject(fn()=>\Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireReturnable($result,$result->domain));
     $saved=$result->fresh()->attempt;
-    expect(!str_contains($result->getRawOriginal('attempt'),'Name server'),'Reply is retained inside encrypted attempt storage');
+    $ciphertext = DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $result->id, 'kind' => 'reply'])->value('evidence');
+    expect(is_string($ciphertext) && !str_contains($ciphertext, 'Name server'), 'Reply is retained inside encrypted attempt storage');
     expect(!str_contains(json_encode($saved),'PRIVATE-')&&!str_contains(json_encode($saved),'owner@example.test'),'No echoed private payload retained');
     expect(!array_key_exists('registration',$saved)&&!array_key_exists('terminal',$saved),'Error is neither completion nor terminal proof');
     $engine->execute($result->id);
@@ -71,7 +76,7 @@ foreach ([...$badCounts,'refusal','contradictory','lost'] as $case) {
     same($saved,$result->fresh()->attempt,'Original reply is immutable on later execution');
     same($money,nativeFinancialSnapshot($result),'Error/lost reply does not credit or alter invoice history');
     if(array_key_exists('evidence',$saved)){commerceReject(fn()=>$result->update(['attempt'=>array_replace($saved,['evidence'=>[]])]));}
-    Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$op->id)->update($virgin);
+    $restore();
     echo 'Uncertain Purchase retained: '.$case."\n";
 }
 
@@ -92,7 +97,10 @@ foreach (['missing','claim_key','account_fingerprint','operation_key'] as $chang
     $foreign=clone $result; $attempt=$foreign->attempt;
     if($changed==='missing'){unset($attempt['evidence']['registrationRefusal']);}
     else{$attempt['evidence']['registrationRefusal']['record'][$changed]='foreign';}
-    $foreign->attempt=$attempt;
+    commerceReject(fn () => $foreign->update(['attempt' => $attempt]));
+    $claimStart = $foreign->started_at; $digest = $foreign->request_fingerprint; $funding = $foreign->funding;
+    unset($foreign->id);
+    $foreign->fill(['attempt' => $attempt, 'started_at' => $claimStart, 'request_fingerprint' => $digest, 'funding' => $funding]);
     commerceReject(fn()=>\Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireReturnable($foreign,$foreign->domain));
 }
 require __DIR__.'/Support/owner-pages.php';

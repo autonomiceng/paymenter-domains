@@ -5,6 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence,DateEvidence,ExpiryPrecision,RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter, RetainedAcquisition, Transition};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAttempt, RenewalCompletion, RenewalDecision, RenewalProof};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 /** An account-specific support answer is evidence, never permission to resend a purchase. */
@@ -207,6 +208,17 @@ class RegistrarAnswers
                 // The audited negative proof is appended on the exact sealed attempt, in the transaction that authorizes the return.
                 if (!$read->answerLocked($op, $answer)) { throw new \DomainException(self::POSITIVE_PROOF); }
                 $read->releaseLocked($op);
+            }
+            if ($op->action !== 'renew') {
+                $writer = OperationWriter::at($now);
+                if ($retained = RetainedAcquisition::adopt($op, $writer, $now)) {
+                    if ($writer->recordAcquisitionAnswer($retained->facts->token, $answer) !== Transition::Applied) {
+                        throw new \DomainException('This request changed. Reload the page and select it again.');
+                    }
+                    $op->reloadAcquisitionAttempt();
+                } elseif ($outcome === 'not_processed') {
+                    throw new \DomainException('This request changed. Reload the page and select it again.');
+                }
             }
             $policy=[...$op->policy,'enom_answer'=>$answer];
             if($transfer){$policy['reconciliation']['staff_alert']=false;$policy['reconciliation']['reason']=TransferRejections::CODE;}

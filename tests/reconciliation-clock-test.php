@@ -1,6 +1,7 @@
 <?php
 // Enom 444f31c reconciliation-registration/provider-disposition/automatic-refresh; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 $fixtureEnding = 'example.com';
 require __DIR__.'/Support/reconciliation-fixture.php';
 require_once __DIR__.'/Support/reserved-fixtures.php';
@@ -19,8 +20,13 @@ same(['8.95', '2027-10-18'], [$result->cost['actual']['amount'], $proof['expiry'
 expect(!in_array(ReadCommand::Orders, $observation->calls, true), 'Captured ID bypasses history discovery');
 expect(RenewalAuthority::completed($result, $result->domain, $binding), 'Local-clock registration remains a valid future renewal anchor');
 foreach (['processed_at' => '2026-10-19T02:05:01', 'order_reference' => '9002', 'source' => 'accepted_history'] as $key => $value) {
-    $tampered = clone $result; $tampered->attempt = [...$result->attempt, 'reconciliation' => [...$proof, $key => $value]];
-    expect(!RenewalAuthority::completed($tampered, $result->domain, $binding), 'Retained anchor rechecks local bounds and captured identity: '.$key);
+    $restore = changeAcquisitionEvidence($result, 'settlement', static function (array $facts) use ($key, $value): array {
+        $facts['reconciliation'][$key] = $value;
+        return $facts;
+    });
+    try {
+        expect(!RenewalAuthority::completed($result->fresh(), $result->domain, $binding), 'Retained anchor rechecks local bounds and captured identity: '.$key);
+    } finally { $restore(); }
 }
 // Bounds are asymmetric: local = UTC + an offset from -12 through +14 hours.
 foreach (['lower' => '10/18/2026 12:00:00 AM', 'upper' => '10/19/2026 2:05:00 AM'] as $edge => $billDate) {

@@ -30,13 +30,14 @@ expect(!str_contains($html,'Ask Enom')&&!str_contains($html,'You can record'),'C
 expect($hasDeadline($notice->textContent),'Customer sees the real PT deadline');
 expect(str_contains($notice->getAttribute('class'),'domains-notice--info'),'Waiting for our registrar check asks no customer action');
 // A renewal waiting on the registrar's answer is called a renewal, not a registration (renewal-uncertain R1).
-require_once __DIR__.'/Support/renewal-attempts.php';$action=$result->action;
-// The same request as a renewal sealed at the same moment; its attempt rows and action are put back afterwards.
-// A renewal's attempt JSON reads as empty, so the registration's send time is read first.
+require_once __DIR__.'/Support/renewal-attempts.php';
+// The temporary renewal still needs its start on the operation row. Copy the registration's projected start and restore the original row afterwards.
+$original=['action'=>$result->action,'started_at'=>$result->getRawOriginal('started_at')];
 $sentAt=new DateTimeImmutable($result->attempt['dispatch_attempted_at']);
-Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$result->id)->update(['action'=>'renew']);
+$row=Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$result->id);
+$row->update(['action'=>'renew','started_at'=>$result->fromDateTime($result->started_at)]);
 try{$said=withSealedRenewal($result->refresh(),static fn($renewal)=>Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::forCustomer($renewal),at:$sentAt);}
-finally{Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$result->id)->update(['action'=>$action]);$result->refresh();}
+finally{$row->update($original);$result->refresh();}
 expect(str_contains($said['body'],'renewal')&&!str_contains($said['title'].$said['body'],'registration')&&$hasDeadline($said['body']),'A waiting renewal says renewal, with the same deadline');
 same('uncertain',$result->state,'No fabricated completion');same(null,$result->attempt['execution'],'Attempt remains unchanged');
 // Once the usual wait is over, the customer notice still asks for nothing urgent; its words are checked on the page.

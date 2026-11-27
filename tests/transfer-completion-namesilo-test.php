@@ -1,6 +1,7 @@
 <?php
 // Synthetic NameSilo transfer evidence; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 require __DIR__.'/Support/transfer-completion-namesilo-fixture.php';
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Data\{RenewalCode, RenewalRequest};
@@ -25,9 +26,14 @@ $observe->name=$completed->domain->domain; $observe->fault=''; $authority=new Re
 $request=new RenewalRequest($completed->domain_id,$completed->authority_generation,$completed->domain->confirmed_revision,'2028-01-01',null);
 $admit=new RenewalAdmission($authority,$readBindings,new RenewalAcceptance($binding,true,true,25),$clock);
 Cache::flush(); same(RenewalCode::Admitted,$admit->check($request)->code,'NameSilo transfer anchor admits ordinary renewal');
-$saved=$completed->fresh()->getRawOriginal('attempt'); $a=$completed->fresh()->attempt; unset($a['transfer_admission']['premium']); $completed->fresh()->forceFill(['attempt'=>$a])->saveQuietly();
-Cache::flush(); same(RenewalCode::Cost,$admit->check($request)->code,'No ordinary proof means Cost, never inferred from Active');
-commerceReject(fn()=>$completed->fresh()->update(['attempt'=>$completed->attempt])); DB::table('domains_operations')->where('id',$completed->id)->update(['attempt'=>$saved]);
+$restore = changeAcquisitionEvidence($completed, 'admission', static function (array $facts): array {
+    unset($facts['transfer_admission']['premium']);
+    return $facts;
+});
+try {
+    Cache::flush(); same(RenewalCode::Cost,$admit->check($request)->code,'No ordinary proof means Cost, never inferred from Active');
+    commerceReject(fn()=>$completed->fresh()->update(['attempt'=>$completed->attempt]));
+} finally { $restore(); }
 App\Models\Server::find($completed->server_id)->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>true,'type'=>'boolean']);
 $billing=new DomainBilling($bindings,$guard,$clock,catalogue: $GLOBALS['caps']??null); $invoice=$billing->invoice($completed->domain_id,$user);
 $renew=Paymenter\Extensions\Servers\Domains\Models\Operation::where('invoice_id',$invoice->id)->sole();

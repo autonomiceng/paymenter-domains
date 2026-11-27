@@ -2,10 +2,14 @@
 // Synthetic exact-order support recovery; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/namesilo-registration-fixture.php';
+require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
+use App\Models\Credit;
+use Illuminate\Support\Facades\{Crypt, DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{Environment,ExecutionRecord};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client,Driver};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport,TransportResponse};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationWriter, ReadToken, StepKey};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,HistoryAcceptances,OperationReconciliation,ReconciliationEvidence,Refunds,RegistrarCheck,RenewalAuthority,StaffSettingsReview as Review,StaffSettingsWrites};
 app()->instance(Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);
 $staff=commerceUser();$role=App\Models\Role::create(['name'=>'Purchase answers','permissions'=>['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.enom_answer','admin.domains.manage','admin.invoices.update']]);$staff->update(['role_id'=>$role->id]);
@@ -20,25 +24,26 @@ $wire=new class($wireState) implements DeadlineTransport {
     public function send($e,$c,$r,#[SensitiveParameter] string $key):TransportResponse{throw new LogicException;}
     public function sendWithin($e,$c,$r,#[SensitiveParameter] string $key,int $ms):TransportResponse{
         same(0,Illuminate\Support\Facades\DB::transactionLevel(),'Readback stays outside financial locks');$s=$this->s;$s->calls[]=$r->command;
-        $reply=['code'=>300,'detail'=>'synthetic']+match($r->command){
+        $reply=match($r->command){
             'orderDetails'=>['order_number'=>$s->fault==='id'?'9002':'9001','order_date'=>$s->fault==='time'?'2026-10-18 05:00:02':'2026-10-18 05:00:01','total'=>'99.00',
                 'order_details'=>[['description'=>($s->fault==='name'?'other.example.com':$s->name).' - registration','years_qty'=>$s->fault==='term'?'2':'1',
                     'status'=>$s->fault==='status'?'Credited':'Processed','subtotal'=>'99.00']]],
             'listOrders'=>['order'=>[]],
-            'getDomainInfo'=>['created'=>'2026-10-18','expires'=>$s->fault==='expiry'?'2026-10-18':'2027-10-18','status'=>'Active','auto_renew'=>'No','private'=>'No','locked'=>'Yes'],
+            'getDomainInfo'=>$s->fault==='unowned' ? ['code'=>280] : ['created'=>'2026-10-18','expires'=>$s->fault==='expiry'?'2026-10-18':'2027-10-18','status'=>'Active','auto_renew'=>'No','private'=>'No','locked'=>'Yes'],
             default=>throw new LogicException('Exact support order must not enumerate history'),
-        };
+        }+['code'=>300,'detail'=>'synthetic'];
         return new TransportResponse(200,json_encode(['request'=>['operation'=>$r->command],'reply'=>$reply]));
     }
 };
 $readRegistry=new \Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
 $readRegistry->register('namesilo',['token'],$verifier,fn($b,$c)=>new Driver(new Client($b,$c['token'],$wire),['renew'],$clock),authenticator:new class implements \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator {public function authenticate(Environment $environment,array $credentials):void { /* Synthetic local authentication. */ }});
 $reads=new AccountBindings($readRegistry);$reconcile=new OperationReconciliation($claims,$reads,$clock);
-foreach(['accepted','not_processed'] as $outcome){
+foreach(['accepted','not_processed','invalid_claim','expired_read','inherited_read'] as $scenario){
+    $outcome = $scenario === 'accepted' ? 'accepted' : 'not_processed';
     $clock->instant=new DateTimeImmutable('2026-10-18T12:00:00Z');$makeEngine($binding,$exchange);
     $registration->mode=$outcome==='accepted'?'300':'unknown';
-    $op=$runRegistration($nsNew(placeholderComFixtureName('support-'.str_replace('_','-',$outcome).'-placeholder.com')));$attempt=$op->attempt;$calls=$registration->calls;
-    $wireState->name=$op->domain->domain;$wireState->calls=[];
+    $op=$runRegistration($nsNew(placeholderComFixtureName('support-'.str_replace('_','-',$scenario).'-placeholder.com')));$attempt=$op->attempt;$calls=$registration->calls;
+    $wireState->name=$op->domain->domain;$wireState->calls=[];$wireState->fault=$outcome==='not_processed'?'unowned':'';
     commerceReject(fn()=>$settings->run($review($op),$input($op,$outcome),$clock->now()));
     $clock->instant=$clock->now()->modify('+25 hours');
     // Support is the fallback when the order history cannot confirm the purchase.
@@ -51,13 +56,63 @@ foreach(['accepted','not_processed'] as $outcome){
     same('listOrders',$wireState->calls[0]??null,'One status check read the order history');expect(!in_array('registerDomain',$wireState->calls,true),'A status check never sends');
     expect(RegistrarCheck::attempted($op),'The status check is saved for this attempt');
     same(null,$op->attempt['reconciliation']??null,'An empty order history settles nothing');
+    if ($scenario === 'invalid_claim') {
+        // Restore the installed legacy format with a saved check for the same malformed claim.
+        restoreAcquisitionFixture([...$op->getRawOriginal(),
+            'attempt' => Crypt::encryptString(json_encode([...$attempt, 'claim_key' => 'invalid-legacy-claim'], JSON_THROW_ON_ERROR)),
+            'funding' => Crypt::encryptString(json_encode($op->funding, JSON_THROW_ON_ERROR)),
+            'started_at' => OperationAttempts::at($op->started_at), 'request_fingerprint' => $op->request_fingerprint]);
+        $op->refresh();
+        $policy = $op->policy;
+        $policy['status_check']['attempt_identity'] = EnomAnswers::identity($op);
+        $op->update(['policy' => $policy]);
+        $snapshot = static fn () => [$op->fresh()->getRawOriginal(), $op->domain->fresh()->getRawOriginal(),
+            Credit::where('user_id', $op->domain->user_id)->sum('amount'),
+            OperationAttempts::sealed((int) $op->id, new StepKey('register', 1))];
+        $before = $snapshot();
+        $refused = false;
+        try { $settings->run($review($op), $input($op, $outcome), $clock->now()); }
+        catch (DomainException) { $refused = true; }
+        expect($refused, 'A negative answer requires a sealed claim that can retain it');
+        same($before, $snapshot(), 'An unadoptable sealed claim keeps its request, holding and payment unchanged');
+        continue;
+    }
     $wireState->calls=[];
     if($outcome==='accepted'){
         $bad=$input($op,'not_processed');commerceReject(fn()=>$settings->run($review($op),$bad,$clock->now()));
         foreach(['','2026-10-18 05:00:01','2026-10-19T05:00:01-07:00'] as $date){$bad=$input($op,$outcome);$bad['processed_at']=$date;commerceReject(fn()=>$settings->run($review($op),$bad,$clock->now()));}
     }
+    if (in_array($scenario, ['expired_read', 'inherited_read'], true)) {
+        $token = OperationAttempts::sealed((int) $op->id, new StepKey('register', 1))->token;
+        $writer = new OperationWriter($clock);
+        $underLock = static function (Closure $work) use ($op) {
+            return DB::transaction(static function () use ($op, $work) {
+                $op->newQuery()->whereKey($op->id)->lockForUpdate()->firstOrFail();
+                return $work();
+            });
+        };
+        $openRead = static fn () => $underLock(fn () => $writer->openRead($token, $clock->now()->modify('+30 seconds')));
+        $read = $openRead();
+        expect($read instanceof ReadToken, 'A worker opens a read before exiting');
+        commerceReject(fn () => $settings->run($review($op), $input($op, $outcome), $clock->now()));
+        same(null, OperationAttempts::evidence((int) $op->id, $token->attemptId, 'settlement'), 'An active read blocks the staff settlement');
+        $clock->instant = $clock->now()->modify('+30 seconds');
+        if ($scenario === 'inherited_read') {
+            $successor = $openRead();
+            expect($successor->inheritedUnresolved, 'The next worker inherits the orphaned read');
+            expect($underLock(fn () => $writer->closeRead($successor)), 'The successor finishes without positive proof');
+        }
+    }
     $settings->run($review($op),$input($op,$outcome),$clock->now());$op->refresh();
     same($attempt,$op->attempt,'Answer never changes the original sent attempt');
+    $sealed = OperationAttempts::sealed((int) $op->id, new StepKey('register', 1));
+    $kind = $outcome === 'accepted' ? 'answer' : 'settlement';
+    same($outcome, OperationAttempts::evidence((int) $op->id, $sealed->token->attemptId, $kind)['outcome'] ?? null,
+        'Audited answer addresses the original registration attempt');
+    if (in_array($scenario, ['expired_read', 'inherited_read'], true)) {
+        same([null, true], [$sealed->readToken, $sealed->readUnresolved],
+            'The staff settlement fences the orphaned reader and retains its uncertainty');
+    }
     if($outcome==='accepted'){
         $a=ReconciliationEvidence::attempt($op,$op->domain,$binding);same(ExecutionRecord::StaffAnswer,$a->execution,'Exact order carries staff provenance');
         foreach(['id','name','term','status','time','expiry'] as $fault){

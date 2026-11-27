@@ -1,6 +1,7 @@
 <?php
 // Enom 444f31c/f7175ff transfer reconciliation; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 require_once __DIR__.'/Support/fixture-checkpoint.php';
 require __DIR__.'/Support/transfer-completion-enom-fixture.php';
 use Illuminate\Support\Facades\DB;
@@ -148,7 +149,12 @@ same(['ns1.provider.example','ns2.provider.example'],$r->domain->fresh()->observ
 same('observed',$r->domain->fresh()->observation['nameservers']['state']??null,'Enom transfer nameservers retain observed provenance');
 same(null,App\Models\Service::find($r->service_id)->expires_at,'Native expiry disabled'); expect(RenewalAuthority::completed($r,$r->domain,$binding),'Transfer anchor accepted by renewal consumers');
 $completed=$r; $calls=$observe->calls; $reconcile->run($r->id); same($calls,$observe->calls,'Completion refresh sends nothing');
-$copy=clone $r; $copy->attempt=[...$copy->attempt,'reconciliation'=>[...$copy->attempt['reconciliation'],'transfer_status'=>'pending']]; expect(!RenewalAuthority::completed($copy,$copy->domain,$binding),'Succeeded label lacks status proof');
+$restoreProof = changeAcquisitionEvidence($r, 'settlement', static function (array $facts): array {
+    $facts['reconciliation']['transfer_status'] = 'pending';
+    return $facts;
+});
+try { expect(!RenewalAuthority::completed($r->fresh(), $r->domain, $binding), 'Succeeded label lacks status proof'); }
+finally { $restoreProof(); }
 $unresolved=$prepare(placeholderComFixtureName('unresolved-transfer-placeholder.com'));
 $restoreTransfer=nativeRegistrarCheckpoint($clock,$observe);
 foreach (['pending','status','charge','duplicate','short','owner','expiry','late','nohistory','reversed','race','reject_owned','reject_charge'] as $fault) {

@@ -1,6 +1,7 @@
 <?php
 // Synthetic vendor facts and retained slice28 financial gates; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/acquisition-evidence-fixture.php';
 require_once __DIR__.'/reserved-fixtures.php';
 require_once __DIR__.'/fixture-checkpoint.php';
 require __DIR__.'/transfer-fixture.php';
@@ -64,8 +65,13 @@ $unresolved=static function(array $faults)use($prepare,$observe,$clock,$now,$rec
         if ($fault==='nohistory') { App\Models\Server::find($op->server_id)->settings()->where('key',HistoryAcceptances::KEY.'_transfer')->delete(); }
         if ($fault==='lag') { HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',600,86400,'namesilo_transfer_v1')); }
         if ($fault==='retention') { $clock->instant=$now->modify('+2 days'); }
-        if ($fault==='baseline') { $a=$op->attempt; $a['transfer_admission']['base_expiry']=null; $op->forceFill(['attempt'=>$a])->saveQuietly(); }
-        if ($fault==='sealedprivacy') { $a=$op->attempt; unset($a['transfer_admission']['privacy']); $op->forceFill(['attempt'=>$a])->saveQuietly(); }
+        if (in_array($fault, ['baseline', 'sealedprivacy'], true)) {
+            changeAcquisitionEvidence($op, 'admission', static function (array $facts) use ($fault): array {
+                if ($fault === 'baseline') { $facts['transfer_admission']['base_expiry'] = null; }
+                else { unset($facts['transfer_admission']['privacy']); }
+                return $facts;
+            });
+        }
         if ($fault==='reversed') { App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>'-0.01','fee'=>'0.00','status'=>'succeeded']); }
         if ($fault==='race') { $observe->during=fn()=>App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>'-0.01','fee'=>'0.00','status'=>'succeeded']); }
         $r=$reconcile->run($op->id); same('uncertain',$r->state,'Missing or contradictory proof stays unresolved'); same(null,$r->cost['actual']??null,'No inferred charge');

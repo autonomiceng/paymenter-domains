@@ -18,6 +18,7 @@ final class DomainHistory
     public static function entries(Domain $domain): array
     {
         $rows=DomainQueries::operations($domain)->with('invoice:id,status')->orderByDesc('id')->get()->all();
+        Operation::loadAcquisitionAttempts($rows);
         $departed=DepartedHistory::closed($domain);
         // One read of the renewals' attempt facts serves every Sent row.
         $renewals=RenewalAttempt::loaded(array_filter($rows,fn($op)=>$op->action==='renew'));

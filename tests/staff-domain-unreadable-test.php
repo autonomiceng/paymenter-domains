@@ -5,11 +5,13 @@ require __DIR__.'/Support/staff-domain-edits.php';
 use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\{Auth,Cache,DB};
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainEditActions,DomainFacts,Staff};
-use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
+use Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers;
 use Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainManagement,DomainObservation,ObservationSchema,OwnedDomains,OwnerPorts};
 use Paymenter\Extensions\Servers\Domains\Services\{StaffOperationReview,StaffOperations};
@@ -51,6 +53,19 @@ $check('staff unreadable contacts',function()use($view,$d):void{$view()->assertS
 $attempt=$acquisition->fresh()->getRawOriginal('attempt');DB::table('domains_operations')->where('id',$acquisition->id)->update(['attempt'=>'d29-explicit-unreadable-fixture']);
 $check('staff unreadable attempt',function()use($view,$acquisition,$actor):void{$view()->assertSuccessful();foreach(['transfer','register'] as $action){DB::table('domains_operations')->where('id',$acquisition->id)->update(['action'=>$action]);Livewire::actingAs($actor)->test(ViewOperation::class,['record'=>$acquisition->id])->assertSuccessful()->assertActionHidden('enom_answer');}});
 DB::table('domains_operations')->where('id',$acquisition->id)->update(['attempt'=>$attempt,'action'=>$acquisition->action]);
+// A lost purchase is the oldest unresolved request on its account. Both staff pages still show its holding or history.
+[$lost]=$prepare(placeholderComFixtureName('unreadable-acquisition-placeholder.com'),'null');
+$holding=$lost->domain;
+$reply=DB::table(OperationSchema::EVIDENCE)->where(['operation_id'=>$lost->id,'kind'=>'reply'])->sole();
+DB::table(OperationSchema::EVIDENCE)->where('id',$reply->id)->update(['evidence'=>'unreadable-acquisition-reply']);
+$check('staff domain list with unreadable acquisition',fn()=>Livewire::actingAs($actor)->test(ListDomains::class)
+    ->assertSuccessful()->searchTable($holding->domain)->assertCanSeeTableRecords([$holding]));
+$check('staff holding history with unreadable acquisition',function()use($actor,$holding,$lost):void{
+    $history=Livewire::actingAs($actor)->test(RequestsRelationManager::class,['ownerRecord'=>$holding,'pageClass'=>ViewDomain::class])->assertSuccessful();
+    $links=collect($history->instance()->getTableRecords()->items())->pluck('url');
+    expect($links->contains(OperationResource::getUrl('view',['record'=>$lost])),'History links to the original request');
+});
+expect(!RegistrarAnswers::readable($lost->fresh()),'Unreadable acquisition evidence cannot support a staff answer');
 same([],$unreadable,'Unreadable saved data renders without granting an edit or renewal');
 
 echo "Unreadable staff and customer domain pages passed.\n";$nativeSuccessful=true;

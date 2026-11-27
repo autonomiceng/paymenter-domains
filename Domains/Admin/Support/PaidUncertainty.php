@@ -30,8 +30,10 @@ final class PaidUncertainty
     /** When the account hold began: the oldest request on this account that holds it. Every request on the account shows this one time. */
     private static function since(Operation $op): string
     {
-        $at=AccountSpendingHolds::query(Operation::where('account_fingerprint',$op->account_fingerprint))->selectRaw('min(coalesce(started_at,created_at)) as first')->value('first')
-            ?? ($op->started_at??$op->created_at);
+        $at = AccountSpendingHolds::query(Operation::where('account_fingerprint', $op->account_fingerprint))
+            ->select(['id', 'action', 'transition_revision', 'started_at', 'created_at'])->lazyById()
+            ->map(static fn (Operation $order) => $order->started_at ?? $order->created_at)->filter()->min()
+            ?? $op->started_at ?? $op->created_at;
         if ($at===null) { return ''; }
         $time=$at instanceof \DateTimeInterface?$at->getTimestamp():\Illuminate\Support\Carbon::parse((string)$at)->getTimestamp();
         return ' (on hold since '.\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($time).')';
@@ -78,6 +80,7 @@ final class PaidUncertainty
         $names=\App\Models\Server::whereIn('id',$ids)->pluck('name','id');
         // The oldest held request per account decides Delayed: one bounded read of the rows already found.
         $firstOps = Operation::whereKey($held->values()->map(fn($id)=>(int)$id)->all())->get()->keyBy('server_id');
+        Operation::loadAcquisitionAttempts($firstOps);
         $out=[];
         foreach ($held as $id=>$oldest) {
             $review=$reviews->get($id);

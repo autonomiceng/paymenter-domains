@@ -60,6 +60,7 @@ foreach(['accepted','not_processed'] as $outcome){
     commerceReject(fn()=>$settings->run($review($op),$input($op,$outcome),$clock->now()));
     $clock->instant=$clock->now()->modify('+25 hours');
     // Enom reads the domain on a lost reply before staff record its answer.
+    if ($outcome === 'not_processed') { $observation->fault = 'absent'; }
     $reconcile->run($op->id);$r=$review($op);
     $bad=$input($op,$outcome);$bad['attempt_hash']=str_repeat('0',64);commerceReject(fn()=>$settings->run($r,$bad,$clock->now()));
     $role->update(['permissions'=>array_diff($permissions,['admin.domains.settings.enom_answer'])]);commerceReject(fn()=>$settings->run($r,$input($op,$outcome),$clock->now()));$role->update(['permissions'=>$permissions]);
@@ -121,7 +122,15 @@ $observation->fault = 'wrong-charge';
 $observation->during = static function () use ($op, $clock): void { \Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::resumed($op->fresh(), $clock->now()->getTimestamp()); };
 $reconcile->run($op->id); same('scheduled', $op->fresh()->policy['status_check']['outcome'], 'A resume saved during a read keeps its status');
 $observation->during = static function () use ($op, $clock, $observation, $reconcile): void {
-    $clock->instant = $clock->now()->modify('+60 seconds'); $observation->fault = 'send_guard'; $reconcile->run($op->id); $observation->fault = 'wrong-charge';
+    $clock->instant = $clock->now()->modify('+60 seconds');
+    $calls = $observation->calls;
+    $check = $op->fresh()->policy['status_check'];
+    $reconcile->run($op->id);
+    same([$calls, $check], [$observation->calls, $op->fresh()->policy['status_check']], 'A live read keeps the status claim without a second exchange');
+    $clock->instant = $clock->now()->modify('+191 seconds');
+    $observation->fault = 'send_guard';
+    $reconcile->run($op->id);
+    $observation->fault = 'wrong-charge';
 };
 $reconcile->run($op->id); same('deferred', $op->fresh()->policy['status_check']['outcome'], 'A newer check keeps its result over the older check');
 $observation->during = null; $reconcile->run($op->id); same('checked', $op->fresh()->policy['status_check']['outcome'], 'The next check saves its own result');

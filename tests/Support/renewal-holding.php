@@ -101,9 +101,10 @@ function reusableRenewalHolding(
             $attempt['registration_admission']['name'] = $name;
             $attempt['reconciliation']['query']['name'] = $name;
             $attempt['reconciliation']['operation_key'] = $key;
-            $op = (new Operation)->setRawAttributes($original->getRawOriginal())->fill([
+            // This new holding deliberately gets an independent historical acquisition, not the seed's live attempt.
+            $op = (new Operation)->setRawAttributes(array_diff_key($original->getRawOriginal(), ['id' => true]))->fill([
                 'domain_id' => $holding->id, 'service_id' => $serviceId, 'invoice_id' => $invoiceId,
-                'invoice_item_id' => $itemId, 'operation_key' => $key, 'attempt' => $attempt,
+                'invoice_item_id' => $itemId, 'operation_key' => $key, 'attempt' => $attempt, 'started_at' => $original->started_at,
             ]);
             // Recompute the production digest for the new operation, name and frozen evidence.
             $op->request_fingerprint = (new ReflectionMethod(OperationClaims::class, 'digest'))->invoke(null, $op, $holding);

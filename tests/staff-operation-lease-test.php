@@ -67,7 +67,10 @@ foreach(array_keys(StaffOperationReview::ACTIONS) as $action){same(false,Operati
 foreach(['equal','past','missing'] as $expiry){
     [$stale]=$prepare(placeholderComFixtureName('staff-lease-expired-'.$expiry.'-placeholder.com'),'absent');
     $lease=$stale->lease_expires_at;
-    if($expiry==='missing'){$stale->update(['lease_expires_at'=>null]);}else{$clock->instant=$lease->modify($expiry==='past'?'+1 second':'+0 seconds');}
+    if ($expiry === 'missing') {
+        $step = DB::table('domains_operation_steps')->where('operation_id', $stale->id)->where('step_type', 'register')->sole();
+        DB::table('domains_operation_attempts')->where('id', $step->current_attempt_id)->update(['claim_until' => null]);
+    } else { $clock->instant = $lease->modify($expiry === 'past' ? '+1 second' : '+0 seconds'); }
     \Illuminate\Support\Facades\Auth::setUser($staff);
     expect(OperationActions::relevant('recheck',$stale->fresh()),'Expired running recheck stays visible');
     $run($stale->fresh(),'recheck');

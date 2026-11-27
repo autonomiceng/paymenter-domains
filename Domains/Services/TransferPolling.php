@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionAttempt;
 /** Read scheduling only. The sealed transfer's seven-day window never authorizes another purchase or a refund. */
 final class TransferPolling
 {
@@ -56,7 +57,13 @@ final class TransferPolling
 
     public static function reading(Operation $op, int $now): bool
     {
-        return ($op->policy['reconciliation']['reading_until'] ?? 0) > $now;
+        return (self::readUntil($op) ?? 0) > $now;
+    }
+
+    public static function readUntil(Operation $op): ?int
+    {
+        $attempt = AcquisitionAttempt::of((int) $op->id, $op->action);
+        return $attempt ? $attempt->facts->readUntil?->getTimestamp() : ($op->policy['reconciliation']['reading_until'] ?? null);
     }
 
     /** Unix seconds for both the dispatcher and staff. Local reservations are never a registrar observation. */
@@ -83,7 +90,7 @@ final class TransferPolling
                 // (including a crashed worker) or a capacity retry can pace the second week.
                 $retry = isset($r['capacity_wait_since']) ? $next : 0;
                 // An unfinished check could have entered the wire any time before its saved deadline.
-                $lastPossibleRead = max($read['at'], $r['reading_until'] ?? 0);
+                $lastPossibleRead = max($read['at'], self::readUntil($op) ?? 0);
                 $view['next_read_at'] = max($retry, $deadline, $lastPossibleRead + TransferFollowup::DAY);
             }
         } elseif (!isset($r['final_check']) && ($now >= $deadline
@@ -123,7 +130,9 @@ final class TransferPolling
         $final=$overdue&&!$manual&&($r['final_check']??null)!=='done';
         $p['reconciliation']=[...$r,'checks'=>$checks,'next_at'=>$final||$manual?$now+self::delay($checks):min(self::deadline($op),$now+self::delay($checks))];
         if ($overdue) {
-            $p['reconciliation']['reading_until'] = $now + OperationReconciliation::READ_SECONDS;
+            if (!AcquisitionAttempt::of((int) $op->id, $op->action)) {
+                $p['reconciliation']['reading_until'] = $now + OperationReconciliation::READ_SECONDS;
+            }
             if (!$final && !$manual) { $p['reconciliation']['next_at'] = $now + TransferFollowup::DAY; }
         }
         if($final){$p['reconciliation']['final_check']='running';}

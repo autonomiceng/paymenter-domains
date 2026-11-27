@@ -40,20 +40,40 @@ final class OperationAttempts
         return $facts?->current ? $facts : null;
     }
 
-    /** The one sealed attempt of a step. Row 08 permits at most one. */
+    /** The active sealed attempt. A TEST cap refusal may have retired an earlier seal. */
     public static function sealed(int $operationId, StepKey $key, bool $lock = false): ?AttemptFacts
     {
         $facts = self::latest($operationId, $key, $lock);
-        return $facts?->sealed() ? $facts : null;
+        return $facts?->sealed() && !$facts->released ? $facts : null;
     }
 
-    /** True only when the step's sealed attempt is definitely unsent and its retained reply is the local refusal. */
-    public static function locallyRefused(int $operationId, StepKey $key): bool
+    /**
+     * Each listed acquisition's current attempt, or latest history when the step has no owner.
+     * @return array<int, array{facts: AttemptFacts, action: string, start: ?\DateTimeImmutable}>
+     */
+    public static function latestAcquisitions(array $operationIds, bool $lock = false): array
     {
-        $facts = self::sealed($operationId, $key, DB::transactionLevel() > 0);
-        if ($facts?->sendState !== SendState::DefinitelyUnsent) { return false; }
-        $reply = self::evidence($operationId, $facts->token->attemptId, 'reply');
-        return ($reply['source'] ?? null) === 'local_refusal' && $reply['outcome'] === 'unsent';
+        if (!$operationIds) { return []; }
+        $rows = DB::table(OperationSchema::STEPS.' as s')->join(OperationSchema::ATTEMPTS.' as a', 'a.step_id', '=', 's.id')
+            ->join('domains_operations as o', 'o.id', '=', 's.operation_id')
+            ->leftJoin(OperationSchema::EVIDENCE.' as e', fn ($join) => $join->on('e.attempt_id', '=', 'a.id')
+                ->where('e.kind', 'test_capacity')->where('e.outcome', 'fresh'))
+            ->whereIn('s.operation_id', $operationIds)->whereIn('s.step_type', ['register', 'transfer'])
+            ->where('s.sequence', 1)->whereColumn('s.step_type', 'o.action')
+            ->where(fn ($q) => $q->whereNull('s.current_attempt_id')->orWhereColumn('a.id', 's.current_attempt_id'))
+            ->when($lock, fn ($q) => $q->lockForUpdate())
+            ->orderByDesc('a.ordinal')->get(['a.*', 's.operation_id as step_operation_id', 's.current_attempt_id as step_current_attempt_id',
+                's.step_type', 'e.id as fresh_capacity_refusal']);
+        $attempts = [];
+        foreach ($rows as $row) {
+            $id = (int) $row->step_operation_id;
+            $step = (object) ['id' => $row->step_id, 'current_attempt_id' => $row->step_current_attempt_id];
+            $attempts[$id] ??= [
+                'facts' => self::facts($id, $step, $row), 'action' => $row->step_type,
+                'start' => $row->fresh_capacity_refusal === null ? self::time($row->claimed_at) : null,
+            ];
+        }
+        return $attempts;
     }
 
     /** Of the given operations, those whose step has a sealed attempt. */
@@ -103,11 +123,13 @@ final class OperationAttempts
      * (0 for operation-level evidence), then kind. A row that no longer decrypts reads as UNREADABLE, so it never
      * hides the evidence of another operation.
      */
-    public static function evidenceMany(array $operationIds, array $kinds): array
+    public static function evidenceMany(array $operationIds, array $kinds, bool $lock = false): array
     {
         if (!$operationIds || !$kinds) { return []; }
         $found = [];
-        foreach (DB::table(OperationSchema::EVIDENCE)->whereIn('operation_id', $operationIds)->whereIn('kind', $kinds)->orderBy('id')->get() as $row) {
+        $rows = DB::table(OperationSchema::EVIDENCE)->whereIn('operation_id', $operationIds)->whereIn('kind', $kinds)
+            ->when($lock, fn ($q) => $q->lockForUpdate())->orderBy('id')->get();
+        foreach ($rows as $row) {
             $slot = &$found[(int) $row->operation_id][(int) ($row->attempt_id ?? 0)][$row->kind];
             if ($slot === null) { try { $slot = self::decoded($row); } catch (DecryptException|\JsonException) { $slot = self::UNREADABLE; } }
             unset($slot);

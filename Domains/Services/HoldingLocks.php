@@ -37,10 +37,15 @@ final class HoldingLocks
         $prices = Price::where(['server_id' => $seed->server_id, 'tld' => $seed->tld, 'action' => 'renew'])->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $offer = $catalogue?->holding(AccountBindings::binding($account), $tld, $prices);
         $domain = Domain::whereKey($seed->id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
-        $operations = Operation::where('domain_id', $seed->id)->when($advisory,fn($q)=>$q->whereIn('id',$opIds)->limit(100))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        // Domains writers at READ COMMITTED already hold the holding row, which serializes creation of acquisition steps.
+        $currentView = $advisory || FreshTransaction::active();
+        $operations = Operation::where('domain_id', $seed->id)->when($currentView, fn ($q) => $q->withAcquisitionStep())
+            ->when($advisory,fn($q)=>$q->whereIn('id',$opIds)->limit(100))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $adoption = $domain->adoption_id === null ? null : Adoption::whereKey($domain->adoption_id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->first();
         // Payment rows of the locked invoices, last (HoldingNativeLocks::transactions).
         $transactions = HoldingNativeLocks::transactions($invoices->pluck('id'), $advisory);
+        // Core may already have a snapshot. Follow the writer's operation, attempt, evidence lock order.
+        if (!$currentView) { Operation::loadAcquisitionAttempts($operations, lock: true); }
         if ($domain->service_id !== $seed->service_id || $domain->user_id !== $seed->user_id || $domain->server_id !== $seed->server_id || $domain->tld !== $seed->tld
             || $domain->adoptionPending() || !$domain->billing_managed || $domain->reservation_name !== ($released ? null : $domain->domain) || $domain->authority_generation < 1
             || $server->extension !== 'Domains' || $account->account_fingerprint !== $domain->account_fingerprint || $account->registrar_key !== $domain->registrar_key

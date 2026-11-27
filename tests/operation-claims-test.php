@@ -3,12 +3,14 @@
 declare(strict_types=1);
 require __DIR__.'/Support/operation-claims.php';
 require_once __DIR__.'/Support/fixture-cases.php';
+require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 use App\Models\Credit;
-use Illuminate\Support\Facades\{Cache, DB};
+use Illuminate\Support\Facades\{Cache, Crypt, DB};
 use Paymenter\Extensions\Servers\Domains\Data\Disposition;
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{FundsWaits, MoneyWorkSchema, PricingRule, Refunds, WriteAcceptance};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationSchema, StepKey};
+use Paymenter\Extensions\Servers\Domains\Services\{FundsWaits, HoldingLocks, MoneyWorkSchema, PricingRule, RefundProof, Refunds, WriteAcceptance};
 // Claim, seal, funds cutoff and send outcome cases share the one prepared claim fixture and clock. Each makes
 // its own paid native checkout; the reset restores rows, payments, attempts, listeners, cache and fakes after it.
 $cases['claims'] = static function () use ($new, $engine, $writer, $assertNoSend): void {
@@ -22,6 +24,108 @@ $cases['claims'] = static function () use ($new, $engine, $writer, $assertNoSend
     foreach (['execution', 'dispatch_attempted_at', 'claim_key', 'seal'] as $key) {
         $attempt = $result->attempt; unset($attempt[$key]); commerceReject(fn () => $result->fresh()->update(['attempt' => $attempt]));
     }
+};
+$cases['attempt-authority'] = static function () use ($new, $engine, $writer): void {
+    foreach (['register', 'transfer'] as $action) {
+        $op = $new('ledger-'.$action.'.example.com', action: $action);
+        $stale = $op->fresh();
+        same([], $stale->attempt ?? [], 'The earlier instance has no attempt yet');
+        $before = $writer->calls;
+        $result = $engine->execute($op->id)->fresh();
+        $payload = $result->payload;
+        commerceReject(fn () => $stale->update(['payload' => [...$payload, 'nameservers' => ['ns1.example.net', 'ns2.example.net']]]));
+        same($payload, $result->fresh()->payload, 'A stale instance cannot change the sealed payload');
+        same($before + 1, $writer->calls, 'Exactly one acquisition crossed the writer boundary');
+        $attempt = OperationAttempts::sealed((int) $result->id, new StepKey($action, 1));
+        expect($attempt !== null && $attempt->grantConsumedAt !== null, 'Acquisition seal and grant are durable across reload');
+        same('unknown', OperationAttempts::evidence((int) $result->id, $attempt->token->attemptId, 'reply')['outcome'] ?? null,
+            'The active attempt owns the reply');
+        same([null, null, null], [$result->getRawOriginal('attempt'), $result->getRawOriginal('request_fingerprint'),
+            $result->getRawOriginal('lease_expires_at')], 'The operation has no mirrored claim or reply');
+        $engine->execute($result->id);
+        same($before + 1, $writer->calls, 'A restarted worker cannot send again');
+    }
+};
+$cases['possibly-sent-capacity-retry'] = static function () use ($new, $claims, $clock): void {
+    $op = $new('capacity-prior-send.example.com');
+    [$claimed] = $claims->claim($op->id);
+    $attempt = [...$claimed->attempt, 'send_state' => 'possibly_sent',
+        'capacity_deferrals' => [$clock->now()->format(DATE_ATOM)]];
+    restoreAcquisitionFixture([...$claimed->getRawOriginal(), 'state' => 'queued', 'safe_code' => 'write_rate_limited',
+        'attempt' => Crypt::encryptString(json_encode($attempt, JSON_THROW_ON_ERROR)),
+        'funding' => Crypt::encryptString(json_encode($claimed->funding, JSON_THROW_ON_ERROR)),
+        'started_at' => OperationAttempts::at($claimed->started_at), 'request_fingerprint' => $claimed->request_fingerprint]);
+
+    $retry = $claims->claim($op->id);
+    $current = $op->fresh();
+    same([false, 'uncertain', 'prior_attempt', 'possibly_sent'],
+        [$retry !== null, $current->state, $current->safe_code, $current->attempt['send_state']],
+        'A legacy capacity deferral preserves possible send evidence and gives no worker another claim');
+};
+$cases['stale-claim-evidence'] = static function () use ($new, $engine, $preflight, $writer): void {
+    $op = $new('stale-claim.example.com');
+    $op->update(['state' => 'queued']);
+    $staleAttempt = $op->fresh();
+    $staleFunding = Operation::withAcquisitionStep()->findOrFail($op->id);
+    same('queued', $staleAttempt->state, 'The stale model predates the claim');
+    same([], $staleAttempt->attempt ?? [], 'The stale attempt projection is empty');
+    same([], $staleFunding->attempt ?? [], 'The stale funding writer has no attempt');
+    $originalReader = clone $staleAttempt;
+
+    $refused = [];
+    $readsCurrentClaim = false;
+    $preflight->during = static function (Operation $claimed) use ($staleAttempt, $staleFunding, $originalReader, &$refused, &$readsCurrentClaim): void {
+        $claimKey = $claimed->attempt['claim_key'];
+        $readsCurrentClaim = ($originalReader->getOriginal('attempt')['claim_key'] ?? null) === $claimKey;
+        foreach ([
+            [$staleAttempt, 'attempt', ['claim_key' => str_repeat('a', 32)]],
+            [$staleFunding, 'funding', ['claim' => []]],
+        ] as [$stale, $field, $value]) {
+            try {
+                $stale->update([$field => $value]);
+                $refused[$field] = false;
+            } catch (\DomainException) {
+                $refused[$field] = true;
+            }
+        }
+    };
+    $before = $writer->calls;
+    $result = $engine->execute($op->id);
+    $preflight->during = null;
+
+    $seal = OperationAttempts::sealed((int) $result->id, new StepKey('register', 1));
+    $expected = ['original_reads_claim' => true, 'attempt_refused' => true, 'funding_refused' => true,
+        'sends' => 1, 'sealed_and_consumed' => true];
+    $actual = ['original_reads_claim' => $readsCurrentClaim, 'attempt_refused' => $refused['attempt'] ?? false,
+        'funding_refused' => $refused['funding'] ?? false, 'sends' => $writer->calls - $before,
+        'sealed_and_consumed' => $seal?->grantConsumedAt !== null];
+    same($expected, $actual, 'Stale claim regression: '.json_encode($actual, JSON_THROW_ON_ERROR));
+};
+$cases['inherited-refund-snapshot'] = static function () use ($new, $engine): void {
+    $op = $new('refund-snapshot.example.com');
+    $holding = $op->domain;
+    $sent = $engine->execute($op->id);
+    same('uncertain', $sent->state, 'The worker sent without a confirmed reply');
+    // SQLite has no current locking reads. Hide the new ledger rows only from consistent reads.
+    $connection = DB::connection();
+    $original = $connection->getQueryGrammar();
+    $connection->setQueryGrammar(new class($connection) extends Illuminate\Database\Query\Grammars\SQLiteGrammar {
+        public function compileSelect(Illuminate\Database\Query\Builder $query)
+        {
+            if (!$query->lock && in_array($query->from, [OperationSchema::STEPS.' as s', OperationSchema::EVIDENCE], true)) {
+                $query = (clone $query)->whereRaw('0 = 1');
+            }
+            return parent::compileSelect($query);
+        }
+    });
+    try {
+        DB::transaction(static function () use ($holding, $op): void {
+            $locks = HoldingLocks::take($holding);
+            $locked = $locks['operations']->firstWhere('id', $op->id);
+            commerceReject(fn () => RefundProof::requireUnsent($locked, $locks['domain']));
+            same('possibly_sent', $locked->attempt['execution']['send_state'], 'The holding retains the current attempt under core locks');
+        });
+    } finally { $connection->setQueryGrammar($original); }
 };
 $cases['funds-cutoff'] = static function () use ($new, $engine, $preflight, $clock, $user, $assertNoSend): void {
     // The real worker must release its own unsealed claim when the funds cutoff passes during preflight.

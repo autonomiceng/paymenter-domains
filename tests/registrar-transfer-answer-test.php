@@ -2,8 +2,10 @@
 // Synthetic support closure on native paid transfers; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/transfer-completion-namesilo-fixture.php';
+use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,PricingRule,RefundProof,StaffSettingsReview as Review,StaffSettingsWrites,TransferRejections};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationWriter, ReadToken, StepKey};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,PricingRule,RefundProof,RegistrarCheck,RuntimeSchema,StaffSettingsReview as Review,StaffSettingsWrites,TransferPolling,TransferRejections};
 app()->instance(Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);
 $staff=commerceUser();$permissions=['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.enom_answer','admin.domains.manage','admin.invoices.update'];
 $role=App\Models\Role::create(['name'=>'Registrar answers','permissions'=>$permissions]);$staff->update(['role_id'=>$role->id]);
@@ -54,6 +56,9 @@ $form=[...array_diff_key($answer($op),['final_confirmed'=>true]),'review_key'=>R
 \Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction::make($op->fresh(),$stamp)->data($form)->call();$op->refresh();
 same(['rejected','transfer_rejected','cancelled'],[$op->state,$op->domain->status,$op->domain->service->status],'Audited finality closes the native transfer');
 same($attempt,$op->attempt,'Sent attempt remains byte-for-byte intact');
+$sealed = OperationAttempts::sealed((int) $op->id, new StepKey('transfer', 1));
+$settlement = OperationAttempts::evidence((int) $op->id, $sealed->token->attemptId, 'settlement');
+same('transfer_rejected', $settlement['outcome'] ?? null, 'Audited finality settles the exact original attempt');
 same(['amount'=>'5.95','currency'=>'USD'],$op->cost['actual'],'Only the net failed fee is absorbed');
 same(['99.00','93.05','Transfer Rejected','9001'],array_map(fn($k)=>$op->policy['enom_answer'][$k],['charge','registrar_refund','transfer_status','order_reference']),'Exact final amounts, status and order retained');
 same($staff->id,$op->policy['enom_answer']['actor_id'],'Accountable staff identity retained');
@@ -66,9 +71,71 @@ commerceReject(fn()=>RefundProof::requireUnsent($op,$op->domain));
 commerceReject(fn()=>$op->update(['attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent']]));
 commerceReject(fn()=>$op->fresh()->update(['policy'=>array_diff_key($op->policy,['enom_answer'=>true])]));
 $writes=$state->calls;$engine->execute($op->id);same($writes,$state->calls,'Closure never repeats transferDomain');
-// A charged rejection also needs the same explicit support finality and settled refund.
-$charged=$rejected('support-charged',true);$settings->run($review($charged),$answer($charged),$clock->now());
-expect(TransferRejections::proved($charged->fresh(),$charged->domain->fresh()),'A failed charged order closes through support rather than guessed empty history');
+// The answer can close a charged transfer before or after an expired check finishes.
+RuntimeSchema::install();
+foreach ([true, false] as $checkFirst) {
+    $charged = $rejected($checkFirst ? 'support-check-first' : 'support-answer-first', true);
+    $check = new RegistrarCheck($clock);
+    $check->deferred = 'read_limit';
+    $writer = new OperationWriter($clock);
+    $until = $clock->now()->modify('+1 minute');
+    $read = DB::transaction(static function () use ($charged, $check, $writer, $until) {
+        $locked = $charged->newQuery()->whereKey($charged->id)->lockForUpdate()->firstOrFail();
+        $check->capture($locked);
+        $sealed = OperationAttempts::sealed((int) $locked->id, new StepKey('transfer', 1), true);
+        return $writer->openRead($sealed->token, $until);
+    });
+    expect($read instanceof ReadToken, 'The pending transfer owns the check before the answer');
+    $clock->instant = $until;
+    if ($checkFirst) {
+        $checked = $check->finish($charged, $read);
+        expect(isset($checked->policy['status_check']['next_at']), 'A check that finishes before the answer can schedule another read');
+    }
+    $settings->run($review($charged), $answer($charged), $clock->now());
+    $closed = $charged->fresh();
+    expect(TransferRejections::proved($closed, $closed->domain), 'The final answer settles the charged transfer and its refund');
+    if (!$checkFirst) {
+        $schedule = DB::table('domains_runtime_operations')->where('operation_id', $closed->id);
+        $before = [$closed->policy['status_check'], $schedule->value('due_at')];
+        $finished = $check->finish($closed, $read);
+        same($before, [$finished->policy['status_check'], $schedule->value('due_at')],
+            'A check finishing after the rejected transfer writes no status or schedule');
+    }
+}
+// A timely ownership reply can wait for its finishing lock while staff close the transfer.
+$late = $rejected('support-late-ownership', true);
+$step = new StepKey('transfer', 1);
+$sealed = OperationAttempts::sealed((int) $late->id, $step);
+$credit = static fn () => App\Models\Credit::where('user_id', $user->id)->sum('amount');
+$schedule = DB::table('domains_runtime_operations')->where('operation_id', $late->id);
+$snapshot = static fn ($op) => [$op->state, $op->policy, $op->funding, (array) $schedule->first(), $credit()];
+$clock->instant = new DateTimeImmutable('@'.TransferPolling::schedule($late, $clock->now()->getTimestamp())['next_read_at']);
+$observe->fault = 'rejectowned';
+$observe->calls = [];
+$armed = true;
+$closedSnapshot = null;
+DB::connection()->beforeExecuting(static function (string $sql, array $bindings, $db) use (
+    &$armed, &$closedSnapshot, $late, $step, $observe, $clock, $settings, $review, $answer, $snapshot
+): void {
+    if (!$armed || $db->transactionLevel() !== 0 || !in_array('getDomainInfo', $observe->calls, true)
+        || !str_starts_with($sql, 'select * from "domains_operations"') || $bindings !== [$late->id]) { return; }
+    $armed = false;
+    $until = OperationAttempts::sealed((int) $late->id, $step)->readUntil;
+    expect($until !== null && $until > $clock->now(), 'The ownership reply arrived before the read expired');
+    $clock->instant = $until;
+    $settings->run($review($late), $answer($late), $clock->now());
+    $closed = $late->fresh();
+    expect(TransferRejections::proved($closed, $closed->domain) && isset($closed->funding['refund']),
+        'Staff settle the rejection and return the payment before the check takes its finishing lock');
+    $closedSnapshot = $snapshot($closed);
+});
+$finished = $reconcile->run($late->id);
+expect(!$armed, 'The staff answer ran between the ownership reply and the finishing lock');
+same(null, OperationAttempts::evidence((int) $late->id, $sealed->token->attemptId, 'observation'),
+    'A check finishing after the final rejection adds no ownership evidence');
+same($closedSnapshot, $snapshot($finished), 'The late check leaves the rejection, schedule and refund unchanged');
+same(null, OperationAttempts::sealed((int) $late->id, $step)->readToken, 'The late check releases its read');
+
 // Original-receipt returns use the existing idempotent gateway recovery after a lost reply.
 require __DIR__.'/Support/money-receipt.php';
 $gateway=App\Models\Gateway::create(['extension'=>'MoneyReceipt','name'=>'Registrar receipt fixture','type'=>'gateway','enabled'=>true]);

@@ -1,6 +1,7 @@
 <?php
 // Enom 444f31c request-gates/provider-disposition/transfer-codes; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/acquisition-evidence-fixture.php';
 require_once __DIR__.'/reserved-fixtures.php';
 require __DIR__.'/transfer-fixture.php';
 \Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::install();
@@ -58,7 +59,7 @@ $assertTransferGuards=static function(int $i)use($state,$newTransfer,$makeTransf
         }finally{
             $accounts->update(['account_fingerprint'=>$before->account_fingerprint,'processing_enabled'=>$before->processing_enabled]);
             \Illuminate\Support\Facades\DB::table('domains_domains')->where('id',$op->domain_id)->update(['reservation_name'=>$reservation]);
-            if($fault!=='funding'){\Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$op->id)->update($unsent);}
+            if ($fault !== 'funding') { restoreAcquisitionFixture($unsent); }
             $state->missingCost=false;$state->quote='7.00';$state->funds='100.00';
         }
     }

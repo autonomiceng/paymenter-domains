@@ -3,11 +3,12 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php';
 
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{Money, SendState};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AttemptToken, OperationAttempts, OperationSchema, OperationWriter, ReadToken, SealTerms, StepKey, Transition, WireOutcome};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AttemptToken, OperationAttempts, OperationSchema, OperationWriter, ReadToken, SealTerms, StepKey, Transition, WireOutcome};
 use Paymenter\Extensions\Servers\Domains\Services\FoundationSchema;
 
 // Registry does not install the operation tables yet; this test installs them beside the foundation.
@@ -17,8 +18,8 @@ $clock = new class implements Clock {
     public function __construct() { $this->instant = new DateTimeImmutable('2026-11-25T12:00:00+00:00'); }
     public function now(): DateTimeImmutable { return $this->instant; }
 };
-$operation = static fn (string $key): int => (int) DB::table('domains_operations')->insertGetId(['server_id' => 1, 'registrar_key' => 'enom',
-    'domain_id' => 1, 'service_id' => 1, 'operation_key' => $key, 'action' => 'renew', 'state' => 'queued', 'currency' => 'USD']);
+$operation = static fn (string $key, string $action = 'renew'): int => (int) DB::table('domains_operations')->insertGetId(['server_id' => 1, 'registrar_key' => 'enom',
+    'domain_id' => 1, 'service_id' => 1, 'operation_key' => $key, 'action' => $action, 'state' => 'queued', 'currency' => 'USD']);
 $writer = new OperationWriter($clock); $step = StepKey::renew();
 $in = static fn (Closure $work) => DB::transaction($work);
 $later = static fn (int $seconds) => $clock->now()->modify("+$seconds seconds");
@@ -68,6 +69,55 @@ same(Transition::Applied, $in(fn () => $writer->recordReply($unsent, WireOutcome
 same(SendState::DefinitelyUnsent, OperationAttempts::attempt($unsent)->sendState, 'A proved local refusal is definitely unsent');
 same(Transition::Stale, $in(fn () => $writer->consumeGrant($unsent)), 'A refused attempt has no grant to spend');
 same(true, OperationAttempts::attempt($unsent)->sealed(), 'The seal survives the refusal');
+
+// A new acquisition needs the retired TEST refusal, but reads its own reply.
+$acquisitionId = $operation('writer-capacity-history', 'register');
+$acquisition = new StepKey('register', 1);
+$previous = $in(fn () => $writer->claim($acquisitionId, $acquisition, $later(60), ['digest' => str_repeat('a', 64)]));
+$in(fn () => $writer->seal($previous, $terms()));
+$refusal = ['phase' => 'purchase', 'refused_at' => $clock->now()->format(DATE_ATOM),
+    'dispatch_attempted_at' => $clock->now()->format(DATE_ATOM), 'authorized_cost' => ['amount' => '8.120000', 'currency' => 'USD']];
+same(Transition::Applied, $in(fn () => $writer->refuseTestCapacity($previous, $refusal, false)), 'Local TEST refusal retires the sealed attempt');
+$current = $in(fn () => $writer->claim($acquisitionId, $acquisition, $later(60), ['digest' => str_repeat('b', 64)]));
+$history = DB::table(OperationSchema::EVIDENCE)->where('attempt_id', $previous->attemptId);
+(clone $history)->where('kind', 'reply')->update(['evidence' => 'unreadable']);
+$projected = AcquisitionAttempt::of($acquisitionId, 'register')->attempt();
+same([$current->claimKey, [$refusal]], [$projected['claim_key'], $projected['test_call_refusals']],
+    'An unreadable retired reply leaves the current claim and TEST refusal history readable');
+(clone $history)->where('kind', 'test_capacity')->update(['evidence' => 'unreadable']);
+$batch = AcquisitionAttempt::many(OperationAttempts::latestAcquisitions([$acquisitionId]));
+expect($batch[$acquisitionId] instanceof DecryptException, 'An unreadable retired TEST refusal fails closed because it supplies history');
+
+$snapshotId = $operation('writer-current-claim', 'register');
+$snapshotClaim = $in(fn () => $writer->claim($snapshotId, $acquisition, $later(60), ['digest' => str_repeat('c', 64)]));
+$connection = DB::connection();
+$original = $connection->getQueryGrammar();
+// The locking read sees the claim committed after the consistent read's snapshot.
+$connection->setQueryGrammar(new class($connection) extends Illuminate\Database\Query\Grammars\SQLiteGrammar {
+    public function compileSelect(Illuminate\Database\Query\Builder $query)
+    {
+        if (!$query->lock && $query->from === OperationSchema::EVIDENCE) {
+            $query = (clone $query)->whereRaw('0 = 1');
+        }
+        return parent::compileSelect($query);
+    }
+});
+try {
+    $in(static function () use ($snapshotId, $snapshotClaim): void {
+        DB::table('domains_operations')->where('id', $snapshotId)->lockForUpdate()->first();
+        $current = AcquisitionAttempt::of($snapshotId, 'register', lock: true);
+        same($snapshotClaim->claimKey, $current->attempt()['claim_key'], 'A locked acquisition sees the claim and its evidence together');
+    });
+} finally { $connection->setQueryGrammar($original); }
+
+$answeredId = $operation('writer-accepted-answer', 'register');
+$answered = $in(fn () => $writer->claim($answeredId, $acquisition, $later(60), ['digest' => str_repeat('a', 64)]));
+$in(fn () => $writer->seal($answered, $terms()));
+same(Transition::Applied, $in(fn () => $writer->recordAcquisitionAnswer($answered, ['outcome' => 'accepted', 'order_reference' => '41'])),
+    'The acquisition retains an accepted answer');
+same(Transition::Stale, $in(fn () => $writer->recordAcquisitionAnswer($answered, ['outcome' => 'not_processed'])),
+    'A retained accepted answer prevents a negative settlement');
+same(null, OperationAttempts::evidence($answeredId, $answered->attemptId, 'settlement'), 'The conflicting answer writes no settlement');
 
 // The grant is spendable only before the sealed dispatch deadline.
 $lateId = $operation('writer-late');
@@ -177,6 +227,28 @@ try {
     }
     $kept = false; try { DB::table('domains_operations')->where('id', $raceId)->delete(); } catch (QueryException) { $kept = true; }
     expect($kept, 'An operation with attempts cannot be deleted');
+    foreach (['register', 'transfer'] as $action) {
+        DB::setDefaultConnection('writer_main');
+        $acquisitionId = $operation('writer-'.$action, $action);
+        $acquisition = new StepKey($action, 1);
+        $claim = $in(fn () => $writer->claim($acquisitionId, $acquisition, $later(60)));
+        DB::setDefaultConnection('writer_other');
+        same(Transition::Busy, $in(fn () => $writer->claim($acquisitionId, $acquisition, $later(60))), 'Other worker cannot claim the acquisition');
+        DB::setDefaultConnection('writer_main');
+        same(Transition::Applied, $in(fn () => $writer->seal($claim, $terms())), 'Claim owner seals the acquisition');
+        same(Transition::Applied, $in(fn () => $writer->consumeGrant($claim)), 'One worker consumes the grant');
+        DB::setDefaultConnection('writer_other');
+        same(Transition::Stale, $in(fn () => $writer->consumeGrant($claim)), 'Restarted worker cannot spend the grant again');
+        $read = $in(fn () => $writer->openRead($claim, $later(60)));
+        expect($read instanceof ReadToken, 'Another worker can read the original send');
+        DB::setDefaultConnection('writer_main');
+        same(Transition::Busy, $in(fn () => $writer->openRead($claim, $later(60))), 'Other worker cannot replace the active read');
+        $wrongRead = new ReadToken($read->attempt, bin2hex(random_bytes(16)), $read->until, $read->inheritedUnresolved);
+        same(Transition::Stale, $in(fn () => $writer->settle($wrongRead, 'succeeded', ['order' => '42'])), 'A different read token cannot settle the open acquisition');
+        same(Transition::Applied, $in(fn () => $writer->settle($read, 'succeeded', ['order' => '41'])), 'Only the read authority can settle');
+        DB::setDefaultConnection('writer_other');
+        same(Transition::Stale, $in(fn () => $writer->settle($read, 'succeeded', ['order' => '42'])), 'Settlement survives across independent connections');
+    }
 } finally { DB::setDefaultConnection('sqlite'); @unlink($file); }
 
 $nativeSuccessful = true;

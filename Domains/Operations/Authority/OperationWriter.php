@@ -18,24 +18,52 @@ final readonly class OperationWriter
     public function __construct(private Clock $clock) {}
 
     /** A new pre-seal claim. A live claim is busy; a sealed attempt keeps the step, so no second claim exists. */
-    public function claim(int $operationId, StepKey $key, \DateTimeImmutable $until): AttemptToken|Transition
+    public function claim(int $operationId, StepKey $key, \DateTimeImmutable $until, ?array $acquisition = null,
+        ?\DateTimeImmutable $claimedAt = null): AttemptToken|Transition
     {
         self::requireTransaction(); $now = $this->clock->now();
-        $step = OperationAttempts::step($operationId, $key, true);
-        if (!$step) {
-            DB::table(OperationSchema::STEPS)->insert(['operation_id' => $operationId, 'step_type' => $key->type, 'sequence' => $key->sequence]);
-            $step = OperationAttempts::step($operationId, $key, true);
-        }
+        $stepId = $this->stepId($operationId, $key);
         $latest = OperationAttempts::latest($operationId, $key, true);
-        if ($latest?->sealed()) { return Transition::Stale; }
+        if ($latest?->sealed() && (!$latest->released || $latest->sendState !== SendState::DefinitelyUnsent)) { return Transition::Stale; }
         if ($latest?->claiming($now)) { return Transition::Busy; }
         // An expired pre-seal claim never held a grant: it stays as history and loses the step.
         if ($latest?->current) { $this->archive($latest, $now); }
         $claim = bin2hex(random_bytes(16)); $ordinal = ($latest?->token->ordinal ?? 0) + 1;
-        $id = (int) DB::table(OperationSchema::ATTEMPTS)->insertGetId(['step_id' => $step->id, 'ordinal' => $ordinal, 'claim_key' => $claim,
-            'claimed_at' => OperationAttempts::at($now), 'claim_until' => OperationAttempts::at($until), 'send_state' => SendState::DefinitelyUnsent->value]);
-        $this->point((int) $step->id, $id);
-        return new AttemptToken($operationId, (int) $step->id, $id, $ordinal, $claim);
+        $id = (int) DB::table(OperationSchema::ATTEMPTS)->insertGetId(['step_id' => $stepId, 'ordinal' => $ordinal, 'claim_key' => $claim,
+            'claimed_at' => OperationAttempts::at($claimedAt ?? $now), 'claim_until' => OperationAttempts::at($until), 'send_state' => SendState::DefinitelyUnsent->value]);
+        $this->point($stepId, $id);
+        if ($acquisition !== null) {
+            $this->append($operationId, $id, 'claim', 'local', 'claimed', ['identity' => $claim, ...$acquisition], 'claim');
+        }
+        return new AttemptToken($operationId, $stepId, $id, $ordinal, $claim);
+    }
+
+    /** Preserve a historical seal. Its dispatch window is closed and no send permission can be issued. */
+    public function adoptAcquisition(int $id, int $revision, RetainedAcquisition $record): void
+    {
+        self::requireTransaction();
+        if (OperationAttempts::latest($id, $record->step, true)) { throw new \DomainException('Acquisition attempt already exists.'); }
+        $stepId = $this->stepId($id, $record->step);
+        $sealed = OperationAttempts::at($record->sealedAt);
+        $cost = $record->envelope['authorized_cost'] ?? [];
+        $attemptId = (int) DB::table(OperationSchema::ATTEMPTS)->insertGetId([
+            'step_id' => $stepId, 'ordinal' => 1, 'claim_key' => $record->claimKey,
+            'claimed_at' => OperationAttempts::at($record->startedAt), 'claim_until' => $sealed,
+            'sealed_at' => $sealed, 'dispatch_until' => $sealed, 'operation_revision' => $revision,
+            'request_digest' => $record->digest, 'send_state' => $record->sendState->value,
+            'authorized_amount' => $cost['amount'] ?? null, 'authorized_currency' => $cost['currency'] ?? null, 'mode' => $record->step->type,
+        ]);
+        $this->append($id, $attemptId, 'claim', 'retained', 'sealed', [
+            'identity' => $record->claimKey, 'digest' => $record->digest,
+            'legacy_attempt' => $record->envelope, 'legacy_funding' => $record->funding,
+        ], 'claim');
+        $this->point($stepId, $attemptId);
+    }
+
+    private function stepId(int $operationId, StepKey $key): int
+    {
+        return (int) (OperationAttempts::step($operationId, $key, true)?->id
+            ?? DB::table(OperationSchema::STEPS)->insertGetId(['operation_id' => $operationId, 'step_type' => $key->type, 'sequence' => $key->sequence]));
     }
 
     /** Ends a current pre-seal claim. A sealed or replaced attempt is stale and keeps its state. */
@@ -59,7 +87,7 @@ final readonly class OperationWriter
     { return new self(new class($now) implements Clock { public function __construct(private \DateTimeImmutable $now) {} public function now(): \DateTimeImmutable { return $this->now; } }); }
 
     /** Seals the current live claim. From here the send is possibly sent until a reply or local refusal proves otherwise. */
-    public function seal(AttemptToken $token, SealTerms $terms): Transition
+    public function seal(AttemptToken $token, SealTerms $terms, ?array $admission = null): Transition
     {
         self::requireTransaction(); $now = $this->clock->now(); $facts = OperationAttempts::attempt($token, true);
         if (!$facts?->claiming($now) || $terms->dispatchUntil <= $now) { return Transition::Stale; }
@@ -68,6 +96,37 @@ final readonly class OperationWriter
             'dispatch_until' => OperationAttempts::at($terms->dispatchUntil), 'send_state' => SendState::PossiblySent->value,
             'authorized_amount' => $terms->authorized->amount, 'authorized_currency' => $terms->authorized->currency, 'mode' => $terms->mode]);
         $this->bump($token->stepId);
+        if ($admission !== null) {
+            $this->append($token->operationId, $token->attemptId, 'admission', 'local', 'sealed', $admission, 'admission');
+        }
+        return Transition::Applied;
+    }
+
+    /** Retain a local capacity decision on its worker attempt before dropping the current pointer. */
+    public function deferClaim(AttemptToken $token): Transition
+    {
+        self::requireTransaction();
+        $facts = OperationAttempts::attempt($token, true);
+        $now = $this->clock->now();
+        if (!$facts?->claiming($now)) { return Transition::Stale; }
+        $this->append($token->operationId, $token->attemptId, 'capacity', 'local', 'deferred', [], 'capacity');
+        $this->archive($facts, $now);
+        return Transition::Applied;
+    }
+
+    /** The caller proved that the TEST purchase counter stopped this worker before any provider exchange. */
+    public function refuseTestCapacity(AttemptToken $token, array $proof, bool $balance): Transition
+    {
+        self::requireTransaction();
+        $facts = OperationAttempts::attempt($token, true);
+        $now = $this->clock->now();
+        if (!$facts?->current || $facts->released || $facts->claimUntil === null || $facts->claimUntil <= $now) { return Transition::Stale; }
+        if ($facts->sealed() && $this->recordReply($token, WireOutcome::localRefusal('test_capacity')) !== Transition::Applied) {
+            return Transition::Stale;
+        }
+        $this->append($token->operationId, $token->attemptId, 'test_capacity', 'local', $balance ? 'balance' : 'fresh', $proof, 'test_capacity');
+        DB::table(OperationSchema::ATTEMPTS)->where('id', $token->attemptId)->update(['released_at' => OperationAttempts::at($now)]);
+        $this->point($token->stepId, null);
         return Transition::Applied;
     }
 
@@ -78,7 +137,8 @@ final readonly class OperationWriter
     public function consumeGrant(AttemptToken $token): Transition
     {
         self::requireTransaction(); $facts = OperationAttempts::attempt($token, true);
-        if (!$facts?->current || !$facts->sealed() || $facts->grantConsumedAt !== null || $facts->sendState !== SendState::PossiblySent) { return Transition::Stale; }
+        if (!$facts?->current || !$facts->sealed() || $facts->claimUntil === null
+            || $facts->grantConsumedAt !== null || $facts->sendState !== SendState::PossiblySent) { return Transition::Stale; }
         if (DB::table(OperationSchema::EVIDENCE)->where(['attempt_id' => $token->attemptId, 'kind' => 'settlement'])
             ->lockForUpdate()->first(['id'])) { return Transition::Stale; }
         $now = OperationAttempts::at($this->clock->now());
@@ -91,10 +151,45 @@ final readonly class OperationWriter
     public function recordReply(AttemptToken $token, WireOutcome $outcome): Transition
     {
         self::requireTransaction(); $facts = OperationAttempts::attempt($token, true);
-        if (!$facts?->sealed()) { return Transition::Stale; }
+        if (!$facts?->sealed() || !$facts->current) { return Transition::Stale; }
         if (!$this->append($token->operationId, $token->attemptId, 'reply', $outcome->kind, $outcome->outcome, $outcome->evidence, 'reply')) { return Transition::Stale; }
         if ($facts->sendState === SendState::PossiblySent && $outcome->sendState !== SendState::PossiblySent) {
             DB::table(OperationSchema::ATTEMPTS)->where('id', $token->attemptId)->update(['send_state' => $outcome->sendState->value]);
+            $this->bump($token->stepId);
+        }
+        return Transition::Applied;
+    }
+
+    /** A registrar's immediate acquisition outcome after it has been correlated to the holding. */
+    public function recordAcquisitionDecision(AttemptToken $token, string $state, array $proof): Transition
+    {
+        self::requireTransaction();
+        $facts = OperationAttempts::attempt($token, true);
+        if (!$facts?->sealed() || !$facts->current
+            || !OperationAttempts::evidence($token->operationId, $token->attemptId, 'reply')) { return Transition::Stale; }
+        return $this->append($token->operationId, $token->attemptId, 'decision', 'reply', $state, $proof, 'decision')
+            ? Transition::Applied : Transition::Stale;
+    }
+
+    /** An audited answer belongs to the sealed acquisition. Final answers use its one settlement identity. */
+    public function recordAcquisitionAnswer(AttemptToken $token, array $answer): Transition
+    {
+        self::requireTransaction();
+        $facts = OperationAttempts::attempt($token, true);
+        $outcome = $answer['outcome'];
+        if (!$facts?->current || !$facts->sealed() || $facts->reading($this->clock->now())
+            || ($outcome === 'not_processed' && (($facts->readToken !== null && $facts->readUntil === null)
+                || $this->hasSettlementEvidence($token)))) { return Transition::Stale; }
+        $kind = $outcome === 'accepted' ? 'answer' : 'settlement';
+        if (!$this->append($token->operationId, $token->attemptId, $kind, 'staff_answer', $outcome, ['answer' => $answer], $kind)) {
+            return Transition::Stale;
+        }
+        // The registrar's audited answer resolves the return. Retire an expired reader without giving automatic
+        // reconciliation negative send proof or allowing the orphan to replace the saved check.
+        if ($outcome === 'not_processed' && $facts->readToken !== null) {
+            DB::table(OperationSchema::ATTEMPTS)->where('id', $token->attemptId)->update([
+                'read_token' => null, 'read_until' => null, 'read_unresolved' => true,
+            ]);
             $this->bump($token->stepId);
         }
         return Transition::Applied;
@@ -104,7 +199,7 @@ final readonly class OperationWriter
     public function openRead(AttemptToken $token, \DateTimeImmutable $until): ReadToken|Transition
     {
         self::requireTransaction(); $now = $this->clock->now(); $facts = OperationAttempts::attempt($token, true);
-        if (!$facts?->sealed()) { return Transition::Stale; }
+        if (!$facts?->sealed() || !$facts->current || $until <= $now) { return Transition::Stale; }
         if ($facts->reading($now)) { return Transition::Busy; }
         $inherited = $facts->readUnresolved || $facts->readToken !== null; $read = bin2hex(random_bytes(16));
         DB::table(OperationSchema::ATTEMPTS)->where('id', $token->attemptId)->update(['read_token' => $read,
@@ -121,11 +216,12 @@ final readonly class OperationWriter
             && !$facts->readUnresolved && $facts->reading($now);
     }
 
-    /** True while this read still owns the attempt and is inside its deadline, inherited uncertainty or not. */
-    private function readHeld(ReadToken $read): bool
+    /** A stale finisher cannot change the schedule or use its evidence once a successor owns the read. */
+    public function ownsRead(ReadToken $read, bool $allowExpired = false): bool
     {
         $facts = OperationAttempts::attempt($read->attempt, true);
-        return $facts !== null && $facts->readToken !== null && hash_equals($facts->readToken, $read->token) && $facts->reading($this->clock->now());
+        return $facts?->current && $facts->readToken !== null && hash_equals($facts->readToken, $read->token)
+            && ($allowExpired || $facts->reading($this->clock->now()));
     }
 
     /** Releases this read. A stale finisher cannot clear a successor; inherited uncertainty stays. */
@@ -139,13 +235,13 @@ final readonly class OperationWriter
     }
 
     /**
-     * Retains the first positive observation of a sealed attempt. Any reader of the attempt may append it,
+     * Retains the first positive observation of the current sealed attempt. Any reader of that attempt may append it,
      * even after a successor took the read claim, so it changes no claim or stamp.
      */
     public function recordObservation(AttemptToken $token, array $observation, \DateTimeImmutable $observedAt): Transition
     {
         self::requireTransaction(); $facts = OperationAttempts::attempt($token, true);
-        if (!$facts?->sealed()) { return Transition::Stale; }
+        if (!$facts?->current || !$facts->sealed()) { return Transition::Stale; }
         return $this->append($token->operationId, $token->attemptId, 'observation', 'registrar_read', 'positive', $observation, 'observation', $observedAt)
             ? Transition::Applied : Transition::Stale;
     }
@@ -166,7 +262,7 @@ final readonly class OperationWriter
         self::requireTransaction();
         $owned = $outcome === self::NOT_SENT
             ? $this->readCurrent($read) && OperationAttempts::attempt($read->attempt, true)?->grantConsumedAt === null
-            : $this->readHeld($read);
+            : $this->ownsRead($read);
         if (!$owned) { return Transition::Stale; }
         return $this->append($read->attempt->operationId, $read->attempt->attemptId, 'settlement', 'registrar_read', $outcome, $settlement, 'settlement')
             ? Transition::Applied : Transition::Stale;
@@ -176,7 +272,7 @@ final readonly class OperationWriter
     public function hold(ReadToken $read, array $proof): Transition
     {
         self::requireTransaction();
-        if (!$this->readHeld($read)) { return Transition::Stale; }
+        if (!$this->ownsRead($read)) { return Transition::Stale; }
         return $this->append($read->attempt->operationId, $read->attempt->attemptId, 'held', 'registrar_read', 'review', $proof, 'held')
             ? Transition::Applied : Transition::Stale;
     }
@@ -204,9 +300,16 @@ final readonly class OperationWriter
     {
         self::requireTransaction(); $a = $read->attempt;
         if (!$this->readCurrent($read)) { return Transition::Stale; }
-        if (OperationAttempts::evidenceMany([$a->operationId], ['observation', 'held', 'settlement'])[$a->operationId][$a->attemptId] ?? []) { return Transition::Stale; }
+        if ($this->hasSettlementEvidence($a)) { return Transition::Stale; }
         return $this->append($a->operationId, $a->attemptId, 'answer', 'staff_answer', 'not_processed', $answer, 'settlement')
             ? Transition::Applied : Transition::Stale;
+    }
+
+    /** A negative answer must see any retained proof, even if its payload is unreadable. */
+    private function hasSettlementEvidence(AttemptToken $token): bool
+    {
+        return DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $token->operationId, 'attempt_id' => $token->attemptId])
+            ->whereIn('kind', ['observation', 'held', 'settlement', 'answer'])->lockForUpdate()->first(['id']) !== null;
     }
 
     /** Operation-level local terminal proof, such as a never-sent unpaid closure. Recorded once. */

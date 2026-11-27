@@ -83,7 +83,7 @@ final class TransferFollowup
         $addressable = $op->registrar_key === 'namesilo' || ($op->registrar_key === 'enom' && is_string($reference)
             && preg_match('/^[1-9][0-9]{0,19}$/D', $reference));
         return $addressable && $op->state === 'uncertain'
-            && preg_match('/^[0-9a-f]{32}$/D', $a['claim_key'] ?? '') && ($a['send_state'] ?? null) === 'possibly_sent'
+            && preg_match('/^[0-9a-f]{32}$/D', $a['claim_key'] ?? '') && in_array($a['send_state'] ?? null, ['possibly_sent', 'sent'], true)
             && ($a['execution']['send_state'] ?? null) === 'sent' && ($a['execution']['disposition'] ?? null) === 'pending'
             && ($a['evidence']['transfer'] ?? null) === 'pending'
             && $op->completed_at === null && $op->confirmed_expires_at === null && $op->provider_order_id === null

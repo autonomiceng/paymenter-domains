@@ -49,10 +49,12 @@ foreach (['enom', 'namesilo'] as $index => $registrar) {
         if (in_array($result->safe_code, ['nameservers_required', 'order_not_supported'], true)) {
             // A specific refusal retains the old definitely-unsent recovery, never unknown execution.
             // Privileged corruption bypasses the normal write-once evidence guard.
-            $raw = $result->getRawOriginal('attempt'); $result->attempt = [...$result->attempt, 'execution' => null];
-            Illuminate\Support\Facades\DB::table('domains_operations')->where('id', $result->id)->update(['attempt' => $result->getAttributes()['attempt']]);
+            $raw = $result->getRawOriginal('attempt');
+            Illuminate\Support\Facades\DB::table('domains_operations')->where('id', $result->id)->update([
+                'attempt' => Illuminate\Support\Facades\Crypt::encryptString(json_encode(['execution' => null], JSON_THROW_ON_ERROR)),
+            ]);
             commerceReject(fn () => OperationTerminalProof::encode($claims, $result->id));
-            commerceReject(fn () => RefundProof::requireUnsent($result, $result->domain));
+            commerceReject(fn () => RefundProof::requireUnsent($result->fresh(), $result->domain));
             Illuminate\Support\Facades\DB::table('domains_operations')->where('id', $result->id)->update(['attempt' => $raw]);
             $result->refresh(); $credit = PricingRule::minor((string) Credit::sum('amount'));
             if ($case === 'bad-ldh') { $refund = $refunds->refundHeld($staff, $result->id, 'customer_cancelled'); }

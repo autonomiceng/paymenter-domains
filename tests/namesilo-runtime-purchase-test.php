@@ -4,11 +4,14 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 require __DIR__.'/native-app.php';
+require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use App\Models\{Credit,Role};
+use Illuminate\Support\Facades\Crypt;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{Installation,LiveReservations,OperationClaims,PricingRule,RefundProof,Refunds};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationWriter, RetainedAcquisition};
+use Paymenter\Extensions\Servers\Domains\Services\{FreshTransaction,HoldingLocks,Installation,LiveReservations,OperationClaims,PricingRule,RefundProof,Refunds};
 expect(method_exists(\Paymenter\Extensions\Servers\Domains\Contracts\RegistrationProtocol::class,'useReservation'),'Genuine acquisition protocol must bind a pre-seal reservation');
 (new Installation)->install();
 $installedFixture=true;$fixtureEnvironment=Environment::Live;
@@ -96,10 +99,35 @@ foreach(['success','unsent','timeout','cap','off'] as $mode){
         same(['held','acquisition_definitely_unsent'],[$result->state,$result->safe_code],'Local sealed refusal retains definitely-unsent result');
         same('sealed',$result->attempt['seal'],'Seal never reset for retry');same(0,$writes,'Local refusal has zero physical purchase');
         same($deferrals,$result->attempt['capacity_deferrals'],'Sealed local refusal retains capacity deferral');
-        $bad=clone $result;$bad->attempt=array_replace($result->attempt,['capacity_deferrals'=>['invalid']]);
-        try{RefundProof::requireUnsent($bad,$result->domain);expect(false,'Malformed sealed deferral must fail');}
-        catch(\DomainException $error){same('Unknown capacity deferral.',$error->getMessage(),'Sealed deferrals retain timestamp validation');}
+        $malformed = array_replace($result->attempt, ['capacity_deferrals' => ['invalid']]);
+        commerceReject(fn () => $result->fresh()->update(['attempt' => $malformed]));
+        $bad = clone $result; unset($bad->id); $bad->attempt = $malformed;
+        $bad->started_at = $result->started_at; $bad->request_fingerprint = $result->request_fingerprint;
+        commerceReject(fn () => RefundProof::requireUnsent($bad, $result->domain));
         commerceReject(fn()=>$result->update(['attempt'=>array_replace($result->attempt,['execution'=>null]) ]));$result->refresh();
+        RefundProof::requireUnsent($result, $result->domain);
+        // The old writer kept the seal's possibly-sent state and recorded the local refusal separately.
+        $legacy = [...$result->attempt, 'send_state' => 'possibly_sent'];
+        restoreAcquisitionFixture([...$result->getRawOriginal(),
+            'attempt' => Crypt::encryptString(json_encode($legacy, JSON_THROW_ON_ERROR)),
+            'funding' => Crypt::encryptString(json_encode($result->funding, JSON_THROW_ON_ERROR)),
+            'started_at' => OperationAttempts::at($result->started_at), 'request_fingerprint' => $result->request_fingerprint]);
+        $clock->instant = $clock->now()->modify('+1 second');
+        $result->refresh();
+        FreshTransaction::run(static function () use ($result, $clock): void {
+            $locks = HoldingLocks::take($result->domain);
+            $locked = $locks['operations']->firstWhere('id', $result->id);
+            RefundProof::requireUnsent($locked, $locks['domain']);
+            $adopted = RetainedAcquisition::adopt($locked, new OperationWriter($clock), $clock->now());
+            expect($adopted !== null, 'The legacy local refusal adopts its original seal');
+        });
+        $result->refresh();
+        $restore = changeAcquisitionEvidence($result, 'claim', static function (array $evidence): array {
+            unset($evidence['legacy_attempt']['execution']);
+            return $evidence;
+        });
+        try { commerceReject(fn () => RefundProof::requireUnsent($result->fresh(), $result->domain)); }
+        finally { $restore(); }
         $staff=commerceUser();$role=Role::create(['name'=>'Acquisition refunds','permissions'=>['admin.domains.manage','admin.invoices.update']]);$staff->update(['role_id'=>$role->id]);
         $credit=static fn()=>PricingRule::minor((string)(Credit::where('user_id',$user->id)->where('currency_code','USD')->value('amount')??'0.00'));
         $beforeCredit=$credit();$attempt=$result->attempt;$refunds=new Refunds($clock);

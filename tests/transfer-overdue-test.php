@@ -36,6 +36,8 @@ $pending = function (string $label) use ($prepare, $reconcile, $observe, $clock,
     $clock->instant = new DateTimeImmutable('@'.TransferPolling::deadline($op));
     $op = $reconcile->run($op->id);
     same('done', $op->policy['reconciliation']['final_check'], 'The existing final check ran');
+    same(TransferPolling::schedule($op, $clock->now()->getTimestamp())['next_read_at'], $op->policy['status_check']['next_at'],
+        'The finished status uses the scheduled follow-up time after releasing its read claim');
     $observe->calls = [];
     $clock->instant = $clock->now()->modify('+1 day');
     return $op;
@@ -165,8 +167,13 @@ same(null, $view($r, $clock->now()->getTimestamp())['next_read_at'], 'A staff ch
 // Leave the locked reservation in storage, as if the worker died after a delayed wire.
 $op = $pending('overdue-crash');
 $reservedAt = $clock->now()->getTimestamp();
-$claims->locked($op->id, fn($row) => TransferPolling::reserve($row, $reservedAt));
-$wireDeadline = $op->fresh()->policy['reconciliation']['reading_until'];
+$claims->locked($op->id, function ($row) use ($clock, $reservedAt): void {
+    $attempt = \Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionAttempt::of((int) $row->id, 'transfer', true);
+    $writer = new \Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationWriter($clock);
+    $writer->openRead($attempt->facts->token, $clock->now()->modify('+'.OperationReconciliation::READ_SECONDS.' seconds'));
+    TransferPolling::reserve($row, $reservedAt);
+});
+$wireDeadline = TransferPolling::readUntil($op->fresh());
 $clock->instant = new DateTimeImmutable('@'.($wireDeadline - 1));
 $attempt = \Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence::attempt($op, $op->domain, $binding);
 $context = new \Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding, RequestOrigin::Background,

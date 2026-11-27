@@ -68,9 +68,10 @@ final readonly class FinancialAdjustments
         return $funding;
     }
     /** Collection is separate from registrar dispatch; callers must verify current native funding. */
-    public static function registrarUnattemptedFunding(Operation $op): bool
+    public static function registrarUnattemptedFunding(Operation $op, bool $allowClaim = false): bool
     {
         $funding = self::registrarFunding($op);
+        if ($allowClaim) { unset($funding['claim']); }
         if ($funding === []) { return true; }
         try {
             // Saved-method collection evidence grants no registrar attempt or funding authority.

@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence,Evidence,RequestContext};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter,ReadToken};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAttempt, RenewalCompletion};
 /** One bounded read result, shared by background work, staff feedback and customer notices. */
 final class RegistrarCheck
@@ -47,11 +48,17 @@ final class RegistrarCheck
     /** A replacement read owns this attempt's status now. */
     public function discard(): void { $this->identity = null; }
 
-    public function finish(Operation $result): Operation
+    public function finish(Operation $result, ?ReadToken $read = null): Operation
     {
-        return DB::transaction(function () use ($result): Operation {
+        return DB::transaction(function () use ($result, $read): Operation {
             Domain::whereKey($result->domain_id)->lockForUpdate()->firstOrFail();
             $op = Operation::whereKey($result->id)->lockForUpdate()->firstOrFail();
+            if ($read) {
+                $writer = new OperationWriter($this->clock);
+                if (!$writer->ownsRead($read, allowExpired: true)) { return $op; }
+                $writer->closeRead($read);
+            }
+            if ($op->state === 'rejected' && $op->action === 'transfer' && $op->safe_code === TransferRejections::CODE) { return $op; }
             if ($this->identity===null || !hash_equals($this->identity,RegistrarAnswers::identity($op))) { return $op; }
             // A check, resume or answer saved after this check began is newer. This result must not replace it.
             $stored=$op->policy['status_check']??null;
@@ -82,7 +89,10 @@ final class RegistrarCheck
                     DB::table('domains_runtime_operations')->updateOrInsert(['operation_id' => $op->id], ['due_at' => $next, ...($continued ? ['attempts' => 0] : [])]);
                 }
             }
-            $op->update(['policy' => [...($op->policy ?? []), 'status_check' => ['outcome' => $outcome, 'at' => $now, 'started' => $this->started, 'order' => $this->order, 'next_at' => $next, 'reason' => $this->deferred, 'attempt_identity'=>$this->identity, 'read_attempted'=>($this->context?->exchanges()??0)>0||self::attempted($op), 'facts'=>$this->facts, ...($this->awaitingAnswer !== null ? ['registrar'=>$this->awaitingAnswer,'answer_after'=>$this->answerAfter] : [])]]]);
+            self::saveResult($op, ['outcome' => $outcome, 'at' => $now, 'started' => $this->started, 'order' => $this->order,
+                'next_at' => $next, 'reason' => $this->deferred, 'attempt_identity' => $this->identity,
+                'read_attempted' => ($this->context?->exchanges() ?? 0) > 0 || self::attempted($op), 'facts' => $this->facts,
+                ...($this->awaitingAnswer !== null ? ['registrar' => $this->awaitingAnswer, 'answer_after' => $this->answerAfter] : [])]);
             return $op;
         });
     }
@@ -95,7 +105,14 @@ final class RegistrarCheck
         // An earlier read of this same attempt still counts, so staff can record the registrar's answer after a resume.
         $kept=self::attempted($op)?['attempt_identity'=>$op->policy['status_check']['attempt_identity'],'read_attempted'=>true]:[];
         $order=self::nextOrder($op);
-        $op->update(['policy' => [...$op->policy, 'status_check_order' => $order, 'status_check' => ['outcome' => 'scheduled', 'at' => $now, 'order' => $order, 'next_at' => $now, 'reason' => null, ...$kept]]]);
+        self::saveResult($op, ['outcome' => 'scheduled', 'at' => $now, 'order' => $order, 'next_at' => $now, 'reason' => null, ...$kept],
+            ['status_check_order' => $order]);
+    }
+
+    private static function saveResult(Operation $op, array $result, array $changes = []): void
+    {
+        if ($observation = self::legacyObservation($op)) { $result['legacy_observation'] = $observation; }
+        $op->update(['policy' => [...($op->policy ?? []), ...$changes, 'status_check' => $result]]);
     }
     /** A lost reply that no accepted order history covers. Only the registrar's answer can settle it. */
     public static function lostReply(Operation $op, AttemptEvidence $attempt, \DateTimeImmutable $now): bool
@@ -115,6 +132,18 @@ final class RegistrarCheck
         $check=$op->policy['status_check']??[];
         return ($check['read_attempted']??false)===true&&is_string($check['attempt_identity']??null)&&hash_equals(RegistrarAnswers::identity($op),$check['attempt_identity']);
     }
+
+    /** Preserve positive evidence and its date until the legacy acquisition can adopt it. */
+    public static function legacyObservation(Operation $op): ?array
+    {
+        if (!in_array($op->action, ['register', 'transfer'], true)
+            || $op->getRawOriginal('request_fingerprint') === null || !self::attempted($op)) { return null; }
+        $check = $op->policy['status_check'];
+        $observation = $check['legacy_observation'] ?? $check;
+        if (($observation['facts']['owned'] ?? false) !== true || !is_int($observation['at'] ?? null)) { return null; }
+        return ['at' => $observation['at'], 'facts' => $observation['facts']];
+    }
+
     /** Plain words used everywhere this result appears. No provider payload enters the policy or UI. */
     public static function words(?array $check, bool $completed = false): array
     {

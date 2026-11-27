@@ -83,7 +83,11 @@ $state->premium=true;$r=$engine->execute($op->id);$state->premium=false;
 same(['held','premium_name',1],[$r->state,$r->safe_code,count($r->attempt['capacity_deferrals'])],'A refusal after a deferral keeps its cause');
 $act($r,'refund');same('rejected',$r->fresh()->state,'Cancel works after a local deferral');
 expect(OperationTerminalProof::safe($r->fresh(),$r->domain->fresh()),'A deferral keeps the terminal proof');
-$forged=$r->fresh();$forged->attempt=[...$forged->attempt,'capacity_deferrals'=>['not-a-time']];expect(!OperationTerminalProof::safe($forged,$forged->domain),'A malformed deferral fails the terminal proof');
+$forged = $r->fresh();
+$malformed = [...$forged->attempt, 'capacity_deferrals' => ['not-a-time']];
+commerceReject(fn () => $forged->update(['attempt' => $malformed]));
+unset($forged->id); $forged->attempt = $malformed;
+expect(!OperationTerminalProof::safe($forged, $r->domain), 'A malformed deferral fails the retained terminal proof');
 same(1,App\Models\Credit::where('user_id',$user->id)->where('currency_code','USD')->count(),'Credit stays on one row');
 // No automatic retry here, so the failed read has to keep a Release that works.
 $op=$newTransfer(placeholderComFixtureName('refuse-unsupported-placeholder.com'),1);$makeTransfer(1);$state->calls=[];$state->reads=0;$state->premium=null;$r=$engine->execute($op->id);$state->premium=false;
