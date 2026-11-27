@@ -93,8 +93,11 @@ final readonly class AcquisitionAuthority
 
     public function expire(Operation $op): bool
     {
-        if ($op->lease_expires_at && $op->lease_expires_at > $this->clock->now()) { return false; }
-        $op->update(['state' => 'uncertain', 'safe_code' => 'stale_claim', 'lease_expires_at' => null]);
+        $now = $this->clock->now();
+        if ($op->lease_expires_at && $op->lease_expires_at > $now) { return false; }
+        if (!AcquisitionRetryProof::expiredClaim($op, $now)) {
+            $op->update(['state' => 'uncertain', 'safe_code' => 'stale_claim', 'lease_expires_at' => null]);
+        }
         return true;
     }
     public static function payloadDigest(Operation $op): string { return hash('sha256', json_encode($op->payload, JSON_THROW_ON_ERROR)); }

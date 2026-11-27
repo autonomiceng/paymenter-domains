@@ -127,7 +127,8 @@ final class AcquisitionRetryProof
             }
         } catch (\Throwable) { return false; }
         $rateHold = $op->safe_code === 'write_rate_limited' && $window !== null
-            && $window->origin !== AcquisitionAdmission::TestCapacity->value && self::capacityRetry($op) && $retry !== null;
+            && !in_array($window->origin, [AcquisitionAdmission::TestCapacity->value, AcquisitionAdmission::StaffRelease->value], true)
+            && self::capacityRetry($op) && $retry !== null;
         $review = in_array($op->safe_code, BalanceRetries::REVIEW_CODES, true) && $retry !== null;
         $held = $op->state === 'held' && in_array($op->safe_code, ExecutionWindow::BALANCE_HOLDS, true)
             && (in_array($op->safe_code, BalanceRetries::INITIAL_CODES, true) || $released || $rateHold || $review || BalanceRetries::legacyHold($op));
