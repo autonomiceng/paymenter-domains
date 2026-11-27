@@ -7,6 +7,7 @@ use App\Enums\InvoiceTransactionStatus as PaymentStatus;
 use Illuminate\Support\Facades\{Crypt,DB,Log,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter, Transition};
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 use Paymenter\Extensions\Servers\Domains\Money\Returns\{ReceiptReturns, RefundPayment};
 /** Owned acquisition closure. Every decision takes the native W/A0 prefix before domain/operations. */
@@ -99,8 +100,12 @@ final readonly class AcquisitionRetirement
         // Intent fencing precedes the native SQL. Retain it after closure; no resend becomes possible.
         if($s->status!=='cancelled'){$s->update(['status'=>'cancelled']);}
         if($invoice->status!=='cancelled'){$invoice->update(['status'=>'cancelled']);}
+        if ((new OperationWriter($this->clock))->recordTerminal((int) $op->id, 'unpaid_closed',
+            UnpaidAcquisitionProof::attempt($op)['terminal']) !== Transition::Applied) {
+            throw new \DomainException('Terminal proof already recorded.');
+        }
         $op->update(['state'=>'rejected','safe_code'=>UnpaidAcquisitionProof::CODE,'completed_at'=>$this->clock->now(),
-            'attempt'=>UnpaidAcquisitionProof::attempt($op),'policy'=>[...($op->policy??[]),'unpaid_retirement'=>$audit]]);
+            'policy'=>[...($op->policy??[]),'unpaid_retirement'=>$audit]]);
         $d->update(['status'=>'cancelled']);
         DomainReservations::releaseUnfunded($l);
         DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','acquisition_retirement_review')->whereNull('resolved_at')->update(['resolved_at'=>$this->clock->now()->getTimestamp()]);

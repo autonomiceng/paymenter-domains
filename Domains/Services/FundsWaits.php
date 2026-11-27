@@ -107,8 +107,8 @@ final class FundsWaits
                 RefundProof::requireUnsent($proof,$l['domain']);
                 if($proof->funding_basis==='complimentary'){ComplimentaryInvoices::require($proof,$l);}else{RefundPayment::requireCurrent($proof,$l);}
                 if(isset($proof->attempt['claim_key'])&&!OperationTerminalProof::unsentClaim($proof,$l['domain'],$l['operations'])){throw new \DomainException('Funds hold outcome needs review.');}
-                $current->update(['state'=>'rejected','safe_code'=>'registrar_balance_insufficient','completed_at'=>$now,
-                    'attempt'=>OperationTerminalProof::rejectedAttempt($proof,$l['domain'])]);
+                OperationTerminalProof::recordUnsent($proof, $l['domain'], $now);
+                $current->update(['state'=>'rejected','safe_code'=>'registrar_balance_insufficient','completed_at'=>$now]);
                 AcquisitionRetirement::retainClosure($current,$l['transactions']->where('invoice_id',$current->invoice_id),
                     $l['invoices']->firstWhere('id',$current->invoice_id)?->status,$now);
                 $l['domain']->update(['status'=>$current->action==='transfer'?'transfer_rejected':'registration_rejected']);

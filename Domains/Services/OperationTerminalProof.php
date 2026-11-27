@@ -3,6 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter, Transition};
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 /** No provider observation grants a negative proof. Only a completed pre-seal worker may be encoded. */
@@ -14,7 +16,8 @@ final class OperationTerminalProof
             if (!self::unsentClaim($op, $domain, $all)) { throw new \DomainException('No definitely-unsent terminal proof.'); }
             RefundProof::requireUnsent($op, $domain);
             if ($op->funding_basis === 'complimentary' && isset($op->funding['late_credits'])) { $funding->requireInitial($op, $domain); }
-            $op->update(['state' => 'rejected', 'attempt' => self::rejectedAttempt($op,$domain)]);
+            self::recordUnsent($op, $domain, app(Clock::class)->now());
+            $op->update(['state' => 'rejected']);
             if (!self::safe($op, $domain)) { throw new \DomainException('Terminal identity mismatch.'); }
             $domain->update(['status' => $op->action === 'transfer' ? 'transfer_rejected' : 'registration_rejected']); return $op;
         });
@@ -32,12 +35,15 @@ final class OperationTerminalProof
             || $domain->provider_expires_at !== null || $domain->provider_domain_id !== null || $domain->provider_order_id !== null
             || collect($all)->contains(static fn ($other) => $other->id !== $op->id && !self::safe($other, $domain)));
     }
-    /** Shared normalized envelope, only after the existing locked negative-proof checks. */
-    public static function rejectedAttempt(Operation $op,Domain $domain): array
+    /** Record the audited local closure under the caller's operation and money locks. */
+    public static function recordUnsent(Operation $op, Domain $domain, \DateTimeImmutable $at): void
     {
-        RefundProof::requireUnsent($op,$domain);
-        return [...($op->attempt??[]),'seal'=>'absent','send_state'=>'definitely_unsent','disposition'=>'rejected','rejection_basis'=>'definitely_unsent',
-            'terminal'=>['operation_key'=>$op->operation_key,'generation'=>$op->authority_generation]];
+        RefundProof::requireUnsent($op, $domain);
+        if (OperationWriter::at($at)->recordTerminal((int) $op->id, 'definitely_unsent', [
+            'operation_key' => $op->operation_key, 'generation' => $op->authority_generation,
+        ]) !== Transition::Applied) {
+            throw new \DomainException('Terminal proof already recorded.');
+        }
     }
     public static function safe(Operation $op, Domain $domain): bool
     {

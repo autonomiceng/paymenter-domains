@@ -10,6 +10,9 @@ $op = $new(reservedFixtureName('unsent.example.com')); [$claimed] = $claims->cla
 same('held', $held->state, 'Completed unsealed worker held');
 same('pre_send_interrupted', $held->safe_code, 'Completed unsealed worker retains the expected refusal');
 $result = OperationTerminalProof::encode($claims, $op->id); same('rejected', $result->state, 'Normalized definitely-unsent terminal proof');
+$terminal = \Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationAttempts::evidence((int)$result->id, null, 'terminal');
+same('definitely_unsent', $terminal['outcome'] ?? null, 'Terminal proof belongs to the operation ledger');
+same($result->operation_key, $terminal['evidence']['operation_key'], 'Terminal proof identifies the retained operation');
 commerceReject(fn()=>DomainReservations::releaseTerminal($result->domain->domain));
 expect((new Refunds($clock))->creditRejected($result->id)!==null,'Exact unsent account credit commits through engine');
 DomainReservations::releaseTerminal($result->domain->domain); same(null, $result->domain->fresh()->reservation_name, 'Reservation service releases proven unsent only after credit');

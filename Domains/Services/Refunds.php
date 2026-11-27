@@ -46,7 +46,7 @@ final readonly class Refunds
                 $op->update(['policy'=>[...($op->policy??[]),'held_order_refund'=>true]]);
             }
             if (in_array($op->action,['register','transfer'],true)&&(($op->attempt??[])===[]||($op->action==='transfer'&&($testUnsent||$claimedUnsent)))) {
-                $op->update(['attempt'=>OperationTerminalProof::rejectedAttempt($op,$l['domain'])]);
+                OperationTerminalProof::recordUnsent($op, $l['domain'], $this->clock->now());
                 if($claimedUnsent&&!OperationTerminalProof::safe($op,$l['domain'])){throw new \DomainException('Terminal identity mismatch.');}
             }
             AcquisitionRetirement::retainClosure($op,$l['transactions']->where('invoice_id',$op->invoice_id),

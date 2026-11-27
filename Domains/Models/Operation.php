@@ -53,8 +53,11 @@ class Operation extends Model
                 return $this->projectEvidence($field, $value, $row);
             },
             set: function (?array $value, array $row) use ($field): ?string {
+                $terminal = $field === 'attempt' ? $this->acquisitionTerminal($row) : [];
                 if ($attempt = $this->acquisition($row)) {
-                    $value = $attempt->keepOperationFacts($field, $this->acquisitionEvidence($field, $row), $value);
+                    $value = $attempt->keepOperationFacts($field, array_replace($this->acquisitionEvidence($field, $row), $terminal), $value);
+                } elseif ($terminal) {
+                    $value = AcquisitionAttempt::retain($terminal, $value);
                 }
                 return $value === null ? null : $this->castAttributeAsEncryptedString($field, $this->asJson($value));
             },
@@ -66,7 +69,18 @@ class Operation extends Model
         if ($field === 'attempt' && ($row['action'] ?? null) === 'renew') { return []; }
         $stored = $this->decodeEvidence($value);
         $projection = $this->acquisitionEvidence($field, $row);
+        if ($field === 'attempt') { $projection = array_replace($projection, $this->acquisitionTerminal($row)); }
         return $projection ? array_replace($stored ?? [], $projection) : $stored;
+    }
+
+    private function acquisitionTerminal(array $row): array
+    {
+        if (!isset($row['id']) || ($row['state'] ?? null) !== 'rejected' || !AcquisitionAttempt::key($row['action'] ?? '')) { return []; }
+        $proof = OperationAttempts::evidence((int) $row['id'], null, 'terminal');
+        return in_array($proof['outcome'] ?? null, ['definitely_unsent', 'unpaid_closed'], true)
+            ? ['seal'=>'absent', 'send_state'=>'definitely_unsent', 'disposition'=>'rejected',
+                'rejection_basis'=>'definitely_unsent', 'terminal'=>$proof['evidence']]
+            : [];
     }
 
     private function decodeEvidence(?string $value): ?array
