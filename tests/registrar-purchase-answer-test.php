@@ -161,7 +161,7 @@ foreach(['accepted','not_processed','invalid_claim','expired_read','inherited_re
 // A prior empty check allows a support answer. A later matching charge must survive missing ownership,
 // competing or unreadable order details, and a concurrent check that loses the read claim.
 $failures = [];
-foreach (['credited', 'incomplete', 'overlap'] as $scenario) {
+foreach (['credited', 'incomplete', 'overlap', 'status-change'] as $scenario) {
     $clock->instant = new DateTimeImmutable('2026-10-18T12:00:00Z'); $makeEngine($binding, $exchange);
     $registration->mode = 'unknown';
     $op = $runRegistration($nsNew(placeholderComFixtureName('support-charge-'.$scenario.'-placeholder.com')));
@@ -173,7 +173,8 @@ foreach (['credited', 'incomplete', 'overlap'] as $scenario) {
     $policy = $op->policy;
     $policy['reconciliation']['polls'] = OperationReconciliation::POLL_LIMIT - 1;
     $op->update(['policy'=>$policy]);
-    $wireState->orders = $scenario === 'overlap' ? ['9001'] : ['9001','9002'];
+    $complete = in_array($scenario, ['overlap', 'status-change'], true);
+    $wireState->orders = $complete ? ['9001'] : ['9001','9002'];
     $wireState->fault = $scenario;
     if ($scenario === 'overlap') {
         $wireState->during = static function () use ($op, $reconcile, &$failures): void {
@@ -181,10 +182,13 @@ foreach (['credited', 'incomplete', 'overlap'] as $scenario) {
             if ($reconcile->run($op->id)->policy !== $policy) { $failures[] = 'Busy check changed the active reader’s policy'; }
         };
     }
+    if ($scenario === 'status-change') {
+        $wireState->during = static fn () => $op->fresh()->update(['safe_code'=>'staff_review']);
+    }
     $result = $reconcile->run($op->id);
     $sealed = OperationAttempts::sealed((int) $op->id, new StepKey('register', 1));
     $charge = OperationAttempts::evidence((int) $op->id, $sealed->token->attemptId, 'acquisition_charge');
-    $match = $scenario === 'overlap' ? 'exact' : 'ambiguous';
+    $match = $complete ? 'exact' : 'ambiguous';
     if (($charge['outcome'] ?? null) !== $match || array_column($charge['evidence']['orders'] ?? [], 'reference') !== ['9001']) {
         $failures[] = 'Matching charge lost: '.$scenario;
     }
