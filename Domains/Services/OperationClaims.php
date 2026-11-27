@@ -342,7 +342,7 @@ final class OperationClaims
     /** Retry only an exact live, unsealed local-capacity refusal; retain the original claim identity. */
     public function defer(Operation $claimed): Operation
     {
-        if(BalanceRetry::from($claimed)?->window){return $this->finish($claimed,holdReason:'write_rate_limited');}
+        if(BalanceRetries::active($claimed)){return $this->finish($claimed,holdReason:'write_rate_limited');}
         return $this->locked((int)$claimed->id,function($op, $domain)use($claimed):Operation {
             if(!AcquisitionAttempt::sameClaim($op,$claimed)||!$op->lease_expires_at||$op->lease_expires_at<=$this->clock->now()||!AcquisitionRetryProof::unsealed($op)){return $op;}
             $deferrals = count($op->attempt['capacity_deferrals'] ?? []);
@@ -375,16 +375,16 @@ final class OperationClaims
                 if(($attempt['send_state']??null)!=='possibly_sent'||!isset($attempt['dispatch_attempted_at'],$attempt['authorized_cost'],$attempt[$op->action==='transfer'?'transfer_admission':'registration_admission'])) { return $op; }
                 if(!EnomTestCalls::purchaseUnconsumed($op->account_fingerprint,(int)$op->id)) { return $op; }
             } elseif(!AcquisitionRetryProof::unsealed($op)||($attempt['send_state']??null)!=='definitely_unsent') { return $op; }
-            return $this->refuseTestCapacity($op, $claimed->acquisitionWorker, BalanceRetry::from($op));
+            return $this->refuseTestCapacity($op, $claimed->acquisitionWorker);
         });
     }
 
-    private function refuseTestCapacity(Operation $op, AttemptToken $token, ?BalanceRetry $system): Operation
+    private function refuseTestCapacity(Operation $op, AttemptToken $token): Operation
     {
         $attempt = $op->attempt;
         $sealed = $attempt['seal'] === 'sealed';
         $now = $this->clock->now();
-        $balance = $system?->window !== null;
+        $balance = BalanceRetries::active($op);
         if (!$balance && DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $op->id,
             'kind' => 'test_capacity', 'outcome' => 'fresh'])->count() >= 100) { return $op; }
         $proof = ['phase' => $sealed ? 'purchase' : 'preflight', 'refused_at' => $now->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM),

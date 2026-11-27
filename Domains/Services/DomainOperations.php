@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver, Clock, OperationPreflight, SealPreflight, WriteGate};
-use Paymenter\Extensions\Servers\Domains\Data\{BalanceRetry, AccountBinding, AdmittedOperation, Disposition, DriverResult, Money, RejectionBasis, ResultReason, SendState, RequestBudget, RequestContext, RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AdmittedOperation, Disposition, DriverResult, Money, RejectionBasis, ResultReason, SendState, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionResult, AcquisitionRetryProof, OperationAttempts};
@@ -75,7 +75,7 @@ final class DomainOperations
                 if ($recover || in_array($route->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) { $this->writer->reserve(); }
             }
             catch (WriteHeld $held) {
-                if($held->reason==='write_rate_limited'&&!BalanceRetry::from($route)?->window){return $route;}
+                if($held->reason==='write_rate_limited'&&!BalanceRetries::active($route)){return $route;}
                 return $this->claims->holdUnclaimed($id,$held->reason);
             }
         }
@@ -92,7 +92,7 @@ final class DomainOperations
                 if(!($route->action==='transfer'?EnomTestTransfer::accepted($binding):EnomTestRegistration::sellable($binding))) { return $this->claims->holdUnclaimed($id,'write_acceptance_required'); }
                 if(($reason=EnomTestRegistration::localHoldReason($binding,$route))!==null){return $this->claims->holdUnclaimed($id,$reason);}
                 return EnomTestCalls::withPurchase($binding,fn()=> $this->executeClaimed($id,$entry,$binding),(int)$route->id,$route->action==='transfer'?'transfer':'registration');
-            } catch (EnomTestCallLimit) { if(BalanceRetry::from($route)?->window){return $this->claims->holdUnclaimed($id,'write_rate_limited');} return $this->claims->holdUnclaimed($id,$route->action==='transfer'?'enom_test_transfer_call_cap':'enom_test_call_cap'); }
+            } catch (EnomTestCallLimit) { if(BalanceRetries::active($route)){return $this->claims->holdUnclaimed($id,'write_rate_limited');} return $this->claims->holdUnclaimed($id,$route->action==='transfer'?'enom_test_transfer_call_cap':'enom_test_call_cap'); }
             catch (ReadDeferred) { return $route->fresh(); }
             catch (WriteHeld $held) { return $this->claims->holdUnclaimed($id,$held->reason); }
             catch (\Throwable) { return $this->claims->holdUnclaimed($id,$route->action==='transfer'?'enom_test_transfer_setup_required':'enom_test_setup_required'); }
@@ -103,7 +103,7 @@ final class DomainOperations
     private function executeClaimed(int $id, \DateTimeImmutable $entry, ?AccountBinding $testPurchase=null): Operation
     {
         $route=Operation::findOrFail($id);
-        $balanceRetry=BalanceRetry::from($route)?->window!==null;
+        $balanceRetry=BalanceRetries::active($route);
         $guardBeforeClaim = !$balanceRetry && $this->writer instanceof RegistrationBridge
             && (in_array($route->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)
                 || AcquisitionRetryProof::localRecovery($route, $this->clock->now()) && !ContactProfileHold::savedForRecovery($route));

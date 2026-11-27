@@ -277,7 +277,6 @@ final class OperationAttempts
             && ($event['phase'] ?? null) === ($attempt->sealed() ? 'purchase' : 'preflight') ? (int) $row->id : null;
     }
 
-    /** Most recent successful verification for this contact attempt. Failed reads cannot extend its freshness. */
     /**
      * The first evidence of each kind for the given operations in one read, keyed by operation id, then attempt id
      * (0 for operation-level evidence), then kind. A row that no longer decrypts reads as UNREADABLE, so it never

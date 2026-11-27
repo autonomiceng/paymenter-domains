@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Transfer\Input;
 use Paymenter\Extensions\Servers\Domains\Contracts\SealPreflight;
-use Paymenter\Extensions\Servers\Domains\Data\{BalanceRetry, Action, Capabilities, DispatchReadiness, Money, RequestContext, SaleSelection};
+use Paymenter\Extensions\Servers\Domains\Data\{Action, Capabilities, DispatchReadiness, Money, RequestContext, SaleSelection};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, BalanceReads, BalanceRetries, ComplimentaryCosts, ContactSetup, EnomTestTransfer, OperationClaims, RegistrationProfiles, TransferInputs, TransferPrecheck, WriteAcceptance, WriteFeatures, WriteHeld, WriteMoney};
 /** Both observations are unlocked. The second immediately precedes the seal and local consumption. */
@@ -24,7 +24,7 @@ final readonly class TransferPreflight implements SealPreflight
         OperationClaims::outside(); $query = OperationClaims::query($op, $domain); $this->features->requireEnabled(Action::Transfer);
         if ($query->action !== Action::Transfer || $query->years !== 1 || !TransferInputs::validCode($op->payload['epp'] ?? null)) { throw new \DomainException('Transfer inputs incomplete.'); }
         $retryBalance=null;
-        if(BalanceRetry::from($op)?->window){
+        if(BalanceRetries::active($op)){
             $probe=$context->binding->registrarKey==='enom'&&EnomTestTransfer::enabled($context->binding)
                 ?$this->bindings->registrationPreflightReader($context->binding):$this->bindings->reader($context->binding->serverId);
             $context->binding->requireMatch($probe->binding());$retryBalance=BalanceRetries::probe($op,$probe,$context);

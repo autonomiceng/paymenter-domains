@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registration\Checkout;
 use Paymenter\Extensions\Servers\Domains\Contracts\SealPreflight;
-use Paymenter\Extensions\Servers\Domains\Data\{BalanceRetry, Capabilities, DispatchReadiness, Money, RequestContext};
+use Paymenter\Extensions\Servers\Domains\Data\{Capabilities, DispatchReadiness, Money, RequestContext};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, BalanceReads, BalanceRetries, ComplimentaryCosts, ContactSetup, EnomTestRegistration, OperationClaims, RegistrationProfiles, RegistryInputs, WriteAcceptance, WriteFeatures, WriteHeld, WriteMoney};
 /** Fresh bound reads outside locks; the local acceptance is checked again under seal locks. */
@@ -34,7 +34,7 @@ final readonly class RegistrationPreflight implements SealPreflight
             catch (\InvalidArgumentException) { throw new WriteHeld('nameservers_required'); }
         }
         $retryBalance=null;
-        if(BalanceRetry::from($op)?->window){
+        if(BalanceRetries::active($op)){
             $probe=$context->binding->registrarKey==='enom'&&EnomTestRegistration::enabled($context->binding)
                 ?$this->bindings->registrationPreflightReader($context->binding):$this->bindings->reader($context->binding->serverId);
             $context->binding->requireMatch($probe->binding());$retryBalance=BalanceRetries::probe($op,$probe,$context);

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 require __DIR__.'/Support/namesilo-test-activation.php';
 require __DIR__.'/Support/native-commerce.php';
+require_once __DIR__.'/Support/site-dns-default.php';
 // Checklist and checkout render the extension's scoped native views.
 app('view')->addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 require_once __DIR__.'/Support/FakeRegistrar.php';
@@ -16,7 +17,7 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\Feed\OfferPorts;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
-use Paymenter\Extensions\Servers\Domains\Models\{Operation,Tld};
+use Paymenter\Extensions\Servers\Domains\Models\{DnsTemplate,Operation,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,NativePaidHooks,OperationTerminalProof,PricingRule,Refunds,Runtime,RuntimeDispatch,RuntimePorts,RuntimeWork,SellerPolicies,StaffOperationReview,StaffOperations,Storefront};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 expect(CallerRouting::supportsSales('namesilo'),'Installed catalogue routes NameSilo sales through neutral gates');
@@ -184,6 +185,9 @@ same('.com',$rows['What you sell']['value'],'Checklist uses the current installe
 expect(!str_contains(json_encode($offer,JSON_THROW_ON_ERROR),'experimental'),'Customer offer carries no staff Experimental label');
 app(Runtime::class)->boot();
 Queue::fake([RunOperation::class]);
+$template = DB::transaction(fn () => DnsTemplate::create(['name'=>'Synthetic purchase nameservers','enabled'=>true,
+    'nameservers'=>['ns1.provider.example','ns2.provider.example'], 'edited_by'=>$staff->id, 'reason'=>'Review default nameservers']));
+siteDnsFixture($template->id);
 $user=commerceUser();
 foreach (['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value) {
     $user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);

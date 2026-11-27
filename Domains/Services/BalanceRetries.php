@@ -35,6 +35,13 @@ final class BalanceRetries
             &&($prior=$op->acquisitionAttemptFacts())!==null&&!$prior->sealed()&&AcquisitionRetryProof::releasedForReadmission($op,$prior)
             &&($op->action!=='register'||!AcquisitionRetryProof::catalogueRetry($op));
     }
+    /** Backoff history only selects the balance route while its current admission authorizes that route. */
+    public static function active(Operation $op): bool
+    {
+        if (BalanceRetry::from($op)?->window === null) { return false; }
+        $window = AcquisitionResult::window($op);
+        return $window === null || in_array($window->origin, [AcquisitionAdmission::FirstClaim->value, AcquisitionAdmission::Balance->value], true);
+    }
     private static function reads(Operation $op): int {return (int)($op->policy['read_retries']??0);}
     public static function candidate(Operation $op): bool
     { return self::pending($op)&&OperationClaims::balanceAdmissionReason($op)===null; }
