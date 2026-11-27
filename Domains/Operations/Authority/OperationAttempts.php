@@ -76,15 +76,6 @@ final class OperationAttempts
         return $attempts;
     }
 
-    /** True only when the step's sealed attempt is definitely unsent and its retained reply is the local refusal. */
-    public static function locallyRefused(int $operationId, StepKey $key): bool
-    {
-        $facts = self::sealed($operationId, $key, DB::transactionLevel() > 0);
-        if ($facts?->sendState !== SendState::DefinitelyUnsent) { return false; }
-        $reply = self::evidence($operationId, $facts->token->attemptId, 'reply');
-        return ($reply['source'] ?? null) === 'local_refusal' && $reply['outcome'] === 'unsent';
-    }
-
     /** Of the given operations, those whose step has a sealed attempt. */
     public static function sealedOperations(array $operationIds, StepKey $key): array
     {

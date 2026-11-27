@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Operations\Authority;
 
 use Illuminate\Contracts\Encryption\DecryptException;
+use Paymenter\Extensions\Servers\Domains\Data\SendState;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 
 /** Acquisition evidence as seen by checkout, staff, profile and refund readers. */
@@ -68,6 +69,19 @@ final readonly class AcquisitionAttempt
     { return ($this->rows['test_capacity']['outcome'] ?? null) !== 'fresh'; }
 
     public function sealed(): bool { return $this->facts->sealed() && !$this->facts->released; }
+
+    /** The caller validated the exact refusal execution against the funding and holding. */
+    public function locallyRefused(array $execution): bool
+    {
+        if (!$this->sealed()) { return false; }
+        if ($reply = $this->rows['reply'] ?? null) {
+            return $this->facts->sendState === SendState::DefinitelyUnsent
+                && $reply['source'] === 'local_refusal' && $reply['outcome'] === 'unsent';
+        }
+        $claim = $this->rows['claim'];
+        return $claim['source'] === 'retained' && $this->facts->sendState !== SendState::Sent
+            && ($claim['evidence']['legacy_attempt']['execution'] ?? null) === $execution;
+    }
 
     public function digest(): ?string { return $this->hasOriginalClaim() ? $this->origin['digest'] : null; }
 
