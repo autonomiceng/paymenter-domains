@@ -5,9 +5,20 @@ namespace Paymenter\Extensions\Servers\Domains\Operations\Authority;
 
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\{Crypt, DB};
+use Paymenter\Extensions\Servers\Domains\Operations\Reconciliation\AcquisitionCharges;
 
 trait WritesOperationEvidence
 {
+    public function recordAcquisitionCharges(ReadToken $read, AcquisitionCharges $charges): Transition
+    {
+        self::requireTransaction();
+        if (!$this->ownsRead($read)) { return Transition::Stale; }
+        $a = $read->attempt;
+        $match = $charges->match->value;
+        return $this->append($a->operationId, $a->attemptId, 'acquisition_charge', 'registrar_read',
+            $match, ['orders'=>$charges->orders], 'charge:'.$match) ? Transition::Applied : Transition::Stale;
+    }
+
     /**
      * One row per authority identity; false when that identity already has evidence. The plain read can miss a row
      * committed after the caller's snapshot, so the unique authority key decides.

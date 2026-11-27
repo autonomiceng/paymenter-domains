@@ -230,6 +230,10 @@ final class OperationReconciliation
     private function retainPositiveObservation(Operation $op, Domain $holding, Account $account, AcquisitionRead $read,
         AcquisitionObservation $observation): void
     {
+        if ($op->state !== 'rejected' && $read->token && $this->attempts->ownsRead($read->token)
+            && !$observation->proof && $observation->charges) {
+            $this->attempts->recordAcquisitionCharges($read->token, $observation->charges);
+        }
         $domain = $observation->facts?->domain;
         $attempt = $read->attempt;
         if ($op->state === 'rejected' || !$read->token || !$observation->observedAt || !$domain

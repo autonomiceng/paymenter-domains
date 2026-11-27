@@ -310,7 +310,7 @@ final readonly class OperationWriter
     private function hasSettlementEvidence(AttemptToken $token): bool
     {
         return DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $token->operationId, 'attempt_id' => $token->attemptId])
-            ->whereIn('kind', ['observation', 'held', 'settlement', 'answer'])->lockForUpdate()->first(['id']) !== null;
+            ->whereIn('kind', ['observation', 'acquisition_charge', 'held', 'settlement', 'answer'])->lockForUpdate()->first(['id']) !== null;
     }
 
     /** Operation-level local terminal proof, such as a never-sent unpaid closure. Recorded once. */

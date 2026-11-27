@@ -211,14 +211,11 @@ class RegistrarAnswers
             }
             if ($op->action !== 'renew') {
                 $writer = OperationWriter::at($now);
-                if ($retained = RetainedAcquisition::adopt($op, $writer, $now)) {
-                    if ($writer->recordAcquisitionAnswer($retained->facts->token, $answer) !== Transition::Applied) {
-                        throw new \DomainException('This request changed. Reload the page and select it again.');
-                    }
-                    $op->reloadAcquisitionAttempt();
-                } elseif ($outcome === 'not_processed') {
+                $retained = RetainedAcquisition::adopt($op, $writer, $now);
+                if (!$retained || $writer->recordAcquisitionAnswer($retained->facts->token, $answer) !== Transition::Applied) {
                     throw new \DomainException('This request changed. Reload the page and select it again.');
                 }
+                $op->reloadAcquisitionAttempt();
             }
             $policy=[...$op->policy,'enom_answer'=>$answer];
             if($transfer){$policy['reconciliation']['staff_alert']=false;$policy['reconciliation']['reason']=TransferRejections::CODE;}

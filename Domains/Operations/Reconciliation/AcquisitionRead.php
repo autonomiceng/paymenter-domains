@@ -11,5 +11,5 @@ final readonly class AcquisitionRead
 {
     public function __construct(public AttemptEvidence $attempt, public string $stamp, public string $contract,
         public ?NameserverEvidence $requestedNameservers, public bool $watch, public bool $light, public bool $followup,
-        public \DateTimeImmutable $until, public ?ReadToken $token) {}
+        public \DateTimeImmutable $until, public ReadToken $token) {}
 }
