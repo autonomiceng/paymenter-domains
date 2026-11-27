@@ -44,6 +44,12 @@ namespace Paymenter\Extensions\Servers\Domains\Installation {
 namespace Paymenter\Extensions\Servers\Domains\Management\Contacts {
     if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length, 'domains'); } }
 }
+namespace Paymenter\Extensions\Servers\Domains\Management\Records {
+    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length, 'domains'); } }
+}
+namespace Paymenter\Extensions\Servers\Domains\Operations\Authority {
+    if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length, 'domains'); } }
+}
 namespace Paymenter\Extensions\Servers\Domains\Renewal\Execution {
     if (!function_exists(__NAMESPACE__.'\random_bytes')) { function random_bytes(int $length): string { return \NativeFixtureRandom::bytes($length, 'domains'); } }
 }

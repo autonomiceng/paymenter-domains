@@ -49,6 +49,7 @@
     "tests/test_gitleaks_policy.py",
     "tests/test_directory_sizes.py",
     "tests/test_registrar_api_imports.py",
+    "tests/test_fixture_random_namespaces.py",
     "tests/staff-release-decision-test.php",
     "tests/installation-entry-points-test.php"
   ],
