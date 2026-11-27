@@ -38,7 +38,10 @@ final class ContactRecovery
             }
             catch (ContactValidation) { $code = 'contact_details_required'; }
             catch (\DomainException) { $code = 'registry_details_unsupported'; }
-            if ($op->state !== 'held' || $op->safe_code !== $code) { ContactSetup::recoveryWrite(static fn () => $op->update(['state' => 'held', 'safe_code' => $code])); }
+            if ($op->state !== 'held' || $op->safe_code !== $code) {
+                ContactSetup::recoveryWrite(static fn () => $op->update(['state' => 'held', 'safe_code' => $code]));
+                AcquisitionResult::schedule($op, null, null);
+            }
             return $op;
         });
     }

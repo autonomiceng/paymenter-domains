@@ -24,7 +24,11 @@ final class FundsWaits
             return (($deadline=LateRenewalQuote::deadline($op))!==null&&$deadline<=$now)
                 ||(isset($op->policy['funds_wait_until'])&&new \DateTimeImmutable($op->policy['funds_wait_until'])<=$now);
         }
-        $at = AcquisitionResult::continuation($op, $lock)?->shortfallAt;
+        return self::deadlinePassed(AcquisitionResult::continuation($op, $lock)?->shortfallAt, $now);
+    }
+
+    public static function deadlinePassed(?\DateTimeImmutable $at, \DateTimeImmutable $now): bool
+    {
         return $at !== null && $at <= $now->modify('-'.self::WAIT_DAYS.' days');
     }
 
@@ -120,7 +124,6 @@ final class FundsWaits
                 OperationTerminalProof::recordUnsent($proof, $l['domain'], $now);
                 $current->reloadAcquisitionAttempt();
                 $current->update(['state'=>'rejected','safe_code'=>'registrar_balance_insufficient','completed_at'=>$now]);
-                AcquisitionResult::schedule($current, null, null);
                 AcquisitionRetirement::retainClosure($current,$l['transactions']->where('invoice_id',$current->invoice_id),
                     $l['invoices']->firstWhere('id',$current->invoice_id)?->status,$now);
                 $l['domain']->update(['status'=>$current->action==='transfer'?'transfer_rejected':'registration_rejected']);

@@ -102,7 +102,6 @@ final class OperationClaims
         return $this->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($startedAt, $recover): ?array {
             $op->setRelation('domain', $domain);
             $now = $this->clock->now();
-            if (FundsWaits::elapsed($op, $now, true)) { return null; }
             $contact = $op->state === 'queued' ? null : ContactProfileHold::forReadmission($op, $now, true);
             if ($op->state !== 'queued' && ($contact || AcquisitionRetryProof::localRecovery($op, $now))) {
                 return $this->recoverUnsent($op, $domain, $all, $funding, $server, $account, $contact);
@@ -113,11 +112,16 @@ final class OperationClaims
                 return null; // Other expired claims continue to reconciliation.
             }
             if (!in_array($op->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) { return null; }
+            $continuation = AcquisitionResult::continuation($op, true);
+            if (FundsWaits::deadlinePassed($continuation->shortfallAt, $now)
+                || in_array($continuation->lane, [AcquisitionLane::BalanceWait, AcquisitionLane::FundsWait,
+                    AcquisitionLane::PriceWait, AcquisitionLane::ContactWait], true)
+                || $continuation->lane !== null && !$continuation->due($now)) { return null; }
             // Discovery may not have visited this order before dispatch starts.
             ObservationWork::discardUnsent($domain,$this->clock->now(),$all);
             if ($op->action === 'transfer' && !TransferInputs::validCode($op->payload['epp'] ?? null)) { return null; }
-            $revision = AcquisitionResult::revision($op);
-            $window = AcquisitionResult::window($op, true);
+            $revision = $continuation->revision;
+            $window = $continuation->window;
             $prior = AcquisitionAttempt::of((int) $op->id, $op->action, true);
             $first = AcquisitionResult::unclaimed($op) && AcquisitionRetryProof::virgin($op);
             if (!$first && (!$prior || !$window || !AcquisitionResult::continues($op, $window, $prior->facts))) {
@@ -185,7 +189,10 @@ final class OperationClaims
             $this->holdRecovered($op, $prior, 'transfer_setup_review_required');
             return null;
         }
-        if (FundsWaits::elapsed($op, $now, true)) { return null; }
+        if (FundsWaits::elapsed($op, $now, true)) {
+            $this->holdRecovered($op, $prior, 'registrar_balance_insufficient', record: false);
+            return null;
+        }
 
         $expired = AcquisitionRetryProof::expiredClaim($op, $now);
         try {
@@ -225,12 +232,12 @@ final class OperationClaims
         return [$op, $domain, $binding];
     }
 
-    private function holdRecovered(Operation $op, AcquisitionAttempt $prior, string $reason): void
+    private function holdRecovered(Operation $op, AcquisitionAttempt $prior, string $reason, bool $record = true): void
     {
         if ($prior->facts->current && $this->attempts->releasePreSeal($prior->facts->token) !== Transition::Applied) { return; }
         $op->reloadAcquisitionAttempt();
         $op->update(['state' => 'held', 'safe_code' => $reason, 'lease_expires_at' => null]);
-        self::recordHold($op, $this->clock->now());
+        if ($record) { self::recordHold($op, $this->clock->now()); }
     }
 
     private function expireWindow(Operation $op, AcquisitionWindow $window, \DateTimeImmutable $now): void
@@ -241,6 +248,10 @@ final class OperationClaims
             AcquisitionResult::schedule($op, AcquisitionLane::BalanceWait,
                 $now->getTimestamp() + (BalanceRetry::from($op)?->delay() ?? 900), preserveShortfall: true);
             return;
+        }
+        if ($reason === 'write_rate_limited') {
+            BalanceRetries::rateHeld($op, $now);
+            if (BalanceRetries::pending($op)) { return; }
         }
         self::recordHold($op, $now);
     }
@@ -338,7 +349,7 @@ final class OperationClaims
             $op->update(array_replace($next, $completion ?? []));
             if ($op->state === 'held') {
                 self::recordHold($op, $this->clock->now(), $holdCost, !$sealed && $reason === 'registrar_balance_insufficient');
-            } else {
+            } elseif (!in_array($op->state, ['succeeded', 'rejected', 'disposed'], true)) {
                 AcquisitionResult::schedule($op, null, null);
             }
             return $op;
@@ -430,6 +441,7 @@ final class OperationClaims
         $reason = $op->action === 'transfer' ? 'enom_test_transfer_call_cap' : 'enom_test_call_cap';
         $op->update(['state' => 'held', 'safe_code' => $balance ? 'write_rate_limited' : $reason]);
         if ($balance) { BalanceRetries::held($op, $now); }
+        else { AcquisitionResult::schedule($op, null, null); }
         return $op;
     }
     /** Disabled feature gates create no claim, seal or provider traffic. */

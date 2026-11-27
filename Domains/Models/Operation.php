@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\{Builder, Model};
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementAttempt;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionResultSchema, AttemptFacts, AttemptToken, OperationAttempts, OperationSchema};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionResult, AcquisitionResultSchema, AttemptFacts, AttemptToken, OperationAttempts, OperationSchema};
 
 class Operation extends Model
 {
@@ -288,6 +288,18 @@ class Operation extends Model
     }
 
     private function updateAcquisition(Builder $query): bool
+    {
+        if ($this->isDirty('state') && in_array($this->state, ['succeeded', 'rejected', 'disposed'], true)) {
+            return $this->getConnection()->transaction(function () use ($query): bool {
+                if (!$this->saveAcquisition($query)) { return false; }
+                AcquisitionResult::close($this);
+                return true;
+            });
+        }
+        return $this->saveAcquisition($query);
+    }
+
+    private function saveAcquisition(Builder $query): bool
     {
         $dirty = $this->getDirty();
         $identity = array_intersect_key($dirty, array_flip(['started_at', 'request_fingerprint', 'lease_expires_at']));

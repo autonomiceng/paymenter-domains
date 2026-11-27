@@ -57,6 +57,14 @@ final class AcquisitionResult
         }
     }
 
+    /** The model closes the schedule in the same transaction as any terminal purchase update. */
+    public static function close(Operation $operation): void
+    {
+        self::query($operation)->whereNotNull('retry_lane')->increment('revision', 1, [
+            'retry_lane' => null, 'retry_due_at' => null, 'confirmed_shortfall_at' => null,
+        ]);
+    }
+
     public static function revision(Operation $operation, bool $lock = true): int
     {
         return (int) self::row($operation, $lock)->revision;
@@ -123,6 +131,9 @@ final class AcquisitionResult
         }
         $hold = $operation->safe_code;
         $oldLane = $row->retry_lane === null ? null : AcquisitionLane::from($row->retry_lane);
+        if ($oldLane?->ownsBalance() && $admission->startsWorker() && $admission !== AcquisitionAdmission::FirstClaim) {
+            return false;
+        }
         if ($oldLane?->ownsBalance() && !in_array($admission, [AcquisitionAdmission::Balance, AcquisitionAdmission::FirstClaim], true)) {
             throw new \DomainException('The automatic balance retry owns this request.');
         }

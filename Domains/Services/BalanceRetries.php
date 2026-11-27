@@ -53,7 +53,8 @@ final class BalanceRetries
     /** Called with the domain and operation locked, after a definitely-unsent finish. */
     public static function held(Operation $op,\DateTimeImmutable $now,?Money $cost=null,bool $confirmedShortfall=false): bool
     {
-        if(!self::supported($op)||!OperationClaims::balanceRefusalRetryable($op)){return false;}
+        if (!in_array($op->safe_code, [...self::INITIAL_CODES, ...self::REVIEW_CODES, 'write_rate_limited', self::LEGACY_CODE], true)
+            || !self::supported($op) || !OperationClaims::balanceRefusalRetryable($op)) { return false; }
         $retry=BalanceRetry::held($op,$now,$cost);
         // Tries cannot bound reads: a long balance wait says nothing about read health, and a balance answer proves it.
         $reads=self::reads($op);$read=in_array($op->safe_code,self::READ_CODES,true)||$reads>0&&$op->safe_code==='write_rate_limited';
@@ -113,7 +114,7 @@ final class BalanceRetries
     /** Use the last fresh quote only to stop early. A positive result still needs the full fresh preflight. */
     public static function probe(Operation $op,RegistrarDriver $reader,RequestContext $context): ?DriverResult
     {
-        $retry=BalanceRetry::from($op);if(!$retry?->window){return null;}
+        $retry=BalanceRetry::from($op);if(!$retry){return null;}
         $balance=BalanceReads::read($reader,$context,'preflight');$funds=$balance->evidence()->balance;
         $context->binding->requireMatch($balance->binding);
         if($balance->disposition!==Disposition::Accepted||$funds?->currency!=='USD'){

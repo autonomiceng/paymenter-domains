@@ -32,8 +32,8 @@ final readonly class RuntimeDispatch
             $account = Account::where('server_id', $op->server_id)->first();
             $op = $account ? $this->acquisition($op, $account, false) : null;
             if (!$op) { return; }
-            $continuation = AcquisitionResult::continuation($op);
-            if ($continuation?->lane !== null && !self::statusWork($op)) {
+            $continuation = self::statusWork($op) || $op->completed_at !== null ? null : AcquisitionResult::continuation($op);
+            if ($continuation?->lane !== null) {
                 // An older notification may still be queued. Its reservation cannot consume this continuation's wake.
                 if (Cache::add('domains-acquisition-wake:'.$id.':'.$continuation->revision, true, 60)) {
                     RunOperation::dispatch($id, $continuation->revision)->afterCommit();
@@ -100,12 +100,12 @@ final readonly class RuntimeDispatch
             if (!app(OperationClaims::class)->readmitOrdersOff($id)) { return null; }
             $op->refresh();
         }
+        if (self::statusWork($op) || $op->completed_at !== null) { return $op; }
         $continuation = AcquisitionResult::continuation($op);
-        if ($continuation?->shortfallAt !== null
-            && $continuation->shortfallAt <= $instant->modify('-'.FundsWaits::WAIT_DAYS.' days') && !self::statusWork($op)) {
-            return null;
-        }
+        if (FundsWaits::deadlinePassed($continuation?->shortfallAt, $instant)) { return null; }
         $lane = $continuation?->lane;
+        if (in_array($lane, [AcquisitionLane::Purchase, AcquisitionLane::BalancePurchase], true)
+            && !$continuation->due($instant)) { return null; }
         if ($op->state === 'held') {
             if (in_array($lane, [AcquisitionLane::BalanceWait, AcquisitionLane::ContactWait, AcquisitionLane::PriceWait], true)) {
                 if (!$continuation->due($instant)) { return null; }
@@ -120,7 +120,7 @@ final readonly class RuntimeDispatch
             if (!AcquisitionRetryProof::localRecovery($op, $instant)
                 && !ContactProfileHold::forReadmission($op, $instant) && !TransferPolling::applies($op)) { return null; }
         }
-        if ($lane === AcquisitionLane::FundsWait && !self::statusWork($op)) { return null; }
+        if ($lane === AcquisitionLane::FundsWait) { return null; }
         return $op;
     }
 

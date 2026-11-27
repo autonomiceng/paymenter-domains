@@ -69,6 +69,8 @@ final readonly class AcquisitionDispatch
             }
             $until = min($lastSend, $op->lease_expires_at, $ready->validUntil, $wire?->deadline ?? $lastSend, $cutoff ?? $lastSend, $window->effectiveEnd());
             $this->persistSeal($op, $claimed, $ready, $until, $paid, $window);
+            // A status notification starts its own delivery backoff once the purchase is sealed.
+            DB::table('domains_runtime_operations')->where('operation_id', $op->id)->update(['due_at' => 0, 'attempts' => 0]);
             return $op;
         });
     }
