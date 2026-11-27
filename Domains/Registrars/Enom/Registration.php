@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 use Paymenter\Extensions\Servers\Domains\Contracts\RegistrationProtocol;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AdmittedOperation, Discrepancy, Disposition, DriverResult, Evidence, NameserverEvidence, RegistrationEvidence, RequestContext, ResultReason, SendState, RejectionBasis, RegistrationRefusal};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AdmittedOperation, Discrepancy, Disposition, DriverResult, Evidence, NameserverEvidence, RegistrationEvidence, RequestContext, ResultReason, SendState, RejectionBasis, RegistrarReply, RegistrationRefusal};
 use Paymenter\Extensions\Servers\Domains\Services\ContactDetails;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{RegistrationCommand, ResponseParser};
 final class Registration extends RegistrationProtocol
@@ -30,11 +30,15 @@ final class Registration extends RegistrationProtocol
         }
         $parser = new ResponseParser;
         $submittedAt = $ctx->now();
-        $purchase = $parser->parse(RegistrationCommand::Purchase, $this->request($op, $ctx, $origin, 'Purchase', $parameters));
+        $diagnostic = null;
+        $purchase = $parser->parse(RegistrationCommand::Purchase, $this->request($op, $ctx, $origin, 'Purchase', $parameters),
+            static function (?string $code, #[\SensitiveParameter] mixed $message) use (&$diagnostic): void {
+                $diagnostic = RegistrarReply::capture($code, $message);
+            });
         if ($purchase->status === 'rejected') { return new DriverResult($op->binding, Disposition::Rejected, SendState::Sent, ResultReason::ProvenRejected,
-            new Evidence(registrarReply:$purchase->registrarReply(),registrationRefusal:RegistrationRefusal::enom($op,$purchase->value('purchase_refusal'))),rejectionBasis:RejectionBasis::ProviderProof); }
+            new Evidence(registrarReply:$diagnostic,registrationRefusal:RegistrationRefusal::enom($op,$purchase->value('purchase_refusal'))),rejectionBasis:RejectionBasis::ProviderProof); }
         if ($purchase->status !== 'success') { return new DriverResult($op->binding, Disposition::Unknown, SendState::PossiblySent, ResultReason::Unresolved,
-            new Evidence(registrarReply:$purchase->registrarReply())); }
+            new Evidence(registrarReply:$diagnostic)); }
         $reference = $purchase->value('orderid');
         $reference = is_string($reference) && preg_match('/^[1-9][0-9]{0,19}$/D', $reference) ? $reference : null;
         $expiry = Expiry::read($purchase, $expiryIssue); $status = $purchase->value('orderstatus');

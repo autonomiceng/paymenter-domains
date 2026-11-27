@@ -34,8 +34,6 @@ ALLOWED = {
     'Enom/Api/CurlTransport.php': ['Data\\Environment', 'Services\\EnomLiveCalls', 'Services\\EnomTestCallLimit',
                                    'Services\\EnomTestCalls', 'Services\\EnomTestSendLimit',
                                    'Services\\ProviderSendGuard'],
-    'Enom/Api/ProtocolResult.php': ['Data\\RegistrarReply', 'Data\\RegistrationRefusal'],
-    'Enom/Api/ResponseParser.php': ['Data\\RegistrarReply'],
     'Enom/Api/Transport.php': ['Data\\Environment'],
 }
 

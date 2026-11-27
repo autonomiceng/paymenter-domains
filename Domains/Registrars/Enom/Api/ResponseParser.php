@@ -5,7 +5,9 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api;
 
 final class ResponseParser
 {
-    public function parse(ReadCommand|RegistrationCommand|ManagementCommand $command, #[\SensitiveParameter] string $body): ProtocolResult
+    /** @param (\Closure(?string, mixed): void)|null $purchaseDiagnostic Receives a raw error field for immediate redaction. */
+    public function parse(ReadCommand|RegistrationCommand|ManagementCommand $command, #[\SensitiveParameter] string $body,
+        ?\Closure $purchaseDiagnostic = null): ProtocolResult
     {
         if (strlen($body) > $command->bodyLimit() || str_contains($body, "\0") || preg_match('//u', $body) !== 1 || preg_match('/<!DOCTYPE|<!ENTITY/i', $body)) {
             return new ProtocolResult('unknown', 'invalid_response');
@@ -45,29 +47,15 @@ final class ResponseParser
         if ($command === ReadCommand::HostStatus && $data['errcount'] === '1' && ($data['errors']??null) === ['err1'=>'Error 545 - Name server does not exist']
             && !array_key_exists('nschecksuccess',$data) && !array_key_exists('checknsstatus',$data)
             && $code === '545' && !isset($data['responsecode']) && !array_filter(array_keys($data),fn($k)=>preg_match('/^err[0-9]+$/D',$k))) { return new ProtocolResult('success',$code,['host_absent'=>true]); }
-        $reply=null;
-        if($command===RegistrationCommand::Purchase){
-            $number=$data['responses']['response']['responsenumber']??null; $replyCode=$code;
-            if($replyCode===null&&is_string($number)&&preg_match('/^[0-9]{1,6}$/D',$number)){$replyCode=$number;}
-            $reply=\Paymenter\Extensions\Servers\Domains\Data\RegistrarReply::capture($replyCode,
-                $data['errors']['err1']??$data['err1']??$data['responses']['response']['responsestring']??null);
-        }
-        if (trim($data['errcount'], '0') !== '') {
-            $refusal=$command===RegistrationCommand::Purchase&&$this->purchaseRefused($data)
-                ? ['purchase_refusal'=>['err_count'=>(int)$data['errcount'],'rrp_code'=>$data['rrpcode'],
-                    'text'=>$data['errors']['err1']??$data['responses']['response']['responsestring'],'order_id'=>null,'done'=>true]]:[];
-            return new ProtocolResult($command instanceof ReadCommand||$command instanceof ManagementCommand&&$this->refused($command,$data)||$refusal ? 'rejected' : 'unknown', $code, $refusal, registrarReply:$reply);
-        }
-        if (isset($data['errors']) && $data['errors'] !== '') { return new ProtocolResult('unknown', 'contradictory_errors', registrarReply:$reply); }
-        foreach ($data as $key => $value) {
-            if (preg_match('/^err[0-9]+$/D', $key) && $value !== '') { return new ProtocolResult('unknown', 'contradictory_errors', registrarReply:$reply); }
-        }
-        if (isset($data['responsecode']) && (!is_string($data['responsecode']) || !preg_match('/^1[0-9]{5}$/D', $data['responsecode']))) {
-            return new ProtocolResult('unknown', $code, registrarReply:$reply);
-        }
-        $codes = $command === ReadCommand::Check ? ['200', '210', '211'] : ($command instanceof RegistrationCommand && in_array($command, [RegistrationCommand::Purchase, RegistrationCommand::Renew, RegistrationCommand::GraceRenew], true) ? ['200', '1300'] : ['200']);
-        if (isset($data['rrpcode']) && !in_array($data['rrpcode'], $codes, true)) {
-            return new ProtocolResult('unknown', $code, registrarReply:$reply);
+        $failure = $this->failure($command, $code, $data);
+        if ($failure !== null) {
+            if ($command === RegistrationCommand::Purchase && $purchaseDiagnostic !== null) {
+                $number=$data['responses']['response']['responsenumber']??null; $replyCode=$code;
+                if($replyCode===null&&is_string($number)&&preg_match('/^[0-9]{1,6}$/D',$number)){$replyCode=$number;}
+                $purchaseDiagnostic($replyCode,
+                    $data['errors']['err1']??$data['err1']??$data['responses']['response']['responsestring']??null);
+            }
+            return $failure;
         }
         if (in_array($command, [ReadCommand::Orders, ReadCommand::Order], true)) {
             $payload = $command === ReadCommand::Orders ? ['orderlist'] : ['order'];
@@ -84,6 +72,29 @@ final class ResponseParser
         }
         // Payload-specific validation belongs to each named read normalizer, never to acknowledgement alone.
         return new ProtocolResult('success', $code, $data, strlen($body));
+    }
+
+    private function failure(ReadCommand|RegistrationCommand|ManagementCommand $command, ?string $code,
+        #[\SensitiveParameter] array $data): ?ProtocolResult
+    {
+        if (trim($data['errcount'], '0') !== '') {
+            $refusal=$command===RegistrationCommand::Purchase&&$this->purchaseRefused($data)
+                ? ['err_count'=>(int)$data['errcount'],'rrp_code'=>$data['rrpcode'],
+                    'text'=>$data['errors']['err1']??$data['responses']['response']['responsestring'],'order_id'=>null,'done'=>true]:null;
+            return new ProtocolResult($command instanceof ReadCommand||$command instanceof ManagementCommand&&$this->refused($command,$data)||$refusal ? 'rejected' : 'unknown', $code, purchaseRefusal: $refusal);
+        }
+        if (isset($data['errors']) && $data['errors'] !== '') { return new ProtocolResult('unknown', 'contradictory_errors'); }
+        foreach ($data as $key => $value) {
+            if (preg_match('/^err[0-9]+$/D', $key) && $value !== '') { return new ProtocolResult('unknown', 'contradictory_errors'); }
+        }
+        if (isset($data['responsecode']) && (!is_string($data['responsecode']) || !preg_match('/^1[0-9]{5}$/D', $data['responsecode']))) {
+            return new ProtocolResult('unknown', $code);
+        }
+        $codes = $command === ReadCommand::Check ? ['200', '210', '211'] : ($command instanceof RegistrationCommand && in_array($command, [RegistrationCommand::Purchase, RegistrationCommand::Renew, RegistrationCommand::GraceRenew], true) ? ['200', '1300'] : ['200']);
+        if (isset($data['rrpcode']) && !in_array($data['rrpcode'], $codes, true)) {
+            return new ProtocolResult('unknown', $code);
+        }
+        return null;
     }
 
     /** Only the observed not-found envelope, with scalar metadata and one matching error response. */
