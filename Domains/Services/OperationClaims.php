@@ -170,8 +170,7 @@ final class OperationClaims
         $now = $this->clock->now();
         $prior = AcquisitionAttempt::of((int) $op->id, $op->action, true);
         if (!$prior || AcquisitionAttempt::conflicts($op) || $prior->sealed()
-            || !OperationAttempts::replaceable($prior->facts, $now, lock: true)
-        ) { return null; }
+            || !OperationAttempts::replaceable($prior->facts, $now, lock: true)) { return null; }
         if (ExecutionWindow::pastTransferCutoff($op, $now)) {
             $this->holdRecovered($op, $prior, 'transfer_setup_review_required');
             return null;
@@ -261,10 +260,10 @@ final class OperationClaims
     }
 
     /** Post-read/write bookkeeping needs only domain -> ordered operations, never financial authority again. */
-    public function finish(Operation $claimed, ?DriverResult $result = null, ?string $holdReason = null, ?Money $holdCost = null, bool $locallyUnsent = false, ?SendFailure $failure = null, bool $catalogueUnavailable = false): Operation
+    public function finish(Operation $claimed, ?DriverResult $result = null, ?string $holdReason = null, ?Money $holdCost = null, bool $locallyUnsent = false, ?SendFailure $failure = null): Operation
     {
         self::outside();
-        return DB::transaction(function () use ($claimed, $result, $holdReason, $holdCost, $locallyUnsent, $failure, $catalogueUnavailable): Operation {
+        return DB::transaction(function () use ($claimed, $result, $holdReason, $holdCost, $locallyUnsent, $failure): Operation {
             $domain = Domain::whereKey($claimed->domain_id)->lockForUpdate()->firstOrFail();
             $all = Operation::where('domain_id', $claimed->domain_id)->orderBy('id')->lockForUpdate()->get();
             $op = $all->firstWhere('id', $claimed->id);
@@ -289,15 +288,12 @@ final class OperationClaims
             } elseif (!$sealed && $this->attempts->releasePreSeal($claimed->acquisitionWorker) !== Transition::Applied) {
                 return $op;
             }
-            $retryCatalogue = $catalogueUnavailable && (!$sealed || $unsent
-                && $this->attempts->releaseUnsentAcquisition($claimed->acquisitionWorker) === Transition::Applied);
             $op->reloadAcquisitionAttempt();
             // Ack/rejection still require action-specific correlation/completion in 21/22.
-            $completion = !$retryCatalogue && !$expired && $sealed && $result
+            $completion = !$expired && $sealed && $result
                 ? $this->recordDecision($op, $domain, $claimed->acquisitionWorker, $result) : null;
-            $state = $retryCatalogue || $unsent || (!$sealed && !$expired) ? 'held' : 'uncertain';
+            $state = $unsent || (!$sealed && !$expired) ? 'held' : 'uncertain';
             $reason = match (true) {
-                $retryCatalogue => 'write_acceptance_required',
                 $unsent => 'acquisition_definitely_unsent',
                 $expired => 'stale_claim',
                 $sealed => 'reconciliation_required',

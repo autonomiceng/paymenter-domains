@@ -102,6 +102,7 @@
     "tests/Support/enom-registration-contracts-cases.php": ["tests/test_installed_package_enom_test.py"],
     "tests/Support/enom-registration-cap-cases.php": ["tests/test_installed_package.py"],
     "tests/Support/enom-transfer-cases-fixture.php": ["tests/test_installed_package_enom_transfer.py"],
+    "tests/Support/enom-transfer-capacity-cases.php": ["tests/test_installed_package_enom_transfer.py"],
     "tests/Support/enom-transfer-contacts-cases.php": ["tests/test_installed_package_enom_transfer.py"],
     "tests/Support/renewal-holding.php": [
       "tests/cancelled-renewal-payment-test.php",

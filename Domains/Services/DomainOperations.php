@@ -169,7 +169,7 @@ final class DomainOperations
             if ($op->acquisitionAttemptFacts()?->sealed()) { return $this->interrupted($op, $binding, $result); }
             return $this->claims->defer($op);
         } catch (WriteHeld $held) {
-            return $this->interrupted($op,$binding,$result,$held->reason,$held->cost,catalogueUnavailable:$held->catalogueUnavailable);
+            return $this->interrupted($op,$binding,$result,$held->reason,$held->cost);
         } catch (RuntimeIneligible $error) {
             return $this->interrupted($op, $binding, $result,
                 $error->reason === RuntimeReason::ProcessingOff ? 'processing' : null);
@@ -180,7 +180,7 @@ final class DomainOperations
             return $this->interrupted($op,$binding,$result); // Completion never repeats a send.
         }
     }
-    private function interrupted(Operation $op,AccountBinding $binding,?DriverResult $result,?string $reason=null,?Money $cost=null,?\Paymenter\Extensions\Servers\Domains\Data\SendFailure $failure=null, bool $catalogueUnavailable=false): Operation
+    private function interrupted(Operation $op,AccountBinding $binding,?DriverResult $result,?string $reason=null,?Money $cost=null,?\Paymenter\Extensions\Servers\Domains\Data\SendFailure $failure=null): Operation
     {
         $unsent = $this->writer instanceof RegistrationBridge && ($this->writer->unconsumed((int) $op->id)
             || ($op->registrar_key === 'enom' && $result === null && $op->acquisitionWorker !== null
@@ -189,6 +189,6 @@ final class DomainOperations
         if($unsent){$result=new DriverResult($binding,Disposition::Rejected,
             SendState::DefinitelyUnsent,ResultReason::Unsent,
             rejectionBasis:RejectionBasis::DefinitelyUnsent);}
-        return $this->claims->finish($op,$result,$reason,$cost,locallyUnsent:$unsent,failure:$failure,catalogueUnavailable:$catalogueUnavailable);
+        return $this->claims->finish($op,$result,$reason,$cost,locallyUnsent:$unsent,failure:$failure);
     }
 }

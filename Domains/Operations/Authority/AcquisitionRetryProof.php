@@ -59,7 +59,7 @@ final class AcquisitionRetryProof
             : !OperationAttempts::hasAttempts($id, $key, $lock);
     }
 
-    /** Orders off stopped this before any attempt, so nothing needs a person once they are on. Held only for Orders off, it goes back to the normal first claim, which proves everything again. */
+    /** Orders paused before a first claim or suspended a continuing purchase admission. */
     public static function ordersOffHold(Operation $op): bool
     {
         if ($op->state !== 'held' || $op->safe_code !== 'processing' || AcquisitionAttempt::key($op->action) === null
