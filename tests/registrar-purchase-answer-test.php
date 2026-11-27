@@ -72,13 +72,27 @@ foreach(['accepted','not_processed','invalid_claim','expired_read','inherited_re
             'started_at' => OperationAttempts::at($op->started_at), 'request_fingerprint' => $op->request_fingerprint]);
         $op->refresh();
         $policy = $op->policy;
-        $policy['status_check']['attempt_identity'] = EnomAnswers::identity($op);
+        $policy['status_check'] = [...$policy['status_check'], 'outcome'=>'awaiting_answer', 'registrar'=>'NameSilo',
+            'answer_after'=>$clock->now()->getTimestamp(), 'attempt_identity'=>EnomAnswers::identity($op)];
         $op->update(['policy' => $policy]);
-        // The lost reply is now outside the TEST history window, where this check would ask NameSilo for an answer.
+        // The saved result predates adoption validation and is still bound to this exact legacy attempt.
         $clock->instant = $clock->now()->modify('+31 days');
         $wireState->calls = [];
-        $op = $reconcile->run($op->id);
         $viewer = Auth::user();
+        Auth::setUser($staff);
+        $notice = RequestFacts::notice($op->fresh());
+        if ($viewer !== null) { Auth::setUser($viewer); }
+        $refusal = RegistrarCheck::words(['reason'=>RegistrarCheck::ADOPTION_REFUSED]);
+        expect(str_contains($notice['title'] ?? '', $refusal['title']), 'The first staff view explains the local refusal for a saved registrar next step');
+        same([null, null, false, []], [$notice['action'] ?? null, $notice['primary'] ?? null,
+            EnomAnswers::ready($op, $clock->now()), $wireState->calls], 'The first view offers no registrar next step and makes no call');
+        $check = RegistrarCheck::status($op->fresh());
+        same(['unavailable', RegistrarCheck::ADOPTION_REFUSED, null], [$check['outcome'] ?? null, $check['reason'] ?? null,
+            $check['answer_after'] ?? null], 'The projected check shows a local refusal');
+        same($policy, $op->fresh()->policy, 'Viewing a saved registrar result does not rewrite it');
+
+        // The lost reply is now outside the TEST history window, where the worker would ask NameSilo for an answer.
+        $op = $reconcile->run($op->id);
         Auth::setUser($staff);
         $notice = RequestFacts::notice($op);
         if ($viewer !== null) { Auth::setUser($viewer); }

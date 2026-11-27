@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence,Evidence,RequestContext};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter,ReadToken};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter,ReadToken,RetainedAcquisition};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAttempt, RenewalCompletion};
 /** One bounded read result, shared by background work, staff feedback and customer notices. */
 final class RegistrarCheck
@@ -220,9 +220,17 @@ final class RegistrarCheck
             } catch (DecryptException) { return null; }
             if (!$same) { $check = null; }
         }
-        if (($check['reason'] ?? null) === self::ADOPTION_REFUSED) {
-            return in_array($op->state, ['running', 'pending', 'uncertain', 'held'], true) ? $check : null;
+        $unresolved = in_array($op->state, ['running', 'pending', 'uncertain', 'held'], true);
+        // A saved answer step may predate validation of the legacy acquisition attempt.
+        if ($unresolved && ($check['outcome'] ?? null) === 'awaiting_answer' && in_array($op->action, ['register', 'transfer'], true)) {
+            try { $adoptable = RetainedAcquisition::adoptable($op, app(Clock::class)->now()); }
+            catch (DecryptException|\InvalidArgumentException|\DateException) { $adoptable = false; }
+            if (!$adoptable) {
+                unset($check['registrar'], $check['answer_after']);
+                return [...$check, 'outcome'=>'unavailable', 'reason'=>self::ADOPTION_REFUSED, 'next_at'=>null];
+            }
         }
+        if (($check['reason'] ?? null) === self::ADOPTION_REFUSED) { return $unresolved ? $check : null; }
         // An Enom lost reply is read before staff ask Enom for a case.
         if ($op->action==='register'&&$op->registrar_key==='enom'&&in_array($op->state,['running','pending','uncertain'],true)
             &&RegistrarAnswers::eligible($op,app(Clock::class)->now())&&!self::attempted($op)) { return ['outcome'=>'not_checked']; }

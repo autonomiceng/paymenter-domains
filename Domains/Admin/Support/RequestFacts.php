@@ -414,7 +414,9 @@ final class RequestFacts
     {
         $facts ??= self::for($op);
         if ($facts['unreadable']??false) { return ['title'=>DomainFacts::UNREADABLE,'tone'=>'danger']; }
-        if (($op->policy['status_check']['reason'] ?? null) === RegistrarCheck::ADOPTION_REFUSED
+        $savedCheck = $op->policy['status_check'] ?? [];
+        if ((($savedCheck['reason'] ?? null) === RegistrarCheck::ADOPTION_REFUSED
+                || (($savedCheck['outcome'] ?? null) === 'awaiting_answer' && in_array($op->action, ['register', 'transfer'], true)))
             && (($check = RegistrarCheck::status($op))['reason'] ?? null) === RegistrarCheck::ADOPTION_REFUSED) {
             return ['title' => RegistrarCheck::words($check)['title'].'.', 'tone' => 'warning'];
         }
