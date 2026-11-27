@@ -238,7 +238,7 @@ function nativeCaseCheckpoint(array $state = [], array $cases = []): Closure
         'captured' => array_map(static fn (Closure $c) => nativeIdentities((new ReflectionFunction($c))->getStaticVariables()), $captured),
         'files' => array_map(sha1(...), nativeStorageFiles())]);
     $prepared = $witness();
-    return static function () use ($restoreRows, $cache, $schema, $app, $container, $objects, $statics, $globals, $clock, $files, $process, $witness, $prepared): void {
+    return static function () use ($restoreRows, $store, $cache, $schema, $app, $container, $objects, $statics, $globals, $clock, $files, $process, $witness, $prepared): void {
         while (DB::transactionLevel() > 0) { DB::rollBack(); }
         $pdo = DB::connection()->getPdo();
         $kept = array_map(serialize(...), $schema);
@@ -249,8 +249,9 @@ function nativeCaseCheckpoint(array $state = [], array $cases = []): Closure
         same($schema, nativeSchema(), 'Case reset restores the prepared schema; a case never alters or drops a fixture table');
         $restoreRows();
         // The prepared cache entries and lock owners, such as a unique job's lock, come back after Cache::flush(): the first
-        // case must not see entries a later case would have to rebuild.
-        if (($store = nativeArrayStore()) !== null && $cache !== null) {
+        // case must not see entries a later case would have to rebuild. They go into the store captured at the checkpoint, so a
+        // case that changed cache.default or swapped the store cannot skip or misdirect the restore.
+        if ($store !== null && $cache !== null) {
             [$entries, $store->locks] = $cache; (fn () => $this->storage = $entries)->call($store);
         }
         foreach ($container as $name => $value) { (new ReflectionProperty(Illuminate\Container\Container::class, $name))->setValue($app, $value); }
