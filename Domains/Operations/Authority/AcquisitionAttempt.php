@@ -25,7 +25,7 @@ final readonly class AcquisitionAttempt
         $key = self::key($action);
         $facts = $key ? OperationAttempts::latest($id, $key, $lock) : null;
         if (!$facts) { return null; }
-        return self::fromRows($facts, $action, OperationAttempts::evidenceMany([$id], self::KINDS)[$id] ?? []);
+        return self::fromRows($facts, $action, OperationAttempts::evidenceMany([$id], self::KINDS, $lock)[$id] ?? []);
     }
 
     /** One bad attempt must fail closed at its own reader without hiding the other rows. */

@@ -88,6 +88,28 @@ same([$current->claimKey, [$refusal]], [$projected['claim_key'], $projected['tes
 $batch = AcquisitionAttempt::many(OperationAttempts::latestAcquisitions([$acquisitionId]));
 expect($batch[$acquisitionId] instanceof DecryptException, 'An unreadable retired TEST refusal fails closed because it supplies history');
 
+$snapshotId = $operation('writer-current-claim', 'register');
+$snapshotClaim = $in(fn () => $writer->claim($snapshotId, $acquisition, $later(60), ['digest' => str_repeat('c', 64)]));
+$connection = DB::connection();
+$original = $connection->getQueryGrammar();
+// The locking read sees the claim committed after the consistent read's snapshot.
+$connection->setQueryGrammar(new class($connection) extends Illuminate\Database\Query\Grammars\SQLiteGrammar {
+    public function compileSelect(Illuminate\Database\Query\Builder $query)
+    {
+        if (!$query->lock && $query->from === OperationSchema::EVIDENCE) {
+            $query = (clone $query)->whereRaw('0 = 1');
+        }
+        return parent::compileSelect($query);
+    }
+});
+try {
+    $in(static function () use ($snapshotId, $snapshotClaim): void {
+        DB::table('domains_operations')->where('id', $snapshotId)->lockForUpdate()->first();
+        $current = AcquisitionAttempt::of($snapshotId, 'register', lock: true);
+        same($snapshotClaim->claimKey, $current->attempt()['claim_key'], 'A locked acquisition sees the claim and its evidence together');
+    });
+} finally { $connection->setQueryGrammar($original); }
+
 $answeredId = $operation('writer-accepted-answer', 'register');
 $answered = $in(fn () => $writer->claim($answeredId, $acquisition, $later(60), ['digest' => str_repeat('a', 64)]));
 $in(fn () => $writer->seal($answered, $terms()));
