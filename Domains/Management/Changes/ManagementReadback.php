@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\ReadToken;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, EntryDeadline, FreshTransaction, HoldingLocks,
-    ManagementEvidence, ObservationProjection, OperationClaims, ReadDeferred, Runtime, StaffOperationReview, StaffReviewRefused};
+    ManagementEvidence, ObservationProjection, OperationClaims, ReadDeferred, RequestAlerts, Runtime, StaffOperationReview, StaffReviewRefused};
 
 trait ManagementReadback
 {
@@ -116,6 +116,7 @@ trait ManagementReadback
             if ($op->action==='dns' && $ok && $confirmed && !$newer && ManagementEvidence::resolved($op,$l['domain'])) {
                 ObservationRecords::saveDnsReadback($l['domain'],$facts,$this->clock->now(),$driver->observationCapabilities());
             }
+            RequestAlerts::readback($op);
             return $op;
         }, false, false);
     }

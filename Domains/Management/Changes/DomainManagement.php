@@ -107,6 +107,7 @@ final class DomainManagement
             $op = HoldingLocks::take($seed)['operations']->firstWhere('id', $id);
             if ($op->state === 'running' && (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now())) {
                 $facts = $op->managementAttempt()?->facts;
+                if ($facts?->reading($this->clock->now())) { return $op; }
                 if ($facts?->current && !$facts->sealed()) { $this->attempts->stop($op, $facts->token); }
                 $op->update(['state'=>($op->attempt['seal']??null)==='sealed'?'uncertain':'held',
                     'safe_code'=>'management_unconfirmed', ...($facts ? [] : ['lease_expires_at'=>null])]);
@@ -135,9 +136,9 @@ final class DomainManagement
         return FreshTransaction::run(function () use ($seed, $id, $driver, $token, $read, $error, $refusals): Operation {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
             if (!$op) { throw new \DomainException('Management unavailable.'); }
-            if ($read) { $this->attempts->close($read); }
+            if ($read && !$this->attempts->close($read)) { return $op; }
             $facts = $token ? OperationAttempts::attempt($token, true) : null;
-            if (!$facts?->current || $op->state !== 'running') { return $op; }
+            if (!$facts?->current || $op->state !== 'running' || (!$read && $facts->sealed())) { return $op; }
 
             $b = AccountBindings::binding($l['account']); $sealed = $facts->sealed();
             $unsent = $sealed && $op->funding_basis === 'non_billable_management' && $b->registrarKey === 'namesilo'

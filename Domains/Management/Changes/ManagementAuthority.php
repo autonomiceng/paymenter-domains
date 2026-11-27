@@ -151,7 +151,7 @@ final readonly class ManagementAuthority
         $op->reloadManagementAttempt();
     }
 
-    public function close(ReadToken $read): void { $this->writer->closeRead($read); }
+    public function close(ReadToken $read): bool { return $this->writer->closeRead($read); }
 
     public function fail(Operation $op, array $approval): void
     {
