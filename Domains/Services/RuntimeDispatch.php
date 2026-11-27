@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Illuminate\Support\Facades\{Cache,DB};
+use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt,AcquisitionLane,AcquisitionResult,AcquisitionRetryProof};
@@ -33,10 +33,8 @@ final readonly class RuntimeDispatch
             if ($route === null) { return; }
             [$op, $revision] = $route;
             if ($revision !== null) {
-                // An older notification may still be queued. Its reservation cannot consume this continuation's wake.
-                if (Cache::add('domains-acquisition-wake:'.$id.':'.$revision, true, 60)) {
-                    RunOperation::dispatch($id, $revision)->afterCommit();
-                }
+                // The job owns the revision's unique lock until the queue finishes handling it.
+                DB::afterCommit(static fn () => RunOperation::dispatch($id, $revision));
                 return;
             }
         } elseif (!$this->current($op)) { return; }
