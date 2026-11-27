@@ -30,7 +30,7 @@ $registry->register('enom',['uid','token'],$verify,$reader,null,false,$reader);
 $auth=new AccountBindings($registry);$auth->configure($binding->serverId,'enom',Environment::Test,['uid'=>'account-enom','token'=>'SYNTHETIC-WIRE-TOKEN']);
 require_once __DIR__.'/installed-module-routing.php';
 [$prices,$native,$sellers]=installedModuleRouting($auth,$clock,$ports,activeFixtureClock($sellers),$precheck);
-expect(\Paymenter\Extensions\Servers\Domains\Services\EnomProtocol::accepts($binding,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding)),'Exchange uses the compiled environment route');
+expect(\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::acceptsRegistrationProtocol($binding,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding)),'Exchange uses the compiled environment route');
 Paymenter\Extensions\Servers\Domains\Services\BalanceReads::record($binding,new Money('100.00','USD'),$clock->now(),'manual');
 Illuminate\Support\Facades\Queue::fake();
 $user=commerceUser();$user->update(['email'=>'acquisition-owner@example.com']);

@@ -40,6 +40,18 @@ final class RuntimeFactory
         ];
     }
 
+    /** Deployment route and pacing policy. */
+    public static function acceptsRegistrationProtocol(AccountBinding $binding, array $protocol): bool
+    {
+        if ($binding->registrarKey !== 'enom') { return false; }
+        $expected = self::registrationAcceptance($binding);
+        return ($protocol['batch_route'] ?? null) === true && $expected['batch_route'] === true
+            && ($protocol['route'] ?? null) === $expected['route']
+            && is_int($protocol['interval_seconds'] ?? null)
+            && $protocol['interval_seconds'] >= 25 && $protocol['interval_seconds'] <= 86400
+            && $protocol['interval_seconds'] === $expected['interval_seconds'];
+    }
+
     private function exchange(string $role): \Closure
     {
         return function(string $origin,string $command,#[\SensitiveParameter] array $parameters,int $timeoutMs)use($role):string {
