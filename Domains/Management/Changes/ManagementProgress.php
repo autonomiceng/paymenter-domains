@@ -2,9 +2,11 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Management\Changes;
+use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
 use Paymenter\Extensions\Servers\Domains\Services\{ManagementEvidence, ManagementReadRecovery, ObservationProjection, OwnedDomains};
 /** Stored state only. Shared by both controls and the owner status endpoint. */
 final class ManagementProgress
@@ -46,7 +48,12 @@ final class ManagementProgress
             ->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint);
         $latest=(clone $scope)->selectRaw('MAX(id)')->groupBy('action');
         $retained=(clone $scope)->where(fn($q)=>$q->whereNull('safe_code')->orWhere('safe_code','!=','management_retired'))->selectRaw('MAX(id)')->groupBy('action');
-        $pending=(clone $scope)->where('management_pending',true)->selectRaw('MAX(id)')->groupBy('action');
+        $step = DB::table(OperationSchema::STEPS)->select('id')->whereColumn('operation_id', 'domains_operations.id')
+            ->where('step_type', 'management');
+        $pending = (clone $scope)->where(fn ($q) => $q->whereIn('state', ['queued','awaiting_payment','running','pending','uncertain'])
+            ->orWhere(fn ($held) => $held->where('state', 'held')->where('safe_code', 'management_unconfirmed')->whereExists($step))
+            ->orWhere(fn ($legacy) => $legacy->where('management_pending', true)->whereNotNull('attempt')->whereNotExists($step)))
+            ->selectRaw('MAX(id)')->groupBy('action');
         // At most three rows per action; pending selection is independent of finished history.
         $candidates=(clone $scope)->where(fn($q)=>$q->whereIn('id',$latest)->orWhereIn('id',$retained)->orWhereIn('id',$pending))->orderByDesc('id')->limit(3*count(self::ACTIONS))->get();
         Operation::loadManagementAttempts($candidates);

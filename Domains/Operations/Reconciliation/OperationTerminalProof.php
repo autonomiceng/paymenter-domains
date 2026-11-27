@@ -1,0 +1,70 @@
+<?php
+// MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+namespace Paymenter\Extensions\Servers\Domains\Operations\Reconciliation;
+use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, EnomAnswers, InvoiceFunding,
+    OperationClaims, RefundProof, RegistrationRefusals, WriteHeld};
+use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter, Transition};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
+use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
+/** No provider observation grants a negative proof. Only a completed pre-seal worker may be encoded. */
+final class OperationTerminalProof
+{
+    public static function encode(OperationClaims $claims, int $id): Operation
+    {
+        return $claims->locked($id, static function ($op, $domain, $all, InvoiceFunding $funding): Operation {
+            if (!self::unsentClaim($op, $domain, $all)) { throw new \DomainException('No definitely-unsent terminal proof.'); }
+            RefundProof::requireUnsent($op, $domain);
+            if ($op->funding_basis === 'complimentary' && isset($op->funding['late_credits'])) { $funding->requireInitial($op, $domain); }
+            self::recordUnsent($op, $domain, app(Clock::class)->now());
+            $op->update(['state' => 'rejected']);
+            if (!self::safe($op, $domain)) { throw new \DomainException('Terminal identity mismatch.'); }
+            $domain->update(['status' => $op->action === 'transfer' ? 'transfer_rejected' : 'registration_rejected']); return $op;
+        });
+    }
+    /** A held claim that stopped before its seal, with no sign of a send. transfer_not_registered stays out: it needs a fresh registry answer. */
+    public static function unsentClaim(Operation $op, Domain $domain, iterable $all): bool
+    {
+        $a = $op->attempt ?? [];
+        return !($op->state !== 'held' || !in_array($op->safe_code, [...BalanceRetries::REVIEW_CODES,'pre_send_interrupted', 'seal_authority_invalid', 'nameservers_required', 'write_acceptance_required', 'enom_test_call_cap', 'usd_balance_required', 'enom_test_setup_required', ...WriteHeld::UNSENT_REFUSALS], true)
+            || !isset($a['claim_key']) || ($a['seal'] ?? null) !== 'absent' || ($a['send_state'] ?? null) !== 'definitely_unsent'
+            || array_diff(array_keys($a), ['claim_key', 'seal', 'send_state', 'capacity_deferrals', 'test_call_refusals']) || $op->lease_expires_at !== null
+            || $op->provider_order_id !== null || $op->confirmed_expires_at !== null || array_key_exists('actual', $op->cost ?? [])
+            || array_key_exists('execution', $op->cost ?? []) || array_key_exists('refund', $op->funding ?? [])
+            || array_key_exists('dispatch_attempted_at', $op->policy ?? []) || $domain->status !== ($op->action === 'transfer' ? 'transfer_pending' : 'registration_pending')
+            || $domain->provider_expires_at !== null || $domain->provider_domain_id !== null || $domain->provider_order_id !== null
+            || collect($all)->contains(static fn ($other) => $other->id !== $op->id && !self::safe($other, $domain)));
+    }
+    /** Record the audited local closure under the caller's operation and money locks. */
+    public static function recordUnsent(Operation $op, Domain $domain, \DateTimeImmutable $at): void
+    {
+        RefundProof::requireUnsent($op, $domain);
+        if (OperationWriter::at($at)->recordTerminal((int) $op->id, 'definitely_unsent', [
+            'operation_key' => $op->operation_key, 'generation' => $op->authority_generation,
+        ]) !== Transition::Applied) {
+            throw new \DomainException('Terminal proof already recorded.');
+        }
+    }
+    public static function safe(Operation $op, Domain $domain): bool
+    {
+        $a = $op->attempt ?? [];
+        if(RegistrationRefusals::proved($op,$domain)){return true;}
+        if($op->state==='rejected'&&EnomAnswers::unprocessed($op,$domain)&&RefundProof::answeredAttempt($op)){return true;}
+        if($op->safe_code===UnpaidAcquisitionProof::CODE){return UnpaidAcquisitionProof::terminal($op,$domain);}
+        return $op->authority_generation > 0 && is_string($op->account_fingerprint) && $op->state === 'rejected' && in_array($op->action, ['register', 'renew', 'transfer'], true) && $op->account_fingerprint === $domain->account_fingerprint
+            && $op->registrar_key === $domain->registrar_key && $op->server_id === $domain->server_id && $op->service_id === $domain->service_id
+            && $op->authority_generation === $domain->authority_generation && $op->confirmed_expires_at === null && $op->provider_order_id === null
+            && (
+                ($op->action === 'transfer' && ($a['terminal'] ?? null) === ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation]
+                    && !array_diff(array_keys($a), ['claim_key', 'seal', 'send_state', 'terminal', 'disposition', 'rejection_basis','test_call_refusals','capacity_deferrals'])
+                    &&OperationClaims::localDeferrals($a)) || $op->action === 'register' || ($op->action === 'renew' && RenewalAttempt::of($op)->closedBeforeSeal($op)))
+            && (!array_key_exists('test_call_refusals',$a)||OperationClaims::testCallRefusalUnsent($op)||OperationClaims::testCallRefusalTerminal($op))
+            && ($op->action === 'renew' || (($a['disposition'] ?? null) === 'rejected' && ($a['rejection_basis'] ?? null) === 'definitely_unsent'
+            && ($a['send_state'] ?? null) === 'definitely_unsent' && ($a['seal'] ?? null) === 'absent'
+            && !array_intersect(array_keys($a), ['execution', 'dispatch_attempted_at', 'provider_reference', 'evidence', 'registration'])
+            && ($a['charge'] ?? null) === null && ($a['order_candidates'] ?? []) === []))
+            && !array_intersect(array_keys($op->cost ?? []), ['actual', 'execution']) && !array_key_exists('dispatch_attempted_at', $op->policy ?? []);
+    }
+}

@@ -62,7 +62,7 @@ final class ManagementEvidence
         if($op->state==='held' && $op->safe_code==='management_unconfirmed' && $op->funding_basis==='non_billable_management'
             && self::idle($op) && ($op->attempt['seal']??null)==='absent' && isset($op->attempt['management_claim'])
             && count($op->attempt['management_deferrals']??[])===5){
-            $op->update(['state'=>'rejected','safe_code'=>'management_preparation_failed','completed_at'=>$now,'lease_expires_at'=>null]);
+            $op->update(['state'=>'rejected','safe_code'=>'management_preparation_failed','completed_at'=>$now,...($op->managementAttempt() ? [] : ['lease_expires_at'=>null])]);
         }
     }
     /** The exact closed result of finishExhausted(): five unsent preparation tries, never sealed or sent. */

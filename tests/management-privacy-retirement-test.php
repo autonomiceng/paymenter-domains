@@ -159,7 +159,12 @@ foreach(['privacy_purchase','privacy_renew'] as $action){
         [$d,$driver,$op]=$issue();$op=$management->retire($user,$op->id);$payment($op);
         $changes = $corrupt($op);
         if (isset($changes['attempt'])) { restoreLegacyManagement($op, $changes['attempt']); }
-        else { Operation::withoutEvents(fn()=>$op->update($changes)); }
+        else {
+            foreach (['funding', 'policy'] as $field) {
+                if (isset($changes[$field])) { $changes[$field] = \Illuminate\Support\Facades\Crypt::encryptString(json_encode($changes[$field], JSON_THROW_ON_ERROR)); }
+            }
+            DB::table('domains_operations')->where('id', $op->id)->update($changes);
+        }
         expect(!PrivacyRetirement::safe($op->fresh(),$d),'Verifier itself refuses '.$kind);$before=$balance();$calls=count($state->calls);
         commerceReject(fn()=>$refunds->creditRejected($op->id));same($before,$balance(),'Forged/sent '.$kind.' cannot credit');expect(!isset($op->fresh()->funding['refund']),'Unsafe proof retains no credit marker');same($calls,count($state->calls),'Unsafe retirement never calls registrar');
     }

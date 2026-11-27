@@ -77,8 +77,17 @@
   "Services\\EnomLiveCallSchema",
   "Services\\EnomTestSendLimitSchema"
  ],
+ "Management/Changes/DomainManagement.php": [
+  "Services\\EnomTestCallLimit",
+  "Services\\EnomTestCalls",
+  "Services\\EnomTestManagement",
+  "Services\\EnomTestWriteReservation"
+ ],
  "Management/Changes/ManagementForms.php": [
   "Registrars\\NameSilo\\DnsForm"
+ ],
+ "Management/Changes/ManagementRequests.php": [
+  "Services\\EnomTestManagement"
  ],
  "Management/Records/OwnerRecords.php": [
   "Registrars\\NameSilo\\DnsForm",
@@ -87,7 +96,14 @@
  "Models/Account.php": [
   "Services\\NameSiloSandbox"
  ],
- "Models/Operation.php": [
+ "Operations/Reconciliation/OperationReconciliation.php": [
+  "Registrars\\Enom\\Driver",
+  "Registrars\\Enom\\EnomTestReconciliationReader",
+  "Registrars\\NameSilo\\Driver",
+  "Services\\EnomBillZones",
+  "Services\\EnomTestCallLimit"
+ ],
+ "Operations/Reconciliation/OperationTerminalProof.php": [
   "Services\\EnomAnswers"
  ],
  "Presentation/DsState.php": [
@@ -151,12 +167,6 @@
  "Services/DomainBilling.php": [
   "Services\\EnomLateRenewal",
   "Services\\EnomTestRenewal"
- ],
- "Services/DomainManagement.php": [
-  "Services\\EnomTestCallLimit",
-  "Services\\EnomTestCalls",
-  "Services\\EnomTestManagement",
-  "Services\\EnomTestWriteReservation"
  ],
  "Services/DomainObservation.php": [
   "Services\\EnomTestCallLimit"
@@ -265,9 +275,6 @@
   "Registrars\\NameSilo\\TestRuntime",
   "Services\\NameSiloSandbox"
  ],
- "Services/ManagementEvidence.php": [
-  "Services\\EnomTestWriteReservation"
- ],
  "Services/ManagementPayload.php": [
   "Registrars\\NameSilo\\Glue"
  ],
@@ -291,16 +298,6 @@
  ],
  "Services/OperationClaims.php": [
   "Services\\EnomTestCalls"
- ],
- "Services/OperationReconciliation.php": [
-  "Registrars\\Enom\\Driver",
-  "Registrars\\Enom\\EnomTestReconciliationReader",
-  "Registrars\\NameSilo\\Driver",
-  "Services\\EnomBillZones",
-  "Services\\EnomTestCallLimit"
- ],
- "Services/OperationTerminalProof.php": [
-  "Services\\EnomAnswers"
  ],
  "Services/OwnedDomains.php": [
   "Registrars\\NameSilo\\Dns"
