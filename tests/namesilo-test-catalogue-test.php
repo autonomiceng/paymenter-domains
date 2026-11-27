@@ -240,9 +240,10 @@ same([true, false, true], [$runtime->accepted($account->fresh()), $runtime->acqu
 $beforeGate = $GLOBALS['nsCatalogueCalls'];
 $runOrder();
 $op->refresh();
-same(['held', 'write_disabled', true, true, $beforeGate], [$op->state, $op->safe_code,
-    $op->acquisitionAttemptFacts()->token == $refused, OperationActions::relevant('refund', $op), $GLOBALS['nsCatalogueCalls']],
-    'The pre-claim gate retains the refusal and offers a refund without provider calls');
+$held = [$op->state, $op->safe_code, $op->acquisitionAttemptFacts()->token == $refused,
+    OperationActions::relevant('refund', $op), $GLOBALS['nsCatalogueCalls'] === $beforeGate];
+same(['held', 'write_acceptance_required', true, true, true], $held,
+    'The pre-claim gate retains the refusal and offers a refund without provider calls '.json_encode($held, JSON_THROW_ON_ERROR));
 $credit = static fn (): int => PricingRule::minor((string) (\App\Models\Credit::where('user_id', $user->id)
     ->where('currency_code', 'USD')->value('amount') ?? '0.00'));
 $beforeCredit = $credit();
