@@ -10,6 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 final readonly class AcquisitionAttempt
 {
     private const KINDS = ['claim', 'admission', 'reply', 'decision', 'test_capacity', 'capacity', 'answer', 'settlement'];
+    private const HISTORY_KINDS = ['claim' => true, 'capacity' => true, 'test_capacity' => true];
 
     private function __construct(public AttemptFacts $facts, private string $action, private array $rows, private array $origin, private array $history) {}
 
@@ -40,8 +41,16 @@ final readonly class AcquisitionAttempt
 
     private static function fromRows(AttemptFacts $facts, string $action, array $rows): self
     {
-        foreach ($rows as $evidence) {
+        $history = [];
+        ksort($rows);
+        foreach ($rows as $id => $attempt) {
+            $evidence = $id === $facts->token->attemptId ? $attempt : array_intersect_key($attempt, self::HISTORY_KINDS);
             if (in_array(OperationAttempts::UNREADABLE, $evidence, true)) { throw new DecryptException('Acquisition attempt evidence is unreadable.'); }
+            foreach ($attempt['claim']['evidence']['history'] ?? [] as $kind => $events) { $history[$kind] = $events; }
+            if (isset($attempt['capacity']['recorded_at'])) { $history['capacity_deferrals'][] = $attempt['capacity']['recorded_at']; }
+            if (($attempt['test_capacity']['outcome'] ?? null) === 'fresh') {
+                $history['test_call_refusals'][] = $attempt['test_capacity']['evidence'];
+            }
         }
         $current = $rows[$facts->token->attemptId] ?? [];
         $origin = $current['claim']['evidence'] ?? throw new \DomainException('Acquisition claim evidence unavailable.');
@@ -50,15 +59,6 @@ final readonly class AcquisitionAttempt
             $origin = [...$original, 'origin_attempt_id' => $origin['origin_attempt_id']];
         }
         if (!is_string($origin['identity'] ?? null)) { throw new \DomainException('Original acquisition identity unavailable.'); }
-        $history = [];
-        ksort($rows);
-        foreach ($rows as $attempt) {
-            foreach ($attempt['claim']['evidence']['history'] ?? [] as $kind => $events) { $history[$kind] = $events; }
-            if (isset($attempt['capacity']['recorded_at'])) { $history['capacity_deferrals'][] = $attempt['capacity']['recorded_at']; }
-            if (($attempt['test_capacity']['outcome'] ?? null) === 'fresh') {
-                $history['test_call_refusals'][] = $attempt['test_capacity']['evidence'];
-            }
-        }
         return new self($facts, $action, $current, $origin, $history);
     }
 

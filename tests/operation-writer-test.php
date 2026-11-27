@@ -3,11 +3,12 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php';
 
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{Money, SendState};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AttemptToken, OperationAttempts, OperationSchema, OperationWriter, ReadToken, SealTerms, StepKey, Transition, WireOutcome};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AttemptToken, OperationAttempts, OperationSchema, OperationWriter, ReadToken, SealTerms, StepKey, Transition, WireOutcome};
 use Paymenter\Extensions\Servers\Domains\Services\FoundationSchema;
 
 // Registry does not install the operation tables yet; this test installs them beside the foundation.
@@ -68,6 +69,24 @@ same(Transition::Applied, $in(fn () => $writer->recordReply($unsent, WireOutcome
 same(SendState::DefinitelyUnsent, OperationAttempts::attempt($unsent)->sendState, 'A proved local refusal is definitely unsent');
 same(Transition::Stale, $in(fn () => $writer->consumeGrant($unsent)), 'A refused attempt has no grant to spend');
 same(true, OperationAttempts::attempt($unsent)->sealed(), 'The seal survives the refusal');
+
+// A new acquisition needs the retired TEST refusal, but reads its own reply.
+$acquisitionId = $operation('writer-capacity-history', 'register');
+$acquisition = new StepKey('register', 1);
+$previous = $in(fn () => $writer->claim($acquisitionId, $acquisition, $later(60), ['digest' => str_repeat('a', 64)]));
+$in(fn () => $writer->seal($previous, $terms()));
+$refusal = ['phase' => 'purchase', 'refused_at' => $clock->now()->format(DATE_ATOM),
+    'dispatch_attempted_at' => $clock->now()->format(DATE_ATOM), 'authorized_cost' => ['amount' => '8.120000', 'currency' => 'USD']];
+same(Transition::Applied, $in(fn () => $writer->refuseTestCapacity($previous, $refusal, false)), 'Local TEST refusal retires the sealed attempt');
+$current = $in(fn () => $writer->claim($acquisitionId, $acquisition, $later(60), ['digest' => str_repeat('b', 64)]));
+$history = DB::table(OperationSchema::EVIDENCE)->where('attempt_id', $previous->attemptId);
+(clone $history)->where('kind', 'reply')->update(['evidence' => 'unreadable']);
+$projected = AcquisitionAttempt::of($acquisitionId, 'register')->attempt();
+same([$current->claimKey, [$refusal]], [$projected['claim_key'], $projected['test_call_refusals']],
+    'An unreadable retired reply leaves the current claim and TEST refusal history readable');
+(clone $history)->where('kind', 'test_capacity')->update(['evidence' => 'unreadable']);
+$batch = AcquisitionAttempt::many(OperationAttempts::latestAcquisitions([$acquisitionId]));
+expect($batch[$acquisitionId] instanceof DecryptException, 'An unreadable retired TEST refusal fails closed because it supplies history');
 
 // The grant is spendable only before the sealed dispatch deadline.
 $lateId = $operation('writer-late');
@@ -193,6 +212,8 @@ try {
         expect($read instanceof ReadToken, 'Another worker can read the original send');
         DB::setDefaultConnection('writer_main');
         same(Transition::Busy, $in(fn () => $writer->openRead($claim, $later(60))), 'Other worker cannot replace the active read');
+        $wrongRead = new ReadToken($read->attempt, bin2hex(random_bytes(16)), $read->until, $read->inheritedUnresolved);
+        same(Transition::Stale, $in(fn () => $writer->settle($wrongRead, 'succeeded', ['order' => '42'])), 'A different read token cannot settle the open acquisition');
         same(Transition::Applied, $in(fn () => $writer->settle($read, 'succeeded', ['order' => '41'])), 'Only the read authority can settle');
         DB::setDefaultConnection('writer_other');
         same(Transition::Stale, $in(fn () => $writer->settle($read, 'succeeded', ['order' => '42'])), 'Settlement survives across independent connections');
