@@ -133,7 +133,8 @@ DB::table('domains_accounts')->where('id',$account->id)->update(['processing_ena
 config(['domains.enom_writes.registration'=>false]);
 $result=$lowEngine->execute($low->id);
 same(['held','name_unavailable',$before],[$result->state,$result->safe_code,$writer->calls],'An expired Staff Release restores its saved hold without sending');
-$open($result)->assertActionVisible('release')->callAction('release')->assertNotified('Hold released');
+$open($result)->assertActionVisible('release')->callAction('release')->assertHasNoActionErrors();
+same('queued',$result->fresh()->state,'The second reviewed Release admits the request');
 $result=$lowEngine->execute($low->id);
 same($originalClaim,$result->attempt['claim_key'],'Reviewed recovery preserves the original unsent claim');
 same(['availability','quote','balance'],end($readers)->calls,'Reviewed recovery repeats the fresh preflight');

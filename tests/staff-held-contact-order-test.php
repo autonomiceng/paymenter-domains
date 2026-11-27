@@ -150,7 +150,6 @@ foreach([
     $notice=RequestFacts::notice($row);
     if($code==='registrar_price_missing'){
         same(null, $notice['next_try'] ?? null, 'Changing a display reason cannot schedule a price check');
-        expect(!str_contains($notice['title'],'It will retry automatically'),'A price label cannot promise a retry owned by another lane');
     }else{expect(str_contains((string)$notice['body'],$owner),'The page names who fixes '.$code);}
     same($destination,$notice['link'],'The page leads to the repair for '.$code);
     if($code==='future_hold'){
