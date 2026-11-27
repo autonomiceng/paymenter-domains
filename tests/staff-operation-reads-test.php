@@ -284,18 +284,25 @@ same('uncertain',$lost->state,'A found domain cannot settle a lost purchase');
 same(null,$lost->cost['actual']??null,'Unknown charge stays unknown');
 same($before,[$lost->attempt,$lost->funding,$lost->domain->fresh()->reservation_name,$credit()],'Reads keep the original attempt, reservation and payment');
 // A matching domain read cannot prove the charge, but it rules out a negative answer and refund.
-$refusesAnswer = static function ($op, string $scenario) use ($staff, $clock, $nativeMoney): void {
+$recordNegativeAnswer = static function ($op) use ($staff, $clock): void {
     $review = new StaffSettingsReview($staff->id, $op->server_id, null, 'enom_answer',
         StaffSettingsReview::ticket($staff->id, $op->server_id, null, 'enom_answer', StaffSettingsReview::stamp($op->server_id, null)),
         'Record final synthetic Enom answer');
+    RegistrarAnswers::record($review, ['operation_id' => $op->id, 'attempt_hash' => RegistrarAnswers::identity($op),
+        'outcome' => 'not_processed', 'order_reference' => '', 'case_reference' => 'synthetic-case-123',
+        'evidence' => 'Enom checked the exact account, domain and attempt time.', 'confirmed' => true], $clock->now());
+};
+$refusesAnswer = static function ($op, string $scenario) use ($nativeMoney, $recordNegativeAnswer): void {
+    $steps = DB::table(OperationSchema::STEPS)->where('operation_id', $op->id);
+    $attempts = DB::table(OperationSchema::ATTEMPTS)->whereIn('step_id', (clone $steps)->select('id'));
+    $evidence = DB::table(OperationSchema::EVIDENCE)->where('operation_id', $op->id);
+    $rows = static fn ($query) => (clone $query)->orderBy('id')->get()->map(static fn ($row) => (array) $row)->all();
     $snapshot = static fn () => [$op->fresh()->getRawOriginal(), $op->domain->fresh()->getRawOriginal(),
-        $op->domain->service->fresh()->getRawOriginal(), $nativeMoney()];
+        $op->domain->service->fresh()->getRawOriginal(), $nativeMoney(), $rows($steps), $rows($attempts), $rows($evidence)];
     $before = $snapshot();
     $refused = false;
     try {
-        RegistrarAnswers::record($review, ['operation_id' => $op->id, 'attempt_hash' => RegistrarAnswers::identity($op),
-            'outcome' => 'not_processed', 'order_reference' => '', 'case_reference' => 'synthetic-case-123',
-            'evidence' => 'Enom checked the exact account, domain and attempt time.', 'confirmed' => true], $clock->now());
+        $recordNegativeAnswer($op);
     } catch (DomainException $error) {
         $refused = true;
     }
@@ -333,18 +340,6 @@ $driver=$readBindings->reader($lost->server_id);
 $reader=new EnomTestReconciliationReader(new CataloguePreview($driver),$driver);
 $context=new RequestContext($binding,RequestOrigin::Background,$clock->now()->modify('+250 seconds'),new RequestBudget(25),$clock);
 same(true,$reader->reconcile(ReconciliationEvidence::attempt($lost,$lost->domain->fresh(),$binding),$context)->result()->evidence()->domain?->owned,'Installed reader reads a sealed lost attempt through a paid-changes hold');
-$restoreLegacy();
-$clock->instant = $clock->now()->modify('+1 minute');
-$run($lost, 'resume_reads');
-same(0, $lost->fresh()->policy['reconciliation']['polls'], 'The first staff action restarts the exhausted legacy checks');
-$observation->fault = 'transport';
-$run($lost->fresh(), 'recheck');
-same([],$lost->fresh()->policy['status_check']['facts'],'A failed read cannot repeat earlier facts as current');
-same(null,$lost->fresh()->cost['actual']??null,'A failed read cannot settle the fee');
-$refusesAnswer($lost->fresh(), 'A matching pre-upgrade registrar read followed by restart and a failed check');
-$adopted = OperationAttempts::sealed((int) $lost->id, $step);
-$proof = OperationAttempts::evidence((int) $lost->id, $adopted->token->attemptId, 'observation');
-same(true, $proof['evidence']['owned'] ?? null, 'The adopted attempt retains ownership after a later check fails');
 // Once the read limit stops new reads, the earlier read of this attempt still lets staff record the answer.
 $policy=$lost->fresh()->policy;$policy['reconciliation']['polls']=OperationReconciliation::POLL_LIMIT;$lost->fresh()->update(['policy'=>$policy]);$observation->fault='';$observation->calls=[];
 $reconcile->run($lost->id);
@@ -359,6 +354,21 @@ Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lost->id])->ca
 same(true,$lost->fresh()->policy['status_check']['read_attempted'],'A resume keeps the earlier read of this attempt');
 $restoreLegacy();
 $refusesAnswer($lost, 'A matching pre-upgrade registrar read');
+$clock->instant = $clock->now()->modify('+1 minute');
+$run($lost, 'resume_reads');
+same(0, $lost->fresh()->policy['reconciliation']['polls'], 'The first staff action restarts the exhausted legacy checks');
+$observation->fault = 'transport';
+$run($lost->fresh(), 'recheck');
+$observation->fault = '';
+same([],$lost->fresh()->policy['status_check']['facts'],'A failed read cannot repeat earlier facts as current');
+same(null,$lost->fresh()->cost['actual']??null,'A failed read cannot settle the fee');
+$refusesAnswer($lost->fresh(), 'A matching pre-upgrade registrar read followed by restart and a failed check');
+$adopted = OperationAttempts::sealed((int) $lost->id, $step);
+$proof = OperationAttempts::evidence((int) $lost->id, $adopted->token->attemptId, 'observation');
+same(true, $proof['evidence']['owned'] ?? null, 'The adopted attempt retains ownership after a later check fails');
+DB::table(OperationSchema::EVIDENCE)->where(['attempt_id' => $adopted->token->attemptId, 'kind' => 'observation'])->delete();
+$recordNegativeAnswer($lost->fresh());
+same('rejected', $lost->fresh()->state, 'The same reviewed answer can close the request when the retained ownership evidence is absent');
 // A lost renewal reply outside its history window can still read the domain.
 DB::table('domains_accounts')->where('server_id',$lost->server_id)->update(['processing_enabled'=>true]);
 [$lostRenew,$lostDomain,$binding]=$makeRenewal(placeholderComFixtureName('staff-lost-renewal-placeholder.com'));
