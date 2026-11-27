@@ -21,6 +21,7 @@ final class Installer
     public const STAFF = 'Ask your site admin to verify the Domains installation, then try again.';
 
     private static ?self $owner = null;
+    private static bool $retainedUpgrade = false;
     private function __construct(private readonly string $intent, private readonly string $manifest) {}
 
     public static function legacy(): void
@@ -59,15 +60,21 @@ final class Installer
     {
         OperationClaims::outside(); self::requireCompatible(); self::legacy();
         Cache::lock('domains-fresh-installation', 60)->block(5, static function (): void {
-            // MariaDB DDL commits transactions. A connection lock survives both DDL and cache TTL expiry.
-            $connection = DB::connection(); $mysql = in_array($connection->getDriverName(), ['mysql','mariadb'], true);
-            $lock = hash('sha256', 'domains-install-'.$connection->getDatabaseName());
-            if ($mysql && (int) $connection->selectOne('SELECT GET_LOCK(?, 0) AS owned', [$lock])->owned !== 1) {
-                throw new \DomainException('Another Domains initializer is running. Retry installation.');
-            }
-            try { self::run(); }
-            finally { if ($mysql) { $connection->selectOne('SELECT RELEASE_LOCK(?) AS released', [$lock]); } }
+            self::connectionLock('domains-install-', self::run(...));
         });
+    }
+
+    /** MariaDB DDL commits transactions. A connection lock survives both DDL and cache TTL expiry. */
+    private static function connectionLock(string $scope, \Closure $work): void
+    {
+        $connection = DB::connection();
+        $mysql = in_array($connection->getDriverName(), ['mysql', 'mariadb'], true);
+        $lock = hash('sha256', $scope.$connection->getDatabaseName());
+        if ($mysql && (int) $connection->selectOne('SELECT GET_LOCK(?, 0) AS owned', [$lock], false)->owned !== 1) {
+            throw new \DomainException('Another Domains initializer is running. Retry installation.');
+        }
+        try { $work(); }
+        finally { if ($mysql) { $connection->selectOne('SELECT RELEASE_LOCK(?) AS released', [$lock], false); } }
     }
 
     /** Advisory bootstrap check; only the locked lifecycle proof may create initialization authority. */
@@ -98,13 +105,28 @@ final class Installer
         return $state;
     }
 
+    public static function upgradingAcquisitions(): bool
+    { return self::$retainedUpgrade; }
+
     private static function retained(): void
     {
         Cache::lock('domains-installation', 60)->block(5, static function (): void {
             if (!DB::table('migrations')->where('migration', Registry::BASELINE)->exists()) {
                 throw new \DomainException('Retained Domains data has no installation record.');
             }
-            Verification::run();
+            self::connectionLock('domains-acquisition-upgrade-', static function (): void {
+                if (DB::table('migrations')->where('migration', Registry::ACQUISITION_RESULTS)->exists()) {
+                    Verification::run();
+                    return;
+                }
+                self::$retainedUpgrade = true;
+                try {
+                    app(Migrator::class)->run([dirname(__DIR__).'/database/migrations/'.Registry::ACQUISITION_RESULTS.'.php'], ['force'=>true]);
+                    Verification::finish();
+                } finally {
+                    self::$retainedUpgrade = false;
+                }
+            });
             ReminderTemplates::ensure();
         });
     }

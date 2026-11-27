@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Catalogue\Pricing\PriceSchema;
 use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferSchema;
 use Paymenter\Extensions\Servers\Domains\Management\Records\{DnsTemplateClaimsSchema, DnsTemplatesSchema};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionResultSchema,OperationSchema};
 use Paymenter\Extensions\Servers\Domains\Services\{AdoptionSchema,BalanceAlertSchema,BalanceSchema,BusinessSettingsSchema,
     ComplimentaryAccountSchema,ContactProfileSchema,DomainAuditSchema,
     EnomLiveCallSchema,EnomTestSendLimitSchema,FoundationSchema,HistoryLinkSchema,MoneyWorkSchema,NativeIntentSchema,ObservationSchema,
@@ -20,10 +20,12 @@ use Paymenter\Extensions\Servers\Domains\Storefront\Search\{DnsQuotaSchema,RdapQ
 final class Registry
 {
     public const BASELINE = '2026_11_23_000001_create_domains_schema';
+    public const ACQUISITION_RESULTS = '2026_11_27_000001_create_domains_acquisition_results';
     /** Install order. Each feature owns its definition; this list owns order and the complete table inventory. */
     public const SCHEMAS = [
         FoundationSchema::class,
         OperationSchema::class,
+        AcquisitionResultSchema::class,
         RenewalAllocationSchema::class,
         OfferSchema::class,
         PriceSchema::class,
@@ -81,7 +83,7 @@ final class Registry
             return hash_file('sha256', $root.'/manifest.json') ?: throw new \RuntimeException('Cannot read the Domains package manifest.');
         }
 
-        $files = [$root.'/database/migrations/'.self::BASELINE.'.php'];
+        $files = array_map(static fn ($migration) => $root.'/database/migrations/'.$migration.'.php', [self::BASELINE, self::ACQUISITION_RESULTS]);
         foreach ([self::class, Verification::class, TableSchema::class, SchemaVerifier::class, ...self::SCHEMAS] as $class) {
             $files[] = (new \ReflectionClass($class))->getFileName();
         }

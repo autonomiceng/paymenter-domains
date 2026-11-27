@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Labels,RequestFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResultSchema;
 staffPanel();[, $d]=staffData(true);$actor=staffUser([Staff::VIEW]);Auth::setUser($actor);
 $op=Operation::create(['domain_id'=>$d->id,'service_id'=>$d->service_id,'server_id'=>$d->server_id,'registrar_key'=>$d->registrar_key,
     'account_fingerprint'=>$d->account_fingerprint,'authority_generation'=>$d->authority_generation,'operation_key'=>'staff-refused-nameservers',
@@ -29,6 +30,7 @@ foreach(['register'=>'acquisition_definitely_unsent','nameservers'=>'management_
         'safe_code'=>$code,'attempt'=>['seal'=>'sealed','execution'=>null,'send_state'=>'possibly_sent']]);
     $id=\Illuminate\Support\Facades\DB::table('domains_operations')->insertGetId($retained->getAttributes());
     $current=Operation::findOrFail($id);
+    if($action==='register'){AcquisitionResultSchema::insert((int) $current->id);}
     // A renewal is sealed on its attempt rows, not in the retained JSON.
     if($action==='renew'){$current=sealRenewal($current);}
     $words=Labels::reason($code);$unknown=\Paymenter\Extensions\Servers\Domains\Admin\Support\PaidUncertainty::title($current);

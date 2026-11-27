@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Schema;
 use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Installation\{Registry, SchemaVerifier};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, Price, Tld};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionResultSchema, OperationSchema};
 use Paymenter\Extensions\Servers\Domains\Services\{FoundationSchema, ObservationSchema};
 
 // The extension lifecycle owns fresh-install authority through catalogue retirement.
@@ -110,12 +110,15 @@ $before = [];
 foreach (['domains_domains', 'domains_operations', 'domains_tlds', 'domains_prices', 'domains_accounts'] as $table) {
     $before[$table] = DB::table($table)->orderBy('id')->get()->toJson();
 }
+$resultBefore = DB::table(AcquisitionResultSchema::TABLE)->where('operation_id', 71)->first();
+same(71, $resultBefore->operation_id, 'A new acquisition owns its result');
 $entry = new Domains([]);
 $entry->uninstalled();
 $entry->installed();
 FoundationSchema::verify(); OperationSchema::verify();
 expect(DB::table('migrations')->where('migration', '2026_11_23_000001_create_domains_schema')->exists(), 'Native migration history recorded');
 foreach ($before as $table => $rows) { same($rows, DB::table($table)->orderBy('id')->get()->toJson(), 'Reinstall retains bytes: '.$table); }
+same((array) $resultBefore, (array) DB::table(AcquisitionResultSchema::TABLE)->where('operation_id', 71)->first(), 'Reinstall retains acquisition result');
 $operationTables = OperationSchema::tables();
 same($operationTables, array_values(array_intersect($operationTables, Registry::expectedTables())), 'The table inventory lists the operation tables');
 // Nullable time columns without a default are the declaration MariaDB never initializes or updates implicitly.
@@ -130,6 +133,9 @@ same(array_fill_keys(['domains_operations.started_at', 'domains_operations.lease
     'domains_operation_attempts.sealed_at', 'domains_operation_attempts.dispatch_until', 'domains_operation_attempts.grant_consumed_at',
     'domains_operation_attempts.read_until', 'domains_operation_evidence.observed_at', 'domains_operation_evidence.recorded_at'], [true, null]),
     $timeColumns, 'Operation time columns are nullable with no default');
+try { DB::table('domains_operations')->where('id', 71)->delete(); expect(false, 'Operation with a result deleted'); }
+catch (QueryException) { same(1, DB::table(AcquisitionResultSchema::TABLE)->where('operation_id', 71)->count(), 'Restrictive acquisition result reference keeps the operation'); }
+DB::table(AcquisitionResultSchema::TABLE)->where('operation_id', 71)->delete();
 // The retired renewal columns are gone, and a retained database that still has one is the old inventory and is refused.
 $retired = ['renewal_admission_until', 'renewal_reserved_revision', 'renewal_proof', 'renewal_check'];
 same([], array_values(array_filter($retired, static fn (string $c): bool => Schema::hasColumn('domains_operations', $c))), 'The four retired renewal columns are not installed');
@@ -189,11 +195,12 @@ try { FoundationSchema::install(); expect(false, 'Missing evidence column accept
 catch (RuntimeException $e) { expect(str_contains($e->getMessage(), 'schema mismatch'), 'Column refusal'); }
 $afterVerification = Schema::getTableListing(); sort($afterVerification);
 same($installedTables, $afterVerification, 'All reference tables cleaned after success and schema refusals');
+DB::table(AcquisitionResultSchema::TABLE)->delete();
 Schema::drop('domains_operations');
 try { FoundationSchema::install(); expect(false, 'Partial retained installation accepted'); }
 catch (RuntimeException $e) { expect(str_contains($e->getMessage(), 'Partial retained'), 'Partial installation refusal'); }
 expect(!Schema::hasTable('domains_operations'), 'Missing history was not silently recreated');
-foreach ([OperationSchema::EVIDENCE, OperationSchema::ATTEMPTS, OperationSchema::STEPS] as $table) { Schema::drop($table); }
+foreach ([OperationSchema::EVIDENCE, OperationSchema::ATTEMPTS, OperationSchema::STEPS, AcquisitionResultSchema::TABLE] as $table) { Schema::drop($table); }
 try { FoundationSchema::install(); expect(false, 'Foundation without operation tables accepted'); }
 catch (RuntimeException $e) { expect(str_contains($e->getMessage(), 'Partial retained'), 'Missing operation inventory refusal'); }
 expect(!Schema::hasTable(OperationSchema::STEPS), 'Missing operation tables were not silently created');

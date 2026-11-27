@@ -10,6 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\{StaffContext, Target};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain, Operation, Price};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResultSchema;
 // Preview cases share one adoption fixture; each case restores rows, schema, listeners, container, config,
 // clocks and fake ports before the next.
 extract($fixture=adoptionFixture());
@@ -120,6 +121,7 @@ foreach (['failed', 'cancelled', 'succeeded'] as $state) {
         'operation_key' => 'synthetic-uncertain-'.$state, 'term' => 1, 'currency' => 'USD', 'amount' => '10.00', 'state' => $state,
         'attempt' => ['seal' => 'sealed', 'send_state' => 'possibly_sent'], 'policy' => [], 'payload' => []]);
     $count = count($wire->calls); same('unresolved_debt', $reader->preview($target, $context)->code, 'Unproved terminal label refuses: '.$state); same($count, count($wire->calls), 'Unresolved retained attempt zero wire');
+    DB::table(AcquisitionResultSchema::TABLE)->where('operation_id', $op->id)->delete();
     DB::table('domains_operations')->where('id', $op->id)->delete();
 }
 $unsent = Operation::create(['domain_id' => $pending->id, 'service_id' => $service->id, 'server_id' => $binding->serverId,

@@ -9,7 +9,7 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionResultSchema,OperationSchema};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,NativeIntentSchema,ObservationSchema,ObservationWork,Refunds,RenewalReplacements,StaffOperationReview,StaffOperations};
 staffPanel(); ObservationSchema::install(); NativeIntentSchema::install();
 app()->instance(Clock::class,$clock); app()->instance(Refunds::class,new Refunds($clock));
@@ -28,6 +28,7 @@ $removeFixtureRequest = static function (int $id): void {
         DB::table(OperationSchema::EVIDENCE)->where('operation_id', $id)->delete();
         DB::table(OperationSchema::ATTEMPTS)->whereIn('step_id', (clone $steps)->select('id'))->delete();
         $steps->delete();
+        DB::table(AcquisitionResultSchema::TABLE)->where('operation_id', $id)->delete();
         DB::table('domains_operations')->where('id', $id)->delete();
     });
 };

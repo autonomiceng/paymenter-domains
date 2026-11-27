@@ -2,6 +2,7 @@
 // Native reminder review and all fallback slots. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-panel.php';
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResultSchema;
 use Illuminate\Support\Facades\{DB,Route};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
@@ -82,7 +83,10 @@ $page=Livewire::actingAs($money)->test(ViewDomain::class,['record'=>$long->id]);
 same(1,$items,'The page reads the payment notice once per render');
 // A refresh reads it again: the same page drops the notice once the payment is resolved.
 expect(str_contains(panelNoticesText($page->html()),'Payment received after credit.'),'The page shows the payment notice before it is resolved');
-DB::table('domains_operations')->where('id',$replacement->id)->update(['action'=>'register']);
+DB::transaction(static function () use ($replacement): void {
+    DB::table('domains_operations')->where('id',$replacement->id)->update(['action'=>'register']);
+    AcquisitionResultSchema::insert((int) $replacement->id);
+});
 expect(str_contains(panelNoticesText($page->html()),'Payment received after credit.'),'Within one render the page reuses the notice it read');
 $page->call('pollManagement');
 expect(!str_contains(panelNoticesText($page->html()),'Payment received after credit.'),'A refresh reads the notice again');

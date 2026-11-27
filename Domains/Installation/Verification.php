@@ -76,7 +76,7 @@ final class Verification
     {
         $ran = app(Migrator::class)->getRepository()->getRan(); sort($ran);
         $domains = array_values(array_filter($ran, static fn ($name) => str_contains(strtolower($name), 'domains')));
-        if ($domains !== [Registry::BASELINE]) {
+        if ($domains !== [Registry::BASELINE, Registry::ACQUISITION_RESULTS]) {
             throw new \RuntimeException('Retained Domains migration history is incomplete.');
         }
         return json_encode(['version'=>$checked['version'],'migrations'=>$ran,'schema'=>$checked['schema']], JSON_THROW_ON_ERROR);

@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'scripts'))
@@ -110,6 +111,15 @@ def run(*, exercise=None):
         command('netns', [unshare, '--user', '--map-root-user', '--net', 'true'])
         original = native.verify(source)[1]
         app = scratch/'app'; native.prepare(source, app)
+        installed = None
+        if exercise is None:
+            import build
+            package = scratch/'package'
+            archive = build.build(ROOT/'Domains', package)
+            # build() verifies the archive members and the embedded manifest before extraction.
+            installed = app/'extensions/Servers'
+            with zipfile.ZipFile(package/archive['archive']) as zipped:
+                zipped.extractall(installed)
         sock = scratch/'sock'; sock.mkdir(mode=0o777); sock.chmod(0o777)
         password = secrets.token_hex(24)
         docker_env.update(MARIADB_ROOT_PASSWORD=password, MYSQL_PWD=password)
@@ -142,7 +152,8 @@ def run(*, exercise=None):
             php_args = [unshare, '--user', '--map-root-user', '--net', php, '-d', 'allow_url_fopen=0',
                 '-d', 'zend.exception_ignore_args=1', '-d',
                 'disable_functions=curl_exec,curl_multi_exec,fsockopen,pfsockopen,stream_socket_client,stream_socket_server,socket_connect,socket_sendto,mail']
-            if exercise is None:
+            if installed is not None:
+                env['DOMAINS_SCHEMA_PACKAGE'] = str(installed/'Domains')
                 result = command('lifecycle-'+str(index), php_args+[str(ROOT/'tests/Support/mariadb-schema.php')], env=env, timeout=180)
                 proof = json.loads(result.stdout)
             else:

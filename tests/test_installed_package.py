@@ -94,7 +94,7 @@ def main(scenario, *, private_copy=False):
         retained = root/(scenario+'-retained.json')
         migrations = root/(scenario+'-migrations.json')
         env = dict(os.environ, PAYMENTER_TEST_FIXTURE=str(app), PACKAGE_DATABASE=str(database),
-                   PACKAGE_RETAINED=str(retained), PACKAGE_MIGRATION_RECEIPT=str(migrations), PACKAGE_MIGRATIONS='1')
+                   PACKAGE_RETAINED=str(retained), PACKAGE_MIGRATION_RECEIPT=str(migrations), PACKAGE_MIGRATIONS='2')
         def phase(name, package=None, worker=None):
             phase_started = time.monotonic()
             package_seconds = 0.0
