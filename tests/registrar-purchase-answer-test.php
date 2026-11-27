@@ -3,13 +3,15 @@
 declare(strict_types=1);
 require __DIR__.'/Support/namesilo-registration-fixture.php';
 require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
+require_once __DIR__.'/Support/native-financial-snapshot.php';
 use App\Models\Credit;
 use Illuminate\Support\Facades\{Crypt, DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{Environment,ExecutionRecord};
+use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client,Driver};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport,TransportResponse};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationWriter, ReadToken, StepKey};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationWriter, ReadToken, StepKey, Transition};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,HistoryAcceptances,OperationReconciliation,ReconciliationEvidence,Refunds,RegistrarCheck,RenewalAuthority,StaffSettingsReview as Review,StaffSettingsWrites};
 app()->instance(Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);
 $staff=commerceUser();$role=App\Models\Role::create(['name'=>'Purchase answers','permissions'=>['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.enom_answer','admin.domains.manage','admin.invoices.update']]);$staff->update(['role_id'=>$role->id]);
@@ -38,7 +40,7 @@ $wire=new class($wireState) implements DeadlineTransport {
 $readRegistry=new \Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
 $readRegistry->register('namesilo',['token'],$verifier,fn($b,$c)=>new Driver(new Client($b,$c['token'],$wire),['renew'],$clock),authenticator:new class implements \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator {public function authenticate(Environment $environment,array $credentials):void { /* Synthetic local authentication. */ }});
 $reads=new AccountBindings($readRegistry);$reconcile=new OperationReconciliation($claims,$reads,$clock);
-foreach(['accepted','not_processed','invalid_claim','expired_read','inherited_read'] as $scenario){
+foreach(['accepted','not_processed','invalid_claim','expired_read','inherited_read','late_observation'] as $scenario){
     $outcome = $scenario === 'accepted' ? 'accepted' : 'not_processed';
     $clock->instant=new DateTimeImmutable('2026-10-18T12:00:00Z');$makeEngine($binding,$exchange);
     $registration->mode=$outcome==='accepted'?'300':'unknown';
@@ -102,6 +104,28 @@ foreach(['accepted','not_processed','invalid_claim','expired_read','inherited_re
             expect($successor->inheritedUnresolved, 'The next worker inherits the orphaned read');
             expect($underLock(fn () => $writer->closeRead($successor)), 'The successor finishes without positive proof');
         }
+    }
+    if ($scenario === 'late_observation') {
+        $token = OperationAttempts::sealed((int) $op->id, new StepKey('register', 1))->token;
+        // Save the observation after the answer row is written, before the operation's rejection is saved.
+        Operation::updating(static function (Operation $saving) use ($op, $token, $clock): void {
+            if ($saving->id !== $op->id || !$saving->isDirty('state') || $saving->state !== 'rejected') { return; }
+            same('not_processed', OperationAttempts::evidence($token->operationId, $token->attemptId, 'settlement')['outcome'] ?? null,
+                'The staff answer precedes the observation');
+            same(Transition::Applied, OperationWriter::at($clock->now())->recordObservation($token, ['owned' => true, 'expiry' => '2027-10-18'], $clock->now()),
+                'The sealed attempt retains the positive registrar observation');
+        });
+        $before = nativeFinancialSnapshot($op);
+        $refused = false;
+        try { $settings->run($review($op), $input($op, $outcome), $clock->now()); }
+        catch (DomainException) { $refused = true; }
+        $op->refresh();
+        same('positive', OperationAttempts::evidence($token->operationId, $token->attemptId, 'observation')['outcome'] ?? null,
+            'The positive observation is present when the return runs');
+        expect($refused, 'Positive registrar evidence on the sealed registration blocks the payment return');
+        same(null, $op->funding['refund'] ?? null, 'A refused return leaves no refund record');
+        same($before, nativeFinancialSnapshot($op), 'A refused return preserves the holding and payment');
+        continue;
     }
     $settings->run($review($op),$input($op,$outcome),$clock->now());$op->refresh();
     same($attempt,$op->attempt,'Answer never changes the original sent attempt');
