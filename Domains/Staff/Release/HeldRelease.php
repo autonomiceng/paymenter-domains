@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Staff\Requests\RequestReads;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceRetries,ComplimentaryInvoices,ContactDetails,ContactProfileHold,ContactRecovery,ContactSetup,EnomTestRegistration,EnomTestRenewal,EnomTestTransfer,HoldingLocks,OperationClaims,RefundProof,RenewalFunding,RenewalStop,StaffOperationReview,StaffOperationWrites,TransferInputs};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission,AcquisitionAttempt,AcquisitionResult,AcquisitionRetryProof,OperationWriter,StepKey};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission,AcquisitionAttempt,AcquisitionLane,AcquisitionResult,AcquisitionRetryProof,OperationWriter,StepKey};
 /** Releases a held request back to the queue. The offer and the locked writer run the same check over complete native facts. */
 final class HeldRelease
 {
@@ -84,6 +84,12 @@ final class HeldRelease
         $code=$op->safe_code;$base=[(string)$op->state,(string)$op->action,$code];
         if($op->state!=='held'||!in_array($op->action,ReleaseDecision::ACTIONS,true)||$code==='contact_details_required'){return new ReleaseFacts(...$base);}
         if(BalanceRetries::owns($op)){return new ReleaseFacts(...$base,balancePending:true);}
+        if ($code === 'processing') {
+            $saved = AcquisitionResult::continuation($op);
+            if ($saved?->lane === AcquisitionLane::Purchase && $saved->window?->origin === AcquisitionAdmission::StaffRelease->value) {
+                return new ReleaseFacts(...$base,pausedRelease:true);
+            }
+        }
         $op->setRelation('domain',$l['domain']);$account=$l['account'];
         $acquisition=in_array($op->action,['register','transfer'],true);
         $context=[...$base,'registrar'=>$op->registrar_key,'environment'=>$account?->environment,

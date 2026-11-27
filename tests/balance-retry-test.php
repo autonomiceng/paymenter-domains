@@ -169,13 +169,15 @@ $retry=static function(string $case,array &$failures)use($fixed):void {extract($
             $sent=$op->fresh()->state;
             if ($case === 'transfer') {
                 $delivery = \Paymenter\Extensions\Servers\Domains\Services\TransferPolling::schedule($op->fresh(),$clock->now()->getTimestamp())['next_read_at'];
+                $expectedDelay = \Paymenter\Extensions\Servers\Domains\Services\TransferPolling::delay(1);
             } else {
                 $dispatch->enqueue($op->id);
                 $delivery = DB::table('domains_runtime_operations')->where('operation_id',$op->id)->value('due_at');
+                $expectedDelay = 300;
             }
             $wait=$delivery-$clock->now()->getTimestamp();
             expect($delivery !== null, 'A sent operation has a status delivery schedule');
-            same([true,true],[in_array($sent,['pending','uncertain','running'],true),$wait<=300],$case.': the status check waits '.$wait.'s, not the retry backoff');
+            same([true,true],[in_array($sent,['pending','uncertain','running'],true),$wait<=$expectedDelay],$case.': the status check waits '.$wait.'s on its own pacing');
             if($case==='sent_cap'){
                 same('sealed',$op->fresh()->attempt['seal'],'A refusal after sending retains the seal');
                 expect(!Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::candidate($op->fresh()),'Possibly sent work cannot retry for balance');

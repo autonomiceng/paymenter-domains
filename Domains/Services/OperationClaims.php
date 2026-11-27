@@ -75,6 +75,7 @@ final class OperationClaims
             $now = $this->clock->now();
             if(!$account->processing_enabled||FundsWaits::elapsed($op,$now,true)
                 ||!AcquisitionRetryProof::ordersOffReturns($op,fn()=>$funding->initialFacts($domain)+['account'=>$account,'operations'=>$all])){return false;}
+            if (ContactStepRetries::candidate($op) && ContactProfileHold::releaseBlocked($op) !== null) { return false; }
             $window = AcquisitionResult::window($op, true);
             if ($window && !$window->fits($now)) {
                 $this->expireWindow($op, $window, $now);

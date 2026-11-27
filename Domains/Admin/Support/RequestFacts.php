@@ -367,6 +367,9 @@ final class RequestFacts
         }
         if ($op->state!=='queued' && !($op->state==='held' && in_array($op->safe_code,['processing','usd_balance_required','enom_test_transfer_usd_balance_required'],true))) { return null; }
         $account=$read();$on=self::ordersOn($op,$account,$accounts);
+        if ($account && !$on && $op->safe_code === 'processing' && OperationClaims::ordersOffHold($op)) {
+            return 'Not sent. '.self::ORDERS_OFF;
+        }
         // Orders off held this and they are on now, so that is no longer the reason.
         $ordersBack=$op->state==='held'&&$op->safe_code==='processing'&&$on;
         $owes=OperationActions::customerOwes($op,$release['invoices']??null);

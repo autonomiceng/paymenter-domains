@@ -29,7 +29,7 @@ final class FundsWaits
 
     public static function deadlinePassed(?\DateTimeImmutable $at, \DateTimeImmutable $now): bool
     {
-        return $at !== null && $at <= $now->modify('-'.self::WAIT_DAYS.' days');
+        return $at !== null && $at->modify('+'.self::WAIT_DAYS.' days') <= $now;
     }
 
     private static function due(Operation $op, \DateTimeImmutable $now, bool $lock = false): bool

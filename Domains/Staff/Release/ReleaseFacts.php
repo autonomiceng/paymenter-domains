@@ -28,5 +28,6 @@ final readonly class ReleaseFacts
         public bool $testCallRetry=false,
         public bool $accountGuardRetry=false,
         public bool $purchaseRefused=false,
+        public bool $pausedRelease=false,
     ) {}
 }
