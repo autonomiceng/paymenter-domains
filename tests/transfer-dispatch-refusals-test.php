@@ -98,4 +98,18 @@ $makeTransfer(1);$state->premium=null;$r=$engine->execute($op->id);same(['held',
 Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$op->id)->update(['safe_code'=>'write_acceptance_required']);$r=$op->fresh();
 Illuminate\Support\Facades\Auth::setUser($staff);$notice=RequestFacts::notice($r);same(['Not sent: reason not saved.','Release hold queues the test transfer to send to NameSilo. Release to check this order again.','release',null],[$notice['title'],$notice['body'],$notice['action'],$notice['link']??null],'An old hold with no automatic look claims no cause');
 $act($r,'release');$makeTransfer(1);$state->available=false;$r=$engine->execute($op->id);same(['held','name_unavailable'],[$r->state,$r->safe_code],'Release finds the real answer');$state->available=true;
+
+$op = $newTransfer(placeholderComFixtureName('expired-registry-refusal-placeholder.com'));
+$makeTransfer();
+$state->rdap404 = true;
+$state->calls = [];
+$held = $engine->execute($op->id);
+same('transfer_not_registered', $held->safe_code, 'Registry absence holds the purchase before seal');
+commerceReject(fn () => $act($held, 'refund'));
+$clock->instant = Paymenter\Extensions\Servers\Domains\Services\TransferInputs::deadline($held, $clock->now())->modify('+1 second');
+$act($held, 'refund');
+$closed = $held->fresh();
+expect(OperationTerminalProof::safe($closed, $closed->domain), 'After cutoff, the retained unsent purchase proves the cancellation');
+same('account_credit', $closed->funding['refund']['to'], 'The paid transfer is refunded');
+same([], $state->calls, 'Cutoff cancellation after a registry refusal makes no purchase');
 echo "Transfer dispatch input, feature and pre-seal refusal proofs passed.\n"; $nativeSuccessful=true;
