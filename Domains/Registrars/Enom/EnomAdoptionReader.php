@@ -4,24 +4,25 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\{AdoptionSource, Clock, ReadLimiter};
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName, ExpiryPrecision, Query, RequestBudget, RequestContext, RequestOrigin, SystemClock};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, ExpiryPrecision, RequestBudget, RequestContext, RequestOrigin, SystemClock};
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\AdoptionReadback;
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{AdoptionReadCommand as Command, AdoptionTransport, Client, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{AdoptionReadCommand as Command, AdoptionTransport, Transport};
 
 /** One name, one bounded readback, no general driver or caller-supplied context. */
 final class EnomAdoptionReader implements AdoptionSource
 {
-    private readonly Client $client;
+    private readonly ReadAdapter $client;
     public function __construct(public readonly AccountBinding $binding, #[\SensitiveParameter] string $uid,
         #[\SensitiveParameter] string $token, #[\SensitiveParameter] Transport $wire,
         private readonly Clock $clock = new SystemClock, private readonly ?ReadLimiter $limiter = null)
-    { $this->client = new Client($binding, $uid, $token, new AdoptionTransport($wire)); }
+    { $this->client = new ReadAdapter($binding, $uid, $token, new AdoptionTransport($wire)); }
 
     public function binding(): AccountBinding { return $this->binding; }
 
     public function read(string $name, string $suffix): AdoptionReadback
     {
-        Query::requireName($name); $nameParts = CanonicalName::parse($name, [$suffix]);
+        CanonicalName::requireCanonical($name); $nameParts = CanonicalName::parse($name, [$suffix]);
         $parts = ['SLD' => $nameParts['sld'], 'TLD' => $nameParts['tld']];
         $start = $this->clock->now();
         $context = new RequestContext($this->binding, RequestOrigin::Interactive, $start->modify('+90 seconds'), new RequestBudget(6), $this->clock, $this->limiter);

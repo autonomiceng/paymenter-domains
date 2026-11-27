@@ -5,6 +5,7 @@ $fixtureEnding = 'example.com';
 require __DIR__.'/Support/reconciliation-fixture.php';
 require_once __DIR__.'/Support/reserved-fixtures.php';
 use Paymenter\Extensions\Servers\Domains\Data\{DateEvidence, Disposition, DriverResult, Evidence, ExpiryPrecision, HistoryAcceptance, RegistrationEvidence, ResultReason, SendState};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Environment as EnomEnvironment;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 use Paymenter\Extensions\Servers\Domains\Services\{HistoryAcceptances, ReconciliationEvidence, RenewalAuthority};
 // Exercise optional read failures through the real Client and RequestContext admission.
@@ -12,7 +13,7 @@ require_once __DIR__.'/Support/WireLimit.php';
 $dnsFault = (object) ['mode' => ''];
 $dnsWire = new class($wire, $observation, $dnsFault) implements \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Transport {
     public function __construct(private $inner, private $state, private $fault) {}
-    public function send(\Paymenter\Extensions\Servers\Domains\Data\Environment $env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
+    public function send(EnomEnvironment $env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
         if ($command !== ReadCommand::Nameservers) { return $this->inner->send($env, $command, $parameters, $uid, $token, $timeoutMs); }
         $this->state->calls[] = $command;
         if ($this->fault->mode === 'cap') { throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit; }
@@ -31,7 +32,7 @@ $dnsWire = new class($wire, $observation, $dnsFault) implements \Paymenter\Exten
 };
 $dnsRegistry = new \Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
 $dnsRegistry->register('enom', ['token'], $verify, fn ($b, $c) => new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(
-    new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($b, 'account-enom', $c['token'], $dnsWire), [$fixtureEnding]));
+    new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter($b, 'account-enom', $c['token'], $dnsWire), [$fixtureEnding]));
 $dnsBindings = new \Paymenter\Extensions\Servers\Domains\Services\AccountBindings($dnsRegistry);
 $dnsReconcile = new \Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation($claims, $dnsBindings, $clock);
 $proofCommands = [ReadCommand::Info, ReadCommand::Renewal, ReadCommand::Lock, ReadCommand::Privacy, ReadCommand::Info, ReadCommand::Expiry, ReadCommand::Order];

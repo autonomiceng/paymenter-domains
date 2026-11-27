@@ -108,7 +108,7 @@ $wire = new class implements Paymenter\Extensions\Servers\Domains\Registrars\Eno
     }
 };
 $registry->registerBoundReader($b,static function($binding,$credentials)use($wire,$state){
-    $driver=new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($binding,$credentials['token'],'synthetic',$wire),['com']);
+    $driver=new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter($binding,$credentials['token'],'synthetic',$wire),['com']);
     return new class($driver,$state) implements RegistrarDriver {
         public function __construct(private RegistrarDriver $driver,private object $state){}
         public function binding():AccountBinding{return $this->driver->binding();}

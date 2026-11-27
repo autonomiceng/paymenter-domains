@@ -6,7 +6,8 @@ require __DIR__.'/Support/accounts.php';
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, Environment, Query, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Price, Tld};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport, Environment as EnomEnvironment};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
 use Paymenter\Extensions\Servers\Domains\Services\{FoundationSchema, PriceCatalogue, PricingRule, PricingRules};
 FoundationSchema::install();\Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferSchema::install();\Paymenter\Extensions\Servers\Domains\Catalogue\Pricing\PriceSchema::install(); $account = fixtureAccount(1, 'enom', 'offline');
@@ -17,7 +18,7 @@ $context = fn () => new RequestContext($binding, RequestOrigin::Background, $clo
 $wire = new class implements Transport {
     public array $priceParameters = [];
     public string $price = '8.9550'; public bool $enabled = true; public bool $fail = false;
-    public function send(Environment $environment, ReadCommand $command, #[\SensitiveParameter] array $parameters,
+    public function send(EnomEnvironment $environment, ReadCommand $command, #[\SensitiveParameter] array $parameters,
         #[\SensitiveParameter] string $uid, #[\SensitiveParameter] string $token, int $timeoutMs): string
     {
         if ($this->fail) { throw new RuntimeException('offline timeout'); }
@@ -27,7 +28,7 @@ $wire = new class implements Transport {
         return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done><ProductPrice><ProductEnabled>'.($this->enabled ? 'true' : 'false').'</ProductEnabled><Price>'.$this->price.'</Price></ProductPrice></interface-response>';
     }
 };
-$driver = new Driver(new Client($binding, 'offline', 'synthetic', $wire), ['com']);
+$driver = new Driver(new ReadAdapter($binding, 'offline', 'synthetic', $wire), ['com']);
 $query = new Query('example.com', Action::Register, 3);
 $read=static fn()=>$driver->productPrice('com','register',3,$context());
 $observed=$read();same('success',$observed->status,'Synthetic Enom price reply accepted');

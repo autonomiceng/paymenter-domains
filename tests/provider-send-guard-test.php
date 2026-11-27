@@ -5,7 +5,8 @@ require __DIR__.'/native-app.php';
 require __DIR__.'/Support/enom-wire.php';
 require __DIR__.'/Support/enom-exchange.php';
 require __DIR__.'/Support/provider-send-namesilo-wire.php';
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{CurlTransport,ReadCommand,ManagementCommand};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Environment, ReadCommand, ManagementCommand};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit,EnomTestSendLimitSchema,EnomTestWriteReservation as Reservation};
 $sends=static fn():int=>DB::table(EnomTestSendLimitSchema::SENDS)->count();
@@ -29,7 +30,7 @@ $guard=static function(...$args)use(&$events,$clock):void {
 };
 $clock->instant=$clock->instant->setTimezone(new DateTimeZone('Pacific/Auckland'));
 config(['domains.provider_send_guard'=>$guard]);
-foreach([\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,\Paymenter\Extensions\Servers\Domains\Data\Environment::Live] as $env){
+foreach([Environment::Test,Environment::Live] as $env){
     foreach(ReadCommand::cases() as $named){
         $parameters=match($named){
             ReadCommand::Balance,ReadCommand::Tlds,ReadCommand::Expired=>[],
@@ -43,12 +44,12 @@ foreach([\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,\Paymenter
             ReadCommand::Check=>['SLD'=>'example','TLD'=>'com','Version'=>2,'IncludePrice'=>1,'IncludeProperties'=>1,'IncludeEAP'=>1],
             default=>['SLD'=>'example','TLD'=>'com'],
         };
-        resetWire(['chunks'=>[$purchaseReply]]);$events=[];(new CurlTransport)->send($env,$named,$parameters,'synthetic-uid','SYNTHETIC-TOKEN',25000);
+        resetWire(['chunks'=>[$purchaseReply]]);$events=[];ReadAdapter::transport()->send($env,$named,$parameters,'synthetic-uid','SYNTHETIC-TOKEN',25000);
         same([['enom',$env->value,$named->value]],$events,'Every named Enom read invokes guard once');
         same(1,count($GLOBALS['enomWire']['forms']),'Allowed Enom read sends once');
         if($named->bulkPricing()){
             same('Text',$GLOBALS['enomWire']['forms'][0]['ResponseType'],'Bulk requests use the documented cost-bearing format');
-            if($env===\Paymenter\Extensions\Servers\Domains\Data\Environment::Test){
+            if($env===Environment::Test){
                 same(1,DB::table(EnomTestSendLimitSchema::SENDS)->where('command',$named->value)->count(),'Each bulk read is recorded in the normal TEST ledger');
             }
         }
@@ -90,7 +91,7 @@ foreach([false,true] as $logThrows){
         [static fn()=>throw new Error('PRIVATE-GUARD-SENTINEL'),'guard_threw'],['invalid-callable','not_callable']] as [$denyGuard,$reason]){
         config(['domains.provider_send_guard'=>$denyGuard]);
         foreach([
-            ['enom','GetBalance',fn()=>(new CurlTransport)->send(\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,ReadCommand::Balance,[],'synthetic-uid','SYNTHETIC-TOKEN',25000),true],
+            ['enom','GetBalance',fn()=>ReadAdapter::transport()->send(Environment::Test,ReadCommand::Balance,[],'synthetic-uid','SYNTHETIC-TOKEN',25000),true],
             ['enom','Purchase',fn()=>$exchange($wire,'registration')($origin,'Purchase',['Contact'=>'PRIVATE-REQUEST-SENTINEL'],25000),false],
             ['namesilo','getDomainInfo',fn()=>NameSiloClient::readTransport()->send(NsEnvironment::Sandbox,NsContext::Background,RegistrarRequest::domainInfo('example.com'),'SYNTHETIC-KEY'),true],
         ] as [$registrar,$command,$send,$typed]){$refusal($send,$registrar,$command,$reason,$typed);}
@@ -156,7 +157,7 @@ foreach(['renewal'=>'Extend','management'=>'SetRegLock'] as $role=>$command){
     same($used+1,$sends(),$role.' the freshly armed retry records exactly one attempt');
 }
 $warnings=[];
-foreach(['read'=>fn()=>(new CurlTransport)->send(\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,ReadCommand::Balance,[],'synthetic-uid','SYNTHETIC-TOKEN',1000),
+foreach(['read'=>fn()=>ReadAdapter::transport()->send(Environment::Test,ReadCommand::Balance,[],'synthetic-uid','SYNTHETIC-TOKEN',1000),
     'runtime'=>fn()=>$exchange($wire,'registration')($origin,'Purchase',[],1000)] as $path=>$send){
     resetWire(['chunks'=>[$purchaseReply]]);$events=[];
     config(['domains.provider_send_guard'=>static function()use(&$events):void {$events[]='allowed';$GLOBALS['enomWire']['nanoseconds']+=250000000;}]);
@@ -175,7 +176,7 @@ foreach(['read'=>fn()=>(new CurlTransport)->send(\Paymenter\Extensions\Servers\D
 }
 same([],$warnings,'Enom deadline failures outside the guard do not warn');
 config(['domains.provider_send_guard'=>null]);resetWire(['chunks'=>[$purchaseReply]]);$before=$sends();
-(new CurlTransport)->send(\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,ReadCommand::Balance,[],'synthetic-uid','SYNTHETIC-TOKEN',25000);
+ReadAdapter::transport()->send(Environment::Test,ReadCommand::Balance,[],'synthetic-uid','SYNTHETIC-TOKEN',25000);
 $exchange($wire,'registration')($origin,'Purchase',[],25000);
 $GLOBALS['nsGuardSends']=0;NameSiloClient::readTransport()->send(NsEnvironment::Sandbox,NsContext::Background,RegistrarRequest::balance(),'SYNTHETIC-KEY');
 same([2,1],[count($GLOBALS['enomWire']['forms']),$GLOBALS['nsGuardSends']],'Null guard preserves all three physical senders');
@@ -193,7 +194,7 @@ expect($expired!==null,'Guard cannot spend an expired NameSilo request budget');
 same(0,$GLOBALS['nsGuardSends'],'Expired NameSilo budget sends no bytes');
 same([],$warnings,'NameSilo deadline failures outside the guard do not warn');
 config(['domains.provider_send_guard'=>$guard]);
-foreach([fn()=>(new CurlTransport)->send(\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,ReadCommand::Balance,[],'synthetic-uid','SYNTHETIC-TOKEN',1000),
+foreach([fn()=>ReadAdapter::transport()->send(Environment::Test,ReadCommand::Balance,[],'synthetic-uid','SYNTHETIC-TOKEN',1000),
     fn()=>$exchange($wire,'management')($origin,'GetBalance',[],1000),
     fn()=>NameSiloClient::readTransport()->send(NsEnvironment::Sandbox,NsContext::Background,RegistrarRequest::balance(),'SYNTHETIC-KEY')] as $index=>$send){
     resetWire(['execFail'=>true]);$caught=null;$warnings=[];$events=[];$GLOBALS['nsGuardSends']=0;
@@ -207,7 +208,7 @@ foreach([fn()=>(new CurlTransport)->send(\Paymenter\Extensions\Servers\Domains\D
     }finally{$GLOBALS['nsGuardExecFail']=false;}
 }
 config(['domains.enom_test_sends_per_day'=>0]);resetWire(['chunks'=>[$purchaseReply]]);$caught=null;$before=$sends();
-try{(new CurlTransport)->send(\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,ReadCommand::Balance,[],'synthetic-uid','SYNTHETIC-TOKEN',1000);}catch(EnomTestCallLimit $error){$caught=$error;}
+try{ReadAdapter::transport()->send(Environment::Test,ReadCommand::Balance,[],'synthetic-uid','SYNTHETIC-TOKEN',1000);}catch(EnomTestCallLimit $error){$caught=$error;}
 expect($caught instanceof EnomTestCallLimit,'Send limit fixture must refuse');
 same([],$GLOBALS['enomWire']['forms'],'Send limit refusal sends nothing');
 same($before,$sends(),'Send limit refusal records no attempt');

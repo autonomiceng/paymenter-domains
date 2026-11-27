@@ -3,8 +3,6 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api;
 
-use Paymenter\Extensions\Servers\Domains\Data\Environment;
-
 interface Transport
 {
     /** Return a complete HTTP-200 body or throw; no retry, redirect or partial response. */

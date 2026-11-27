@@ -3,8 +3,8 @@
 declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment, RequestBudget, RequestContext, RequestOrigin};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, ResponseParser, Transport};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{BulkPricing, CataloguePreview, Driver, EnomTestReconciliationReader};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, ResponseParser, Transport, Environment as EnomEnvironment};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{BulkPricing, CataloguePreview, Driver, EnomTestReconciliationReader, ReadAdapter};
 
 // Two rows from https://api.enom.com/docs/pe_getretailpricing Text example, metadata omitted.
 $text = <<<'TEXT'
@@ -58,10 +58,10 @@ same('8.95', BulkPricing::rows($parser->parse(ReadCommand::DomainPricing, $xml))
 $wire = new class($text) implements Transport {
     public int $calls = 0;
     public function __construct(private string $text) {}
-    public function send(Environment $e, ReadCommand $c, array $p, string $uid, string $token, int $timeoutMs): string { $this->calls++; return $this->text; }
+    public function send(EnomEnvironment $e, ReadCommand $c, array $p, string $uid, string $token, int $timeoutMs): string { $this->calls++; return $this->text; }
 };
 $binding = new AccountBinding('enom', 1, Environment::Test, 'synthetic-uid');
-$driver = new Driver(new Client($binding, 'synthetic-uid', 'synthetic-token', $wire), []);
+$driver = new Driver(new ReadAdapter($binding, 'synthetic-uid', 'synthetic-token', $wire), []);
 $preview = new CataloguePreview($driver);
 $reader = new EnomTestReconciliationReader($preview, $driver);
 $context = fn (int $budget) => new RequestContext($binding, RequestOrigin::Background, new DateTimeImmutable('+30 seconds'), new RequestBudget($budget));

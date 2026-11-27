@@ -14,7 +14,7 @@ $before=$original->fresh()->getAttributes();
 $registry=new Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
 $registry->register('enom',['token'],new class implements Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier {
     public function verify(Environment $e,array $c):string {return 'account-enom';}
-},fn($b,$c)=>new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($b,'account-enom',$c['token'],$wire),['com']));
+},fn($b,$c)=>new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter($b,'account-enom',$c['token'],$wire),['com']));
 $readBindings=new Paymenter\Extensions\Servers\Domains\Services\AccountBindings($registry);
 $work=observationFixtureScheduler(new DomainObservation($readBindings,$clock,$budget),$clock,$ports); $work->enroll($d->server_id);
 $afterProjection=null; $projected=false;

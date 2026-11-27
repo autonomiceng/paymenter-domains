@@ -6,7 +6,8 @@ require __DIR__.'/Support/reconciliation-fixture.php';
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Data\{Capabilities, CostUnit, DateEvidence, Disposition, DomainSnapshot, DriverResult, Environment, Evidence, ExpiryPrecision, Money, Query, QuoteEvidence, RenewalCode, RenewalRequest, RenewalStatus, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport, Environment as EnomEnvironment};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, EnomLateRenewal, EnomTestRenewal, RenewalAcceptance, RenewalAuthority, RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAdmission;
@@ -19,7 +20,7 @@ $state = (object) ['name' => $domain->domain, 'expiry' => '10/18/2027 5:00:00 AM
     'captured' => false, 'premium' => '0', 'hold' => 'False', 'maximum' => '8', 'expired' => 'Expired', 'during' => null, 'duringCommand' => null, 'calls' => [], 'fail' => null];
 $transport = new class($state) implements Transport {
     public function __construct(private $s) {}
-    public function send(Environment $env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
+    public function send(EnomEnvironment $env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
         same(0, DB::transactionLevel(), 'Every fresh read is outside locks');
         expect($timeoutMs > 0 && $timeoutMs <= 25000, 'Per-request deadline bounded');
         $s = $this->s; $s->calls[] = $command;
@@ -45,7 +46,7 @@ $transport = new class($state) implements Transport {
     }
 };
 $registry = new RegistrarRegistry;
-$registry->register('enom', ['token'], $verify, fn ($b, $c) => new Driver(new Client($b, 'account-enom', $c['token'], $transport), ['com']));
+$registry->register('enom', ['token'], $verify, fn ($b, $c) => new Driver(new ReadAdapter($b, 'account-enom', $c['token'], $transport), ['com']));
 $renewBindings = new AccountBindings($registry); $authority = new RenewalAuthority($renewBindings, $clock,offers: $GLOBALS['caps']??null);
 $service = new RenewalAdmission($authority, $renewBindings, new RenewalAcceptance($binding, true, true, 25, true), $clock);
 $check = static function (?RenewalRequest $r = null) use ($service, $request, $state, $ports, $clock, $tlds) {

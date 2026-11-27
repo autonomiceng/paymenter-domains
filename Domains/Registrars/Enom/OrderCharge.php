@@ -3,7 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, DateEvidence, Environment, ExecutionRecord, Money, OrderEvidence, PersistedExecution, CanonicalName, HistoryAcceptance, ExpiryPrecision, Query};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, DateEvidence, Environment, ExecutionRecord, Money, OrderEvidence, PersistedExecution, HistoryAcceptance, ExpiryPrecision, Query};
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ProtocolResult;
 
 /** Single exact item only. A quote, acknowledgement or order ID alone never proves a charge. */

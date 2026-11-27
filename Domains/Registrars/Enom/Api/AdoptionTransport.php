@@ -3,8 +3,6 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api;
 
-use Paymenter\Extensions\Servers\Domains\Data\Environment;
-
 /** Recheck at the wire boundary; a general read command is insufficient authority. */
 final class AdoptionTransport implements Transport
 {
@@ -14,7 +12,7 @@ final class AdoptionTransport implements Transport
     {
         if (AdoptionReadCommand::tryFrom($command->value) === null) { throw new \DomainException('Adoption command refused.'); }
         $command->validate($parameters);
-        if ($timeoutMs < 1 || $timeoutMs > 25000) { throw new \DomainException('Adoption timeout refused.'); }
+        if ($timeoutMs < 1 || $timeoutMs > Client::MAX_TIMEOUT_MS) { throw new \DomainException('Adoption timeout refused.'); }
         return $this->wire->send($environment, $command, $parameters, $uid, $token, $timeoutMs);
     }
     public function __debugInfo(): array { return []; }

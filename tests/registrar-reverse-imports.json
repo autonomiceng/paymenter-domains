@@ -197,9 +197,6 @@
   "Services\\EnomLive",
   "Services\\EnomTestCalls"
  ],
- "Services/EnomProtocol.php": [
-  "Registrars\\Enom\\RuntimeFactory"
- ],
  "Services/EnomTestCalls.php": [
   "Services\\EnomLive",
   "Services\\EnomLiveCalls",
@@ -216,7 +213,6 @@
   "Registrars\\Enom\\RuntimeFactory",
   "Services\\EnomLive",
   "Services\\EnomLiveActivation",
-  "Services\\EnomProtocol",
   "Services\\EnomTestManagement",
   "Services\\EnomTestRenewal",
   "Services\\EnomTestTransfer"

@@ -8,7 +8,8 @@ use App\Models\{Invoice, InvoiceTransaction};
 use Illuminate\Support\Facades\{Cache, DB, Queue};
 use Paymenter\Extensions\Servers\Domains\Data\{Environment, Money};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation, Price};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport, Environment as EnomEnvironment};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, DomainBilling, HolderPricing, NativeDomainGuard, RenewalAcceptance, RenewalAuthority, RenewalCycles, RenewalFunding, RegistrarRegistry, WriteFeatures, HoldingLocks};
 use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter;
@@ -20,7 +21,7 @@ $state = (object) ['name' => '', 'expiry' => '10/18/2027 5:00:00 AM', 'day' => '
     'premium' => '0', 'hold' => 'False', 'maximum' => '8', 'expired' => 'Expired', 'during' => null, 'duringCommand' => null, 'calls' => [], 'fail' => null, 'years' => 1, 'writes' => 0, 'lost' => false, 'after' => '2028-10-18', 'charge' => '8.95', 'order' => '9002', 'orderYear' => '2027', 'billTime' => '5:00:01 AM', 'multiple' => false, 'afterWrite' => null, 'lastWrite' => null];
 $transport = new class($state) implements Transport {
     public function __construct(private $s) {}
-    public function send(Environment $env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
+    public function send(EnomEnvironment $env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
         same(0, DB::transactionLevel(), 'Every fresh read is outside locks');
         expect($timeoutMs > 0 && $timeoutMs <= 25000, 'Per-request deadline bounded');
         $s = $this->s; $s->calls[] = $command;
@@ -45,7 +46,7 @@ $transport = new class($state) implements Transport {
     }
 };
 $registry = new RegistrarRegistry;
-$registry->register('enom', ['token'], $verify, fn ($b, $c) => new Driver(new Client($b, 'account-enom', $c['token'], $transport), ['com']));
+$registry->register('enom', ['token'], $verify, fn ($b, $c) => new Driver(new ReadAdapter($b, 'account-enom', $c['token'], $transport), ['com']));
 $renewBindings = new AccountBindings($registry); $authority = new RenewalAuthority($renewBindings, $clock,$caps??null);
 $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot(); Queue::fake();
 $billing = new DomainBilling($bindings, $guard, $clock, $caps??null); $cycles = new RenewalCycles($bindings, $clock);

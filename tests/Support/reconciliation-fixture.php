@@ -10,13 +10,14 @@ require_once __DIR__.'/operation-fixture.php';
 $paidRegistration ??= $new;
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, DateEvidence, Disposition, DriverResult, Environment, Evidence, ExpiryPrecision, HistoryAcceptance, RegistrationEvidence, RequestBudget, RequestContext, RequestOrigin, ResultReason, SendState};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport, Environment as EnomEnvironment};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, HistoryAcceptances, OperationClaims, OperationReconciliation, RegistrarRegistry};
 $observation = (object) ['name' => '', 'nameservers'=>[], 'years' => 1, 'expiryYears' => null, 'reference' => '9001', 'fault' => '', 'billDate' => '10/18/2026 6:00:01 AM', 'calls' => [], 'during' => null];
 $wire = new class($observation) implements Transport {
     public function __construct(private $state) {}
-    public function send(Environment $env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
+    public function send(EnomEnvironment $env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
         same(0, Illuminate\Support\Facades\DB::transactionLevel(), 'Provider reads outside financial locks');
         if ($this->state->fault === 'transport') { throw new RuntimeException('Synthetic transport unavailable'); }
         if ($this->state->fault === 'send_guard') { throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit('send_guard'); }
@@ -60,7 +61,7 @@ $wire = new class($observation) implements Transport {
 };
 $registry = new RegistrarRegistry;
 $verify = new class implements AccountVerifier { public function verify(Environment $e, array $c): string { return $c['token']; } };
-$registry->register('enom', ['token'], $verify, fn ($binding, $c) => new Driver(new Client($binding, 'account-enom', $c['token'], $wire), [$fixtureEnding ?? 'com']));
+$registry->register('enom', ['token'], $verify, fn ($binding, $c) => new Driver(new ReadAdapter($binding, 'account-enom', $c['token'], $wire), [$fixtureEnding ?? 'com']));
 $readBindings = new AccountBindings($registry); $reconcile = new OperationReconciliation($claims, $readBindings, $clock);
 $caps??=null;$ports??=null;
 // Only a fixture that explicitly starts from this funded order may consume it.

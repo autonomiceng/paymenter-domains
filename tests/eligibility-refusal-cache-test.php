@@ -12,7 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier, Clock};
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\StorefrontController;
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CartAdmission, CartHandoffFailure, CheckoutEligibility, EnomTestSendLimitSchema, RegistrarRegistry, Storefront};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
@@ -22,7 +22,7 @@ extract(commerceFixture(true));
 $registry = new RegistrarRegistry;
 $registry->register('enom', ['token'], new class implements AccountVerifier {
     public function verify(Environment $environment, #[SensitiveParameter] array $credentials): string { return $credentials['token']; }
-}, static fn ($binding, $credentials) => new Driver(new Client($binding, $credentials['token'], 'synthetic'), ['com']));
+}, static fn ($binding, $credentials) => new Driver(new ReadAdapter($binding, $credentials['token'], 'synthetic'), ['com']));
 $bindings = new AccountBindings($registry); app()->instance(Clock::class, $clock);
 // The physical reader changes; the same explicit active offer authority still owns this checkout.
 activeFixturePorts($bindings,$ports,$clock);activeFixtureOffers($bindings,$offers);

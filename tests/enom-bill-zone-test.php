@@ -8,15 +8,15 @@ require __DIR__.'/Support/reconciliation-fixture.php';
 use App\Models\Server;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, DispatchSeal, Disposition, Environment, ExecutionRecord, PersistedExecution, Query, RequestBudget, RequestContext, RequestOrigin, SendState};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolResult, ReadCommand};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Driver, OrderCharge};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ProtocolResult, ReadCommand};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Driver, OrderCharge, ReadAdapter};
 use Paymenter\Extensions\Servers\Domains\Services\{EnomBillZones, ReconciliationEvidence};
 // The send window opens at 12:00:00 UTC and lasts 300 seconds. 6:00:01 AM fits as Mountain (MDT), 5:00:01 AM as Pacific (PDT).
 [$op, $binding] = $prepare(placeholderComFixtureName('zone-calibration-placeholder.com'));
 same(Environment::Live, $binding->environment, 'Live account');
 $attempt = ReconciliationEvidence::attempt($op, $op->domain, $binding);
 same([null, ExecutionRecord::Recorded, '9001'], [$attempt->billZone, $attempt->execution, $attempt->providerReference], 'An unmeasured account carries no bill zone; the normal reply names its order');
-$driver = new Driver(new Client($binding, 'account-enom', 'token', $wire), ['com']);
+$driver = new Driver(new ReadAdapter($binding, 'account-enom', 'token', $wire), ['com']);
 $sample = function (string $bill) use ($driver, $attempt, $observation, $binding, $clock): ?array {
     $observation->billDate = $bill; $observation->calls = [];
     $facts = $driver->orderCharge($attempt, $attempt->executionFacts, new RequestContext($binding, RequestOrigin::Background, $clock->now()->modify('+250 seconds'), new RequestBudget(25), $clock))->evidence();

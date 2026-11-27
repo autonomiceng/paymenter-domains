@@ -44,7 +44,7 @@ $state->name=$pending->domain->domain; $state->expiry='2028-10-18'; $state->char
 expect(method_exists($caps,'identities'),'Historical Enom reconciliation needs identity-only suffixes when current facts are unknown');
 $identityRegistry=new \Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
 $identityRegistry->register('enom',['token'],$verify,fn($b,$c)=>new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(
-    new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($b,'account-enom',$c['token'],$transport),$caps->identities($b)));
+    new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter($b,'account-enom',$c['token'],$transport),$caps->identities($b)));
 $completion=new \Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion(new \Paymenter\Extensions\Servers\Domains\Services\AccountBindings($identityRegistry),$clock);
 same('succeeded',$completion->run($pending->id)->state,'Paid pending renewal reconciles its original charge with unknown public facts');
 same($writes,$state->writes,'Renewal completion is read only');

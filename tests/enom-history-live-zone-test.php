@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
 require __DIR__.'/Support/enom-live-history.php';
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment, RequestBudget, RequestContext, RequestOrigin};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\History;
 $liveWire->paging = 'kept';
 // A lost renewal sent 17:13-17:18 UTC created no order. Staff then renewed the domain at Enom at 18:15:03 UTC: 11:15:03 AM Pacific.
@@ -36,7 +36,7 @@ same([true, 2, null, 1], [$both->historyComplete, count($both->candidates), $liv
 // TEST stays Mountain only, whatever a Live measurement says.
 $test = new AccountBinding('enom', 3, Environment::Test, 'offline-test'); $testWire = clone $liveWire;
 $testWire->rows = [['id'=>'5002', 'date'=>'7/4/2026 10:07:13 AM']];
-$testRead = fn () => (new History(new Client($test, 'offline-test', 'token', $testWire)))->inspect($liveAttempt($liveStart, $test), new RequestContext($test, RequestOrigin::Background, $liveNow->modify('+250 seconds'), new RequestBudget(25), $liveClock));
+$testRead = fn () => (new History(new ReadAdapter($test, 'offline-test', 'token', $testWire)))->inspect($liveAttempt($liveStart, $test), new RequestContext($test, RequestOrigin::Background, $liveNow->modify('+250 seconds'), new RequestBudget(25), $liveClock));
 $testWire->details['5002'] = $liveOrder('5002', 'live-renew-placeholder.com', '7/4/2026 10:15:03 AM', '7/4/2026 10:07:13 AM');
 same([true, 0], [$testRead()->historyComplete, count($testRead()->candidates)], 'TEST does not read a bill date as Pacific');
 $testWire->details['5002'] = $liveOrder('5002', 'live-renew-placeholder.com', '7/4/2026 11:15:03 AM', '7/4/2026 10:07:13 AM');

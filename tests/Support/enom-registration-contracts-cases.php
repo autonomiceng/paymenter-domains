@@ -15,7 +15,7 @@ require __DIR__.'/enom-test-registration-fixture.php';
 require_once __DIR__.'/installed-offer-evidence.php';
 config(['domains.enom_writes.registration'=>true,'domains.enom_writes.renewal'=>true]);
 $protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding);
-expect(\Paymenter\Extensions\Servers\Domains\Services\EnomProtocol::accepts($binding,$protocol),'Compiled TEST Purchase route and interval');
+expect(\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::acceptsRegistrationProtocol($binding,$protocol),'Compiled TEST Purchase route and interval');
 // Protocol evidence does not come from the staff sales form; covered by enom-protocol-test.php and offer-staff-policy-test.
 saveDefaultRule(['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
 $tld=installedOfferEvidence($binding,$clock);

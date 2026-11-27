@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api;
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/enom-test-counter.php';
-use Paymenter\Extensions\Servers\Domains\Data\Environment;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
 ini_set('zend.exception_ignore_args', '0');
 function curl_init(): object { ++$GLOBALS['enomCurl']['inits']; return new \stdClass; }
 function hrtime(bool $asNumber=false): mixed { return $GLOBALS['enomCurl']['nanoseconds']??0; }
@@ -23,7 +23,7 @@ function resetCurl(array $overrides = []): void
 {
     $GLOBALS['enomCurl'] = $overrides + ['calls' => 0, 'inits' => 0, 'closed' => 0, 'options' => [], 'chunks' => ['xml'], 'timeout' => false, 'configFail' => false, 'status' => 200,'nanoseconds'=>0];
 }
-$transport = new CurlTransport;
+$transport = ReadAdapter::transport();
 foreach ([Environment::Test, Environment::Live] as $environment) {
     resetCurl();
     same('xml', $transport->send($environment, ReadCommand::Info, ['SLD' => 'example', 'TLD' => 'com'], 'private-uid', 'private-token', 1200), 'Complete body');
@@ -60,7 +60,17 @@ config(['domains.enom_test_sends_per_day'=>1000,'domains.provider_send_guard'=>s
 try{$transport->send(Environment::Test,ReadCommand::Balance,[],'uid','token',25000);throw new \LogicException('Expected send guard refusal');}
 catch(\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit){}
 same([0,$before],[$GLOBALS['enomCurl']['calls'],$sends()],'A send guard refusal records no attempt');
-config(['domains.provider_send_guard'=>null]);
+config(['domains.provider_send_guard'=>null,'domains.enom_test_sends_per_day'=>$before+1]);
+resetCurl(['timeout' => true]);
+try { $transport->send(Environment::Test, ReadCommand::Balance, [], 'uid', 'token', 25000); throw new \LogicException('Expected physical failure'); }
+catch (\RuntimeException) {}
+same([$before+1,1],[$sends(),$GLOBALS['enomCurl']['calls']],'A failed exchange occupies the last TEST cap slot');
+resetCurl();
+try { $transport->send(Environment::Test, ReadCommand::Balance, [], 'uid', 'token', 25000); throw new \LogicException('Expected cap refusal'); }
+catch (\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit) {}
+same([$before+1,0],[$sends(),$GLOBALS['enomCurl']['calls']],'The next read cannot reuse the occupied cap slot');
+$before=$sends();
+config(['domains.enom_test_sends_per_day'=>1000]);
 $slow=false;
 \Illuminate\Support\Facades\DB::listen(static function($query)use(&$slow):void {
     if(!$slow&&str_contains($query->sql,\Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimitSchema::SENDS)){$slow=true;$GLOBALS['enomCurl']['nanoseconds']+=26000000000;}

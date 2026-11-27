@@ -198,7 +198,7 @@ $registry = new \Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry
 $registry->register('enom', ['token'], new class implements \Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier {
     public function verify($environment, array $credentials): string { return $credentials['token']; }
 }, fn ($b, $credentials) => new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(
-    new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($b, $credentials['token'], 'synthetic', $wire), ['example.net']));
+    new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter($b, $credentials['token'], 'synthetic', $wire), ['example.net']));
 $quoted = new AcquisitionOffers($ports, new AccountBindings($registry), $native);
 $admission->fixtureOffers = $eligibility->fixtureOffers = $quoted;
 $expire = static function (array $keys) use ($clock, $binding): void {

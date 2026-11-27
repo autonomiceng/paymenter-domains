@@ -4,7 +4,8 @@ declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
 require __DIR__.'/Support/adoption-wire.php';
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment, RequestContext, RequestBudget, RequestOrigin};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{AdoptionReadCommand, AdoptionTransport, Client, ManagementCommand, ReadCommand, RegistrationCommand};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{AdoptionReadCommand, AdoptionTransport, ManagementCommand, ReadCommand, RegistrationCommand, Environment as EnomEnvironment};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomAdoptionReader;
 
 $binding = new AccountBinding('enom', 1, Environment::Test, 'synthetic-uid');
@@ -23,7 +24,7 @@ $refuse = static function (callable $send, string $type, string $message) use ($
 // Only valid ReadCommand values reach the allowlist predicate.
 foreach (ReadCommand::cases() as $command) {
     if (AdoptionReadCommand::tryFrom($command->value) !== null) { continue; }
-    $refuse(fn () => $gate->send(Environment::Test, $command, [], 'synthetic-uid', 'synthetic-secret', 25000),
+    $refuse(fn () => $gate->send(EnomEnvironment::Test, $command, [], 'synthetic-uid', 'synthetic-secret', 25000),
         DomainException::class, 'Adoption command refused.');
 }
 // Modeled writes and strings are refused by the typed boundary before the allowlist.
@@ -31,17 +32,17 @@ foreach ([...RegistrationCommand::cases(), ...ManagementCommand::cases(),
     'SetContacts', 'SetDNS', 'SetNS', 'SetWPPSInfo', 'GetAuthInfo', 'SendAuthInfo', 'GetPOP3', 'GetEmailForward', 'GetWhoisContact'] as $command) {
     $before = count($wire->calls);
     try {
-        $gate->send(Environment::Test, $command, ['SLD'=>'example','TLD'=>'com'], 'synthetic-uid', 'synthetic-secret', 25000);
+        $gate->send(EnomEnvironment::Test, $command, ['SLD'=>'example','TLD'=>'com'], 'synthetic-uid', 'synthetic-secret', 25000);
         throw new LogicException('Expected non-read command type refusal');
     } catch (TypeError $error) { same(TypeError::class, $error::class, 'Non-read commands require a type refusal'); }
     same($before, count($wire->calls), 'Non-read command never reaches wire: '.(is_string($command) ? $command : $command->value));
 }
 foreach ([['Command' => 'SetRenew'], ['SLD' => 'example', 'TLD' => 'com', 'Command' => 'Purchase']] as $parameters) {
-    $refuse(fn () => $gate->send(Environment::Test, ReadCommand::Info, $parameters, 'synthetic-uid', 'synthetic-secret', 25000),
+    $refuse(fn () => $gate->send(EnomEnvironment::Test, ReadCommand::Info, $parameters, 'synthetic-uid', 'synthetic-secret', 25000),
         InvalidArgumentException::class, 'Invalid named read parameters.');
 }
 foreach ([0, 25001] as $timeout) {
-    $refuse(fn () => $gate->send(Environment::Test, ReadCommand::Info, ['SLD'=>'example','TLD'=>'com'], 'synthetic-uid', 'synthetic-secret', $timeout),
+    $refuse(fn () => $gate->send(EnomEnvironment::Test, ReadCommand::Info, ['SLD'=>'example','TLD'=>'com'], 'synthetic-uid', 'synthetic-secret', $timeout),
         DomainException::class, 'Adoption timeout refused.');
 }
 foreach ([new RuntimeException('Synthetic transport failure'), new DomainException('Synthetic transport refusal')] as $failure) {
@@ -95,7 +96,7 @@ same([25000, 25000, 25000, 18000], array_column($wire->calls, 3), 'Remaining dea
 $clock = new AdoptionClock; $wire = new AdoptionWire; $wire->during = function () use ($clock): void { $clock->time = $clock->time->modify('+90 seconds'); };
 (new EnomAdoptionReader($binding, 'synthetic-uid', 'synthetic-secret', $wire, $clock))->read('example.com', 'com');
 same(1, count($wire->calls), 'Expired deadline stops before second wire');
-$clock = new AdoptionClock; $wire = new AdoptionWire; $client = new Client($binding, 'synthetic-uid', 'synthetic-secret', new AdoptionTransport($wire));
+$clock = new AdoptionClock; $wire = new AdoptionWire; $client = new ReadAdapter($binding, 'synthetic-uid', 'synthetic-secret', new AdoptionTransport($wire));
 $context = new RequestContext($binding, RequestOrigin::Interactive, $clock->now()->modify('+90 seconds'), new RequestBudget(6), $clock);
 for ($i = 0; $i < 7; $i++) { try { $client->read(ReadCommand::Info, ['SLD' => 'example', 'TLD' => 'com'], $context); } catch (RuntimeException) {} }
 same(6, count($wire->calls), 'Seventh request is refused before wire');

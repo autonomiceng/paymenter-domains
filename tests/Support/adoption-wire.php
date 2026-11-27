@@ -3,8 +3,7 @@
 declare(strict_types=1);
 
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\Environment;
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport, Environment};
 
 final class AdoptionClock implements Clock
 {

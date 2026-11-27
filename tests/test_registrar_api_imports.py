@@ -26,18 +26,10 @@ PROVIDERS = ('Registrars/Enom/', 'Registrars/NameSilo/')
 # Dispatch files that build provider objects or classify their refusals. Other Dispatch files stay provider neutral.
 COMPOSITION = {'Registrars/Dispatch/Accounts.php', 'Registrars/Dispatch/Offers.php', 'Registrars/Dispatch/RegistrarFactories.php',
                'Registrars/Dispatch/RegistrarRegistry.php', 'Registrars/Dispatch/RenewalWriter.php'}
-SHARED_CONTRACT = {'Registrars\\Contract\\CanonicalName', 'Registrars\\Contract\\LiveReservationLimit'}
+SHARED_CONTRACT = {'Registrars\\Contract\\CanonicalName', 'Registrars\\Contract\\LiveReservationLimit',
+                   'Registrars\\Contract\\ReadRefusal'}
 
-ALLOWED = {
-    'Enom/Api/AdoptionTransport.php': ['Data\\Environment'],
-    'Enom/Api/Client.php': ['Data\\AccountBinding', 'Data\\RequestContext', 'Services\\EnomTestCallLimit'],
-    'Enom/Api/CurlTransport.php': ['Data\\Environment', 'Services\\EnomLiveCalls', 'Services\\EnomTestCallLimit',
-                                   'Services\\EnomTestCalls', 'Services\\EnomTestSendLimit',
-                                   'Services\\ProviderSendGuard'],
-    'Enom/Api/ProtocolResult.php': ['Data\\RegistrarReply', 'Data\\RegistrationRefusal'],
-    'Enom/Api/ResponseParser.php': ['Data\\RegistrarReply'],
-    'Enom/Api/Transport.php': ['Data\\Environment'],
-}
+ALLOWED = {}
 
 # Any PHP identifier segment, whatever its initial case: \Vendor\protocol\Client is a qualified name.
 QUALIFIED = re.compile(r'(?<![\w\\])\\([A-Za-z_]\w*(?:\\[A-Za-z_]\w*)+)')

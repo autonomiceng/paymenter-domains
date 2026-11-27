@@ -8,7 +8,8 @@ use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\StaffDomainInputs;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\HistoryAcceptance;
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client,ReadCommand,Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,HistoryAcceptances,HoldingLocks,InvoiceMoney,ObligationAlerts,OperationTerminalProof,PricingRule,RegistrarRegistry,Refunds,ReminderSchema,StaffSettingsReview as Review,StaffSettingsWrites};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion;
@@ -42,7 +43,7 @@ $history=new class($transport) implements Transport {
     }
 };
 $historyRegistry=new RegistrarRegistry;
-$historyRegistry->register('enom',['token'],$verify,fn($b,$c)=>new Driver(new Client($b,'account-enom',$c['token'],$history),['com']));
+$historyRegistry->register('enom',['token'],$verify,fn($b,$c)=>new Driver(new ReadAdapter($b,'account-enom',$c['token'],$history),['com']));
 $historyBindings=new AccountBindings($historyRegistry);
 HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',60,2592000,'enom_renewal_v1'));
 $clock->instant=renewalSentAt($op)->modify('+25 hours');Cache::flush();

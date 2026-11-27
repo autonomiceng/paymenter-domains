@@ -6,7 +6,7 @@ require_once __DIR__.'/Support/fixture-checkpoint.php';
 require __DIR__.'/Support/transfer-completion-enom-fixture.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\{Environment,HistoryAcceptance};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client,ReadCommand};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,RegistrarRegistry,HistoryAcceptances,OperationReconciliation,RenewalAuthority};
 require_once __DIR__.'/Support/WireLimit.php';
 $nativeMoney = static function (): array {

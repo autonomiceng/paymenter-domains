@@ -8,6 +8,7 @@ require_once __DIR__.'/Support/renewal-attempts.php';
 require __DIR__.'/Support/native-commerce.php';
 require __DIR__.'/Support/staff-panel.php';
 require __DIR__.'/Support/staff-alerts.php';
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Environment as EnomEnvironment;
 use Paymenter\Extensions\Servers\Domains\Money\Allocations\{PostingSource, RenewalAllocation, RenewalFundingLedger, RenewalReservation};
 use App\Models\{Invoice,ServiceCancellation};
 use Filament\Facades\Filament;
@@ -133,9 +134,9 @@ foreach(['budget','deadline','binding'] as $refusal){
 }
 $noWire=new class implements Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Transport {
     public int $calls=0;
-    public function send(Environment $environment,Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand $command,array $parameters,string $uid,string $token,int $timeoutMs):string{$this->calls++;throw new LogicException('Local refusal must not send');}
+    public function send(EnomEnvironment $environment,Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand $command,array $parameters,string $uid,string $token,int $timeoutMs):string{$this->calls++;throw new LogicException('Local refusal must not send');}
 };
-$readDriver=new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($binding,'account-enom','synthetic-token',$noWire),['com']);
+$readDriver=new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter($binding,'account-enom','synthetic-token',$noWire),['com']);
 foreach(['budget','deadline'] as $refusal){
     $c=new RequestContext($binding,RequestOrigin::Interactive,$clock->now()->modify($refusal==='deadline'?'-1 second':'+25 seconds'),new RequestBudget($refusal==='budget'?0:1),$clock);
     $before=(array)$row($a);same(Disposition::Unknown,BalanceReads::read($readDriver,$c,'preflight')->disposition,'Local driver refusal returns an unknown result');

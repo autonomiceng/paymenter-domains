@@ -4,7 +4,8 @@ declare(strict_types=1);
 require __DIR__.'/Support/renewal-execution.php';
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Data\{HistoryAcceptance};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, HistoryAcceptances, RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion;
@@ -50,7 +51,7 @@ $wire=new class($transport,$scenario,$state,$sent) implements Transport {
     }
 };
 $registry=new RegistrarRegistry;
-$registry->register('enom',['token'],$verify,fn($binding,$credentials)=>new Driver(new Client($binding,'account-enom',$credentials['token'],$wire),['com']));
+$registry->register('enom',['token'],$verify,fn($binding,$credentials)=>new Driver(new ReadAdapter($binding,'account-enom',$credentials['token'],$wire),['com']));
 $complete=new RenewalCompletion(new AccountBindings($registry),$clock); $money=$nativeMoney();
 foreach (['page_missing','missing','ambiguous','duplicate','unknown_registration_date','unknown_older_renewal_date','unsupported_registration',''] as $fault) {
     $scenario->fault=$fault; $scenario->forms=[]; Cache::flush();
@@ -93,7 +94,7 @@ $dense=new class($transport,$state,$sent) implements Transport {
     }
 };
 $denseRegistry=new RegistrarRegistry;
-$denseRegistry->register('enom',['token'],$verify,fn($binding,$credentials)=>new Driver(new Client($binding,'account-enom',$credentials['token'],$dense),['com']));
+$denseRegistry->register('enom',['token'],$verify,fn($binding,$credentials)=>new Driver(new ReadAdapter($binding,'account-enom',$credentials['token'],$dense),['com']));
 $recover=new RenewalCompletion(new AccountBindings($denseRegistry),$clock); $money=$nativeMoney();
 // TEST holds new renewal invoices, so the environment is set once the renewal is already in flight.
 config(['domains.enom_identity.environment'=>'test']);

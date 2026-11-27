@@ -6,13 +6,13 @@ require __DIR__.'/Support/reconciliation-fixture.php';
 require_once __DIR__.'/Support/reserved-fixtures.php';
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, StepKey};
 use Paymenter\Extensions\Servers\Domains\Data\{DateEvidence, Disposition, DriverResult, Evidence, ExpiryPrecision, HistoryAcceptance, RegistrationEvidence, ResultReason, SendState};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{CataloguePreview, Driver, EnomTestReconciliationReader};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{CataloguePreview, Driver, EnomTestReconciliationReader, ReadAdapter};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, HistoryAcceptances, OperationReconciliation, ReconciliationEvidence, RegistrarRegistry, RenewalAuthority};
 // Exercise the installed reader's gate as well as the underlying history proof.
 $registry = new RegistrarRegistry;
 $registry->register('enom', ['token'], $verify, static function ($binding, $credentials) use ($wire) {
-    $driver = new Driver(new Client($binding, 'account-enom', $credentials['token'], $wire), ['example.com']);
+    $driver = new Driver(new ReadAdapter($binding, 'account-enom', $credentials['token'], $wire), ['example.com']);
     return new EnomTestReconciliationReader(new CataloguePreview($driver), $driver);
 });
 $readBindings = new AccountBindings($registry); $reconcile = new OperationReconciliation($claims, $readBindings, $clock);

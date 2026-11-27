@@ -4,7 +4,8 @@
 declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Disposition, Environment, RequestBudget, RequestContext, RequestOrigin};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolResult, ReadCommand, ResponseParser, RegistrationCommand, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ProtocolResult, ReadCommand, ResponseParser, RegistrationCommand, Transport, Environment as EnomEnvironment};
 ini_set('zend.exception_ignore_args', '0');
 function envelope(string $command, string $payload = ''): string
 {
@@ -108,32 +109,40 @@ foreach (['<OrderID>1234</OrderID>','<OrderID/>','<GetDomainInfo><OrderID>1234</
         'Contradictory order or financial evidence prevents definite refusal');
 }
 
+$parsePurchase = static function (string $body) use ($parser): array {
+    $diagnostic = null;
+    $reply = $parser->parse(RegistrationCommand::Purchase, $body,
+        static function (?string $code, #[SensitiveParameter] mixed $message) use (&$diagnostic): void {
+            $diagnostic = \Paymenter\Extensions\Servers\Domains\Data\RegistrarReply::capture($code, $message);
+        });
+    return [$reply, $diagnostic];
+};
 // The reply retains fixed error wording only, never private suffixes or arbitrary error content.
 foreach ([['Error 545 - Name server does not exist; PW=PRIVATE-TOKEN','Error 545 - Name server does not exist'],
     [str_repeat('PRIVATE-TOKEN',400),null],['owner@example.test PRIVATE-ACCOUNT',null],['<private>PRIVATE-TOKEN</private>',null]] as [$text,$expected]) {
     $body='<interface-response><Command>Purchase</Command><ErrCount>1</ErrCount><Done>true</Done><RRPCode>545</RRPCode>'
         .'<errors><Err1>'.htmlspecialchars($text,ENT_XML1).'</Err1></errors><debug>PRIVATE-TOKEN</debug></interface-response>';
-    $reply=$parser->parse(RegistrationCommand::Purchase,$body);
-    same(['code'=>'545','text'=>$expected],get_object_vars($reply->registrarReply()),'Bounded sanitized diagnostic');
+    [$reply, $diagnostic] = $parsePurchase($body);
+    same(['code'=>'545','text'=>$expected],get_object_vars($diagnostic),'Bounded sanitized diagnostic');
     same('unknown',$reply->status,'Diagnostic never makes the refusal terminal');
-    expect(!str_contains(json_encode($reply->registrarReply()),'PRIVATE-'),'No private error values survive');
+    expect(!str_contains(json_encode($diagnostic),'PRIVATE-'),'No private error values survive');
     same(null,$reply->value('errors'),'Non-success still discards all raw protocol data');
 }
-$reply=$parser->parse(RegistrationCommand::Purchase,'<interface-response><Command>Purchase</Command><ErrCount>1</ErrCount><Done>true</Done>'
+[$reply, $diagnostic] = $parsePurchase('<interface-response><Command>Purchase</Command><ErrCount>1</ErrCount><Done>true</Done>'
     .'<errors><Err1>Invalid nameserver information</Err1></errors><responses><response><ResponseNumber>316153</ResponseNumber>'
     .'</response></responses></interface-response>');
-same(['code'=>'316153','text'=>'Invalid nameserver information'],get_object_vars($reply->registrarReply()),'Nested eNom response number survives');
+same(['code'=>'316153','text'=>'Invalid nameserver information'],get_object_vars($diagnostic),'Nested eNom response number survives');
 same(null,\Paymenter\Extensions\Servers\Domains\Data\RegistrarReply::fromArray(['code'=>'545','text'=>'PRIVATE-TOKEN']),
     'Malformed saved diagnostics cannot expose arbitrary text');
 
 foreach (['<RRPCode>545</RRPCode>','<RRPCode>200</RRPCode><Err1>Invalid nameserver information</Err1>'] as $unconfirmed) {
-    $reply=$parser->parse(RegistrationCommand::Purchase,envelope('Purchase',$unconfirmed));
+    [$reply, $diagnostic] = $parsePurchase(envelope('Purchase',$unconfirmed));
     same('unknown',$reply->status,'A contradictory or unsuccessful acknowledgement stays uncertain');
-    expect($reply->registrarReply()!==null,'Numeric Purchase evidence survives outside the ErrCount failure branch');
+    expect($diagnostic!==null,'Numeric Purchase evidence survives outside the ErrCount failure branch');
 }
 
-$reply=$parser->parse(RegistrationCommand::Purchase,envelope('Purchase','<responses><response><ResponseNumber>1300</ResponseNumber></response></responses>'));
-same(['success',null,null],[$reply->status,$reply->code,$reply->registrarReply()],
+[$reply, $diagnostic] = $parsePurchase(envelope('Purchase','<responses><response><ResponseNumber>1300</ResponseNumber></response></responses>'));
+same(['success',null,null],[$reply->status,$reply->code,$diagnostic],
     'A diagnostic response number cannot change an incomplete acknowledgement into pending acceptance');
 
 $binding = new AccountBinding('enom', 1, Environment::Test, 'synthetic-uid');
@@ -141,7 +150,7 @@ $transport = new class implements Transport {
     public int $calls = 0;
     public bool $fail = false;
     public int $timeout = 0;
-    public function send(Environment $environment, ReadCommand $command, #[\SensitiveParameter] array $parameters,
+    public function send(EnomEnvironment $environment, ReadCommand $command, #[\SensitiveParameter] array $parameters,
         #[\SensitiveParameter] string $uid, #[\SensitiveParameter] string $token, int $timeoutMs): string
     {
         $this->calls++; $this->timeout = $timeoutMs;
@@ -152,13 +161,13 @@ $transport = new class implements Transport {
 foreach ([[new AccountBinding('namesilo', 1, Environment::Test, 'synthetic-uid'), 'synthetic-uid', 'token'],
     [$binding, 'other', 'token'], [$binding, 'synthetic-uid', ''], [$binding, 'synthetic-uid', str_repeat('x', 4097)],
     [$binding, 'synthetic-uid', "bad\ntoken"]] as [$invalidBinding, $uid, $token]) {
-    try { new Client($invalidBinding, $uid, $token, $transport); throw new LogicException('Expected credential refusal'); }
+    try { new ReadAdapter($invalidBinding, $uid, $token, $transport); throw new LogicException('Expected credential refusal'); }
     catch (InvalidArgumentException $e) {
         $trace = print_r($e->getTrace(), true);
         expect(!str_contains($trace, $invalidBinding->fingerprint) && !str_contains($trace, $uid), 'Constructor trace excludes binding/credentials');
     }
 }
-$client = new Client($binding, 'synthetic-uid', 'synthetic-token', $transport);
+$client = new ReadAdapter($binding, 'synthetic-uid', 'synthetic-token', $transport);
 $context = fn (int $limit = 10, ?AccountBinding $account = null, string $date = '+1 hour') => new RequestContext(
     $account ?? $binding, RequestOrigin::Background, new DateTimeImmutable($date), new RequestBudget($limit));
 $clock = new class implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock {

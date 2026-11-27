@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Queue;
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\{StaffContext, Target};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AdoptionSchema, DomainAuditSchema, RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Holding\Adoption\{AdoptionMapping, AdoptionReader};
@@ -31,7 +31,7 @@ function adoptionFixture(Environment $environment = Environment::Test, array $re
     $registry = new RegistrarRegistry;
     $registry->register('enom', ['uid', 'token'], new class implements AccountVerifier {
         public function verify(Environment $environment, #[SensitiveParameter] array $credentials): string { return $credentials['uid']; }
-    }, fn (AccountBinding $b, array $c) => new Driver(new Client($b, $c['uid'], $c['token'], $wire), ['com']),
+    }, fn (AccountBinding $b, array $c) => new Driver(new ReadAdapter($b, $c['uid'], $c['token'], $wire), ['com']),
         adoptionReaderFactory: fn (AccountBinding $b, array $c, $clock) => new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomAdoptionReader($b, $c['uid'], $c['token'], $wire, $clock, \Paymenter\Extensions\Servers\Domains\Services\Runtime::limiter()));
     $bindings = new AccountBindings($registry);
     $binding = $bindings->configure($tld->server_id, 'enom', $environment, ['uid' => 'account-enom', 'token' => 'synthetic-secret']);

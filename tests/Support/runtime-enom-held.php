@@ -1,7 +1,8 @@
 <?php
 // Installed Enom holding lifecycle; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client,ReadCommand,Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport, Environment as EnomEnvironment};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,DomainBilling,HolderPricing,NativeDomainGuard,OperationClaims,OperationReconciliation,ReconciliationEvidence,RegistrarRegistry,RenewalAcceptance,WriteFeatures};
 use Illuminate\Support\Facades\{Cache,DB};
@@ -14,7 +15,7 @@ $clock->at=$clock->at->modify('+61 seconds');Carbon\Carbon::setTestNow($clock->n
 $s=(object)['name'=>$registered->domain->domain,'bill'=>(new DateTimeImmutable($registered->attempt['dispatch_attempted_at']))->modify('+1 second')->setTimezone(new DateTimeZone('America/Denver'))->format('n/j/Y g:i:s A'),'locked'=>true,'renewal'=>false];
 $readWire=new class($s) implements Transport {
     public function __construct(private $s){}
-    public function send(Environment $env,ReadCommand $command,array $p,string $uid,string $token,int $timeoutMs):string {
+    public function send(EnomEnvironment $env,ReadCommand $command,array $p,string $uid,string $token,int $timeoutMs):string {
         same(0,DB::transactionLevel(),'Holding fresh reads outside locks');$s=$this->s;
         $body=match($command){
             ReadCommand::Info=>'<GetDomainInfo><DomainName DomainNameID="456">'.$s->name.'</DomainName><Status><Belongs-To>account-enom</Belongs-To><Expiration>'.($s->renewal?'10/18/2027 5:00:00 AM':'2027-10-18').'</Expiration></Status></GetDomainInfo>',
@@ -30,7 +31,7 @@ $readWire=new class($s) implements Transport {
         return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$body.'</interface-response>';
     }
 };
-$registry=new RegistrarRegistry;$registry->register('enom',['uid','token'],$verify,fn($b,$c)=>new Driver(new Client($b,$c['uid'],$c['token'],$readWire),['com']));
+$registry=new RegistrarRegistry;$registry->register('enom',['uid','token'],$verify,fn($b,$c)=>new Driver(new ReadAdapter($b,$c['uid'],$c['token'],$readWire),['com']));
 $heldBindings=new AccountBindings($registry);Cache::flush();
 $reconcile=new OperationReconciliation(new OperationClaims($heldBindings,$clock),$heldBindings,$clock);
 same('succeeded',$reconcile->run($registered->id)->state,'Captured original order completes genuine holding');$d=$registered->domain()->firstOrFail();

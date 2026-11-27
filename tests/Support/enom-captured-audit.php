@@ -4,8 +4,8 @@ declare(strict_types=1);
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Services\OwnedDomains;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, Environment, Query, RenewalStatus, RequestBudget, RequestContext, RequestOrigin, Support};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, ResponseParser, Transport};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{AccountVerifier, Driver, ManagementRead};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, ResponseParser, Transport, Environment as EnomEnvironment};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{AccountVerifier, Driver, ManagementRead, ReadAdapter};
 
 (function (): void {
     $fixtures = require __DIR__.'/enom-captured-reads.php';
@@ -24,11 +24,11 @@ use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{AccountVerifier, Drive
     };
     $wire = new class($fixtures) implements Transport {
         public function __construct(private array $fixtures) {}
-        public function send(Environment $environment, ReadCommand $command, #[\SensitiveParameter] array $parameters,
+        public function send(EnomEnvironment $environment, ReadCommand $command, #[\SensitiveParameter] array $parameters,
             #[\SensitiveParameter] string $uid, #[\SensitiveParameter] string $token, int $timeoutMs): string
         { return $this->fixtures[$command->name] ?? throw new LogicException('Uncaptured command requested.'); }
     };
-    $driver = new Driver(new Client($binding, 'synthetic-uid', 'synthetic-token', $wire), ['com']);
+    $driver = new Driver(new ReadAdapter($binding, 'synthetic-uid', 'synthetic-token', $wire), ['com']);
     $context = fn () => new RequestContext($binding, RequestOrigin::Background, $clock->now()->modify('+1 hour'), new RequestBudget(20), $clock);
     $domain = $driver->readDomain('example.com', $context())->evidence()->domain;
     same(true, $domain?->owned, 'Captured attributed owner text authenticated');

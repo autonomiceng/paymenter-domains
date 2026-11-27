@@ -72,7 +72,7 @@ foreach([Environment::Test] as $environment){
     same(['Command'=>'Purchase','UID'=>'synthetic-uid','PW'=>'SYNTHETIC-TOKEN','ResponseType'=>'XML','SLD'=>'example','TLD'=>'com'],$GLOBALS['enomWire']['forms'][0],'Credentialed POST');
     foreach([CURLOPT_POST=>true,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_MAXREDIRS=>0,CURLOPT_PROXY=>'',CURLOPT_NOPROXY=>'*',CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS,CURLOPT_REDIR_PROTOCOLS=>CURLPROTO_HTTPS,CURLOPT_CONNECTTIMEOUT_MS=>8000,CURLOPT_TIMEOUT_MS=>25000,CURLOPT_VERBOSE=>false,CURLOPT_HEADER=>false,CURLOPT_FRESH_CONNECT=>true,CURLOPT_FORBID_REUSE=>true,CURLOPT_LOW_SPEED_LIMIT=>32,CURLOPT_LOW_SPEED_TIME=>25] as $key=>$value){same($value,$options[$key],'Safe wire option '.$key);}
     same(1,$GLOBALS['enomWire']['closed'],'Handle released');
-    resetWire();(new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\CurlTransport)->send($environment,Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Info,['SLD'=>'example','TLD'=>'com'],'synthetic-uid','SYNTHETIC-TOKEN',25000);
+    resetWire();Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter::transport()->send(Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Environment::from($environment->value),Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Info,['SLD'=>'example','TLD'=>'com'],'synthetic-uid','SYNTHETIC-TOKEN',25000);
     $readOptions=$GLOBALS['enomWire']['options'];foreach([CURLOPT_POSTFIELDS,CURLOPT_WRITEFUNCTION,CURLOPT_LOW_SPEED_TIME] as $different){unset($options[$different],$readOptions[$different]);}
     same($readOptions,$options,'Read and protocol cURL safeguards remain identical');
 }

@@ -4,16 +4,17 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\RegistrarDriver;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, CanonicalName, Capabilities, CatalogueRate, CostUnit, Discrepancy, Disposition, DomainSnapshot,
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, Capabilities, CatalogueRate, CostUnit, Discrepancy, Disposition, DomainSnapshot,
     DriverResult, Evidence, ExpiryPrecision, Money, NameserverEvidence, PrivacyMode, Query, QuoteEvidence, ReconciliationResult, TransferStatus, RejectionBasis, RequestContext, ResultReason, SendState};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolResult, ReadCommand};
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ProtocolResult, ReadCommand};
 use Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence;
 
 /** Named read adapter only; no admission, charging, persistence or account adoption. */
 final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Domains\Contracts\AcquisitionPriceReader, \Paymenter\Extensions\Servers\Domains\Contracts\TransferPoller
 {
     private array $suffixes;
-    public function __construct(private readonly Client $client, array $suffixes, private readonly int $priceMaxAgeSeconds = 300)
+    public function __construct(private readonly ReadAdapter $client, array $suffixes, private readonly int $priceMaxAgeSeconds = 300)
     {
         if ($priceMaxAgeSeconds < 1 || $priceMaxAgeSeconds > 86400) { throw new \InvalidArgumentException('Invalid local price freshness policy.'); }
         foreach ($suffixes as $tld) { if (!is_string($tld)) { throw new \InvalidArgumentException('Invalid ending.'); } Catalogue::tld($tld); }
@@ -46,7 +47,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     }
     private function parts(string $name): array
     {
-        Query::requireName($name); $parts = CanonicalName::parse($name, $this->suffixes);
+        CanonicalName::requireCanonical($name); $parts = CanonicalName::parse($name, $this->suffixes);
         return ['SLD' => $parts['sld'], 'TLD' => $parts['tld']];
     }
     private function result(?array $facts): ReadResult { return new ReadResult($this->binding(), $facts === null ? 'unknown' : 'success', $facts ?? []); }

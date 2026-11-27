@@ -8,15 +8,19 @@ $transferEnvironment??=Paymenter\Extensions\Servers\Domains\Data\Environment::Li
 require __DIR__.'/transfer-fixture.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\{Environment, HistoryAcceptance};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport, Environment as EnomEnvironment};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, RegistrarRegistry, HistoryAcceptances, OperationReconciliation, RenewalAuthority};
 $observe=(object)['name'=>'','fault'=>'','calls'=>[],'during'=>null,'orders'=>1,'unowned'=>false,'countSends'=>false,'beforeSend'=>null];
 $wire=new class($observe) implements Transport {
     public function __construct(private $s){}
-    public function send(Environment $e, ReadCommand $command, array $p, string $uid, string $token, int $timeoutMs): string {
+    public function send(EnomEnvironment $e, ReadCommand $command, array $p, string $uid, string $token, int $timeoutMs): string {
         same(0,DB::transactionLevel(),'Observation outside locks'); expect($timeoutMs>0 && $timeoutMs<=25000,'Bounded observation'); $s=$this->s;
         if($s->beforeSend){$hook=$s->beforeSend;$s->beforeSend=null;$hook();}
-        if($s->countSends){\Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimit::admit($e,$uid,$command->value);}
+        if ($s->countSends) {
+            \Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimit::admit(
+                Environment::from($e->value), $uid, $command->value);
+        }
         $s->calls[]=$command->value;
         if ($s->fault === 'down') { throw new RuntimeException('Synthetic outage'); }
         if ($s->during) { $hook=$s->during; $s->during=null; $hook(); }
@@ -51,7 +55,7 @@ $wire=new class($observe) implements Transport {
         return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$data.'</interface-response>';
     }
 };
-$registry=new RegistrarRegistry; $registry->register('enom',['token'],$verifier,fn($b,$c)=>new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new Client($b,'account-enom',$c['token'],$wire),['com']));
+$registry=new RegistrarRegistry; $registry->register('enom',['token'],$verifier,fn($b,$c)=>new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new ReadAdapter($b,'account-enom',$c['token'],$wire),['com']));
 $readBindings=new AccountBindings($registry); $reconcile=new OperationReconciliation($claims,$readBindings,$clock);
 $prepare=static function($name)use($newTransfer,$makeTransfer,&$engine,&$binding,$clock,$now,$state,$observe){
     DB::table('domains_read_budgets')->delete(); // Each synthetic transfer starts an independent account-minute scenario.

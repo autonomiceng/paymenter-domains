@@ -4,15 +4,15 @@
 declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, Disposition, Environment, ExpiryPrecision, Query, RequestBudget, RequestContext, RequestOrigin, SendState, Support};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolResult, ReadCommand, ResponseParser, Transport};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Driver, Expiry};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ProtocolResult, ReadCommand, ResponseParser, Transport, Environment as EnomEnvironment};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Driver, Expiry, ReadAdapter};
 use Paymenter\Extensions\Servers\Domains\Services\{RegistrarRegistry, WriteHeld, WriteMoney};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 function body(string $command, string $payload = ''): string { return '<interface-response><Command>'.$command.'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$payload.'</interface-response>'; }
 $binding = new AccountBinding('enom', 1, Environment::Test, 'synthetic-uid');
 $wire = new class implements Transport {
     public array $payloads = []; public array $calls = []; public bool $fail = false; public bool $reject = false; public ?ReadCommand $failCommand = null; public bool $cap = false; public ?ReadCommand $rejectCommand = null;
-    public function send(Environment $environment, ReadCommand $command, #[\SensitiveParameter] array $parameters,
+    public function send(EnomEnvironment $environment, ReadCommand $command, #[\SensitiveParameter] array $parameters,
         #[\SensitiveParameter] string $uid, #[\SensitiveParameter] string $token, int $timeoutMs): string
     {
         $this->calls[] = [$command, $parameters];
@@ -28,7 +28,7 @@ $verifier = new class implements AccountVerifier {
     public function verify(Environment $environment, #[\SensitiveParameter] array $credentials): string { return $credentials['uid']; }
 };
 $registry->register('enom', ['uid', 'token'], $verifier, fn (AccountBinding $accepted, array $credentials) => new Driver(
-    new Client($accepted, $credentials['uid'], $credentials['token'], $wire), ['com', 'co.uk']));
+    new ReadAdapter($accepted, $credentials['uid'], $credentials['token'], $wire), ['com', 'co.uk']));
 [$verified] = $registry->verify('enom', 1, Environment::Test, ['uid' => 'synthetic-uid', 'token' => 'synthetic-secret']);
 $driver = $registry->reader($verified, ['uid' => 'synthetic-uid', 'token' => 'synthetic-secret']);
 expect($driver instanceof Driver && $binding->matches($driver->binding()), 'Neutral registry returns bound read-only driver');

@@ -6,7 +6,8 @@ require_once __DIR__.'/adoption-holding.php';
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport, Environment as EnomEnvironment};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, DomainBilling, HolderPricing, NativeDomainGuard, RegistrarRegistry, RenewalAcceptance, RenewalAuthority, WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter;
@@ -28,7 +29,7 @@ $state = (object) ['name' => '', 'expiry' => '10/20/2027 5:00:00 AM', 'day' => '
     'premium' => '0', 'hold' => 'False', 'maximum' => '8', 'expired' => 'Expired', 'during' => null, 'duringCommand' => null, 'calls' => [], 'fail' => null, 'years' => 1, 'writes' => 0, 'lost' => false, 'after' => '2028-10-20', 'charge' => '8.95', 'order' => '9002', 'orderYear' => '2027', 'multiple' => false, 'afterWrite' => null, 'lastWrite' => null];
 $transport = new class($state) implements Transport {
     public function __construct(private $s) {}
-    public function send(Environment $env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
+    public function send(EnomEnvironment $env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
         same(0, DB::transactionLevel(), 'Every fresh read is outside locks');
         expect($timeoutMs > 0 && $timeoutMs <= 25000, 'Per-request deadline bounded');
         $s = $this->s; $s->calls[] = $command;
@@ -54,7 +55,7 @@ $transport = new class($state) implements Transport {
     $registry = new RegistrarRegistry;
     $registry->register('enom', ['uid', 'token'], new class implements AccountVerifier {
         public function verify(Environment $e, array $c): string { return $c['uid']; }
-    }, fn ($b, $c) => new Driver(new Client($b, $c['uid'], $c['token'], $transport), ['com']));
+    }, fn ($b, $c) => new Driver(new ReadAdapter($b, $c['uid'], $c['token'], $transport), ['com']));
     $renewBindings = new AccountBindings($registry);
     $ports = new \Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts(new \Paymenter\Extensions\Servers\Domains\Catalogue\Projection($native),$clock,$renewBindings,static fn()=>null,static fn()=>true);
     $caps = new \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities($ports,$clock,static fn()=>null);
