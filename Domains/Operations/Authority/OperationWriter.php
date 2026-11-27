@@ -178,11 +178,21 @@ final readonly class OperationWriter
         $facts = OperationAttempts::attempt($token, true);
         $outcome = $answer['outcome'];
         if (!$facts?->current || !$facts->sealed() || $facts->reading($this->clock->now())
-            || ($outcome === 'not_processed' && ($facts->readToken !== null || $facts->readUnresolved
+            || ($outcome === 'not_processed' && (($facts->readToken !== null && $facts->readUntil === null)
                 || $this->hasSettlementEvidence($token)))) { return Transition::Stale; }
         $kind = $outcome === 'accepted' ? 'answer' : 'settlement';
-        return $this->append($token->operationId, $token->attemptId, $kind, 'staff_answer', $outcome, ['answer' => $answer], $kind)
-            ? Transition::Applied : Transition::Stale;
+        if (!$this->append($token->operationId, $token->attemptId, $kind, 'staff_answer', $outcome, ['answer' => $answer], $kind)) {
+            return Transition::Stale;
+        }
+        // The registrar's audited answer resolves the return. Retire an expired reader without giving automatic
+        // reconciliation negative send proof or allowing the orphan to replace the saved check.
+        if ($outcome === 'not_processed' && $facts->readToken !== null) {
+            DB::table(OperationSchema::ATTEMPTS)->where('id', $token->attemptId)->update([
+                'read_token' => null, 'read_until' => null, 'read_unresolved' => true,
+            ]);
+            $this->bump($token->stepId);
+        }
+        return Transition::Applied;
     }
 
     /** A new read claim on the sealed attempt. A live read is busy. An earlier claim that was never closed leaves uncertainty. */
@@ -299,7 +309,7 @@ final readonly class OperationWriter
     private function hasSettlementEvidence(AttemptToken $token): bool
     {
         return DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $token->operationId, 'attempt_id' => $token->attemptId])
-            ->whereIn('kind', ['observation', 'held', 'settlement'])->lockForUpdate()->first(['id']) !== null;
+            ->whereIn('kind', ['observation', 'held', 'settlement', 'answer'])->lockForUpdate()->first(['id']) !== null;
     }
 
     /** Operation-level local terminal proof, such as a never-sent unpaid closure. Recorded once. */

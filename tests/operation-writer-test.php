@@ -88,6 +88,15 @@ same([$current->claimKey, [$refusal]], [$projected['claim_key'], $projected['tes
 $batch = AcquisitionAttempt::many(OperationAttempts::latestAcquisitions([$acquisitionId]));
 expect($batch[$acquisitionId] instanceof DecryptException, 'An unreadable retired TEST refusal fails closed because it supplies history');
 
+$answeredId = $operation('writer-accepted-answer', 'register');
+$answered = $in(fn () => $writer->claim($answeredId, $acquisition, $later(60), ['digest' => str_repeat('a', 64)]));
+$in(fn () => $writer->seal($answered, $terms()));
+same(Transition::Applied, $in(fn () => $writer->recordAcquisitionAnswer($answered, ['outcome' => 'accepted', 'order_reference' => '41'])),
+    'The acquisition retains an accepted answer');
+same(Transition::Stale, $in(fn () => $writer->recordAcquisitionAnswer($answered, ['outcome' => 'not_processed'])),
+    'A retained accepted answer prevents a negative settlement');
+same(null, OperationAttempts::evidence($answeredId, $answered->attemptId, 'settlement'), 'The conflicting answer writes no settlement');
+
 // The grant is spendable only before the sealed dispatch deadline.
 $lateId = $operation('writer-late');
 $late = $in(fn () => $writer->claim($lateId, $step, $later(60))); $in(fn () => $writer->seal($late, $terms()));
