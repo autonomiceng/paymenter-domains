@@ -75,12 +75,12 @@ final class OperationClaims
             $now = $this->clock->now();
             if(!$account->processing_enabled||FundsWaits::elapsed($op,$now,true)
                 ||!AcquisitionRetryProof::ordersOffReturns($op,fn()=>$funding->initialFacts($domain)+['account'=>$account,'operations'=>$all])){return false;}
-            if (ContactStepRetries::candidate($op) && ContactProfileHold::releaseBlocked($op) !== null) { return false; }
             $window = AcquisitionResult::window($op, true);
             if ($window && !$window->fits($now)) {
                 $this->expireWindow($op, $window, $now);
                 return false;
             }
+            if (ContactStepRetries::candidate($op) && ContactProfileHold::releaseBlocked($op) !== null) { return false; }
             $op->update(['state'=>'queued','safe_code'=>null]);
             // Details the customer still owes are their hold, not a quiet wait in the queue.
             try{ContactSetup::requireReady($op);}catch(\DomainException){DB::afterCommit(static fn()=>ContactRecovery::hold((int)$op->id));}

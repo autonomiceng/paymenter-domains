@@ -64,12 +64,14 @@ final class AcquisitionRetryProof
     {
         if ($op->state !== 'held' || $op->safe_code !== 'processing' || AcquisitionAttempt::key($op->action) === null
             || ($op->action === 'transfer' && !TransferInputs::validCode($op->payload['epp'] ?? null))) { return false; }
-        if (AcquisitionResult::continuation($op)?->lane === AcquisitionLane::BalanceWait) { return false; }
-        if (self::virgin($op)) { return true; }
         $lock = \Illuminate\Support\Facades\DB::transactionLevel() > 0;
+        $continuation = AcquisitionResult::continuation($op, $lock);
+        if ($continuation?->lane !== null
+            && !in_array($continuation->lane, [AcquisitionLane::Purchase, AcquisitionLane::BalancePurchase], true)) { return false; }
+        if (self::virgin($op)) { return true; }
         $prior = $op->acquisitionAttemptFacts();
-        $window = $prior ? AcquisitionResult::window($op, $lock) : null;
-        return $window !== null && AcquisitionResult::continues($op, $window, $prior, $lock);
+        return $prior !== null && $continuation?->window !== null
+            && AcquisitionResult::continues($op, $continuation->window, $prior, $lock);
     }
     /** Will the tick take this back? The writer passes its locked read, a page reads without locks; the check is the same. */
     public static function ordersOffReturns(Operation $op,?\Closure $facts=null): bool
