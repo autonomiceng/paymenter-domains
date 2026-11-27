@@ -35,7 +35,7 @@ final class OperationReconciliation
         return $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($check): ?AcquisitionRead {
             if (!$this->eligible($op)) { return null; }
             $watch=TransferPolling::applies($op);$now=$this->clock->now()->getTimestamp();
-            if (TransferPolling::reading($op, $now)) { return null; }
+            if (TransferPolling::reading($op, $now) || $op->acquisitionAttemptFacts()?->reading($this->clock->now())) { return null; }
             $check->capture($op);
             $manual=$watch&&($op->policy['reconciliation']['manual_check']??false);
             if($watch&&!TransferPolling::due($op,$now)){$check->deferred='scheduled';return null;}
@@ -264,7 +264,7 @@ final class OperationReconciliation
             if (!$this->eligible($op)) { throw new \DomainException('No unresolved attempt.'); }
             $this->authority($op, $domain, $all, $funding, $server, $account);
             $now = $this->clock->now()->getTimestamp();
-            if (TransferPolling::reading($op, $now)) { return $op; }
+            if (TransferPolling::reading($op, $now) || $op->acquisitionAttemptFacts()?->reading($this->clock->now())) { return $op; }
             $policy = TransferFollowup::retain($op); $history = $policy['reconciliation_resumptions'] ?? [];
             if(TransferPolling::applies($op)&&($policy['reconciliation']['manual_check']??false)){return $op;}
             if ($review !== null && TransferPolling::followupScheduled($op, $now)) {

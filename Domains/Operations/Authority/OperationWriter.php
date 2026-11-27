@@ -180,7 +180,7 @@ final readonly class OperationWriter
         $outcome = $answer['outcome'];
         if (!$facts?->current || !$facts->sealed() || $facts->reading($this->clock->now())
             || ($outcome === 'not_processed' && (($facts->readToken !== null && $facts->readUntil === null)
-                || $this->hasSettlementEvidence($token)))) { return Transition::Stale; }
+                || OperationAttempts::hasAcquisitionSettlementEvidence($token, lock: true)))) { return Transition::Stale; }
         $kind = $outcome === 'accepted' ? 'answer' : 'settlement';
         if (!$this->append($token->operationId, $token->attemptId, $kind, 'staff_answer', $outcome, ['answer' => $answer], $kind)) {
             return Transition::Stale;
@@ -301,16 +301,9 @@ final readonly class OperationWriter
     {
         self::requireTransaction(); $a = $read->attempt;
         if (!$this->readCurrent($read)) { return Transition::Stale; }
-        if ($this->hasSettlementEvidence($a)) { return Transition::Stale; }
+        if (OperationAttempts::hasAcquisitionSettlementEvidence($a, lock: true)) { return Transition::Stale; }
         return $this->append($a->operationId, $a->attemptId, 'answer', 'staff_answer', 'not_processed', $answer, 'settlement')
             ? Transition::Applied : Transition::Stale;
-    }
-
-    /** A negative answer must see any retained proof, even if its payload is unreadable. */
-    private function hasSettlementEvidence(AttemptToken $token): bool
-    {
-        return DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $token->operationId, 'attempt_id' => $token->attemptId])
-            ->whereIn('kind', ['observation', 'acquisition_charge', 'held', 'settlement', 'answer'])->lockForUpdate()->first(['id']) !== null;
     }
 
     /** Operation-level local terminal proof, such as a never-sent unpaid closure. Recorded once. */

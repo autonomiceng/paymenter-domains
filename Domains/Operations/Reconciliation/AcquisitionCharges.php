@@ -14,8 +14,9 @@ final readonly class AcquisitionCharges
 
     public static function from(AttemptEvidence $attempt, Evidence $facts, \DateTimeImmutable $now): ?self
     {
-        $history = $facts->historyComplete && ($attempt->historyAcceptance?->covers($attempt, $now) ?? false);
-        if (!$history && (!$attempt->executionFacts || $attempt->providerReference === null)) { return null; }
+        $history = $attempt->historyAcceptance?->covers($attempt, $now) ?? false;
+        $captured = $attempt->executionFacts !== null && $attempt->providerReference !== null;
+        if (!$history && !$captured) { return null; }
         try { $attempt->executionFacts?->requireAttempt($attempt); }
         catch (\InvalidArgumentException) { return null; }
 
@@ -26,8 +27,8 @@ final readonly class AcquisitionCharges
                 'currency'=>$order->charge->currency, 'processed_at'=>$order->processedAt->value];
         }
         if ($orders === []) { return null; }
-        if (count($orders) !== count($facts->candidates)) { return null; }
-        return new self(count($orders) === 1 ? AcquisitionChargeMatch::Exact : AcquisitionChargeMatch::Ambiguous, $orders);
+        $unique = count($orders) === 1 && count($facts->candidates) === 1 && ($captured || $facts->historyComplete);
+        return new self($unique ? AcquisitionChargeMatch::Exact : AcquisitionChargeMatch::Ambiguous, $orders);
     }
 
     private static function matches(AttemptEvidence $attempt, OrderEvidence $order): bool

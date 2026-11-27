@@ -144,6 +144,14 @@ final class OperationAttempts
         return self::facts($token->operationId, $step, $row);
     }
 
+    /** A negative answer must see any retained proof, even if its payload is unreadable. */
+    public static function hasAcquisitionSettlementEvidence(AttemptToken $token, bool $lock = false): bool
+    {
+        return DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $token->operationId, 'attempt_id' => $token->attemptId])
+            ->whereIn('kind', ['observation', 'acquisition_charge', 'held', 'settlement', 'answer'])
+            ->when($lock, fn ($q) => $q->lockForUpdate())->first(['id']) !== null;
+    }
+
     /** Decrypted evidence of one kind for an attempt, or for the operation when no attempt is given. */
     public static function evidence(int $operationId, ?int $attemptId, string $kind): ?array
     {

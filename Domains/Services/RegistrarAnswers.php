@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence,DateEvidence,ExpiryPrecision,RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter, RetainedAcquisition, Transition};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationWriter, RetainedAcquisition, Transition};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAttempt, RenewalCompletion, RenewalDecision, RenewalProof};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 /** An account-specific support answer is evidence, never permission to resend a purchase. */
@@ -70,6 +70,15 @@ class RegistrarAnswers
             &&$a->readProof()===null&&!isset($op->cost['actual'])&&$op->confirmed_expires_at===null&&!RenewalCompletion::capturedChargeHeld($op)
             &&(int)($op->policy['renewal_polls']??0)>=OperationReconciliation::POLL_LIMIT;
     }
+    public static function acquisitionProof(Operation $op): bool
+    {
+        if ($op->action !== 'register') { return false; }
+        $facts = $op->acquisitionAttemptFacts();
+        return $facts?->sealed()
+            ? OperationAttempts::hasAcquisitionSettlementEvidence($facts->token)
+            : RegistrarCheck::legacyObservation($op) !== null;
+    }
+
     /** A check of this renewal attempt saw a matching charge or a later expiry, or the domain already shows one. Not processed is then refused. */
     public static function renewalProof(Operation $op,Domain $d): bool
     {

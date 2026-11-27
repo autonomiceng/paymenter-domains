@@ -138,6 +138,9 @@ class Operation extends Model
         return $this->acquisitionRow ??= OperationAttempts::latestAcquisitions([$id])[$id] ?? [];
     }
 
+    public function acquisitionAttemptFacts(): ?AttemptFacts
+    { return $this->acquisitionRow($this->attributes)['facts'] ?? null; }
+
     private function acquisition(array $row): ?AcquisitionAttempt
     {
         if (!($facts = $this->acquisitionRow($row))) { return null; }
