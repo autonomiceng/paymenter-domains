@@ -204,16 +204,9 @@ final class OperationClaims
     {
         $prior = AcquisitionAttempt::of((int) $op->id, $op->action, true);
         $continuation = AcquisitionResult::continuation($op, true);
-        $now = $this->clock->now();
-        if (!$prior || AcquisitionAttempt::conflicts($op) || $prior->sealed()
-            || !OperationAttempts::replaceable($prior->facts, $now, lock: true)) { return null; }
-        if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $prior->facts) !== AcquisitionFundsCutoff::Proceed) { return null; }
-        if (ExecutionWindow::pastTransferCutoff($op, $now)) {
-            $this->holdRecovered($op, $prior, 'transfer_setup_review_required', $now);
-            return null;
-        }
+        if (!$prior || AcquisitionAttempt::conflicts($op) || $prior->sealed()) { return null; }
 
-        $expired = AcquisitionRetryProof::expiredClaim($op, $now);
+        $failure = null;
         try {
             AcquisitionDispatch::requireNoSendEvidence($op);
             [$binding, $paid] = $this->authority->validate($op, $domain, $all, $funding, $server, $account);
@@ -222,9 +215,19 @@ final class OperationClaims
             if ($op->request_fingerprint !== $digest || ($op->funding['claim'] ?? null) !== $paid) {
                 throw new \DomainException('Recovered acquisition authority changed.');
             }
-        } catch (\DomainException $error) {
-            if ($expired) {
-                $reason = $error instanceof RuntimeIneligible && $error->reason === RuntimeReason::ProcessingOff
+        } catch (\DomainException $failure) {}
+        $now = $this->clock->now();
+        if (!OperationAttempts::replaceable($prior->facts, $now, lock: true)
+            || AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $prior->facts) !== AcquisitionFundsCutoff::Proceed) {
+            return null;
+        }
+        if (ExecutionWindow::pastTransferCutoff($op, $now)) {
+            $this->holdRecovered($op, $prior, 'transfer_setup_review_required', $now);
+            return null;
+        }
+        if ($failure !== null) {
+            if (AcquisitionRetryProof::expiredClaim($op, $now)) {
+                $reason = $failure instanceof RuntimeIneligible && $failure->reason === RuntimeReason::ProcessingOff
                     ? 'processing' : 'claim_authority_invalid';
                 $this->holdRecovered($op, $prior, $reason, $now);
             }

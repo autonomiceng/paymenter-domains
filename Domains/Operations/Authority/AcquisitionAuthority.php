@@ -96,7 +96,8 @@ final readonly class AcquisitionAuthority
         ?AttemptFacts $worker = null): AcquisitionFundsCutoff
     {
         if (!FundsWaits::deadlinePassed($continuation->shortfallAt, $now)) { return AcquisitionFundsCutoff::Proceed; }
-        if ($worker === null || !in_array($op->state, ['running', 'uncertain'], true) || $op->completed_at !== null
+        if ($worker === null || $worker->token->operationId !== (int) $op->id
+            || !in_array($op->state, ['running', 'uncertain'], true) || $op->completed_at !== null
             || AcquisitionAttempt::conflicts($op) || !AcquisitionRetryProof::unsealed($op)
             || !OperationAttempts::unsealedUnsent($worker, true)
             || (!$worker->current && !OperationAttempts::releasedUnsent($worker, true))) {
