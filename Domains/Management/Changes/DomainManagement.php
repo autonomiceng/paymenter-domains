@@ -21,8 +21,8 @@ final class DomainManagement
     /** available() refused because the account's own switch for these changes is Off. */
     public const SWITCH_OFF = 'switch';
     private readonly ManagementAuthority $attempts;
-    private ?array $grant = null;
-    private ?array $receiptGrant = null;
+    private ?ManagementGrant $grant = null;
+    private ?ManagementGrant $receiptGrant = null;
     public function __construct(private readonly AccountBindings $bindings, private readonly Clock $clock,
         private readonly WriteFeatures $features = new WriteFeatures, private readonly bool $accepted = false,
         private readonly int $intervalSeconds = 25, private readonly bool $testManagement = false, private readonly ?\Closure $localCheck = null) { $this->attempts = new ManagementAuthority($clock); }
@@ -98,10 +98,10 @@ final class DomainManagement
                 $op->update(['payload' => $prepared]);
                 return [$this->descriptor($op, $l), HoldingLocks::take($l['domain'], (int)$op->authorized_by)['stamp'], self::evidence($l['domain'])];
             });
-            $this->grant = [$r, $ctx, $driver, $stamp, $seed, $id, $token];
+            $this->grant = new ManagementGrant($r, $ctx, $driver, $stamp, $seed, $id, $token);
             try { $result = $driver->perform($r, $ctx, $this); }
             finally {
-                $read = $this->receiptGrant[5] ?? null;
+                $read = $this->receiptGrant?->read;
                 $this->grant = $this->receiptGrant = null;
             }
             if (!$read) { throw new \DomainException('Management send was not sealed.'); }
@@ -138,7 +138,8 @@ final class DomainManagement
             $unsent = $sealed && $op->funding_basis === 'non_billable_management' && $b->registrarKey === 'namesilo'
                 && $driver->bindsTo($b) && $driver->unconsumed($id);
             $cap = $this->testManagement && (!$sealed && EnomTestCalls::refusedSince($refusals)
-                || $error instanceof EnomTestCallLimit && EnomTestWriteReservation::unconsumed($b, 'management', $id));
+                || $op->funding_basis === 'non_billable_management' && $error instanceof EnomTestCallLimit
+                    && EnomTestWriteReservation::unconsumed($b, 'management', $id));
             if ($unsent || $cap) {
                 $this->attempts->stop($op, $token, refusal: $unsent ? 'unsent' : 'test_capacity');
                 $op->update(['state'=>'held', 'safe_code'=>$unsent ? 'management_definitely_unsent' : 'enom_test_management_call_cap']);
@@ -158,32 +159,32 @@ final class DomainManagement
     public function consume(ManagementRequest $r, RequestContext $ctx, ManagementProtocol $driver): void
     {
         $g = $this->grant; $this->grant = null;
-        if (!$g || $g[0] !== $r || $g[1] !== $ctx || $g[2] !== $driver) { throw new \DomainException('No live management grant.'); }
-        $read = $this->locked($g[4], $g[5], $driver, function ($l, $op) use ($g, $ctx, $r, $driver): ReadToken {
+        if (!$g?->matches($r, $ctx, $driver)) { throw new \DomainException('No live management grant.'); }
+        $read = $this->locked($g->seed, $g->operationId, $driver, function ($l, $op) use ($g, $ctx, $r, $driver): ReadToken {
             $this->features->requireManagement(); $this->peers($l, $op->id, $op->policy['management']['correction'] ?? null, $op->action);
-            if (!$this->accepted || $l['stamp'] !== $g[3] || $ctx->deadline < $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+25 seconds')
+            if (!$this->accepted || $l['stamp'] !== $g->stamp || $ctx->deadline < $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+25 seconds')
                 || $op->state !== 'running' || ($op->attempt['seal'] ?? null) !== 'absent') { throw new \DomainException('Management authority changed.'); }
             $driver->requireAtSeal($r);
             $ctx->requireReservedCapacity();EnomTestWriteReservation::prepare($r->binding,'management');
             if($op->action==='auth_code_email'){foreach($l['operations'] as $peer){$at=$peer->attempt['dispatch_attempted_at']??null;if($peer->id!==$op->id&&$peer->action===$op->action&&is_string($at)&&new \DateTimeImmutable($at)>$this->clock->now()->modify('-10 minutes')){throw new \DomainException('Transfer code cooldown active.');}}}
             $this->noInflight($op); $funding=$op->funding_basis==='paid_invoice'?RefundPayment::requireCurrent($op,$l):[];
             if(!Cache::add('domains-write-slot:'.$op->account_fingerprint,true,$this->intervalSeconds)){throw new WriteHeld('write_rate_limited');}
-            return $this->attempts->seal($op, $g[6], $ctx, $funding);
+            return $this->attempts->seal($op, $g->attempt, $ctx, $funding);
         });
-        $this->receiptGrant = [$r, $ctx, $driver, $g[4], $g[5], $read];
+        $this->receiptGrant = $g->sealed($read);
     }
     public function acknowledge(ManagementRequest $r, RequestContext $ctx, ManagementProtocol $driver, array $facts): void
     {
         $g=$this->receiptGrant;
-        if(!$g||$g[0]!==$r||$g[1]!==$ctx||$g[2]!==$driver){throw new \DomainException('No live acknowledgement grant.');}
-        $this->locked($g[3],$g[4],$driver,function($l,$op)use($facts,$g):void{
+        if (!$g?->read || !$g->matches($r, $ctx, $driver)){throw new \DomainException('No live acknowledgement grant.');}
+        $this->locked($g->seed, $g->operationId, $driver,function($l,$op)use($facts,$g):void{
             if(!in_array($op->state,['running','uncertain'],true)||($op->attempt['seal']??null)!=='sealed'||array_key_exists('management_ack',$op->attempt)){throw new \DomainException('Acknowledgement unavailable.');}
             $valid=$op->action==='auth_code_email' ? $facts===['email_accepted'=>true] : in_array($op->action,['privacy_purchase','privacy_renew'],true)&&count($facts)===1&&is_string($facts['order_id']??null)&&preg_match('/^[1-9][0-9]{0,19}$/D',$facts['order_id']);
             // NameSilo is the only accepted durable profile creator; no generic inventory acknowledgement.
             if($op->action==='contact_profile'&&$op->registrar_key==='namesilo'){$valid=count($facts)===1&&is_string($facts['profile_id']??null)&&preg_match('/^[1-9][0-9]{0,19}$/D',$facts['profile_id']);}
             if($op->action==='dns' && isset($op->policy['management']['sequence_index'])) { $valid=count($facts)===1 && is_string($facts['record_id']??null) && preg_match('/^[a-zA-Z0-9]{1,128}$/D',$facts['record_id']); }
             if(!$valid){throw new \DomainException('Invalid management acknowledgement.');}
-            $this->attempts->acknowledge($op, $g[5], $facts);
+            $this->attempts->acknowledge($op, $g->read, $facts);
         },false,false);
     }
     private function descriptor(Operation $op, array $l): ManagementRequest

@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\{Crypt,DB,Log,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter, Transition};
-use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\{AcquisitionClosure, UnpaidAcquisitionProof};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\{ReceiptReturns, RefundPayment};
 /** Owned acquisition closure. Every decision takes the native W/A0 prefix before domain/operations. */
 final readonly class AcquisitionRetirement
@@ -104,6 +104,7 @@ final readonly class AcquisitionRetirement
             UnpaidAcquisitionProof::attempt($op)['terminal']) !== Transition::Applied) {
             throw new \DomainException('Terminal proof already recorded.');
         }
+        $op->reloadAcquisitionAttempt();
         $op->update(['state'=>'rejected','safe_code'=>UnpaidAcquisitionProof::CODE,'completed_at'=>$this->clock->now(),
             'policy'=>[...($op->policy??[]),'unpaid_retirement'=>$audit]]);
         $d->update(['status'=>'cancelled']);
@@ -272,7 +273,7 @@ final readonly class AcquisitionRetirement
     {
         try{$money=($projection??InvoiceMoney::project((int)$op->invoice_id,$transactions,$peers))['attentionFingerprint']??'unreadable';}
         catch(\Throwable){$money='unreadable';}
-        $basis=[$service,$invoice,self::payments($transactions),$money];
+        $basis=[$service,$invoice,AcquisitionClosure::payments($transactions),$money];
         // The native guard retains each reactivation before its status SQL.
         if($service==='active'&&isset($d->renewal_policy['late_payment_service_event'])){$basis[]=$d->renewal_policy['late_payment_service_event'];}
         return hash('sha256',json_encode($basis,JSON_THROW_ON_ERROR));
@@ -298,18 +299,9 @@ final readonly class AcquisitionRetirement
     private static function needsSnapshot($op,?string $service): bool
     {return $service==='cancelled'&&$op->safe_code!==UnpaidAcquisitionProof::CODE&&!isset($op->funding['refund'])&&(!isset($op->policy['native_acquisition_closure'])||!isset($op->policy['native_acquisition_cancelled_at']));}
     /** Caller already owns the native invoice/service prefix and the operation lock. */
-    public static function retainClosure(\Paymenter\Extensions\Servers\Domains\Models\Operation $op,\Illuminate\Support\Collection $transactions,?string $invoice,\DateTimeInterface $at,bool $cancelled=false): void
-    {
-        if(!in_array($op->action,['register','transfer'],true)||$op->safe_code===UnpaidAcquisitionProof::CODE
-            ||isset($op->funding['refund'])){return;}
-        $policy=$op->policy??[];
-        if(!isset($policy['native_acquisition_closure'])){$policy['native_acquisition_closure']=[
-            'at'=>$at->format(DATE_ATOM),'payments'=>self::payments($transactions),'invoice_status'=>$invoice];}
-        if($cancelled&&!isset($policy['native_acquisition_cancelled_at'])){$policy['native_acquisition_cancelled_at']=$at->format(DATE_ATOM);}
-        if($policy!==($op->policy??[])){$op->update(['policy'=>$policy]);}
-    }
-    private static function payments(\Illuminate\Support\Collection $transactions): array
-    {return $transactions->map(fn($t)=>[(int)$t->id,$t->status->value,(string)$t->amount])->values()->all();}
+    public static function retainClosure(Operation $op, \Illuminate\Support\Collection $transactions, ?string $invoice,
+        \DateTimeInterface $at, bool $cancelled = false): void
+    { AcquisitionClosure::retain($op, $transactions, $invoice, $at, $cancelled); }
     private static function activity($op,?string $service,?string $invoice,\Illuminate\Support\Collection $transactions,?\Illuminate\Support\Collection $observedPeers=null,?array $projection=null): bool
     {
         if($service==='active'&&(isset($op->policy['native_acquisition_cancelled_at'])||!isset($op->funding['refund_authorization'])||isset($op->funding['refund']))){return true;}
@@ -320,7 +312,7 @@ final readonly class AcquisitionRetirement
             $closure=$op->policy['native_acquisition_closure']??null;
             if(is_array($closure)){
                 $activity=ReceiptReturns::activityTransactions($op,$transactions);
-                return self::payments($activity)!==$closure['payments']||($invoice==='paid'&&$closure['invoice_status']!=='paid');
+                return AcquisitionClosure::payments($activity)!==$closure['payments']||($invoice==='paid'&&$closure['invoice_status']!=='paid');
             }
             if((isset($op->funding['refund'])||isset($op->funding['late_credits']))&&!ReceiptReturns::malformed($op)&&ReceiptReturns::outstanding($op)===0){
                 $credited=RefundPayment::lateCredited($op,$observedPeers);

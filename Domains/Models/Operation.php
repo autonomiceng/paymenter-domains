@@ -23,6 +23,7 @@ class Operation extends Model
     private ?array $acquisitionRow = null;
     private AcquisitionAttempt|\Throwable|null $acquisitionAttempt = null;
     private bool $acquisitionLoaded = false;
+    private ?array $terminalProof = null;
     private bool $noAcquisitionStep = false;
     private bool $validatingUpdate = false;
 
@@ -80,7 +81,8 @@ class Operation extends Model
     private function acquisitionTerminal(array $row): array
     {
         if (!isset($row['id']) || ($row['state'] ?? null) !== 'rejected' || !AcquisitionAttempt::key($row['action'] ?? '')) { return []; }
-        $proof = OperationAttempts::evidence((int) $row['id'], null, 'terminal');
+        $proof = $this->terminalProof ??= OperationAttempts::evidence((int) $row['id'], null, 'terminal') ?? [];
+        if ($proof === OperationAttempts::UNREADABLE) { throw new \Illuminate\Contracts\Encryption\DecryptException('Acquisition terminal proof is unreadable.'); }
         return in_array($proof['outcome'] ?? null, ['definitely_unsent', 'unpaid_closed'], true)
             ? ['seal'=>'absent', 'send_state'=>'definitely_unsent', 'disposition'=>'rejected',
                 'rejection_basis'=>'definitely_unsent', 'terminal'=>$proof['evidence']]
@@ -151,8 +153,12 @@ class Operation extends Model
     /** Batch the attempt rows for staff readers. Date-only readers need no encrypted evidence. */
     public static function loadAcquisitionAttempts(iterable $operations, bool $withEvidence = true, bool $lock = false): void
     {
-        $pending = [];
+        $pending = $terminal = [];
         foreach ($operations as $op) {
+            if ($withEvidence && $op->terminalProof === null && $op->state === 'rejected' && $op->getRawOriginal('id') !== null
+                && AcquisitionAttempt::key((string) $op->getRawOriginal('action')) !== null) {
+                $terminal[(int) $op->id][] = $op;
+            }
             if ($op->noAcquisitionStep) { continue; }
             if (!$op->acquisitionLoaded && $op->getRawOriginal('id') !== null
                 && AcquisitionAttempt::key((string) $op->getRawOriginal('action')) !== null) {
@@ -168,6 +174,10 @@ class Operation extends Model
                 $op->acquisitionLoaded = $withEvidence;
             }
         }
+        $proofs = OperationAttempts::evidenceMany(array_keys($terminal), ['terminal'], $lock);
+        foreach ($terminal as $id => $models) {
+            foreach ($models as $op) { $op->terminalProof = $proofs[$id][0]['terminal'] ?? []; }
+        }
     }
 
     /** Called after a writer transition on this model's locked operation. */
@@ -176,6 +186,7 @@ class Operation extends Model
         $this->acquisitionRow = null;
         $this->acquisitionAttempt = null;
         $this->acquisitionLoaded = false;
+        $this->terminalProof = null;
         $this->noAcquisitionStep = false;
     }
 

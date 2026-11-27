@@ -44,6 +44,7 @@ final class StaffOperationWrites
     {
         try { $p=$op->policy['management']??null; $seal=$op->attempt['seal']??null; } catch (\Throwable) { return false; }
         return is_array($p)&&!array_intersect_key($p,array_flip(['sequence','sequence_parent','prerequisite']))
+            &&!($op->managementAttempt()?->facts?->reading(app(Clock::class)->now()) ?? false)
             &&$op->funding_basis==='non_billable_management'&&$op->invoice_id===null&&$op->state==='uncertain'&&$seal==='sealed'&&$op->lease_expires_at===null;
     }
     /** Records the final failed result. Sends nothing; the domain's real settings still come from the normal reads. */

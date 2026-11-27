@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Operations\Reconciliation;
 
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence, Evidence, OrderEvidence};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionChargeMatch;
 use Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence;
 
 /** The charge side of a read. Ownership and expiry are verified separately for completion. */

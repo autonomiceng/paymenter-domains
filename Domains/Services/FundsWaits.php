@@ -108,6 +108,7 @@ final class FundsWaits
                 if($proof->funding_basis==='complimentary'){ComplimentaryInvoices::require($proof,$l);}else{RefundPayment::requireCurrent($proof,$l);}
                 if(isset($proof->attempt['claim_key'])&&!OperationTerminalProof::unsentClaim($proof,$l['domain'],$l['operations'])){throw new \DomainException('Funds hold outcome needs review.');}
                 OperationTerminalProof::recordUnsent($proof, $l['domain'], $now);
+                $current->reloadAcquisitionAttempt();
                 $current->update(['state'=>'rejected','safe_code'=>'registrar_balance_insufficient','completed_at'=>$now]);
                 AcquisitionRetirement::retainClosure($current,$l['transactions']->where('invoice_id',$current->invoice_id),
                     $l['invoices']->firstWhere('id',$current->invoice_id)?->status,$now);

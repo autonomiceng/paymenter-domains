@@ -5,18 +5,16 @@ namespace Paymenter\Extensions\Servers\Domains\Operations\Authority;
 
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\{Crypt, DB};
-use Paymenter\Extensions\Servers\Domains\Operations\Reconciliation\AcquisitionCharges;
 
 trait WritesOperationEvidence
 {
-    public function recordAcquisitionCharges(ReadToken $read, AcquisitionCharges $charges): Transition
+    public function recordAcquisitionCharges(ReadToken $read, AcquisitionChargeMatch $match, array $orders): Transition
     {
         self::requireTransaction();
         if (!$this->ownsRead($read)) { return Transition::Stale; }
         $a = $read->attempt;
-        $match = $charges->match->value;
         return $this->append($a->operationId, $a->attemptId, 'acquisition_charge', 'registrar_read',
-            $match, ['orders'=>$charges->orders], 'charge:'.$match) ? Transition::Applied : Transition::Stale;
+            $match->value, ['orders'=>$orders], 'charge:'.$match->value) ? Transition::Applied : Transition::Stale;
     }
 
     /**

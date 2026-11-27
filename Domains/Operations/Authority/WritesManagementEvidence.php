@@ -55,6 +55,8 @@ trait WritesManagementEvidence
     /** A reservation counts before the provider call, including when the read fails or the worker stops. */
     public function openManagementRead(AttemptToken $token, \DateTimeImmutable $until, array $reservation): ReadToken|Transition
     {
+        self::requireTransaction();
+        if (!OperationAttempts::attempt($token, true)?->sealed() || $this->managementSettled($token)) { return Transition::Stale; }
         $read = $this->openRead($token, $until);
         if ($read instanceof ReadToken && !$this->append($token->operationId, $token->attemptId,
             ManagementEvidenceKind::ReserveRead->value, 'local', $reservation['mode'], $reservation, 'read:'.$read->token)) {
@@ -66,7 +68,7 @@ trait WritesManagementEvidence
     public function finishManagementRead(ReadToken $read, array $proof, ?string $settlement): Transition
     {
         self::requireTransaction();
-        if (!$this->ownsRead($read)) { return Transition::Stale; }
+        if (!$this->ownsRead($read) || $this->managementSettled($read->attempt)) { return Transition::Stale; }
         $a = $read->attempt;
         if ($settlement !== null) {
             // This same row owns the readback and its one final decision.
@@ -85,5 +87,13 @@ trait WritesManagementEvidence
         if (!$facts?->current || !$facts->sealed() || $facts->reading($this->clock->now())) { return Transition::Stale; }
         return $this->append($token->operationId, $token->attemptId, 'management_failed', 'staff_review',
             'failed', $approval, 'settlement') ? Transition::Applied : Transition::Stale;
+    }
+
+    private function managementSettled(AttemptToken $token): bool
+    {
+        return DB::table(OperationSchema::EVIDENCE)->where(['operation_id'=>$token->operationId, 'attempt_id'=>$token->attemptId])
+            ->where(fn ($q) => $q->where('kind', 'management_failed')->orWhere(fn ($read) =>
+                $read->where('kind', ManagementEvidenceKind::Readback->value)->whereIn('outcome', ['succeeded', 'rejected'])))
+            ->lockForUpdate()->first(['id']) !== null;
     }
 }

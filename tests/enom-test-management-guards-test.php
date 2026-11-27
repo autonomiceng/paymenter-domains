@@ -52,7 +52,7 @@ Reservation::run($b,'management',(int)$op->id,function()use($b,$op,$valid,$refus
     $op->state='held';$op->safe_code='enom_test_management_call_cap';$op->attempt=$valid;
     commerceReject(fn()=>ManagementEvidence::guard($op)); // no original sealed transition
     $op->attempt=['seal'=>'sealed','send_state'=>'possibly_sent'];$op->syncOriginalAttribute('attempt');
-    $op->attempt=$valid;ManagementEvidence::guard($op);
+    $op->attempt=$valid;commerceReject(fn()=>ManagementEvidence::guard($op)); // Only the writer may retain the proof.
     foreach(['management_test_unsent'=>false,'seal'=>'absent','send_state'=>'possibly_sent','management_reads'=>null,'management_ack'=>null] as $key=>$value){$op->attempt=[$key=>$value]+$valid;commerceReject(fn()=>ManagementEvidence::guard($op));}
     $op->attempt=$valid;expect(ManagementEvidence::idle($op),'Only clean nonfinancial proof is idle');
     foreach(['management_reads'=>[],'management_ack'=>[]] as $key=>$value){$op->attempt=[$key=>$value]+$valid;expect(!ManagementEvidence::idle($op),'Read or acknowledgement cannot be proven unsent');}

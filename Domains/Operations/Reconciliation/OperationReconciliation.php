@@ -234,7 +234,7 @@ final class OperationReconciliation
     {
         if ($op->state !== 'rejected' && $read->token && $this->attempts->ownsRead($read->token)
             && !$observation->proof && $observation->charges) {
-            $this->attempts->recordAcquisitionCharges($read->token, $observation->charges);
+            $this->attempts->recordAcquisitionCharges($read->token, $observation->charges->match, $observation->charges->orders);
         }
         $domain = $observation->facts?->domain;
         $attempt = $read->attempt;

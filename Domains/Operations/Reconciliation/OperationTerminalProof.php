@@ -46,6 +46,7 @@ final class OperationTerminalProof
         ]) !== Transition::Applied) {
             throw new \DomainException('Terminal proof already recorded.');
         }
+        $op->reloadAcquisitionAttempt();
     }
     public static function safe(Operation $op, Domain $domain): bool
     {

@@ -21,8 +21,12 @@ final readonly class ManagementAuthority
     public function claim(Operation $op, \DateTimeImmutable $until): AttemptToken
     {
         $history = $op->managementAttempt() === null ? $op->attempt['management_deferrals'] ?? [] : [];
-        $token = $this->writer->claim((int) $op->id, StepKey::management(), $until,
-            $history ? ['management_preparation'=>['management_deferrals'=>$history]] : null);
+        $approved = $op->policy['management'];
+        $token = $this->writer->claim((int) $op->id, StepKey::management(), $until, [
+            'management_approval'=>['actor_id'=>(int) $op->authorized_by, 'generation'=>$op->authority_generation,
+                'input_digest'=>hash('sha256', json_encode($approved['input'], JSON_THROW_ON_ERROR))],
+            ...($history ? ['management_preparation'=>['management_deferrals'=>$history]] : []),
+        ]);
         if (!$token instanceof AttemptToken) { throw new \DomainException('Management attempt already exists.'); }
         self::clearLegacy($op);
         return $token;
@@ -30,9 +34,18 @@ final readonly class ManagementAuthority
 
     public function seal(Operation $op, AttemptToken $token, RequestContext $context, array $funding): ReadToken
     {
+        $approval = OperationAttempts::evidence($token->operationId, $token->attemptId, 'claim')['evidence']['management_approval'] ?? null;
+        if ($token->operationId !== (int) $op->id || $approval !== [
+            'actor_id'=>(int) $op->authorized_by, 'generation'=>$op->authority_generation,
+            'input_digest'=>hash('sha256', json_encode($op->policy['management']['input'], JSON_THROW_ON_ERROR)),
+        ]) {
+            throw new \DomainException('Management approval changed.');
+        }
         $digest = hash('sha256', json_encode([$op->operation_key, $op->authorized_by, $op->authority_generation,
             $op->account_fingerprint, $op->payload], JSON_THROW_ON_ERROR));
-        $terms = new SealTerms($op->transition_revision, $digest, new Money($op->amount, $op->currency), 'management', $context->deadline);
+        $cost = $funding ? $op->payload['privacy_terms']['cost'] ?? null : '0.00';
+        if (!is_string($cost)) { throw new \DomainException('Management spending terms unavailable.'); }
+        $terms = new SealTerms($op->transition_revision, $digest, new Money($cost, $op->currency), 'management', $context->deadline);
         if ($this->writer->seal($token, $terms, $funding ? ['funding'=>$funding] : null) !== Transition::Applied
             || $this->writer->consumeGrant($token) !== Transition::Applied) {
             throw new \DomainException('Management claim changed.');
