@@ -157,9 +157,11 @@ final class OperationReconciliation
         $historyRead=!$callCapBlocked&&$attempt->query->action->value!=='transfer'&&$attempt->replyLost()
             &&($attempt->historyAcceptance?->covers($attempt,$this->clock->now())??false)&&($check->context?->exchanges()??0)>0;
         if (!$callCapBlocked) {
-            return $this->claims->locked($id,function($op,$domain)use ($read, $readStarted, $historyRead, $attempt, $check, $scan, $observed):Operation {
+            return $this->claims->locked($id,function($op,$domain,$all,$funding,$server,$account)use ($read, $readStarted, $historyRead, $attempt, $check, $scan, $observed):Operation {
                 if (!$this->matchesRead($op, $domain, $read->stamp, $read->token)) { return $op; }
-                $this->retainPositiveObservation($read, $observed->facts);
+                if ($account->account_fingerprint === $attempt->binding->fingerprint) {
+                    $this->retainPositiveObservation($read, $observed);
+                }
                 $policy=TransferPolling::finished($op->policy,$readStarted);
                 if ($read->watch && $readStarted) {
                     $result = $read->followup && ($check->context?->completedReads() ?? 0) > 0 ? 'unknown' : 'unavailable';
@@ -194,7 +196,6 @@ final class OperationReconciliation
         return $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($read, $observation, $check, $readStarted): Operation {
             $attempt = $read->attempt;
             $token = $read->token;
-            $facts = $observation->facts;
             if (!$this->matchesRead($op, $domain, $read->stamp, $token)) { return $op; }
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account, $read->followup);
@@ -204,7 +205,7 @@ final class OperationReconciliation
                 if(TransferPolling::applies($op)){$p=TransferPolling::finished($op->policy,$readStarted);$p['reconciliation']['staff_alert']=true;$p['reconciliation']['reason']='transfer_authority_changed';$op->update(['policy'=>$p]);}
                 return $op;
             }
-            $this->retainPositiveObservation($read, $facts);
+            $this->retainPositiveObservation($read, $observation);
             $policy = TransferPolling::finished($op->policy,$readStarted); $policy['reconciliation']['polls'] = ($policy['reconciliation']['polls'] ?? 0) + 1; $check->counted = true;
             if ($observation->scan) { $policy['history_scan'] = $observation->scan->saved(); }
             $policy['reconciliation']['staff_alert']=true;
@@ -227,17 +228,17 @@ final class OperationReconciliation
             return $op;
         });
     }
-    /** Matching domain evidence can rule out a negative answer before there is enough proof to settle. */
-    private function retainPositiveObservation(AcquisitionRead $read, ?Evidence $facts): void
+    /** The caller already checked the matching read. Its deadline governs settlement and when the proof was observed. */
+    private function retainPositiveObservation(AcquisitionRead $read, AcquisitionObservation $observation): void
     {
-        $domain = $facts?->domain;
+        $domain = $observation->facts?->domain;
         $attempt = $read->attempt;
-        if (!$read->token || !$domain || !$domain->binding->matches($attempt->binding)
-            || $domain->name !== $attempt->query->name || !$this->attempts->ownsRead($read->token)) { return; }
+        if (!$read->token || !$observation->observedAt || !$domain || !$domain->binding->matches($attempt->binding)
+            || $domain->name !== $attempt->query->name) { return; }
         $expiry = $domain->expiry?->value;
         $expected = $attempt->expectedExpiry;
         if ($domain->owned === true || ($expiry !== null && $expected && substr($expiry, 0, 10) === substr($expected->value, 0, 10))) {
-            $this->attempts->recordObservation($read->token->attempt, ['owned' => $domain->owned, 'expiry' => $expiry], $this->clock->now());
+            $this->attempts->recordObservation($read->token->attempt, ['owned' => $domain->owned, 'expiry' => $expiry], $observation->observedAt);
         }
     }
 

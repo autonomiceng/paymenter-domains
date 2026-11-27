@@ -10,7 +10,7 @@ final readonly class AcquisitionObservation
 {
     public function __construct(public ?HistoryScan $scan = null, public ?Evidence $facts = null, public bool $covered = false,
         public ?array $proof = null, public ?NameserverEvidence $nameservers = null, public bool $transferConflict = false,
-        public bool $chargeAnomaly = false) {}
+        public bool $chargeAnomaly = false, public ?\DateTimeImmutable $observedAt = null) {}
 
     public function transfer(): TransferStatus { return $this->facts?->transfer ?? TransferStatus::Unknown; }
 
@@ -32,6 +32,6 @@ final readonly class AcquisitionObservation
         $conflict = in_array($transfer, [TransferStatus::Rejected, TransferStatus::NeedsAction], true) && ($owned || $count > $allowed);
         $proof = $read->followup && $chargeAnomaly ? null : ReconciliationEvidence::completion($attempt, $facts, $now);
         return new self($facts->historyScan, $facts, $covered, $proof, $facts->domain?->nameservers ?? $read->requestedNameservers,
-            $conflict, $chargeAnomaly);
+            $conflict, $chargeAnomaly, $now);
     }
 }

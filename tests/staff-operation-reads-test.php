@@ -248,7 +248,22 @@ $observation->fault='send_guard';$reconcile->run($lost->id);$observation->fault=
 same(false,$lost->fresh()->policy['status_check']['read_attempted'],'A read refused before sending is not a read of this attempt');
 $unread($lost,'A read refused before sending');
 $before=[$lost->attempt,$lost->funding,$lost->domain->reservation_name,$credit()];
+$observedAt = $clock->now();
+$readStarted = count($observation->calls);
+$delayed = false;
+DB::listen(static function ($query) use ($clock, $observation, $readStarted, &$delayed): void {
+    if (!$delayed && count($observation->calls) > $readStarted && DB::transactionLevel() > 0
+        && str_contains($query->sql, 'from "users"')) {
+        $delayed = true;
+        $clock->instant = $clock->now()->modify('+'.OperationReconciliation::READ_SECONDS.' seconds');
+    }
+});
 $reconcile->run($lost->id);
+expect($delayed, 'The finishing lock crosses the read deadline after the registrar replied');
+$sealed = OperationAttempts::sealed((int) $lost->id, new StepKey('register', 1));
+$proof = OperationAttempts::evidence((int) $lost->id, $sealed->token->attemptId, 'observation');
+same([true, $observedAt->getTimestamp()], [$proof['evidence']['owned'] ?? null, isset($proof['observed_at']) ? strtotime($proof['observed_at']) : null],
+    'Registrar ownership observed in time remains on the sealed attempt after the finishing lock is delayed');
 expect(in_array(ReadCommand::Info,$observation->calls,true),'Automatic recovery reads the domain before staff ask for a case');
 expect(!in_array(ReadCommand::Order,$observation->calls,true)&&!in_array(ReadCommand::Orders,$observation->calls,true),'Missing order identity and unaccepted history never allow an order search');
 $lost->refresh();
