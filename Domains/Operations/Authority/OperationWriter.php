@@ -169,21 +169,15 @@ final readonly class OperationWriter
      */
     public function consumeGrant(AttemptToken $token): Transition
     {
-        return $this->spendSend($token) !== null ? Transition::Applied : Transition::Stale;
-    }
-
-    /** Returns the frozen handoff limit only to the transaction that spent this attempt. */
-    public function spendSend(AttemptToken $token): ?\DateTimeImmutable
-    {
         self::requireTransaction(); $facts = OperationAttempts::attempt($token, true);
         if (!$facts?->current || $facts->released || !$facts->sealed() || $facts->claimUntil === null || $facts->dispatchUntil === null
-            || $facts->grantConsumedAt !== null || $facts->sendState !== SendState::PossiblySent) { return null; }
+            || $facts->grantConsumedAt !== null || $facts->sendState !== SendState::PossiblySent) { return Transition::Stale; }
         if (DB::table(OperationSchema::EVIDENCE)->where(['attempt_id' => $token->attemptId, 'kind' => 'settlement'])
-            ->lockForUpdate()->first(['id'])) { return null; }
+            ->lockForUpdate()->first(['id'])) { return Transition::Stale; }
         $now = OperationAttempts::at($this->clock->now());
         $updated = DB::table(OperationSchema::ATTEMPTS)->where('id', $token->attemptId)->whereNull('grant_consumed_at')
             ->where('dispatch_until', '>', $now)->update(['grant_consumed_at' => $now]);
-        return $updated === 1 ? $facts->dispatchUntil : null;
+        return $updated === 1 ? Transition::Applied : Transition::Stale;
     }
 
     /** Records the sealed attempt's one wire outcome. Only a proved local refusal makes it definitely unsent. */

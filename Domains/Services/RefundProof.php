@@ -14,12 +14,12 @@ use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisition
 final class RefundProof
 {
     /** Sent transfer settlement is separate from definitely-unsent proof and grants no retry authority. */
-    public static function requireReturnable(Operation $op,Domain $d): void
+    public static function requireReturnable(Operation $op,Domain $d): ?AttemptFacts
     {
-        if(TransferRejections::proved($op,$d)||RegistrationRefusals::proved($op,$d)){return;}
+        if(TransferRejections::proved($op,$d)||RegistrationRefusals::proved($op,$d)){return null;}
         // An audited not-processed answer returns the payment. It is not local-refusal proof, so it grants no same-debt retry.
-        if(EnomAnswers::unprocessed($op,$d)){self::requireOwned($op,$d);self::requireAnsweredAttempt($op);return;}
-        self::requireUnsent($op,$d);
+        if(EnomAnswers::unprocessed($op,$d)){self::requireOwned($op,$d);self::requireAnsweredAttempt($op);return null;}
+        return self::requireUnsent($op,$d);
     }
 
     /** Readmission uses purchase ledger facts and current funding rather than the return history projection. */

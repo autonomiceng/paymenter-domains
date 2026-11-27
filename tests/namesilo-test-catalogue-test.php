@@ -33,7 +33,10 @@ function curl_exec($h): bool {
     $o=$GLOBALS['nsCatalogueOptions'];$url=parse_url($o[CURLOPT_URL]);parse_str($url['query'],$p);$command=basename($url['path']);
     same('ote.namesilo.com',$url['host'],'Catalogue and checkout use only OTE');
     $GLOBALS['nsCatalogueCalls'][]=$command;
-    if ($command === 'contactAdd') { $GLOBALS['nsCatalogueContact'] = $p; }
+    if ($command === 'contactAdd') {
+        $fields = ['first_name','last_name','company','address','address2','city','state','zip','country','email','phone'];
+        $GLOBALS['nsCatalogueContact'] = array_combine($fields, array_values($p));
+    }
     $reply=match($command){
         'getPrices'=>['code'=>300,'com'=>$GLOBALS['nsCatalogueRow']??['registration'=>'10.00','renew'=>'12.00','transfer'=>'11.00'],
             'net'=>['registration'=>'13.00','renew'=>'14.00','transfer'=>'15.00']],
@@ -213,8 +216,9 @@ config(['domains.provider_send_guard' => static function ($provider, $environmen
 $runOrder();
 config(['domains.provider_send_guard' => null]);
 $op->refresh();
-same(['held', 'acquisition_definitely_unsent', 0, 'contactList'], [$op->state, $op->safe_code, $purchases(),
-    end($GLOBALS['nsCatalogueCalls'])], 'Local refusal with a verified order contact '.json_encode([$op->state, $op->safe_code, $GLOBALS['nsCatalogueCalls']], JSON_THROW_ON_ERROR));
+same(['held', 'acquisition_definitely_unsent', 0, 1, 1], [$op->state, $op->safe_code, $purchases(),
+    array_count_values($GLOBALS['nsCatalogueCalls'])['contactAdd'] ?? 0, array_count_values($GLOBALS['nsCatalogueCalls'])['contactList'] ?? 0],
+    'Local refusal with a verified order contact '.json_encode([$op->state, $op->safe_code, $GLOBALS['nsCatalogueCalls']], JSON_THROW_ON_ERROR));
 $refused = $op->acquisitionAttemptFacts()->token;
 $creditActor = staffUser([...array_keys(Staff::permissions()), 'admin.invoices.update']);
 $reviewOrder = static function (string $action) use ($op, $clock, $creditActor): void {
@@ -241,7 +245,20 @@ same(['held', 'write_disabled', true, true, $beforeGate], [$op->state, $op->safe
 $credit = static fn (): int => PricingRule::minor((string) (\App\Models\Credit::where('user_id', $user->id)
     ->where('currency_code', 'USD')->value('amount') ?? '0.00'));
 $beforeCredit = $credit();
-$reviewOrder('refund');
+$blockCredit = true;
+\App\Models\Credit::saving(static function (\App\Models\Credit $row) use (&$blockCredit, $user): void {
+    if ($blockCredit && $row->user_id === $user->id) { throw new \RuntimeException('Synthetic credit write interrupted'); }
+});
+try {
+    $reviewOrder('refund');
+    throw new \LogicException('Expected the credit write to be interrupted');
+} catch (\RuntimeException $error) {
+    same('Synthetic credit write interrupted', $error->getMessage(), 'Only the credit transaction was interrupted');
+} finally { $blockCredit = false; }
+$op->refresh();
+same(['rejected', true, $beforeCredit], [$op->state, OperationTerminalProof::safe($op, $op->domain), $credit()],
+    'The reviewed closure and terminal proof commit before the credit');
+$reviewOrder('credit');
 app(Refunds::class)->creditRejected($op->id);
 $op->refresh();
 same(['rejected', $creditActor->id, true, PricingRule::minor($op->amount), $beforeGate], [$op->state,

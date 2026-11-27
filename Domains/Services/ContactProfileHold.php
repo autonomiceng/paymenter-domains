@@ -79,10 +79,11 @@ final class ContactProfileHold
     private static function bound(ProfileContactOperation $row, Operation $op): bool
     {
         $domain = $op->domain;
-        return $domain && $row->user_id === (int) $domain->user_id && $row->server_id === $op->server_id
+        $parent = $row->attempt['parent_claim'] ?? null;
+        return is_string($parent) && preg_match('/^[a-f0-9]{32}$/D', $parent) && $domain && $row->user_id === (int) $domain->user_id && $row->server_id === $op->server_id
             && $row->account_fingerprint === $op->account_fingerprint && $row->authority_generation === $op->authority_generation
             && $domain->authority_generation === $op->authority_generation && $row->payload_digest === OperationClaims::payloadDigest($op)
-            && ($row->attempt['parent_claim'] ?? null) === ($op->attempt['claim_key'] ?? null);
+            && $parent === ($op->attempt['claim_key'] ?? null);
     }
 
     private static function saved(ProfileContactOperation $row): bool

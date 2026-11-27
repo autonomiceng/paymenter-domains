@@ -96,7 +96,10 @@ trait CreditsRejectedRequests
             || ((isset($op->funding['refund'])||self::closedReceipts($op)!==null)&&FundsWaits::closedRenewal($op,$l['domain'])))) { return $this->creditLate($op, $l, $review); }
         if (!$op || $op->state !== 'rejected' || array_key_exists('refund', $op->funding ?? [])) { if($review){throw new \DomainException('No pending account credit. Reload this page.');} return null; }
         if(RenewalRetries::resolved($op,$l['domain'])){$review?->record($l);return null;} // Its paid debt belongs to the proved retry, not a refund.
-        RefundProof::requireReturnable($op, $l['domain']);
+        $refused = RefundProof::requireReturnable($op, $l['domain']);
+        if ($refused !== null && !OperationTerminalProof::safe($op, $l['domain'])) {
+            throw new \DomainException('No retained purchase disposition.');
+        }
         $approved = $op->funding['refund_authorization'] ?? null;
         if (array_key_exists('refund_authorization', $op->funding ?? []) && (!is_array($approved)
             || array_keys($approved) !== ['actor_id', 'reason', 'at', 'operation_key', 'generation']
