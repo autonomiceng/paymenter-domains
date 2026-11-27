@@ -8,6 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Holding\Adoption\AdoptionEnrollment;
 use Paymenter\Extensions\Servers\Domains\Holding\Retention\HistoryRetention;
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalExecution;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionRetryProof;
 use Paymenter\Extensions\Servers\Domains\Money\Returns\{DisputeRecoveries, RefundCandidates};
 /** Sole scheduler authority. Bounded durable account turns; each financial authority rechecks its own locks. */
 final readonly class RuntimeWork
@@ -26,9 +27,33 @@ final readonly class RuntimeWork
     private function enqueue(int $id,bool $force=false): void {app(RuntimeDispatch::class)->enqueue($id,$force);}
     public function operation(int $id): void
     {
-        $op=Operation::findOrFail($id);try{$a=Account::where('server_id',$op->server_id)->first();$pausedTest=$a&&!$a->processing_enabled&&$op->action==='register'&&$op->state==='awaiting_payment'
+        $op=Operation::findOrFail($id);
+        try {
+            $a=Account::where('server_id',$op->server_id)->first();
+            $now=$this->clock->now();
+            if ($a && (AcquisitionRetryProof::expiredClaim($op,$now) || AcquisitionRetryProof::interruptedHold($op))) {
+                $reason = match (true) {
+                    ExecutionWindow::pastTransferCutoff($op,$now) => 'transfer_setup_review_required',
+                    !$a->processing_enabled => 'processing',
+                    !$this->ports->accepted($a) => 'write_disabled',
+                    default => null,
+                };
+                if ($reason !== null) {
+                    if (app(RuntimeDispatch::class)->current($op)) { app(OperationClaims::class)->holdUnclaimed($id,$reason); }
+                    return;
+                }
+            }
+            $pausedTest=$a&&!$a->processing_enabled&&$op->action==='register'&&$op->state==='awaiting_payment'
             &&\App\Models\Invoice::whereKey($op->invoice_id)->value('status')==='paid'&&self::testRegistrationEnabled($a);
             if($pausedTest){if(app(RuntimeDispatch::class)->current($op)){app(OperationClaims::class)->holdUnclaimed((int)$op->id,'processing');}return;}
+            if ($a && !$a->processing_enabled && $op->state === 'queued' && $op->acquisitionAttemptFacts()) {
+                if (app(RuntimeDispatch::class)->current($op)) { app(OperationClaims::class)->holdUnclaimed($id, 'processing'); }
+                return;
+            }
+            if ($a && $a->processing_enabled && AcquisitionRetryProof::ordersOffHold($op)) {
+                if (!app(RuntimeDispatch::class)->current($op) || !app(OperationClaims::class)->readmitOrdersOff($id)) { return; }
+                $op->refresh();
+            }
             if($a&&$a->processing_enabled&&$op->state==='succeeded'&&$op->safe_code==='registration_correction_required'){
                 $this->ports->corrections($op->domain);return;
             }
@@ -96,9 +121,11 @@ final readonly class RuntimeWork
             $ops=Operation::where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->where('id','>',$row->operation_cursor)
                 ->where(fn($q)=>$q->whereIn('state',['awaiting_payment','awaiting_code','queued','pending','uncertain','running'])
                     ->orWhere(fn($held)=>$held->where('state','held')->whereIn('safe_code',[...BalanceRetries::CODES,BalanceRetries::LEGACY_CODE]))
+                    ->orWhere(fn($held)=>$held->whereIn('action',['register','transfer'])->where('state','held')->whereIn('safe_code',AcquisitionRetryProof::INTERRUPTED_HOLDS))
                     ->orWhere(fn($q)=>$q->whereIn('action',['register','transfer'])->where('funding_basis','paid_invoice')->where('state','held')->where('safe_code','registrar_price_increased'))
                     ->orWhere(fn($q)=>$q->where('action','register')->where('state','held')->where('safe_code','contact_details_required'))
-                    ->orWhere(fn($q)=>$q->whereIn('action',['register','transfer'])->where('state','held')->where('safe_code',ContactProfileHold::CODE))
+                    ->orWhere(fn($q)=>$q->where('registrar_key','namesilo')->whereIn('action',['register','transfer'])->where('state','held')
+                        ->whereIn('safe_code',ContactProfileHold::RECOVERY_HOLDS))
                     ->orWhere(fn($q)=>$q->where('state','succeeded')->where('safe_code','registration_correction_required'))
                     ->orWhere(fn($q)=>$q->where('state','held')->where('safe_code','management_unconfirmed'))
                     ->orWhere(fn($q)=>$q->where('action','renew')->where('state','held')->where('safe_code','renewal_definitely_unsent'))

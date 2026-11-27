@@ -12,6 +12,10 @@ final class ContactProfileHold
     public const CODE='contact_profile_proof_required';
     /** Holds an order can reach at its contact step with nothing sent: the contact hold, or the real local cause. */
     public const HOLDS=[self::CODE,'processing','write_rate_limited'];
+    public const RECOVERY_HOLDS = [
+        self::CODE, 'write_rate_limited', 'processing', 'namesilo_account_guard', 'write_acceptance_required',
+        'pre_send_interrupted', 'registrar_read_failed', 'registrar_price_missing',
+    ];
     public const RETRY_BLOCKED='The contact step cannot be retried with these order details. Cancel and refund this order.';
     public const RETRY_ENDED='This contact step has ended and cannot be retried. Cancel and refund this order.';
     /** A saved step cannot be reopened or send different details. The offer and writer give the same cause. */
@@ -31,10 +35,7 @@ final class ContactProfileHold
     public static function forReadmission(Operation $op, \DateTimeImmutable $now, bool $lock = false): ?ProfileContactOperation
     {
         if (!AcquisitionRetryProof::recoverableClaim($op, $now)) { return null; }
-        if ($op->state === 'held' && !in_array($op->safe_code, [
-            self::CODE, 'write_rate_limited', 'processing', 'namesilo_account_guard', 'write_acceptance_required',
-            'pre_send_interrupted', 'registrar_read_failed', 'registrar_price_missing',
-        ], true)) { return null; }
+        if ($op->state === 'held' && !in_array($op->safe_code, self::RECOVERY_HOLDS, true)) { return null; }
         if ($op->state === 'held' && $op->safe_code === 'registrar_read_failed'
             && ($op->policy['read_retries'] ?? 0) >= BalanceRetries::READ_LIMIT) { return null; }
         return self::savedForRecovery($op, $lock);
@@ -50,7 +51,7 @@ final class ContactProfileHold
             AcquisitionDispatch::requireNoSendEvidence($op);
             $row = self::row($op, $lock);
             return $row && self::bound($row, $op) && self::saved($row) ? $row : null;
-        } catch (\Illuminate\Contracts\Encryption\DecryptException|\JsonException|\DomainException) { return null; }
+        } catch (\Illuminate\Database\QueryException|\Illuminate\Contracts\Encryption\DecryptException|\JsonException|\DomainException) { return null; }
     }
 
     /** A purchase disposition must account for the order's contact evidence when a row exists. */
@@ -67,7 +68,7 @@ final class ContactProfileHold
                     && ($a['send_state'] ?? null) === 'definitely_unsent' && !isset($a['worker_key']) && !isset($a['dispatch_at']) && !isset($a['provider_id']))
                 || ($row->state === 'unsent' && ($a['execution'] ?? null) === 'definitely_unsent'
                     && !isset($a['dispatch_at']) && !isset($a['provider_id']));
-        } catch (\Illuminate\Contracts\Encryption\DecryptException|\JsonException|\DomainException) { return false; }
+        } catch (\Illuminate\Database\QueryException|\Illuminate\Contracts\Encryption\DecryptException|\JsonException|\DomainException) { return false; }
     }
 
     private static function row(Operation $op, bool $lock): ?ProfileContactOperation

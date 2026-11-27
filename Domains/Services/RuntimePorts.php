@@ -2,6 +2,8 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionRetryProof;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\RenewalWriter;
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalCompletion, RenewalExecution};
@@ -79,7 +81,10 @@ final class RuntimePorts
             if(in_array($op->state,['queued','awaiting_payment'],true)){$ports['renewal']->run((int)$op->id,$ports['renewal_writer']);}
             elseif(in_array($op->state,['pending','uncertain','running'],true)){$ports['renewal_completion']->run((int)$op->id);}
         }elseif(in_array($op->action,['register','transfer'],true)){
-            if(in_array($op->state,['queued','awaiting_payment','awaiting_code'],true)||BalanceRetries::candidate($op)){
+            $now = app(Clock::class)->now();
+            if(in_array($op->state,['queued','awaiting_payment','awaiting_code'],true)||BalanceRetries::candidate($op)
+                ||AcquisitionRetryProof::expiredClaim($op,$now)
+                ||$a->processing_enabled&&(AcquisitionRetryProof::localRecovery($op,$now)||ContactProfileHold::forReadmission($op,$now))){
                 if($missing=NativePaidHooks::serviceMissing()){HookDiagnostics::deferred((int)$op->id,$missing);return;}
                 $ports['acquisition']->execute((int)$op->id);
             }

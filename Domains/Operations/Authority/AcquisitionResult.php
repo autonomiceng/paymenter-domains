@@ -36,7 +36,7 @@ final class AcquisitionResult
     {
         $id = (int) $operation->id;
         return !OperationAttempts::hasAttempts($id, AcquisitionAttempt::key($operation->action), true)
-            && !ProfileContactOperation::where('operation_id', $id)->lockForUpdate()->first(['id']);
+            && ($operation->registrar_key !== 'namesilo' || !ProfileContactOperation::where('operation_id', $id)->lockForUpdate()->first(['id']));
     }
 
     /** A queued worker can use the window's exact held attempt or a deferred worker on that same admission. */

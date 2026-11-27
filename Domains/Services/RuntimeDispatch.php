@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionRetryProof;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 /** Durable poll backoff survives queue restarts; unique jobs bound worker backlog. */
 final readonly class RuntimeDispatch
@@ -32,8 +33,11 @@ final readonly class RuntimeDispatch
         // An automatic retry runs now: its window opens at the readmission.
         if(ContactStepRetries::candidate($op)&&ContactStepRetries::readmit($id,$this->clock)){$op=$op->fresh();$force=true;}
         if(PriceHoldRetries::candidate($op)&&PriceHoldRetries::readmit($id,$this->clock)){$op=$op->fresh();$force=true;}
-        if($op->state==='held'&&!ManagementEvidence::recoverable($op)&&!RenewalRetries::candidate($op)&&!TransferPolling::applies($op)&&(!$balance||!Account::where('server_id',$op->server_id)->value('processing_enabled'))){return;}
-        $now=$this->clock->now()->getTimestamp();
+        $instant=$this->clock->now();
+        $cutoffRecovery=ExecutionWindow::pastTransferCutoff($op,$instant)&&AcquisitionRetryProof::interruptedHold($op);
+        if($op->state==='held'&&!$cutoffRecovery&&!ManagementEvidence::recoverable($op)&&!RenewalRetries::candidate($op)&&!TransferPolling::applies($op)
+            &&(!($balance||AcquisitionRetryProof::localRecovery($op,$instant)||ContactProfileHold::forReadmission($op,$instant))||!Account::where('server_id',$op->server_id)->value('processing_enabled'))){return;}
+        $now=$instant->getTimestamp();
         if(!TransferPolling::due($op,$now)){return;}
         $due=DB::transaction(function()use($id,$op,$now,$force,$balance):bool {
             DB::table('domains_runtime_operations')->insertOrIgnore(['operation_id'=>$id,...($balance?['due_at'=>$now+900]:[])]);
