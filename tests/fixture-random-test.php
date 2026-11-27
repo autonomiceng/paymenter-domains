@@ -22,6 +22,9 @@ NativeFixtureRandom::reseed('case-a');
 NativeFixtureRandom::bytes(32, 'framework');
 same($domains[0], bin2hex(NativeFixtureRandom::bytes(16, 'domains')), 'A framework draw does not shift the Domains stream');
 same(40, strlen(NativeFixtureRandom::bytes(40, 'domains')), 'A draw longer than one block keeps its length');
+$before = NativeFixtureRandom::position();
+try { NativeFixtureRandom::bytes(0, 'domains'); expect(false, 'A zero-length draw is rejected'); }
+catch (ValueError) { same($before, NativeFixtureRandom::position(), 'A rejected draw does not advance the stream'); }
 
 NativeFixtureRandom::reseed('case-a');
 NativeFixtureRandom::bytes(16, 'domains');

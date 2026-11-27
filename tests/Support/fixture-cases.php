@@ -188,6 +188,14 @@ function nativeSchema(): array
     return DB::connection()->getPdo()->query("SELECT type, name, tbl_name, sql FROM main.sqlite_master ORDER BY type, name")->fetchAll(PDO::FETCH_ASSOC);
 }
 
+/** The environment by name: a reset that re-adds an unset variable appends it, which must not read as a change. */
+function nativeSortedEnvironment(): array
+{
+    $environment = getenv();
+    ksort($environment);
+    return $environment;
+}
+
 /**
  * Capture committed rows, sequences, schema, container, events, config (with the objects it holds), auth, session,
  * request, clocks, locale, timezone, statics, globals, fake ports, queue fakes and storage files; the closure restores them all.
@@ -215,8 +223,9 @@ function nativeCaseCheckpoint(array $state = [], array $cases = []): Closure
     }
     // Every object the fixture state, the cases and config reach, however deep: a port held by a service or a closure is
     // restored too. Paymenter keeps its settings in config as an object, and issuing an invoice advances its invoice number in place.
+    // The array store keeps cached objects by reference, so a case that changes one would leak it past the reset.
     $captured = [];
-    foreach (nativeStateObjects([$state, $cases, app('config')->all()]) as $object) {
+    foreach (nativeStateObjects([$state, $cases, app('config')->all(), $cache[0] ?? []]) as $object) {
         if ($object instanceof Closure) { $captured[] = $object; } else { $objects[] = nativeObjectState($object); }
     }
     $statics = nativeStatics();
@@ -234,7 +243,7 @@ function nativeCaseCheckpoint(array $state = [], array $cases = []): Closure
         JSON_PARTIAL_OUTPUT_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE)), ['schema' => nativeSchema(), 'bindings' => nativeIdentities(app()->getBindings()),
         'listeners' => nativeIdentities((fn () => [$this->listeners, $this->wildcards])->call(app('events'))), 'config' => app('config')->all(),
         'locale' => [date_default_timezone_get(), setlocale(LC_ALL, 0), app()->getLocale()], 'globals' => array_keys($GLOBALS),
-        'process' => [getcwd(), getenv()], 'handlers' => nativeIdentities(nativeHandlers()),
+        'process' => [getcwd(), nativeSortedEnvironment()], 'handlers' => nativeIdentities(nativeHandlers()),
         'captured' => array_map(static fn (Closure $c) => nativeIdentities((new ReflectionFunction($c))->getStaticVariables()), $captured),
         'files' => array_map(sha1(...), nativeStorageFiles())]);
     $prepared = $witness();
