@@ -182,8 +182,11 @@ final class OperationAttempts
     private static function decoded(object $row): array
     {
         return ['source' => $row->source, 'outcome' => $row->outcome, 'observed_at' => self::time($row->observed_at)?->format(DATE_ATOM),
-            'recorded_at' => self::time($row->recorded_at)?->format(DATE_ATOM), 'evidence' => json_decode(Crypt::decryptString($row->evidence), true, self::EVIDENCE_DEPTH, JSON_THROW_ON_ERROR)];
+            'recorded_at' => self::time($row->recorded_at)?->format(DATE_ATOM), 'evidence' => self::decodeEvidence($row->evidence)];
     }
+
+    public static function decodeEvidence(string $ciphertext): array
+    { return json_decode(Crypt::decryptString($ciphertext), true, self::EVIDENCE_DEPTH, JSON_THROW_ON_ERROR); }
 
     /** The first evidence of one kind on the step's sealed attempt, in one read. */
     public static function sealedEvidence(int $operationId, StepKey $key, string $kind): ?array

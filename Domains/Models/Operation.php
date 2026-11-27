@@ -24,6 +24,7 @@ class Operation extends Model
     private AcquisitionAttempt|\Throwable|null $acquisitionAttempt = null;
     private bool $acquisitionLoaded = false;
     private ?array $terminalProof = null;
+    private ?string $terminalCiphertext = null;
     private bool $noAcquisitionStep = false;
     private bool $validatingUpdate = false;
 
@@ -81,12 +82,17 @@ class Operation extends Model
     private function acquisitionTerminal(array $row): array
     {
         if (!isset($row['id']) || ($row['state'] ?? null) !== 'rejected' || !AcquisitionAttempt::key($row['action'] ?? '')) { return []; }
-        $proof = $this->terminalProof ??= OperationAttempts::evidence((int) $row['id'], null, 'terminal') ?? [];
-        if ($proof === OperationAttempts::UNREADABLE) { throw new \Illuminate\Contracts\Encryption\DecryptException('Acquisition terminal proof is unreadable.'); }
-        return in_array($proof['outcome'] ?? null, ['definitely_unsent', 'unpaid_closed'], true)
-            ? ['seal'=>'absent', 'send_state'=>'definitely_unsent', 'disposition'=>'rejected',
-                'rejection_basis'=>'definitely_unsent', 'terminal'=>$proof['evidence']]
-            : [];
+        if ($this->terminalCiphertext !== null) {
+            $terminal = OperationAttempts::decodeEvidence($this->terminalCiphertext);
+        } else {
+            $proof = $this->terminalProof ??= OperationAttempts::evidence((int) $row['id'], null, 'terminal') ?? [];
+            if ($proof === OperationAttempts::UNREADABLE) {
+                throw new \Illuminate\Contracts\Encryption\DecryptException('Acquisition terminal proof is unreadable.');
+            }
+            $terminal = in_array($proof['outcome'] ?? null, ['definitely_unsent', 'unpaid_closed'], true) ? $proof['evidence'] : null;
+        }
+        return $terminal === null ? [] : ['seal'=>'absent', 'send_state'=>'definitely_unsent', 'disposition'=>'rejected',
+            'rejection_basis'=>'definitely_unsent', 'terminal'=>$terminal];
     }
 
     private function decodeEvidence(?string $value): ?array
@@ -112,10 +118,17 @@ class Operation extends Model
     /** Read step presence with the operation when the caller has a current view of the ledger. */
     public function scopeWithAcquisitionStep(Builder $query): Builder
     {
-        return $query->addSelect(['has_acquisition_step' => DB::table(OperationSchema::STEPS)
-            ->select('id')->whereColumn('operation_id', 'domains_operations.id')
-            ->whereIn('step_type', ['register', 'transfer'])->where('sequence', 1)
-            ->whereColumn('step_type', 'domains_operations.action')->limit(1)]);
+        return $query->addSelect([
+            'has_acquisition_step' => DB::table(OperationSchema::STEPS)
+                ->select('id')->whereColumn('operation_id', 'domains_operations.id')
+                ->whereIn('step_type', ['register', 'transfer'])->where('sequence', 1)
+                ->whereColumn('step_type', 'domains_operations.action')->limit(1),
+            'acquisition_terminal_evidence' => DB::table(OperationSchema::EVIDENCE)
+                ->select('evidence')->whereColumn('operation_id', 'domains_operations.id')->whereNull('attempt_id')
+                ->where('kind', 'terminal')->whereIn('outcome', ['definitely_unsent', 'unpaid_closed'])
+                ->whereIn('domains_operations.action', ['register', 'transfer'])->where('domains_operations.state', 'rejected')
+                ->orderBy('id')->limit(1),
+        ]);
     }
 
     private function acquisitionEvidence(string $field, array $row): array
@@ -158,7 +171,7 @@ class Operation extends Model
     {
         $pending = $terminal = [];
         foreach ($operations as $op) {
-            if ($withEvidence && $op->terminalProof === null && $op->state === 'rejected' && $op->getRawOriginal('id') !== null
+            if ($withEvidence && $op->terminalProof === null && $op->terminalCiphertext === null && $op->state === 'rejected' && $op->getRawOriginal('id') !== null
                 && AcquisitionAttempt::key((string) $op->getRawOriginal('action')) !== null) {
                 $terminal[(int) $op->id][] = $op;
             }
@@ -190,6 +203,7 @@ class Operation extends Model
         $this->acquisitionAttempt = null;
         $this->acquisitionLoaded = false;
         $this->terminalProof = null;
+        $this->terminalCiphertext = null;
         $this->noAcquisitionStep = false;
     }
 
@@ -198,7 +212,10 @@ class Operation extends Model
         $this->reloadAcquisitionAttempt();
         $this->reloadManagementAttempt();
         $this->noAcquisitionStep = array_key_exists('has_acquisition_step', $attributes) && $attributes['has_acquisition_step'] === null;
-        unset($attributes['has_acquisition_step']);
+        $this->terminalCiphertext = $attributes['acquisition_terminal_evidence'] ?? null;
+        if (array_key_exists('acquisition_terminal_evidence', $attributes) && $this->terminalCiphertext === null
+            && ($attributes['state'] ?? null) === 'rejected') { $this->terminalProof = []; }
+        unset($attributes['has_acquisition_step'], $attributes['acquisition_terminal_evidence']);
         return parent::setRawAttributes($attributes, $sync);
     }
 

@@ -39,63 +39,59 @@ $make=static function(int $owner,string $mode)use($rows,$seed,$seedDomain,$inser
  return Operation::findOrFail($insert('domains_operations',$op->getAttributes()));
 };
 
-// PR A expected-red guard: the bounds below failed at 4a759b0b. Invoice-scoped refund and closed credit decisions meet
-// every row bound, so no row allowance remains; the SQL ceilings still ratchet.
 // Fixed before measurement. Required rows come from the fixture's exact invoice identities.
 // These constants do not depend on the collections selected by HoldingLocks.
 const MONEY_SCALE_ROWS = 4;
 const MONEY_SCALE_STATEMENTS = 100;
 const MONEY_SCALE_PAGE_STATEMENTS = 20;
 const MONEY_SCALE_ROW_STATEMENTS = 10;
-// Frozen observations at 11ed0dd8; tuples are [sql, Invoice, InvoiceItem, InvoiceTransaction].
-// Each entry contains complete-pass and per-decision ceilings. Never raise these for PR C's own cost.
-// When a row metric meets its final bound, replace its allowance with null (or remove the cell).
+// Frozen complete-pass and per-decision SQL ceilings, originally measured at 11ed0dd8.
 // The optional research matrix uses the same process: only the first N5/C1 refund is cold.
-const MONEY_SCALE_BASELINE = [
-    'refund:fresh:N5:C1' => [[298, null, null, null], [61, null, null, null]], // re-frozen at 1f6e4bc9: #584 added one statement to the cold first refund
-    'refund:settled:N5:C1' => [[201, null, null, null], [40, null, null, null]],
-    'closed:fresh:N5:C1' => [[225, null, null, null], [44, null, null, null]], // re-frozen: the deferred refund queue adds two statements per pass, Schema::hasTable(domains_money_work) and the queued() read; the renewal receipt sweep adds one
-    'closed:settled:N5:C1' => [[269, null, null, null], [53, null, null, null]], // re-frozen: the deferred refund queue adds two statements per pass, Schema::hasTable(domains_money_work) and the queued() read
-    'refund:fresh:N15:C1' => [[886, null, null, null], [59, null, null, null]],
-    'refund:settled:N15:C1' => [[601, null, null, null], [40, null, null, null]],
-    'closed:fresh:N15:C1' => [[665, null, null, null], [44, null, null, null]], // re-frozen: the deferred refund queue adds two statements per pass, Schema::hasTable(domains_money_work) and the queued() read; the renewal receipt sweep adds one
-    'closed:settled:N15:C1' => [[799, null, null, null], [53, null, null, null]], // re-frozen: the deferred refund queue adds two statements per pass, Schema::hasTable(domains_money_work) and the queued() read
-    'refund:fresh:N5:C2' => [[591, null, null, null], [59, null, null, null]],
-    'refund:settled:N5:C2' => [[401, null, null, null], [40, null, null, null]],
-    'closed:fresh:N5:C2' => [[445, null, null, null], [44, null, null, null]], // re-frozen: the deferred refund queue adds two statements per pass, Schema::hasTable(domains_money_work) and the queued() read; the renewal receipt sweep adds one
-    'closed:settled:N5:C2' => [[534, null, null, null], [53, null, null, null]], // re-frozen: the deferred refund queue adds two statements per pass, Schema::hasTable(domains_money_work) and the queued() read
-    'refund:fresh:N5:C4' => [[1181, null, null, null], [59, null, null, null]],
-    'refund:settled:N5:C4' => [[801, null, null, null], [40, null, null, null]],
-    'closed:fresh:N5:C4' => [[884, null, null, null], [44, null, null, null]], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
-    'closed:settled:N5:C4' => [[1064, null, null, null], [53, null, null, null]], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
-    'refund:fresh:N20:C1' => [[1181, null, null, null], [59, null, null, null]],
-    'refund:settled:N20:C1' => [[801, null, null, null], [40, null, null, null]],
-    'closed:fresh:N20:C1' => [[884, null, null, null], [44, null, null, null]], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
-    'closed:settled:N20:C1' => [[1064, null, null, null], [53, null, null, null]], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
-    'refund:fresh:N20:C2' => [[2361, null, null, null], [59, null, null, null]],
-    'refund:settled:N20:C2' => [[1601, null, null, null], [40, null, null, null]],
-    'closed:fresh:N20:C2' => [[1764, null, null, null], [44, null, null, null]], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
-    'closed:settled:N20:C2' => [[2124, null, null, null], [53, null, null, null]], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
-    'refund:fresh:N20:C4' => [[4721, null, null, null], [59, null, null, null]],
-    'refund:settled:N20:C4' => [[3201, null, null, null], [40, null, null, null]],
-    'closed:fresh:N20:C4' => [[3524, null, null, null], [44, null, null, null]], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
-    'closed:settled:N20:C4' => [[4244, null, null, null], [53, null, null, null]], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
-    'refund:fresh:N50:C1' => [[2951, null, null, null], [59, null, null, null]],
-    'refund:settled:N50:C1' => [[2001, null, null, null], [40, null, null, null]],
-    'closed:fresh:N50:C1' => [[2204, null, null, null], [44, null, null, null]], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
-    'closed:settled:N50:C1' => [[2654, null, null, null], [53, null, null, null]], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
-    'refund:fresh:N50:C2' => [[5901, null, null, null], [59, null, null, null]],
-    'refund:settled:N50:C2' => [[4001, null, null, null], [40, null, null, null]],
-    'closed:fresh:N50:C2' => [[4408, null, null, null], [44, null, null, null]], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
-    'closed:settled:N50:C2' => [[5308, null, null, null], [53, null, null, null]], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
-    'refund:fresh:N50:C4' => [[11802, null, null, null], [59, null, null, null]],
-    'refund:settled:N50:C4' => [[8002, null, null, null], [40, null, null, null]],
-    'closed:fresh:N50:C4' => [[8812, null, null, null], [44, null, null, null]], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
-    'closed:settled:N50:C4' => [[10612, null, null, null], [53, null, null, null]], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
+const MONEY_SCALE_SQL_CEILINGS = [
+    'refund:fresh:N5:C1' => [298, 61], // re-frozen at 1f6e4bc9: #584 added one statement to the cold first refund
+    'refund:settled:N5:C1' => [201, 40],
+    'closed:fresh:N5:C1' => [225, 44], // re-frozen: the deferred refund queue adds two statements per pass, Schema::hasTable(domains_money_work) and the queued() read; the renewal receipt sweep adds one
+    'closed:settled:N5:C1' => [269, 53], // re-frozen: the deferred refund queue adds two statements per pass, Schema::hasTable(domains_money_work) and the queued() read
+    'refund:fresh:N15:C1' => [886, 59],
+    'refund:settled:N15:C1' => [601, 40],
+    'closed:fresh:N15:C1' => [665, 44], // re-frozen: the deferred refund queue adds two statements per pass, Schema::hasTable(domains_money_work) and the queued() read; the renewal receipt sweep adds one
+    'closed:settled:N15:C1' => [799, 53], // re-frozen: the deferred refund queue adds two statements per pass, Schema::hasTable(domains_money_work) and the queued() read
+    'refund:fresh:N5:C2' => [591, 59],
+    'refund:settled:N5:C2' => [401, 40],
+    'closed:fresh:N5:C2' => [445, 44], // re-frozen: the deferred refund queue adds two statements per pass, Schema::hasTable(domains_money_work) and the queued() read; the renewal receipt sweep adds one
+    'closed:settled:N5:C2' => [534, 53], // re-frozen: the deferred refund queue adds two statements per pass, Schema::hasTable(domains_money_work) and the queued() read
+    'refund:fresh:N5:C4' => [1181, 59],
+    'refund:settled:N5:C4' => [801, 40],
+    'closed:fresh:N5:C4' => [884, 44], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
+    'closed:settled:N5:C4' => [1064, 53], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
+    'refund:fresh:N20:C1' => [1181, 59],
+    'refund:settled:N20:C1' => [801, 40],
+    'closed:fresh:N20:C1' => [884, 44], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
+    'closed:settled:N20:C1' => [1064, 53], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
+    'refund:fresh:N20:C2' => [2361, 59],
+    'refund:settled:N20:C2' => [1601, 40],
+    'closed:fresh:N20:C2' => [1764, 44], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
+    'closed:settled:N20:C2' => [2124, 53], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
+    'refund:fresh:N20:C4' => [4721, 59],
+    'refund:settled:N20:C4' => [3201, 40],
+    'closed:fresh:N20:C4' => [3524, 44], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
+    'closed:settled:N20:C4' => [4244, 53], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
+    'refund:fresh:N50:C1' => [2951, 59],
+    'refund:settled:N50:C1' => [2001, 40],
+    'closed:fresh:N50:C1' => [2204, 44], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
+    'closed:settled:N50:C1' => [2654, 53], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
+    'refund:fresh:N50:C2' => [5901, 59],
+    'refund:settled:N50:C2' => [4001, 40],
+    'closed:fresh:N50:C2' => [4408, 44], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
+    'closed:settled:N50:C2' => [5308, 53], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
+    'refund:fresh:N50:C4' => [11802, 59],
+    'refund:settled:N50:C4' => [8002, 40],
+    'closed:fresh:N50:C4' => [8812, 44], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
+    'closed:settled:N50:C4' => [10612, 53], // re-frozen: the deferred refund queue adds two statements per page, Schema::hasTable(domains_money_work) and the queued() read; same count at 27f31f26
 ];
-const MONEY_SCALE_HISTORY_BASELINE = [
-    'refund:fixed-target' => [[40, 1, 1, 1], [40, null, null, null]],
-    'closed:fixed-target' => [[53, 1, 1, 2], [53, null, null, null]],
+const MONEY_SCALE_HISTORY_CEILINGS = [
+    'refund:fixed-target' => [[40, 1, 1, 1], [40]],
+    'closed:fixed-target' => [[53, 1, 1, 2], [53]],
 ];
 final class MoneyScaleMeter
 {
@@ -136,37 +132,34 @@ DB::listen(static fn()=>MoneyScaleMeter::hit('sql'));
 foreach ([Invoice::class, InvoiceItem::class, InvoiceTransaction::class] as $model) {
     Event::listen('eloquent.retrieved: '.$model, static fn()=>MoneyScaleMeter::hit(class_basename($model)));
 }
-$failures = []; $baseline = [];
+$failures = [];
 $bound = static function(bool $ok, string $key, array $facts) use (&$failures): void {
     if (!$ok) { $failures[] = $key; echo 'MONEY_SCALE_RED '.json_encode(['case'=>$key, ...$facts], JSON_THROW_ON_ERROR)."\n"; }
 };
-// Keep the failure-name ratchet as well: an allowance that now meets the goal must be removed.
-$freeze = static function(string $key, array $counts, array $ceilings, bool $allowRows = true) use ($bound, &$baseline): void {
+$checkCeilings = static function(string $key, array $counts, array $ceilings) use ($bound): void {
     foreach (array_keys(MoneyScaleMeter::zero()) as $index=>$class) {
         $ceiling = $ceilings[$index] ?? null;
         if ($ceiling === null) { continue; }
-        if ($allowRows && $class !== 'sql') { $baseline[] = $key.':'.$class; }
         $bound($counts[$class] <= $ceiling, $key.':'.$class.':ceiling', ['actual'=>$counts[$class], 'ceiling'=>$ceiling]);
     }
 };
-$measure = static function(string $label, array $ops, array $required, Closure $run) use ($bound, $freeze): mixed {
+$measure = static function(string $label, array $ops, array $required, Closure $run) use ($bound): mixed {
     MoneyScaleMeter::start($ops); $start = hrtime(true);
     try { [$result, $pages] = $run(); }
     finally { MoneyScaleMeter::$active = false; }
     $counts = MoneyScaleMeter::$total; $decisions = MoneyScaleMeter::$decisions;
-    [$passCeilings, $decisionCeilings] = MONEY_SCALE_BASELINE[$label] ?? [[], []];
-    $freeze($label.':pass', $counts, $passCeilings);
+    [$passCeiling, $decisionCeiling] = MONEY_SCALE_SQL_CEILINGS[$label];
+    $bound($counts['sql'] <= $passCeiling, $label.':pass:sql', ['actual'=>$counts['sql'], 'ceiling'=>$passCeiling]);
     $seconds = (hrtime(true)-$start)/1e9;
     $sum = ['Invoice'=>0, 'InvoiceItem'=>0, 'InvoiceTransaction'=>0];
     foreach ($required as $rows) { foreach ($sum as $class=>$n) { $sum[$class] += $rows[$class]; } }
     $statementLimit = MONEY_SCALE_STATEMENTS*count($ops) + MONEY_SCALE_PAGE_STATEMENTS*$pages + MONEY_SCALE_ROW_STATEMENTS*array_sum($sum);
-    // SQL bounds are never expected red: statement linearity alone misses today's quadratic hydration.
     expect($counts['sql'] <= $statementLimit, 'Fixed complete-pass SQL bound: '.$label);
     foreach ($sum as $class=>$rows) {
         $bound($counts[$class] <= MONEY_SCALE_ROWS*$rows, $label.':pass:'.$class, ['actual'=>$counts[$class], 'limit'=>MONEY_SCALE_ROWS*$rows]);
     }
     foreach ($decisions as $id=>$countsForDecision) {
-        $freeze($label.':decision:'.$id, $countsForDecision, $decisionCeilings);
+        $bound($countsForDecision['sql'] <= $decisionCeiling, $label.':decision:'.$id.':sql', ['actual'=>$countsForDecision['sql'], 'ceiling'=>$decisionCeiling]);
         expect($countsForDecision['sql'] > 0, 'Each scheduled decision was executed and measured');
         expect($countsForDecision['sql'] <= MONEY_SCALE_STATEMENTS + MONEY_SCALE_PAGE_STATEMENTS + MONEY_SCALE_ROW_STATEMENTS*array_sum($required[$id]), 'Fixed per-decision SQL bound');
         foreach ($sum as $class=>$rows) {
@@ -261,14 +254,12 @@ foreach ($moneyScaleHistory ? [false,true] : [] as $closed) {
         $counts = MoneyScaleMeter::$decisions[$target->id];
         $label = ($closed ? 'closed' : 'refund').':fixed-target';
         // Freeze both endpoints: allowing the before count to grow would conceal regressions.
-        $freeze($label.($history === 0 ? ':before' : ':after'), $counts,
-            MONEY_SCALE_HISTORY_BASELINE[$label][$history === 0 ? 0 : 1] ?? [], false);
+        $checkCeilings($label.($history === 0 ? ':before' : ':after'), $counts,
+            MONEY_SCALE_HISTORY_CEILINGS[$label][$history === 0 ? 0 : 1]);
         if ($previous !== null) {
             expect($counts['sql'] <= $previous['sql'], 'Unrelated owner history does not add per-decision SQL statements');
             foreach (['Invoice','InvoiceItem','InvoiceTransaction'] as $class) {
                 $key = $label.':history:'.$class;
-                $index = array_search($class, array_keys(MoneyScaleMeter::zero()), true);
-                if (isset(MONEY_SCALE_HISTORY_BASELINE[$label][1][$index])) { $baseline[] = $key; }
                 $bound($counts[$class] <= $previous[$class],$key,['before'=>$previous[$class],'after'=>$counts[$class]]);
             }
             echo 'MONEY_SCALE_HISTORY '.json_encode(['case'=>$label,'before'=>$previous,'after'=>$counts],JSON_THROW_ON_ERROR)."\n";
@@ -277,7 +268,5 @@ foreach ($moneyScaleHistory ? [false,true] : [] as $closed) {
     }
     DB::table('domains_operations')->where('id',$target->id)->update(['state'=>'cancelled']);
 }
-$unexpected = array_values(array_diff($failures,$baseline)); $missing = array_values(array_diff($baseline,$failures));
-echo 'MONEY_SCALE_RATCHET '.json_encode(['baseline'=>count($baseline),'observed'=>count($failures),'unexpected'=>$unexpected,'missing'=>$missing],JSON_THROW_ON_ERROR)."\n";
-expect($unexpected === [] && $missing === [], 'Expected-red scaling baseline changed; PR C must remove the baseline when the bounds pass');
+expect($failures === [], 'Money scaling exceeded: '.implode(', ', $failures));
 same(0,$writer->calls,'No provider writes'); $nativeSuccessful = true;
