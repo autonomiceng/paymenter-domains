@@ -15,8 +15,12 @@ $nativeSuccessful = false;
 $reset();
 $config = 'domains.enom_live.accounts.live-uid.daily_spend_limit_usd';
 config(['domains.enom_live.registration' => true, $config => '300.00']);
-$write('activate', ['registration' => true, 'renewal' => true, 'management' => false, 'transfer' => true, 'confirmed' => true]);
-$write('publish', [], $tld->id);
+try {
+    $write('activate', ['registration' => true, 'renewal' => true, 'management' => false, 'transfer' => true, 'confirmed' => true]);
+    $write('publish', [], $tld->id);
+} catch (Symfony\Component\HttpKernel\Exception\HttpException $error) {
+    throw new RuntimeException('Enom order activation HTTP '.$error->getStatusCode().' at '.basename($error->getTrace()[1]['file'] ?? '').':'.($error->getTrace()[1]['line'] ?? 0), previous: $error);
+}
 $product = app(NativeCatalogue::class)->product($tld->fresh(), 'register');
 expect($product !== null, 'Synthetic Live registration is active');
 $setTime = static function (DateTimeImmutable $time) use ($clock): void {
@@ -74,7 +78,10 @@ foreach (['funded', 'shortfall', 'deferred-live', 'deferred-expired', 'orders-sc
     $cart = commerceCart($user);
     $name = placeholderComFixtureName('live-admission-'.$case.'-placeholder.com');
     commerceAdd($cart, $product, $name);
-    commerceCheckout($user, $cart)->assertHasNoErrors();
+    try { commerceCheckout($user, $cart)->assertHasNoErrors(); }
+    catch (Symfony\Component\HttpKernel\Exception\HttpException $error) {
+        throw new RuntimeException('Enom order checkout HTTP '.$error->getStatusCode().' for '.$case, previous: $error);
+    }
     $order = Domain::where('domain', $name)->sole()->operations()->sole();
     App\Helpers\ExtensionHelper::addPayment($order->invoice_id, null, $order->amount);
     $setTime($clock->now()->modify('+31 seconds'));

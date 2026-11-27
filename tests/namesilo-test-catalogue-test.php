@@ -9,13 +9,15 @@ require __DIR__.'/Support/native-commerce.php';
 app('view')->addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 require_once __DIR__.'/Support/FakeRegistrar.php';
 use App\Models\{Category,Currency,Setting};
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\{Auth, DB};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{OperationActions, Staff};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities,CallerPorts,CallerRouting,Context,Edit,Intent,OfferReadiness,OfferScheduler,Query,CatalogueActivation};
 use Paymenter\Extensions\Servers\Domains\Catalogue\Feed\OfferPorts;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget,RequestContext,RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Operation,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CartAdmission,InvoiceBinding,PricingRule,RuntimePorts,SellerPolicies,Storefront};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CartAdmission,InvoiceBinding,OperationTerminalProof,PricingRule,Refunds,RuntimePorts,RuntimeWork,SellerPolicies,StaffOperationReview,StaffOperations,Storefront};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 expect(CallerRouting::supportsSales('namesilo'),'Installed catalogue routes NameSilo sales through neutral gates');
 \Illuminate\Support\Facades\Schema::create('cache',static function($t):void {
@@ -35,6 +37,11 @@ function curl_exec($h): bool {
             'net'=>['registration'=>'13.00','renew'=>'14.00','transfer'=>'15.00']],
         'getAccountBalance'=>['code'=>300,'balance'=>'123.45'],
         'checkRegisterAvailability'=>['code'=>300,'available'=>[['domain'=>$p['domains'],'price'=>'10.00','premium'=>0,'duration'=>1]]],
+        'contactAdd'=>['code'=>300,'contact_id'=>'900'] + (function () use ($p): array {
+            $GLOBALS['nsCatalogueContact'] = $p;
+            return [];
+        })(),
+        'contactList'=>['code'=>300,'contact'=>['contact_id'=>'900','default_profile'=>'0', ...$GLOBALS['nsCatalogueContact']]],
         default=>throw new \RuntimeException('Unexpected synthetic wire command.'),
     };
     $body=json_encode(['request'=>['operation'=>$command],'reply'=>['detail'=>'success']+$reply]);
@@ -178,11 +185,61 @@ same('Used by 1 TLD',$rows['Customer pays']['cause'],'Shared pricing summary cou
 same('.com',$rows['What you sell']['value'],'Checklist uses the current installed NS16 TLD selection');
 expect(!str_contains(json_encode($offer,JSON_THROW_ON_ERROR),'experimental'),'Customer offer carries no staff Experimental label');
 app(CartAdmission::class)->boot();app(InvoiceBinding::class)->boot();
-$user=commerceUser();$cart=commerceCart($user);commerceAdd($cart,$offer['product'],'ns16-checkout-placeholder.com');
+$user=commerceUser();
+foreach (['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value) {
+    $user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);
+}
+$cart=commerceCart($user);commerceAdd($cart,$offer['product'],'ns16-checkout-placeholder.com');
 commerceCheckout($user,$cart);
 same(1,Operation::count(),'Real native checkout binds one NameSilo order');
 $op=Operation::sole();same('namesilo',$op->registrar_key,'Checkout freezes the selected NameSilo seller');
 same('13.00',$op->policy['price']['retail'],'Invoice retains the admitted price');
+// Exercise the installed worker's pre-claim gate with a real purchase seal and a verified order contact.
+\App\Helpers\ExtensionHelper::addPayment($op->invoice_id, null, $op->amount);
+$runOrder = static fn () => (new RunOperation($op->id))->handle(app(RuntimeWork::class));
+$purchases = static fn (): int => array_count_values($GLOBALS['nsCatalogueCalls'])['registerDomain'] ?? 0;
+config(['domains.provider_send_guard' => static function ($provider, $environment, $command): void {
+    if ($command === 'registerDomain') { throw new \RuntimeException('Synthetic local purchase refusal'); }
+}]);
+$runOrder();
+config(['domains.provider_send_guard' => null]);
+$op->refresh();
+same(['held', 'acquisition_definitely_unsent', 0, 'contactList'], [$op->state, $op->safe_code, $purchases(),
+    end($GLOBALS['nsCatalogueCalls'])], 'The verified order contact reaches a purchase seal with zero physical purchases');
+$refused = $op->acquisitionAttemptFacts()->token;
+$creditActor = staffUser([...array_keys(Staff::permissions()), 'admin.invoices.update']);
+$reviewOrder = static function (string $action) use ($op, $clock, $creditActor): void {
+    Auth::setUser($creditActor);
+    $op->refresh();
+    $ticket = StaffOperationReview::ticket($creditActor->id, $op->domain_id, $op->id, $action,
+        StaffOperationReview::stamp($op, $op->domain), $clock);
+    (new StaffOperations($clock))->run($creditActor, $op->domain_id, $op->id, $action, $ticket, 'Review the refused NameSilo purchase');
+};
+$clock->instant = $clock->now()->modify('+31 seconds');
+$reviewOrder('release');
+same('queued', $op->fresh()->state, 'Staff Release authorizes the retired purchase');
+$config = 'domains.namesilo_test.registration';
+config([$config => false]);
+$runtime = app(RuntimePorts::class);
+same([true, false, true], [$runtime->accepted($account->fresh()), $runtime->acquisitionGates($account->fresh())['register'],
+    $account->fresh()->processing_enabled], 'Registration closes while runtime and Orders stay enabled');
+$beforeGate = $GLOBALS['nsCatalogueCalls'];
+$runOrder();
+$op->refresh();
+same(['held', 'write_disabled', true, true, $beforeGate], [$op->state, $op->safe_code,
+    $op->acquisitionAttemptFacts()->token == $refused, OperationActions::relevant('refund', $op), $GLOBALS['nsCatalogueCalls']],
+    'The pre-claim gate retains the refusal and offers a refund without provider calls');
+$credit = static fn (): int => PricingRule::minor((string) (\App\Models\Credit::where('user_id', $user->id)
+    ->where('currency_code', 'USD')->value('amount') ?? '0.00'));
+$beforeCredit = $credit();
+$reviewOrder('refund');
+app(Refunds::class)->creditRejected($op->id);
+$op->refresh();
+same(['rejected', $creditActor->id, true, PricingRule::minor($op->amount), $beforeGate], [$op->state,
+    $op->funding['refund']['actor_id'] ?? null, OperationTerminalProof::safe($op, $op->domain),
+    $credit() - $beforeCredit, $GLOBALS['nsCatalogueCalls']], 'The reviewed cancel and credit retry return payment once');
+config([$config => true]);
+
 // Real writer/projection proves an unusable feed retracts saved costs, including holder estimates.
 auth()->login($staff);
 $feedContext=static fn()=>new RequestContext($binding,RequestOrigin::Background,$clock->now()->modify('+120 seconds'),new RequestBudget(1),$clock);
