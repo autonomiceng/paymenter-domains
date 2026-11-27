@@ -3,10 +3,10 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Operations\Reconciliation;
 
-use Paymenter\Extensions\Servers\Domains\Data\{Action, Evidence, HistoryScan, NameserverEvidence, TransferStatus};
+use Paymenter\Extensions\Servers\Domains\Data\{Action, DomainSnapshot, Evidence, HistoryScan, NameserverEvidence, OrderEvidence, RequestContext, TransferStatus};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationWriter;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, ReconciliationEvidence, WriteMoney};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, FreshTransaction, ReconciliationEvidence, WriteMoney};
 
 final readonly class AcquisitionObservation
 {
@@ -37,11 +37,46 @@ final readonly class AcquisitionObservation
             $conflict, $chargeAnomaly, AcquisitionCharges::from($attempt, $facts, $now), $now);
     }
 
+    /** Keep facts reported before an interrupted or overdue registration read can return its result. */
+    public static function collect(RequestContext $context, array &$seen): void
+    {
+        $context->observe(static function (DomainSnapshot|OrderEvidence $fact) use ($context, &$seen): void {
+            $now = $context->now();
+            if ($now >= $context->deadline) { return; }
+            if ($fact instanceof DomainSnapshot) { $seen['domain'] = $fact; }
+            else { $seen['orders'][] = $fact; }
+            $seen['at'] ??= $now;
+        });
+    }
+
+    public static function partial(AcquisitionRead $read, array $seen, ?HistoryScan $scan = null): self
+    {
+        if (!$seen) { return new self($scan); }
+        $facts = new Evidence(domain: $seen['domain'] ?? null, candidates: $seen['orders'] ?? []);
+        return new self($scan, $facts, charges: AcquisitionCharges::from($read->attempt, $facts, $seen['at']), observedAt: $seen['at']);
+    }
+
+    public function retainAfterInterruption(AcquisitionRead $read, OperationWriter $writer): void
+    {
+        if (!$this->facts || $read->attempt->query->action !== Action::Register) { return; }
+        $id = $read->token->attempt->operationId;
+        $route = $this->facts->domain ? Operation::findOrFail($id) : null;
+        FreshTransaction::run(function () use ($id, $read, $writer, $route): void {
+            // Proof may outlive native settlement authority. Keep the account, holding and operation lock order.
+            $account = $route ? Account::where('server_id', $read->attempt->binding->serverId)->lockForUpdate()->first() : null;
+            $holding = $route ? Domain::whereKey($route->domain_id)->lockForUpdate()->first() : null;
+            $op = Operation::whereKey($id)->lockForUpdate()->firstOrFail();
+            $this->retainCharge($op, $read, $writer);
+            if ($account && $holding) { $this->retainOwnership($op, $holding, $account, $read, $writer); }
+        });
+    }
+
     /** A matching charge can bar a negative answer even if the read cannot settle the purchase. */
     public function retainCharge(Operation $op, AcquisitionRead $read, OperationWriter $writer): void
     {
-        if ($op->state === 'rejected' || !$this->charges || !$writer->ownsRead($read->token)) { return; }
-        $writer->recordAcquisitionCharges($read->token, $this->charges->match, $this->charges->orders);
+        if ($op->state === 'rejected' || !$this->charges || $this->observedAt === null
+            || !$writer->ownsRead($read->token, allowExpired: $op->action === 'register')) { return; }
+        $writer->recordAcquisitionCharges($read->token, $this->charges->match, $this->charges->orders, $this->observedAt);
     }
 
     /** Read takeover preserves timely evidence. A rejection closes the attempt to new observations. */
@@ -51,6 +86,7 @@ final readonly class AcquisitionObservation
         $attempt = $read->attempt;
         if ($op->state === 'rejected' || !$this->observedAt || $this->observedAt >= $read->until || !$domain
             || !$domain->binding->matches($attempt->binding) || $domain->name !== $attempt->query->name
+            || $op->domain_id !== $holding->id || $op->server_id !== $attempt->binding->serverId
             || $holding->domain !== $attempt->query->name
             || $op->operation_key !== $attempt->operationKey || $op->authority_generation !== $attempt->authorityGeneration
             || $holding->authority_generation !== $attempt->authorityGeneration

@@ -4,17 +4,18 @@ declare(strict_types=1);
 require __DIR__.'/Support/namesilo-registration-fixture.php';
 require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 require_once __DIR__.'/Support/native-financial-snapshot.php';
+require __DIR__.'/Support/WireLimit.php';
 use App\Models\Credit;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\{Crypt, DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction;
-use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,ReadLimiter};
 use Paymenter\Extensions\Servers\Domains\Data\{Environment,ExecutionRecord,HistoryAcceptance};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client,Driver};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport,TransportResponse};
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationWriter, ReadToken, StepKey, Transition};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,HistoryAcceptances,OperationReconciliation,ReconciliationEvidence,Refunds,RegistrarCheck,RenewalAuthority,StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,HistoryAcceptances,OperationReconciliation,ReconciliationEvidence,Refunds,RegistrarCheck,RenewalAuthority,Runtime,StaffSettingsReview as Review,StaffSettingsWrites};
 app()->instance(Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);
 $staff=commerceUser();$role=App\Models\Role::create(['name'=>'Purchase answers','permissions'=>['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.enom_answer','admin.domains.manage','admin.invoices.update']]);$staff->update(['role_id'=>$role->id]);
 $settings=new StaffSettingsWrites($native,$sellers,$bindings);
@@ -161,7 +162,7 @@ foreach(['accepted','not_processed','invalid_claim','expired_read','inherited_re
 // A prior empty check allows a support answer. A later matching charge must survive missing ownership,
 // competing or unreadable order details, and a concurrent check that loses the read claim.
 $failures = [];
-foreach (['credited', 'incomplete', 'overlap', 'status-change'] as $scenario) {
+foreach (['credited', 'incomplete', 'overlap', 'status-change', 'read-limit'] as $scenario) {
     $clock->instant = new DateTimeImmutable('2026-10-18T12:00:00Z'); $makeEngine($binding, $exchange);
     $registration->mode = 'unknown';
     $op = $runRegistration($nsNew(placeholderComFixtureName('support-charge-'.$scenario.'-placeholder.com')));
@@ -174,7 +175,7 @@ foreach (['credited', 'incomplete', 'overlap', 'status-change'] as $scenario) {
     $policy['reconciliation']['polls'] = OperationReconciliation::POLL_LIMIT - 1;
     $op->update(['policy'=>$policy]);
     $complete = in_array($scenario, ['overlap', 'status-change'], true);
-    $wireState->orders = $complete ? ['9001'] : ['9001','9002'];
+    $wireState->orders = $complete || $scenario === 'read-limit' ? ['9001'] : ['9001','9002'];
     $wireState->fault = $scenario;
     if ($scenario === 'overlap') {
         $wireState->during = static function () use ($op, $reconcile, &$failures): void {
@@ -185,7 +186,19 @@ foreach (['credited', 'incomplete', 'overlap', 'status-change'] as $scenario) {
     if ($scenario === 'status-change') {
         $wireState->during = static fn () => $op->fresh()->update(['safe_code'=>'staff_review']);
     }
-    $result = $reconcile->run($op->id);
+    if ($scenario === 'read-limit') {
+        app()->instance(Runtime::class, new stdClass);
+        app()->instance(ReadLimiter::class, $limiter = new WireLimit(2));
+    }
+    try { $result = $reconcile->run($op->id); }
+    finally {
+        if ($scenario === 'read-limit') {
+            app()->offsetUnset(Runtime::class);
+            app()->offsetUnset(ReadLimiter::class);
+            same(2, $limiter->released, 'Order history returned before the ownership read reached its limit');
+            same(3, $limiter->calls, 'The ownership read was refused at admission');
+        }
+    }
     $sealed = OperationAttempts::sealed((int) $op->id, new StepKey('register', 1));
     $charge = OperationAttempts::evidence((int) $op->id, $sealed->token->attemptId, 'acquisition_charge');
     $match = $complete ? 'exact' : 'ambiguous';
