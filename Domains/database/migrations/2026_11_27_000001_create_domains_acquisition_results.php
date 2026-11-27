@@ -36,7 +36,7 @@ return new class extends Migration {
         }
         $connection = DB::connection($queue['connection'] ?? null);
         $operationJobs = [ExecuteOperation::class, RunOperation::class];
-        foreach ($connection->table($queue['table'])->select(['id', 'payload'])->lazyById() as $job) {
+        foreach ($connection->table($queue['table'])->useWritePdo()->select(['id', 'payload'])->lazyById() as $job) {
             $payload = json_decode($job->payload, true);
             if (!is_array($payload)) {
                 throw new \DomainException('The configured queue contains an unreadable job. Inspect and drain it before upgrading.');
