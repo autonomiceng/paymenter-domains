@@ -483,6 +483,18 @@ final class OperationClaims
 
     public function requireProcessing(AccountBinding $binding): void { $this->authority->requireProcessing($binding); }
 
+    /** Successful preflight can end a shortfall even when a later local gate stops the send. */
+    public function confirmFunds(Operation $claimed, DispatchReadiness $ready): void
+    {
+        if (AcquisitionResult::continuation($claimed)?->shortfallAt === null) { return; }
+        $this->locked((int) $claimed->id, function ($op, $domain, $all, $funding, $server, $account) use ($claimed, $ready): void {
+            $now = $this->clock->now();
+            if (!AcquisitionAttempt::sameClaim($op, $claimed) || !$op->lease_expires_at || $op->lease_expires_at <= $now) { return; }
+            $ready->requireCurrent(AccountBindings::binding($account), self::query($op, $domain), self::payloadDigest($op), $now);
+            AcquisitionResult::clearShortfall($op);
+        });
+    }
+
     public function locked(int $id, \Closure $callback, ?int $staffId = null): mixed
     { return $this->authority->locked($id, $callback, $staffId); }
 

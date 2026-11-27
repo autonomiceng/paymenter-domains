@@ -76,7 +76,8 @@ final readonly class RuntimeDispatch
             if (BalanceRetries::pending($op)) { app(OperationClaims::class)->readmitBalance($id); }
             return null;
         }
-        $recovering = AcquisitionRetryProof::expiredClaim($op, $instant) || AcquisitionRetryProof::interruptedHold($op);
+        $recovering = AcquisitionRetryProof::expiredClaim($op, $instant)
+            || AcquisitionRetryProof::interruptedHold($op) && !BalanceRetries::pending($op);
         if ($recovering && ExecutionWindow::pastTransferCutoff($op, $instant)) {
             app(OperationClaims::class)->holdUnclaimed($id, 'transfer_setup_review_required');
             return null;

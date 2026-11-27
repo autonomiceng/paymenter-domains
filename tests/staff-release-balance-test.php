@@ -403,7 +403,7 @@ $lowEngine->execute($capped->id);same($before,$writer->calls,'Automatic tries, s
 // The independent checkout below needs current catalogue freshness after the capped retry window.
 DB::table('domains_prices')->where('server_id',$binding->serverId)->update(['observed_at'=>$clock->now()->format('Y-m-d H:i:s'),'fresh_until'=>$clock->now()->modify('+1 day')->format('Y-m-d H:i:s')]);
 config(['domains.enom_writes.registration'=>true]);$legacy=$new(placeholderComFixtureName('retry-preclaim-refund-placeholder.com'));
-config(['domains.enom_writes.registration'=>false]);$legacy->update(['state'=>'held','safe_code'=>'usd_balance_required']);
+config(['domains.enom_writes.registration'=>false]);$legacy=$claims->holdUnclaimed($legacy->id,'usd_balance_required');
 same(false,$claims->readmitBalance((int)$legacy->id),'Stored pre-claim check gets the normal backoff');
 $clock->instant=$clock->now()->modify('+900 seconds');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
 // This is the real pre-claim deployment gate, not a synthetic terminal row.

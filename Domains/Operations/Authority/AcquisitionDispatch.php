@@ -43,11 +43,10 @@ final readonly class AcquisitionDispatch
                 $writer?->requireAtSeal($op, $domain, $ready);
                 $now = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'));
                 $ready->requireCurrent($binding, AcquisitionAuthority::query($op, $domain), AcquisitionAuthority::payloadDigest($op), $now);
-                if (\Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::active($op)) {
-                    AcquisitionResult::clearShortfall($op);
-                }
+                $continuation = AcquisitionResult::continuation($op, true);
+                if ($continuation?->shortfallAt !== null) { AcquisitionResult::clearShortfall($op); }
                 $wire?->requireReservedCapacity();
-                $window = AcquisitionResult::window($op, true) ?? throw new \DomainException('Missing acquisition window.');
+                $window = $continuation?->window ?? throw new \DomainException('Missing acquisition window.');
                 if (!$window->fits($now)) { throw new WriteHeld($window->blockedReason($now)); }
                 $lastSend = min($window->end,
                     $entry->setTimezone(new \DateTimeZone('UTC'))->modify('+'.(ExecuteOperation::EXECUTION_SECONDS - ExecuteOperation::FINISH_SECONDS).' seconds'));
