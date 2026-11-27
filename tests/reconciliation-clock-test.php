@@ -5,9 +5,11 @@ require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 $fixtureEnding = 'example.com';
 require __DIR__.'/Support/reconciliation-fixture.php';
 require_once __DIR__.'/Support/reserved-fixtures.php';
+use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\{DateEvidence, Disposition, DriverResult, Evidence, ExpiryPrecision, HistoryAcceptance, RegistrationEvidence, ResultReason, SendState};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationSchema, StepKey};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
-use Paymenter\Extensions\Servers\Domains\Services\{HistoryAcceptances, ReconciliationEvidence, RenewalAuthority};
+use Paymenter\Extensions\Servers\Domains\Services\{HistoryAcceptances, OperationReconciliation, ReconciliationEvidence, RenewalAuthority};
 // The captured ID identifies the order even when its local clock has no accepted zone.
 [$op, $binding] = $prepare(reservedFixtureName('local-clock.example.com'));
 $observation->billDate = '10/18/2026 6:02:00 AM'; // UTC-6 fits; LA interprets this one hour late.
@@ -52,4 +54,17 @@ foreach (['too-late', 'too-early', 'wrong-id', 'history'] as $fault) {
     same([$money, $writes], [$nativeMoney(), $writer->calls], 'Clock reconciliation preserves finance and never writes: '.$fault);
     if ($fault === 'history') { expect(in_array(ReadCommand::Orders, $observation->calls, true), 'Skewed negative really used strict history'); }
 }
+// The full proof arrived in time, but settlement lost the race with the deadline while under lock.
+[$op] = $prepare(reservedFixtureName('expired-charge-proof.example.com'));
+DB::listen(static function ($query) use ($clock): void {
+    if (str_starts_with($query->sql, 'insert into') && str_contains($query->sql, OperationSchema::EVIDENCE)
+        && in_array('observation', $query->bindings, true)) {
+        $clock->instant = $clock->now()->modify('+'.OperationReconciliation::READ_SECONDS.' seconds');
+    }
+});
+$result = $reconcile->run($op->id);
+same('pending', $result->state, 'Expired read does not settle the purchase');
+$charge = OperationAttempts::sealedEvidence($op->id, new StepKey('register', 1), 'acquisition_charge');
+same(['exact', '9001', '8.95'], [$charge['outcome'] ?? null, $charge['evidence']['orders'][0]['reference'] ?? null,
+    $charge['evidence']['orders'][0]['amount'] ?? null], 'A timely matching charge survives expiry before settlement');
 echo "Captured-order clock bounds and retained anchors passed\n"; $nativeSuccessful = true;

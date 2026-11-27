@@ -81,7 +81,7 @@ final readonly class ManagementAttempt
         $at = $attempt['management_read_at'] = $row['recorded_at'];
         $mode = $row['outcome'];
         if ($mode === 'recovery') {
-            $attempt['management_recovery'] = ['number'=>($attempt['management_recovery']['number'] ?? 0) + 1,
+            $attempt['management_recovery'] = ['number'=>($attempt['management_recovery']['number'] ?? 0) + $row['recovery_count'],
                 'at'=>$at, 'reviewed'=>$row['evidence']['reviewed']];
             return;
         }

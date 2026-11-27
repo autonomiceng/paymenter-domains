@@ -14,9 +14,7 @@ trait GuardsOperation
         static::creating(static fn(self $operation)=>\Paymenter\Extensions\Servers\Domains\Services\CapturedChargeReview::guard($operation));
         static::updating(static fn(self $operation)=>\Paymenter\Extensions\Servers\Domains\Services\CapturedChargeReview::guard($operation));
         static::creating(static fn(self $operation)=>\Paymenter\Extensions\Servers\Domains\Services\RenewalRetries::guardCreation($operation));
-        static::creating(static function(self $operation):void {
-            if(array_key_exists('management_unsent',$operation->attempt??[])){throw new \DomainException('Unsent management proof requires a live dispatched operation.');}
-        });
+        static::creating(self::guardManagementCreation(...));
         static::updating(static function (self $operation): void {
             $dirty = array_keys($operation->getDirty());
             if (AcquisitionAttempt::key($operation->action) && $operation->acquisition($operation->attributes)) {
@@ -66,6 +64,14 @@ trait GuardsOperation
         static::updated(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\RequestAlerts::changed($operation));
         static::updating(self::guardRetainedHistory(...));
         static::deleting(static function (): never { throw new \DomainException('Operation ledger rows are retained.'); });
+    }
+
+    private static function guardManagementCreation(self $operation): void
+    {
+        $attempt = $operation->attempt ?? [];
+        if (array_key_exists('management_unsent', $attempt) || array_key_exists('management_test_unsent', $attempt)) {
+            throw new \DomainException('Unsent management proof requires a live dispatched operation.');
+        }
     }
 
     private static function guardRetainedHistory(self $operation): void

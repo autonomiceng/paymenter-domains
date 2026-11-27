@@ -86,9 +86,6 @@
  "Management/Changes/ManagementForms.php": [
   "Registrars\\NameSilo\\DnsForm"
  ],
- "Management/Changes/ManagementRequests.php": [
-  "Services\\EnomTestManagement"
- ],
  "Management/Records/OwnerRecords.php": [
   "Registrars\\NameSilo\\DnsForm",
   "Registrars\\NameSilo\\DnsSequence"

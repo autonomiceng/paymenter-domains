@@ -37,7 +37,7 @@ $chargeCases=['changed'=>['20.00','actual_charge_changed'],'overrun'=>['16.00','
 $cases = [];
 foreach ($capturedCase === 'captured' ? $chargeCases : [] as $case => [$limit, $reason]) {
     $cases[$case] = static function () use ($case, $limit, $reason, $bindings, $clock, $makeRenewal, $cycles, $review,
-        $staff, $state, $compose, $renewBindings, $renewalRuntime, $check, $role, $rights): void {
+        $staff, $state, $compose, $renewBindings, $renewalRuntime, $check, $role, $rights, &$failures): void {
  app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$bindings);config(['domains.enom_identity.environment'=>null]);
  [$seed,$d,$b]=$makeRenewal(placeholderComFixtureName('captured-'.$case.'-placeholder.com'),false);$cycles->retireUnpaid($seed->id);
  $clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');$review($d);

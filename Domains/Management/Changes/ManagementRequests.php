@@ -9,7 +9,8 @@ use Paymenter\Extensions\Servers\Domains\Data\{ManagementRequest, PrivacyMode, R
 use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 use Paymenter\Extensions\Servers\Domains\Management\Records\OwnerRecords;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, EnomTestManagement, EntryDeadline, FreshTransaction,
+use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\Accounts;
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, EntryDeadline, FreshTransaction,
     HoldingLocks, ManagementEvidence, OperationClaims, OwnedDomains, OwnerFormStale, PricingRule, PrivacyRetirement, Runtime,
     RuntimeIneligible, RuntimeReason};
 
@@ -23,7 +24,7 @@ trait ManagementRequests
             return (function()use($actor,$seed,$driver,$actions,&$refused):array {
                 $l=HoldingLocks::take($seed,(int)$actor->id,true);
                 if($this->localCheck&&($this->localCheck)(AccountBindings::binding($l['account']))!==true
-                    ||$this->testManagement&&!EnomTestManagement::accepted(AccountBindings::binding($l['account']))){$refused=self::SWITCH_OFF;return [];}
+                    ||$this->testManagement&&!Accounts::enomManagementAccepted(AccountBindings::binding($l['account']))){$refused=self::SWITCH_OFF;return [];}
                 if(($blocked=$this->unresolved($l))!==null){
                     $refused=(int)$blocked->id;
                     $actions=array_values(array_filter($actions,fn($action)=>$this->unresolved($l,action:$action)===null));

@@ -94,18 +94,33 @@ final class OperationAttempts
         return $attempts;
     }
 
-    /** Ordered records for history and read budgets. */
+    /** Ordered facts for the management projection. Paced recovery keeps a separate, unbounded audit trail. */
     public static function managementEvidence(array $operationIds, bool $lock = false): array
     {
         if (!$operationIds) { return []; }
-        $rows = DB::table(OperationSchema::EVIDENCE)->whereIn('operation_id', $operationIds)
-            ->whereIn('kind', [...array_column(ManagementEvidenceKind::cases(), 'value'), 'management_failed', 'admission', 'reply', 'claim', 'terminal'])
-            ->when($lock, fn ($q) => $q->lockForUpdate())->orderBy('id')->get();
+        $reserve = ManagementEvidenceKind::ReserveRead->value;
+        $readback = ManagementEvidenceKind::Readback->value;
+        $recovery = DB::table(OperationSchema::EVIDENCE)->whereIn('operation_id', $operationIds)
+            ->where(fn ($q) => $q->where(['kind' => $reserve, 'outcome' => 'recovery'])->orWhere('kind', $readback))
+            ->groupBy('attempt_id')->select('attempt_id')
+            ->selectRaw('MIN(CASE WHEN kind = ? THEN id END) AS first_reservation', [$reserve])
+            ->selectRaw('MAX(CASE WHEN kind = ? THEN id END) AS last_reservation', [$reserve])
+            ->selectRaw('COUNT(CASE WHEN kind = ? THEN 1 END) AS recovery_count', [$reserve])
+            ->selectRaw('MAX(CASE WHEN kind = ? THEN id END) AS last_readback', [$readback]);
+        // Fast reads precede the first recovery reservation. A failed recovery adds no readback.
+        $rows = DB::table(OperationSchema::EVIDENCE.' as e')->whereIn('e.operation_id', $operationIds)
+            ->leftJoinSub($recovery, 'r', 'r.attempt_id', '=', 'e.attempt_id')
+            ->whereIn('e.kind', [...array_column(ManagementEvidenceKind::cases(), 'value'), 'management_failed', 'admission', 'reply', 'claim', 'terminal'])
+            ->where(fn ($q) => $q->whereNull('r.first_reservation')->orWhereNotIn('e.kind', [$reserve, $readback])
+                ->orWhereColumn('e.id', '<', 'r.first_reservation')->orWhereColumn('e.id', 'r.last_reservation')
+                ->orWhereColumn('e.id', 'r.last_readback'))
+            ->when($lock, fn ($q) => $q->lockForUpdate())->orderBy('e.id')->get(['e.*', 'r.recovery_count']);
         $found = [];
         foreach ($rows as $row) {
             try { $proof = self::decoded($row); }
             catch (DecryptException|\JsonException) { $proof = self::UNREADABLE; }
-            $found[(int) $row->operation_id][] = ['kind' => $row->kind, 'attempt_id' => (int) $row->attempt_id, ...$proof];
+            $found[(int) $row->operation_id][] = ['kind' => $row->kind, 'attempt_id' => (int) $row->attempt_id,
+                'recovery_count' => (int) $row->recovery_count, ...$proof];
         }
         return $found;
     }

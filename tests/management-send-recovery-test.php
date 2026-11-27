@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/Support/management-send-bound.php';
 use Illuminate\Support\Facades\{Cache, DB};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{ManagementEvidenceKind, OperationAttempts, OperationSchema};
 use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, ManagementEvidence, WriteFeatures};
 // Old sealed attempts cannot claim a zero balance from an incomplete history.
 [$d, $driver, $op] = $uncertain('bound-legacy');
@@ -104,8 +105,11 @@ $state->fault='GetRenew';$management->run($op->id,$driver);
 for($i=1;$i<20;$i++){$management->reconcile($op->id,$driver);}
 $sealed=$op->fresh()->attempt;$funding=$op->fresh()->funding;$payload=$op->fresh()->payload;
 $clock->instant=$clock->now()->modify('+6 hours');$before=count($state->calls);
-$management->reconcile($op->id,$driver);
-same($before+2,count($state->calls),'Exhausted automatic correction still makes a slow status read during outage');
+$state->fault = '';
+same('uncertain', $management->reconcile($op->id,$driver)->state, 'Slow status read can leave the correction unconfirmed');
+same($before+2,count($state->calls),'Exhausted automatic correction still makes a slow status read');
+$lastRecoveryRead = $op->fresh()->attempt['management_recovery_read'];
+$state->fault = 'GetRenew';
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\OwnerPorts::class,new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts(static fn()=>$driver));
 $before=count($state->calls);
 try{$staffRun($op);expect(false,'Recent slow read must throttle Check status');}
@@ -115,6 +119,15 @@ $clock->instant=$clock->now()->modify('+15 minutes');$before=count($state->calls
 try{$staffRun($op);expect(false,'Outage must not be reported as Status checked');}
 catch(\Paymenter\Extensions\Servers\Domains\Services\StaffReviewRefused $e){expect(str_contains($e->getMessage(),'15 minutes'),'Failed staff read gives a plain retry step');}
 same($before+2,count($state->calls),'Spaced Check status performs a real read after the fast budget');
+$snapshot = $op->fresh()->attempt;
+same([2, $lastRecoveryRead], [$snapshot['management_recovery']['number'], $snapshot['management_recovery_read']],
+    'A failed reservation advances the count and keeps the last completed recovery read');
+$recoveryRows = DB::table(OperationSchema::EVIDENCE)->where('operation_id', $op->id)
+    ->where('kind', ManagementEvidenceKind::ReserveRead->value)->where('outcome', 'recovery');
+same(2, $recoveryRows->count(), 'Both recovery reservations remain in the audit trail');
+$projected = DB::transaction(fn () => OperationAttempts::managementEvidence([$op->id], true)[$op->id]);
+same(1, count(array_filter($projected, static fn ($row) => $row['kind'] === ManagementEvidenceKind::ReserveRead->value
+    && $row['outcome'] === 'recovery')), 'The locked reader loads only the latest recovery reservation payload');
 \Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
 $queued=\Illuminate\Support\Facades\Queue::pushed(\Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class)->count();
 (new \Paymenter\Extensions\Servers\Domains\Services\RuntimeDispatch($clock))->enqueue($op->id,true);

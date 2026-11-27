@@ -6,11 +6,17 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\Dispatch;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, RequestContext};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{AccountGuard, CredentialAuthenticator};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\DefaultContact;
+use Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement;
 
 final class Accounts
 {
     public const NAMESILO_EXPECTED_CONTACT = AccountGuard::EXPECTED;
     public const NAMESILO_CONTACT_PIN = AccountGuard::PIN;
+
+    public static function enomManagementAccepted(AccountBinding $binding): bool
+    {
+        return EnomTestManagement::accepted($binding);
+    }
 
     public static function checkNameSiloAccount(AccountBinding $binding, RequestContext $context, #[\SensitiveParameter] \Closure $exchange): void
     {
