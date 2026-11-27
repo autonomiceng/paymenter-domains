@@ -9,8 +9,8 @@ use Illuminate\Support\Facades\{Cache, Crypt, DB};
 use Paymenter\Extensions\Servers\Domains\Data\Disposition;
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, StepKey};
-use Paymenter\Extensions\Servers\Domains\Services\{FundsWaits, MoneyWorkSchema, PricingRule, Refunds, WriteAcceptance};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationSchema, StepKey};
+use Paymenter\Extensions\Servers\Domains\Services\{FundsWaits, HoldingLocks, MoneyWorkSchema, PricingRule, RefundProof, Refunds, WriteAcceptance};
 // Claim, seal, funds cutoff and send outcome cases share the one prepared claim fixture and clock. Each makes
 // its own paid native checkout; the reset restores rows, payments, attempts, listeners, cache and fakes after it.
 $cases['claims'] = static function () use ($new, $engine, $writer, $assertNoSend): void {
@@ -100,6 +100,32 @@ $cases['stale-claim-evidence'] = static function () use ($new, $engine, $preflig
         'funding_refused' => $refused['funding'] ?? false, 'sends' => $writer->calls - $before,
         'sealed_and_consumed' => $seal?->grantConsumedAt !== null];
     same($expected, $actual, 'Stale claim regression: '.json_encode($actual, JSON_THROW_ON_ERROR));
+};
+$cases['inherited-refund-snapshot'] = static function () use ($new, $engine): void {
+    $op = $new('refund-snapshot.example.com');
+    $holding = $op->domain;
+    $sent = $engine->execute($op->id);
+    same('uncertain', $sent->state, 'The worker sent without a confirmed reply');
+    // SQLite has no current locking reads. Hide the new ledger rows only from consistent reads.
+    $connection = DB::connection();
+    $original = $connection->getQueryGrammar();
+    $connection->setQueryGrammar(new class($connection) extends Illuminate\Database\Query\Grammars\SQLiteGrammar {
+        public function compileSelect(Illuminate\Database\Query\Builder $query)
+        {
+            if (!$query->lock && in_array($query->from, [OperationSchema::STEPS.' as s', OperationSchema::EVIDENCE], true)) {
+                $query = (clone $query)->whereRaw('0 = 1');
+            }
+            return parent::compileSelect($query);
+        }
+    });
+    try {
+        DB::transaction(static function () use ($holding, $op): void {
+            $locks = HoldingLocks::take($holding);
+            $locked = $locks['operations']->firstWhere('id', $op->id);
+            commerceReject(fn () => RefundProof::requireUnsent($locked, $locks['domain']));
+            same('possibly_sent', $locked->attempt['execution']['send_state'], 'The holding retains the current attempt under core locks');
+        });
+    } finally { $connection->setQueryGrammar($original); }
 };
 $cases['funds-cutoff'] = static function () use ($new, $engine, $preflight, $clock, $user, $assertNoSend): void {
     // The real worker must release its own unsealed claim when the funds cutoff passes during preflight.
