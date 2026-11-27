@@ -32,15 +32,13 @@ function curl_exec($h): bool {
     $o=$GLOBALS['nsCatalogueOptions'];$url=parse_url($o[CURLOPT_URL]);parse_str($url['query'],$p);$command=basename($url['path']);
     same('ote.namesilo.com',$url['host'],'Catalogue and checkout use only OTE');
     $GLOBALS['nsCatalogueCalls'][]=$command;
+    if ($command === 'contactAdd') { $GLOBALS['nsCatalogueContact'] = $p; }
     $reply=match($command){
         'getPrices'=>['code'=>300,'com'=>$GLOBALS['nsCatalogueRow']??['registration'=>'10.00','renew'=>'12.00','transfer'=>'11.00'],
             'net'=>['registration'=>'13.00','renew'=>'14.00','transfer'=>'15.00']],
         'getAccountBalance'=>['code'=>300,'balance'=>'123.45'],
         'checkRegisterAvailability'=>['code'=>300,'available'=>[['domain'=>$p['domains'],'price'=>'10.00','premium'=>0,'duration'=>1]]],
-        'contactAdd'=>['code'=>300,'contact_id'=>'900'] + (function () use ($p): array {
-            $GLOBALS['nsCatalogueContact'] = $p;
-            return [];
-        })(),
+        'contactAdd'=>['code'=>300,'contact_id'=>'900'],
         'contactList'=>['code'=>300,'contact'=>['contact_id'=>'900','default_profile'=>'0', ...$GLOBALS['nsCatalogueContact']]],
         default=>throw new \RuntimeException('Unexpected synthetic wire command.'),
     };
@@ -205,7 +203,7 @@ $runOrder();
 config(['domains.provider_send_guard' => null]);
 $op->refresh();
 same(['held', 'acquisition_definitely_unsent', 0, 'contactList'], [$op->state, $op->safe_code, $purchases(),
-    end($GLOBALS['nsCatalogueCalls'])], 'The verified order contact reaches a purchase seal with zero physical purchases');
+    end($GLOBALS['nsCatalogueCalls'])], 'Local refusal with a verified order contact '.json_encode([$op->state, $op->safe_code, $GLOBALS['nsCatalogueCalls']], JSON_THROW_ON_ERROR));
 $refused = $op->acquisitionAttemptFacts()->token;
 $creditActor = staffUser([...array_keys(Staff::permissions()), 'admin.invoices.update']);
 $reviewOrder = static function (string $action) use ($op, $clock, $creditActor): void {

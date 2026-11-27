@@ -15,12 +15,8 @@ $nativeSuccessful = false;
 $reset();
 $config = 'domains.enom_live.accounts.live-uid.daily_spend_limit_usd';
 config(['domains.enom_live.registration' => true, $config => '300.00']);
-try {
-    $write('activate', ['registration' => true, 'renewal' => true, 'management' => false, 'transfer' => true, 'confirmed' => true]);
-    $write('publish', [], $tld->id);
-} catch (Symfony\Component\HttpKernel\Exception\HttpException $error) {
-    throw new RuntimeException('Enom order activation HTTP '.$error->getStatusCode().' at '.basename($error->getTrace()[1]['file'] ?? '').':'.($error->getTrace()[1]['line'] ?? 0), previous: $error);
-}
+$write('activate', ['registration' => true, 'renewal' => true, 'management' => false, 'transfer' => true, 'confirmed' => true]);
+$write('publish', [], $tld->id);
 $product = app(NativeCatalogue::class)->product($tld->fresh(), 'register');
 expect($product !== null, 'Synthetic Live registration is active');
 $setTime = static function (DateTimeImmutable $time) use ($clock): void {
@@ -73,18 +69,17 @@ $day = $clock->now()->modify('+2 days');
 foreach (['funded', 'shortfall', 'deferred-live', 'deferred-expired', 'orders-scheduler', 'orders-job', 'orders-expired'] as $index => $case) {
     $setTime($day->modify('+'.(4 * $index).' days'));
     $wire();
+    Auth::setUser($staff);
     installedOfferEvidence($binding, $clock, true);
     DB::table('domains_runtime_turns')->where('server_id', $server->id)->update(['finished_at' => $clock->now()->getTimestamp()]);
     $cart = commerceCart($user);
     $name = placeholderComFixtureName('live-admission-'.$case.'-placeholder.com');
     commerceAdd($cart, $product, $name);
-    try { commerceCheckout($user, $cart)->assertHasNoErrors(); }
-    catch (Symfony\Component\HttpKernel\Exception\HttpException $error) {
-        throw new RuntimeException('Enom order checkout HTTP '.$error->getStatusCode().' for '.$case, previous: $error);
-    }
+    commerceCheckout($user, $cart)->assertHasNoErrors();
     $order = Domain::where('domain', $name)->sole()->operations()->sole();
     App\Helpers\ExtensionHelper::addPayment($order->invoice_id, null, $order->amount);
     $setTime($clock->now()->modify('+31 seconds'));
+    Auth::setUser($staff);
     installedOfferEvidence($binding, $clock, true);
     // Let the seal commit, then end the job before the transport consumes its grant.
     $atSeal = static fn () => $setTime($clock->now()->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds'));
@@ -114,6 +109,7 @@ foreach (['funded', 'shortfall', 'deferred-live', 'deferred-expired', 'orders-sc
         $run($order);
         same(['held', 0], [$order->fresh()->state, $purchases()], 'The earliest retry observes the 900-second pacing');
         $setTime($firstWait->modify('+901 seconds'));
+        Auth::setUser($staff);
         installedOfferEvidence($binding, $clock, true);
         $run($order);
         $order->refresh();
