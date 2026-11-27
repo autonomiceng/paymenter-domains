@@ -14,18 +14,6 @@ final class ManagementReadRecovery
         $at=$a['management_read_at']??$read['at']??$a['dispatch_attempted_at']??null;
         return is_string($at)?new \DateTimeImmutable($at):null;
     }
-    public static function reserve(Operation $op,\DateTimeImmutable $now,bool $reviewed): bool
-    {
-        $last=self::last($op->attempt);$next=$last?->modify($reviewed?'+15 minutes':'+6 hours');
-        if($next&&$now<$next){
-            if($reviewed){throw new StaffReviewRefused('A status check was requested recently. Try again at '.\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($next->getTimestamp()).'. Automatic checks continue.');}
-            return false;
-        }
-        $at=$now->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM);
-        $op->update(['attempt'=>[...$op->attempt,'management_read_at'=>$at,'management_recovery'=>[
-            'number'=>($op->attempt['management_recovery']['number']??0)+1,'at'=>$at,'reviewed'=>$reviewed]]]);
-        return true;
-    }
     public static function reads(Operation $op): array
     { return [...($op->attempt['management_reads']??[]),...(isset($op->attempt['management_recovery_read'])?[$op->attempt['management_recovery_read']]:[])]; }
     public static function latest(Operation $op): array

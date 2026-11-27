@@ -55,9 +55,7 @@ final class ManagementSequence
             foreach (self::members($parent,$operations) as $child) {
                 self::pairPlan($parent,$child);
                 if ($child->id===$parent->id || $child->state==='succeeded') { continue; }
-                $child->update(['state'=>'rejected','safe_code'=>'management_retired','completed_at'=>$at,
-                    'attempt'=>[...($child->attempt??[]),'seal'=>$child->attempt['seal']??'absent','send_state'=>$child->attempt['send_state']??'definitely_unsent',
-                        'management_terminal'=>['actor_id'=>$actor,'at'=>$at->format(DATE_ATOM)]]]);
+                ManagementAuthority::retire($child, ['actor_id'=>$actor, 'at'=>$at->format(DATE_ATOM)], $at);
             } return;
         }
         $key=$parent->policy['management']['prerequisite']['key']??null;
@@ -65,8 +63,7 @@ final class ManagementSequence
         $step=$operations->firstWhere('operation_key',$key);
         if (!$step || self::started($parent,$operations)) { throw new \DomainException('Management sequence already started.'); }
         self::pair($parent,$step);
-        $step->update(['state'=>'rejected','safe_code'=>'management_retired','completed_at'=>$at,
-            'attempt'=>[...($step->attempt??[]),'seal'=>$step->attempt['seal']??'absent','send_state'=>$step->attempt['send_state']??'definitely_unsent','management_terminal'=>['actor_id'=>$actor,'at'=>$at->format(DATE_ATOM)]]]);
+        ManagementAuthority::retire($step, ['actor_id'=>$actor, 'at'=>$at->format(DATE_ATOM)], $at);
     }
     /** Enter the predecessor through the same engine. Unknown sealed work is only read, never sent again. */
     public static function prepare(int $id, DomainManagement $engine, ManagementProtocol $driver, RequestOrigin $origin, \DateTimeImmutable $now, int $interactiveSeconds): bool
@@ -101,7 +98,7 @@ final class ManagementSequence
     /** Every claim and consume rechecks the frozen link; retired/replaced parents cannot create contacts. */
     public static function requireCurrent(array $locked, Operation $op): void
     {
-        if (isset($op->policy['management']['sequence'])) {
+        if (isset($op->policy['management']['sequence_index'])) {
             self::currentPlan($locked,$op); return;
         }
         $parentKey=$op->policy['management']['sequence_parent']??null;
@@ -148,12 +145,16 @@ final class ManagementSequence
         $sequence=['preimage'=>$plan['preimage'],'configuration'=>$plan['configuration'],'steps'=>$steps,...($kept?['confirmed'=>$kept]:[])];$root=null;
         foreach ($steps as $i=>$step) {
             $root=Operation::create([...$data,'operation_key'=>$step['key'],'action'=>$step['action'],'payload'=>$step['input'],
-                'policy'=>['management'=>[...$management,'intent'=>$management['input'],'input'=>$step['input'],'sequence'=>$sequence,'sequence_index'=>$i,
-                    ...($i===$last?[]:['sequence_parent'=>$key])]]]);
+                'policy'=>['management'=>[...$management,'input'=>$step['input'],'sequence_index'=>$i,
+                    ...($i===$last ? ['sequence'=>$sequence, 'intent'=>$management['input']] : ['sequence_parent'=>$key])]]]);
         } return $root;
     }
     public static function retained(Operation $parent,\Paymenter\Extensions\Servers\Domains\Models\Domain $d)
-    { return $d->operations()->whereIn('operation_key',array_column($parent->policy['management']['sequence']['steps'],'key'))->limit(50)->get(); }
+    {
+        $rows = $d->operations()->whereIn('operation_key',array_column($parent->policy['management']['sequence']['steps'],'key'))->limit(50)->get();
+        Operation::loadManagementAttempts($rows);
+        return $rows;
+    }
     public static function members(Operation $parent,$operations)
     {
         $steps=$parent->policy['management']['sequence']['steps'];$rows=collect();
@@ -172,7 +173,8 @@ final class ManagementSequence
         $step=$p['sequence']['steps'][$i]??null;$last=count($p['sequence']['steps'])-1;
         if (!is_int($i) || !$step || $parent->operation_key!==$p['sequence']['steps'][$last]['key']
             || $parent->funding_basis!=='non_billable_management' || $parent->invoice_id!==null || $child->invoice_id!==null
-            || ($s['sequence']??null)!==$p['sequence'] || ($s['intent']??null)!==$p['intent'] || ($s['correction']??null)!==($p['correction']??null)
+            || (isset($s['sequence']) && $s['sequence']!==$p['sequence']) || (isset($s['intent']) && $s['intent']!==$p['intent'])
+            || ($s['correction']??null)!==($p['correction']??null)
             || $step!==['key'=>$child->operation_key,'action'=>$child->action,'input'=>$s['input']??null]
             || ($i===$last ? $child->id!==$parent->id : ($s['sequence_parent']??null)!==$parent->operation_key)) {
             throw new \DomainException('Management sequence input changed.');
@@ -222,9 +224,13 @@ final class ManagementSequence
     /** Context reconstructed solely from frozen policy and verified predecessor evidence. */
     public static function context(Operation $op,array $l): ?array
     {
-        $p=$op->policy['management'];$sequence=$p['sequence']??null;
-        if (!$sequence) { return null; }
-        $preimage=$sequence['preimage'];$i=$p['sequence_index'];
+        $p=$op->policy['management'];$i=$p['sequence_index']??null;
+        if (!is_int($i)) { return null; }
+        $parent = isset($p['sequence_parent']) ? $l['operations']->firstWhere('operation_key', $p['sequence_parent']) : $op;
+        $sequence = $parent?->policy['management']['sequence'] ?? null;
+        if (!$sequence) { throw new \DomainException('Management sequence missing.'); }
+        self::pairPlan($parent, $op);
+        $preimage=$sequence['preimage'];
         if ($i>0) {
             $previous=$l['operations']->firstWhere('operation_key',$sequence['steps'][$i-1]['key']);
             if (!$previous || $previous->state!=='succeeded' || !ManagementEvidence::resolved($previous,$l['domain'])) { throw new \DomainException('Previous management delta unconfirmed.'); }

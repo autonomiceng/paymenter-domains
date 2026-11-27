@@ -49,8 +49,7 @@ $management->reconcile($op->id, $driver);
 same($before, count($state->calls), 'Full history refuses before I/O');
 // An inconsistent restored fixture must also honor the independent history gate.
 $attempt = [...$op->fresh()->attempt, 'management_observation_attempts' => 19];
-DB::table('domains_operations')->where('id', $op->id)->update([
-    'attempt' => $op->fresh()->forceFill(['attempt' => $attempt])->getAttributes()['attempt']]);
+restoreLegacyManagement($op, $attempt);
 $management->reconcile($op->id, $driver);
 same($before, count($state->calls), 'Full completed history refuses independently of the attempt counter');
 

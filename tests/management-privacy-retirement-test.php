@@ -157,7 +157,10 @@ foreach(['privacy_purchase','privacy_renew'] as $action){
     ];
     foreach($bad as $kind=>$corrupt){
         [$d,$driver,$op]=$issue();$op=$management->retire($user,$op->id);$payment($op);
-        Operation::withoutEvents(fn()=>$op->update($corrupt($op)));expect(!PrivacyRetirement::safe($op->fresh(),$d),'Verifier itself refuses '.$kind);$before=$balance();$calls=count($state->calls);
+        $changes = $corrupt($op);
+        if (isset($changes['attempt'])) { restoreLegacyManagement($op, $changes['attempt']); }
+        else { Operation::withoutEvents(fn()=>$op->update($changes)); }
+        expect(!PrivacyRetirement::safe($op->fresh(),$d),'Verifier itself refuses '.$kind);$before=$balance();$calls=count($state->calls);
         commerceReject(fn()=>$refunds->creditRejected($op->id));same($before,$balance(),'Forged/sent '.$kind.' cannot credit');expect(!isset($op->fresh()->funding['refund']),'Unsafe proof retains no credit marker');same($calls,count($state->calls),'Unsafe retirement never calls registrar');
     }
     foreach(['description'=>'Changed issued line','quantity'=>2,'price'=>'1.00','reference_type'=>'foreign','reference_id'=>99] as $field=>$value){
@@ -165,10 +168,10 @@ foreach(['privacy_purchase','privacy_renew'] as $action){
         commerceReject(fn()=>$refunds->creditRejected($op->id));same($before,$balance(),'Changed exact issued line refuses credit');$visible($op,$d);
     }
     foreach(['2026-10-18T11:59:59+00:00','2026-10-18T12:00:01+00:00'] as $outside){
-        [$d,$driver,$op]=$issue('claim');$op=$management->retire($user,$op->id);$payment($op);Operation::withoutEvents(fn()=>$op->update(['started_at'=>$outside]));expect(!PrivacyRetirement::safe($op->fresh(),$d),'Claim start outside issued/retired window refuses');commerceReject(fn()=>$refunds->creditRejected($op->id));
+        [$d,$driver,$op]=$issue('claim');$op=$management->retire($user,$op->id);$payment($op);DB::table('domains_operations')->where('id',$op->id)->update(['started_at'=>$outside]);expect(!PrivacyRetirement::safe($op->fresh(),$d),'Claim start outside issued/retired window refuses');commerceReject(fn()=>$refunds->creditRejected($op->id));
     }
     foreach([['management_claim'=>'bad'],['management_deferrals'=>['2026-02-30T12:00:00+00:00']],['management_deferrals'=>['2026-10-18T12:00:01+00:00']],['management_deferrals'=>[]]] as $corrupt){
-        [$d,$driver,$op]=$issue('deferral');$op=$management->retire($user,$op->id);$payment($op);Operation::withoutEvents(fn()=>$op->update(['attempt'=>array_replace($op->attempt,$corrupt)]));commerceReject(fn()=>$refunds->creditRejected($op->id));
+        [$d,$driver,$op]=$issue('deferral');$op=$management->retire($user,$op->id);$payment($op);restoreLegacyManagement($op, array_replace($op->attempt,$corrupt));commerceReject(fn()=>$refunds->creditRejected($op->id));
     }
     $restore();
 }

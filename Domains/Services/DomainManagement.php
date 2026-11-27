@@ -7,8 +7,9 @@ use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, ManagementProtocol};
 use Paymenter\Extensions\Servers\Domains\Data\{ManagementRequest, ManagementResult, PrivacyMode, RequestBudget, RequestContext, RequestOrigin, Support};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Management\Changes\{CorrectionProgress, ManagementCorrections, ManagementDeferred, ManagementPreparation, ManagementPrivacy, ManagementProgress, ManagementSequence};
+use Paymenter\Extensions\Servers\Domains\Management\Changes\{CorrectionProgress, ManagementAuthority, ManagementCorrections, ManagementDeferred, ManagementPreparation, ManagementPrivacy, ManagementProgress, ManagementSequence};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AttemptToken, OperationAttempts, ReadToken};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 /** Dormant engine boundary. All reads/writes outside locks; every request owns one durable attempt. */
@@ -16,11 +17,12 @@ final class DomainManagement
 {
     /** available() refused because the account's own switch for these changes is Off. */
     public const SWITCH_OFF = 'switch';
+    private readonly ManagementAuthority $attempts;
     private ?array $grant = null;
     private ?array $receiptGrant = null;
     public function __construct(private readonly AccountBindings $bindings, private readonly Clock $clock,
         private readonly WriteFeatures $features = new WriteFeatures, private readonly bool $accepted = false,
-        private readonly int $intervalSeconds = 25, private readonly bool $testManagement = false, private readonly ?\Closure $localCheck = null) {}
+        private readonly int $intervalSeconds = 25, private readonly bool $testManagement = false, private readonly ?\Closure $localCheck = null) { $this->attempts = new ManagementAuthority($clock); }
     public static function capability(string $action): string
     {
         return match ($action) {
@@ -123,9 +125,8 @@ final class DomainManagement
             foreach ($pending as $peer) {
                 if ($peer->id===$keep?->id || !$unsent($peer)) { continue; }
                 ManagementSequence::retirePrerequisite($peer,$l['operations'],(int)$actor->id,$this->clock->now());
-                $peer->update(['state'=>'rejected','safe_code'=>'management_retired','completed_at'=>$this->clock->now(),
-                    'attempt'=>[...($peer->attempt??[]),'seal'=>$peer->attempt['seal']??'absent','send_state'=>$peer->attempt['send_state']??'definitely_unsent',
-                        'management_terminal'=>['actor_id'=>(int)$actor->id,'at'=>$this->clock->now()->format(DATE_ATOM)]]]);
+                $at = $this->clock->now();
+                ManagementAuthority::retire($peer, ['actor_id'=>(int)$actor->id, 'at'=>$at->format(DATE_ATOM)], $at);
             }
             if ($keep) { return $keep; }
 
@@ -159,8 +160,8 @@ final class DomainManagement
             }
             $at=$this->clock->now();$terminal=$op->invoice_id?PrivacyRetirement::terminal($op,$l['domain'],(int)$actor->id,$at):['actor_id'=>(int)$actor->id,'at'=>$at->format(DATE_ATOM)];
             ManagementSequence::retirePrerequisite($op,$l['operations'],(int)$actor->id,$at);
-            $op->update(['state'=>'rejected','safe_code'=>'management_retired','completed_at'=>$at,
-                'attempt'=>[...($op->attempt??[]),'seal'=>$op->attempt['seal']??'absent','send_state'=>$op->attempt['send_state']??'definitely_unsent','management_terminal'=>$terminal]]);return $op;
+            ManagementAuthority::retire($op, $terminal, $at);
+            return $op;
         });
     }
     public function run(int $id, ManagementProtocol $driver, RequestOrigin $origin = RequestOrigin::Interactive, int $interactiveSeconds = EntryDeadline::INTERACTIVE_SECONDS): Operation
@@ -184,20 +185,30 @@ final class DomainManagement
                 $history=$op->attempt['management_deferrals']??[];
                 $last=$history?new \DateTimeImmutable(end($history)):$op->started_at;
                 if(ManagementEvidence::recoverable($op)&&$last&&$last<=$this->clock->now()->modify('-15 minutes')){
-                    $op->update(['state'=>'queued','safe_code'=>'management_deferred','attempt'=>[...$op->attempt,
-                        'management_deferrals'=>[...$history,$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM)]]]);
+                    $this->attempts->restoreDeferred($op);
+                    $op->update(['state'=>'queued','safe_code'=>'management_deferred']);
                 }return $op;
             });
         }
         if(!isset($op->policy['management'])){throw new \DomainException('Not a management operation.');}
         if ($op->state === 'running' && (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now())) {
-            return FreshTransaction::run(function () use ($seed,$id) { $l=HoldingLocks::take($seed); $op=$l['operations']->firstWhere('id',$id); if($op->state==='running'&&(!$op->lease_expires_at||$op->lease_expires_at<=$this->clock->now())){$op->update(['state'=>($op->attempt['seal']??null)==='sealed'?'uncertain':'held','safe_code'=>'management_unconfirmed','lease_expires_at'=>null]);} return $op; });
+            return FreshTransaction::run(function () use ($seed, $id): Operation {
+                $op = HoldingLocks::take($seed)['operations']->firstWhere('id', $id);
+                if ($op->state === 'running' && (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now())) {
+                    $facts = $op->managementAttempt()?->facts;
+                    if ($facts?->current && !$facts->sealed()) { $this->attempts->stop($op, $facts->token); }
+                    $op->update(['state'=>($op->attempt['seal']??null)==='sealed'?'uncertain':'held',
+                        'safe_code'=>'management_unconfirmed', ...($facts ? [] : ['lease_expires_at'=>null])]);
+                }
+                return $op;
+            });
         }
         if (!in_array($op->state, ['queued', 'awaiting_payment'], true) || (($op->attempt ?? []) !== []&&!ManagementEvidence::retryable($op))) { return $op; }
         if ($op->funding_basis === 'paid_invoice' && \App\Models\Invoice::find($op->invoice_id)?->status !== 'paid') { return $op; }
-        $refusals=EnomTestCalls::refusalGeneration();$r = null; $claimed=false; $claim=$op->attempt['management_claim']??bin2hex(random_bytes(16));
+        $refusals = EnomTestCalls::refusalGeneration();
+        $token = $read = null;
         try {
-            [$r, $stamp] = $this->locked($seed, $id, $driver, function ($l, $op) use ($driver,$claim): array {
+            [$r, $stamp, $token] = $this->locked($seed, $id, $driver, function ($l, $op): array {
                 $this->features->requireManagement();
                 if (!$this->accepted || $this->intervalSeconds < 25 || $this->intervalSeconds > 86400) { throw new \DomainException('Management acceptance required.'); }
                 $this->peers($l, $op->id, $op->policy['management']['correction'] ?? null, $op->action);
@@ -205,11 +216,11 @@ final class DomainManagement
                 if ((($op->attempt ?? []) !== []&&!ManagementEvidence::retryable($op)) || !in_array($op->state, ['queued', 'awaiting_payment'], true)) { throw new \DomainException('Management attempt already exists.'); }
                 if ($op->funding_basis === 'paid_invoice') { RefundPayment::requireCurrent($op, $l); $this->noInflight($op); }
                 if(Cache::has('domains-write-slot:'.$op->account_fingerprint)){throw new WriteHeld('write_rate_limited');}
-                $op->update(['payload'=>$op->policy['management']['input'],'state' => 'running', 'started_at' => $this->clock->now(), 'lease_expires_at' => $this->clock->now()->modify('+360 seconds'),
-                    'attempt' => [...($op->attempt??[]),'seal' => 'absent', 'send_state' => 'definitely_unsent', 'management_claim'=>$claim]]);
-                return [$this->descriptor($op, $l), HoldingLocks::take($l['domain'], (int)$op->authorized_by)['stamp']];
+                $now = $this->clock->now(); $until = $now->modify('+360 seconds');
+                $token = $this->attempts->claim($op, $until);
+                $op->update(['payload'=>$op->policy['management']['input'], 'state'=>'running']);
+                return [$this->descriptor($op, $l), HoldingLocks::take($l['domain'], (int)$op->authorized_by)['stamp'], $token];
             });
-            $claimed=true;
             $ctx = new RequestContext($r->binding, $origin, $deadline, new RequestBudget(10), $this->clock, Runtime::limiter());
             $driver->preparedRecords();
             $prepared = $driver->prepare($r, $ctx);
@@ -224,36 +235,55 @@ final class DomainManagement
                 $op->update(['payload' => $prepared]);
                 return [$this->descriptor($op, $l), HoldingLocks::take($l['domain'], (int)$op->authorized_by)['stamp'], self::evidence($l['domain'])];
             });
-            $this->grant = [$r, $ctx, $driver, $stamp, $seed, $id];
+            $this->grant = [$r, $ctx, $driver, $stamp, $seed, $id, $token];
             try { $result = $driver->perform($r, $ctx, $this); }
-            finally { $this->grant = null; $this->receiptGrant = null; }
-            return $this->finish($seed, $id, $driver, $result, evidence: $evidence);
+            finally {
+                $read = $this->receiptGrant[5] ?? null;
+                $this->grant = $this->receiptGrant = null;
+            }
+            if (!$read) { throw new \DomainException('Management send was not sealed.'); }
+            return $this->finish($seed, $id, $driver, $result, $read, evidence: $evidence);
         } catch (\Throwable $error) {
-            return FreshTransaction::run(function () use ($seed, $id, $claimed, $claim, $error, $refusals, $driver): Operation {
-                $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
-                if ($claimed && $op && ($op->attempt['management_claim']??null)===$claim && $op->state === 'running') {
-                    $b=AccountBindings::binding($l['account']);
-                    if(($op->attempt['seal']??null)==='sealed'&&$op->funding_basis==='non_billable_management'&&$b->registrarKey==='namesilo'&&$driver->bindsTo($b)&&$driver->unconsumed($id)){
-                        ManagementEvidence::retainUnsent($op,$driver);return $op;
-                    }
-                    $cap=$this->testManagement&&(($op->attempt['seal']??null)==='absent'&&EnomTestCalls::refusedSince($refusals)
-                        ||$error instanceof EnomTestCallLimit&&EnomTestWriteReservation::unconsumed($b,'management',$id));
-                    if($cap){$op->update(['state'=>'held','safe_code'=>'enom_test_management_call_cap','lease_expires_at'=>null,
-                        'attempt'=>[...$op->attempt,'send_state'=>'definitely_unsent',...(($op->attempt['seal']??null)==='sealed'?['management_test_unsent'=>true]:[])]]);return $op;}
-                    $history=$op->attempt['management_deferrals']??[];$defer=($op->attempt['seal']??null)==='absent'&&($error instanceof ReadDeferred||$error instanceof WriteHeld&&$error->reason==='write_rate_limited')&&count($history)<5;
-                    $op->update(['state'=>($op->attempt['seal']??null)==='sealed'?'uncertain':($defer?'queued':'held'),'safe_code'=>$defer?'management_deferred':'management_unconfirmed','lease_expires_at'=>null,
-                        'attempt'=>[...$op->attempt,...($defer?['management_deferrals'=>[...$history,$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM)]]:[])]]);
-                    ManagementEvidence::finishExhausted($op,$this->clock->now());
-                }
-                return $op ?? throw new \DomainException('Management unavailable.');
-            });
+            return $this->stopWorker($seed, $id, $driver, $token, $read, $error, $refusals);
         }
+    }
+
+    private function stopWorker(Domain $seed, int $id, ManagementProtocol $driver, ?AttemptToken $token,
+        ?ReadToken $read, \Throwable $error, int $refusals): Operation
+    {
+        return FreshTransaction::run(function () use ($seed, $id, $driver, $token, $read, $error, $refusals): Operation {
+            $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
+            if (!$op) { throw new \DomainException('Management unavailable.'); }
+            if ($read) { $this->attempts->close($read); }
+            $facts = $token ? OperationAttempts::attempt($token, true) : null;
+            if (!$facts?->current || $op->state !== 'running') { return $op; }
+
+            $b = AccountBindings::binding($l['account']); $sealed = $facts->sealed();
+            $unsent = $sealed && $op->funding_basis === 'non_billable_management' && $b->registrarKey === 'namesilo'
+                && $driver->bindsTo($b) && $driver->unconsumed($id);
+            $cap = $this->testManagement && (!$sealed && EnomTestCalls::refusedSince($refusals)
+                || $error instanceof EnomTestCallLimit && EnomTestWriteReservation::unconsumed($b, 'management', $id));
+            if ($unsent || $cap) {
+                $this->attempts->stop($op, $token, refusal: $unsent ? 'unsent' : 'test_capacity');
+                $op->update(['state'=>'held', 'safe_code'=>$unsent ? 'management_definitely_unsent' : 'enom_test_management_call_cap']);
+                return $op;
+            }
+
+            $history = $op->attempt['management_deferrals'] ?? [];
+            $defer = !$sealed && ($error instanceof ReadDeferred || $error instanceof WriteHeld && $error->reason === 'write_rate_limited')
+                && count($history) < 5;
+            $this->attempts->stop($op, $token, $defer);
+            $op->update(['state'=>$sealed ? 'uncertain' : ($defer ? 'queued' : 'held'),
+                'safe_code'=>$defer ? 'management_deferred' : 'management_unconfirmed']);
+            ManagementEvidence::finishExhausted($op, $this->clock->now());
+            return $op;
+        });
     }
     public function consume(ManagementRequest $r, RequestContext $ctx, ManagementProtocol $driver): void
     {
         $g = $this->grant; $this->grant = null;
         if (!$g || $g[0] !== $r || $g[1] !== $ctx || $g[2] !== $driver) { throw new \DomainException('No live management grant.'); }
-        $this->locked($g[4], $g[5], $driver, function ($l, $op) use ($g, $ctx, $r, $driver): void {
+        $read = $this->locked($g[4], $g[5], $driver, function ($l, $op) use ($g, $ctx, $r, $driver): ReadToken {
             $this->features->requireManagement(); $this->peers($l, $op->id, $op->policy['management']['correction'] ?? null, $op->action);
             if (!$this->accepted || $l['stamp'] !== $g[3] || $ctx->deadline < $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+25 seconds')
                 || $op->state !== 'running' || ($op->attempt['seal'] ?? null) !== 'absent') { throw new \DomainException('Management authority changed.'); }
@@ -262,24 +292,22 @@ final class DomainManagement
             if($op->action==='auth_code_email'){foreach($l['operations'] as $peer){$at=$peer->attempt['dispatch_attempted_at']??null;if($peer->id!==$op->id&&$peer->action===$op->action&&is_string($at)&&new \DateTimeImmutable($at)>$this->clock->now()->modify('-10 minutes')){throw new \DomainException('Transfer code cooldown active.');}}}
             $this->noInflight($op); $funding=$op->funding_basis==='paid_invoice'?RefundPayment::requireCurrent($op,$l):[];
             if(!Cache::add('domains-write-slot:'.$op->account_fingerprint,true,$this->intervalSeconds)){throw new WriteHeld('write_rate_limited');}
-            if (array_key_exists('management_observation_attempts', $op->attempt)) { throw new \DomainException('Management observation budget already started.'); }
-            $op->update(['attempt'=>[...$op->attempt,'management_observation_attempts'=>1,'management_read_at'=>$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM),'seal'=>'sealed','send_state'=>'possibly_sent','dispatch_attempted_at'=>$this->clock->now()->format(DATE_ATOM)],
-                'funding'=>[...($op->funding??[]),...($funding?['seal'=>$funding]:[])]]);
+            return $this->attempts->seal($op, $g[6], $ctx, $funding);
         });
-        $this->receiptGrant=[$r,$ctx,$driver,$g[4],$g[5]];
+        $this->receiptGrant = [$r, $ctx, $driver, $g[4], $g[5], $read];
     }
     public function acknowledge(ManagementRequest $r, RequestContext $ctx, ManagementProtocol $driver, array $facts): void
     {
         $g=$this->receiptGrant;
         if(!$g||$g[0]!==$r||$g[1]!==$ctx||$g[2]!==$driver){throw new \DomainException('No live acknowledgement grant.');}
-        $this->locked($g[3],$g[4],$driver,function($l,$op)use($facts):void{
+        $this->locked($g[3],$g[4],$driver,function($l,$op)use($facts,$g):void{
             if(!in_array($op->state,['running','uncertain'],true)||($op->attempt['seal']??null)!=='sealed'||array_key_exists('management_ack',$op->attempt)){throw new \DomainException('Acknowledgement unavailable.');}
             $valid=$op->action==='auth_code_email' ? $facts===['email_accepted'=>true] : in_array($op->action,['privacy_purchase','privacy_renew'],true)&&count($facts)===1&&is_string($facts['order_id']??null)&&preg_match('/^[1-9][0-9]{0,19}$/D',$facts['order_id']);
             // NameSilo is the only accepted durable profile creator; no generic inventory acknowledgement.
             if($op->action==='contact_profile'&&$op->registrar_key==='namesilo'){$valid=count($facts)===1&&is_string($facts['profile_id']??null)&&preg_match('/^[1-9][0-9]{0,19}$/D',$facts['profile_id']);}
-            if($op->action==='dns' && isset($op->policy['management']['sequence'])) { $valid=count($facts)===1 && is_string($facts['record_id']??null) && preg_match('/^[a-zA-Z0-9]{1,128}$/D',$facts['record_id']); }
+            if($op->action==='dns' && isset($op->policy['management']['sequence_index'])) { $valid=count($facts)===1 && is_string($facts['record_id']??null) && preg_match('/^[a-zA-Z0-9]{1,128}$/D',$facts['record_id']); }
             if(!$valid){throw new \DomainException('Invalid management acknowledgement.');}
-            $op->update(['attempt'=>[...$op->attempt,'management_ack'=>$facts]]);
+            $this->attempts->acknowledge($op, $g[5], $facts);
         },false,false);
     }
     /** Explicit read-only reconciliation. Never calls prepare or perform, and cannot retry a write/email. */
@@ -311,42 +339,42 @@ final class DomainManagement
     private function reconcileEntered(int $id, ManagementProtocol $driver, \DateTimeImmutable $deadline, bool $reviewed=false): Operation
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
-        $read = $this->locked($seed, $id, $driver, function ($l, $op) use ($driver,$reviewed): ?array {
-            if (!self::canReconcile($op,$this->clock->now())) { return null; }
-            $b=AccountBindings::binding($l['account']); if(!$driver->bindsTo($b)){throw new \DomainException('Read binding changed.');}
-            try{$this->bindings->requireReadableLocked($l['server'],$l['account']);}
-            catch(\Throwable $error){if($reviewed){throw new StaffReviewRefused('The registrar account cannot be read. Check its connection settings and try Check status again.');}throw $error;}
-            // Reserve before I/O, including reads that throw or lose their result.
-            // Legacy recovery counts only new reviewed reads, never unknown earlier usage.
-            if(ManagementReadRecovery::exhausted($op->attempt)){
-                if(!ManagementReadRecovery::reserve($op,$this->clock->now(),$reviewed)){return null;}
-                return [$this->descriptor($op,$l),HoldingLocks::take($l['domain'],(int)$op->authorized_by)['stamp']];
+        $read = $this->locked($seed, $id, $driver, function ($l, $op) use ($driver, $reviewed, $deadline): ?array {
+            if (!self::canReconcile($op, $this->clock->now())) { return null; }
+            $b = AccountBindings::binding($l['account']);
+            if (!$driver->bindsTo($b)) { throw new \DomainException('Read binding changed.'); }
+            try { $this->bindings->requireReadableLocked($l['server'], $l['account']); }
+            catch (\Throwable $error) {
+                if ($reviewed) { throw new StaffReviewRefused('The registrar account cannot be read. Check its connection settings and try Check status again.'); }
+                throw $error;
             }
-            $field='management_observation_attempts';
-            if(!array_key_exists($field,$op->attempt)){
-                if(!$reviewed){return null;}
-                $field='management_legacy_observation_attempts';
-                $count=array_key_exists($field,$op->attempt)?$op->attempt[$field]:0;
-                if(!is_int($count) || $count<0 || $count>=20){return null;}
-            }else{
-                $count=$op->attempt[$field];
-                if(!is_int($count) || $count<1 || $count>=20){return null;}
-            }
-            $op->update(['attempt' => [...$op->attempt, $field => $count + 1, 'management_read_at'=>$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM)]]);
-            return [$this->descriptor($op, $l), HoldingLocks::take($l['domain'], (int) $op->authorized_by)['stamp']];
+            $token = $this->attempts->reserve($op, $deadline, $reviewed);
+            if (!$token) { return null; }
+            $op->reloadManagementAttempt();
+            return [$this->descriptor($op, $l), HoldingLocks::take($l['domain'], (int) $op->authorized_by)['stamp'], $token];
         }, false, false);
-        if ($read === null) { if($reviewed){throw new StaffReviewRefused('A status read cannot run for this request now. Reload the page and try again.');} return Operation::findOrFail($id); }
-        [$r, $stamp] = $read;
+        if ($read === null) {
+            if ($reviewed) { throw new StaffReviewRefused('A status read cannot run for this request now. Reload the page and try again.'); }
+            return Operation::findOrFail($id);
+        }
+        [$r, $stamp, $token] = $read;
         $ctx = new RequestContext($r->binding, RequestOrigin::Background, $deadline, new RequestBudget(10), $this->clock, Runtime::limiter());
-        try { $result = $driver->observe($r, $ctx); return $this->finish($seed, $id, $driver, $result, $stamp); }
-        catch (\Throwable $error) { if($reviewed){throw $error;} return Operation::findOrFail($id); }
+        try { return $this->finish($seed, $id, $driver, $driver->observe($r, $ctx), $token, $stamp); }
+        catch (\Throwable $error) {
+            FreshTransaction::run(function () use ($id, $token): void {
+                Operation::whereKey($id)->lockForUpdate()->firstOrFail();
+                $this->attempts->close($token);
+            });
+            if ($reviewed) { throw $error; }
+            return Operation::findOrFail($id);
+        }
     }
     /** Sealing changes the operation rows, so a write's readback compares only the saved record evidence it started from. */
     private static function evidence(Domain $d): string
     { return hash('sha256', json_encode($d->observation['records'] ?? null, JSON_THROW_ON_ERROR)); }
-    private function finish(Domain $seed, int $id, ManagementProtocol $driver, ManagementResult $result, ?string $stamp = null, ?string $evidence = null): Operation
+    private function finish(Domain $seed, int $id, ManagementProtocol $driver, ManagementResult $result, ReadToken $read, ?string $stamp = null, ?string $evidence = null): Operation
     {
-        return $this->locked($seed, $id, $driver, function ($l, $op) use ($result, $stamp, $driver, $evidence): Operation {
+        return $this->locked($seed, $id, $driver, function ($l, $op) use ($result, $stamp, $driver, $evidence, $read): Operation {
             if(!in_array($op->state,['running','uncertain'],true)||($op->attempt['seal']??null)!=='sealed'){throw new \DomainException('Management readback no longer applicable.');}
             if ($stamp !== null && $l['stamp'] !== $stamp) { throw new \DomainException('Management changed during readback.'); }
             // After an expired write lease, a scheduled read may save newer records before this readback finishes.
@@ -363,9 +391,11 @@ final class DomainManagement
             $history = $op->attempt['management_reads'] ?? [];
             $recovery=$op->attempt['management_recovery']??null;
             if(!$recovery&&count($history)>=20){throw new \DomainException('Management read budget exhausted.');}
-            $evidence=$recovery?['management_recovery_read'=>[...$entry,'recovery_number'=>$recovery['number']]]:['management_reads'=>[...$history,$entry]];
-            $op->update(['state' => $ok ? 'succeeded' : ($terminal?'rejected':'uncertain'), 'safe_code' => $email ? 'auth_email_accepted' : ($ok ? 'readback_confirmed' : ($refused?'management_provider_refused':'management_unconfirmed')),
-                'attempt' => [...$op->attempt, ...$evidence, ...($ack ? ['management_ack'=>$ack] : []),...($refused?['management_refusal'=>['operation_key'=>$op->operation_key,'generation'=>$op->authority_generation,'action'=>$op->action]]:[])], 'completed_at' => ($ok||$terminal) ? $this->clock->now() : null, 'lease_expires_at' => null]);
+            $proof = $recovery ? [...$entry, 'recovery_number'=>$recovery['number']] : $entry;
+            $this->attempts->finish($op, $read, $proof, $refused, $ok ? 'succeeded' : ($terminal ? 'rejected' : null));
+            $op->update(['state' => $ok ? 'succeeded' : ($terminal?'rejected':'uncertain'),
+                'safe_code' => $email ? 'auth_email_accepted' : ($ok ? 'readback_confirmed' : ($refused?'management_provider_refused':'management_unconfirmed')),
+                'completed_at' => ($ok||$terminal) ? $this->clock->now() : null]);
             if ($ok && $confirmed && ManagementEvidence::resolved($op,$l['domain'])) {
                 $section=match($op->action) {
                     'nameservers','lock'=>$op->action,

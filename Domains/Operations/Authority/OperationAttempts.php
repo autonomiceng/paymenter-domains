@@ -76,6 +76,40 @@ final class OperationAttempts
         return $attempts;
     }
 
+    /** The latest management attempt of each operation, including released pre-seal history. */
+    public static function latestManagement(array $operationIds, bool $lock = false): array
+    {
+        if (!$operationIds) { return []; }
+        $rows = DB::table(OperationSchema::STEPS.' as s')->join(OperationSchema::ATTEMPTS.' as a', 'a.step_id', '=', 's.id')
+            ->whereIn('s.operation_id', $operationIds)->where(['s.step_type' => 'management', 's.sequence' => 1])
+            ->where(fn ($q) => $q->whereNull('s.current_attempt_id')->orWhereColumn('a.id', 's.current_attempt_id'))
+            ->when($lock, fn ($q) => $q->lockForUpdate())->orderByDesc('a.ordinal')
+            ->get(['a.*', 's.operation_id as step_operation_id', 's.current_attempt_id as step_current_attempt_id']);
+        $attempts = [];
+        foreach ($rows as $row) {
+            $id = (int) $row->step_operation_id;
+            $step = (object) ['id' => $row->step_id, 'current_attempt_id' => $row->step_current_attempt_id];
+            $attempts[$id] ??= self::facts($id, $step, $row);
+        }
+        return $attempts;
+    }
+
+    /** Ordered records for history and read budgets. */
+    public static function managementEvidence(array $operationIds, bool $lock = false): array
+    {
+        if (!$operationIds) { return []; }
+        $rows = DB::table(OperationSchema::EVIDENCE)->whereIn('operation_id', $operationIds)
+            ->whereIn('kind', [...array_column(ManagementEvidenceKind::cases(), 'value'), 'management_failed', 'admission', 'reply', 'claim', 'terminal'])
+            ->when($lock, fn ($q) => $q->lockForUpdate())->orderBy('id')->get();
+        $found = [];
+        foreach ($rows as $row) {
+            try { $proof = self::decoded($row); }
+            catch (DecryptException|\JsonException) { $proof = self::UNREADABLE; }
+            $found[(int) $row->operation_id][] = ['kind' => $row->kind, 'attempt_id' => (int) $row->attempt_id, ...$proof];
+        }
+        return $found;
+    }
+
     /** Of the given operations, those whose step has a sealed attempt. */
     public static function sealedOperations(array $operationIds, StepKey $key): array
     {
@@ -179,7 +213,7 @@ final class OperationAttempts
             $step->current_attempt_id !== null && (int) $step->current_attempt_id === (int) $row->id, $row->released_at !== null,
             self::time($row->claim_until), self::time($row->sealed_at), $row->operation_revision === null ? null : (int) $row->operation_revision,
             $row->request_digest, SendState::from($row->send_state), self::time($row->grant_consumed_at), $row->authorized_amount,
-            $row->authorized_currency, $row->mode, $row->read_token, self::time($row->read_until), (bool) $row->read_unresolved);
+            $row->authorized_currency, $row->mode, $row->read_token, self::time($row->read_until), (bool) $row->read_unresolved, self::time($row->claimed_at));
     }
 
     /**

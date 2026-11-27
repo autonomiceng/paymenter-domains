@@ -6,6 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\Server;
 use Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities;
 use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementAttempt;
 use Paymenter\Extensions\Servers\Domains\Money\Native\{HoldingNativeLocks, MoneyLockContext};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain, Operation, Price, Tld};
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationAttempts;
@@ -56,15 +57,17 @@ final class HoldingLocks
         $identity_source = HoldingIdentitySource::resolve($domain, $nativeIdentity, $adoption, $account, $cancel);
         $service->setRelation('user', $user);
         $rows = [$user, ...$user->properties, ...$invoices, ...$items, ...$transactions, ...$orders, ...$services, ...$products, ...$plans, ...$cancel, ...$configs, ...$properties, ...$markers, $server, $account, ...$settings, $tld, ...$prices, $domain, ...($adoption ? [$adoption] : []), ...$operations, ...$upgrades, ...$links, ...($tax === 0 ? [] : [$tax])];
+        Operation::loadManagementAttempts($operations, lock: !$advisory);
         // Reuse the held models after saving an operation. Read its current steps and attempts without repeating the lock prefix.
-        $renewals = $operations->where('action', 'renew')->pluck('id')->map(static fn ($id) => (int) $id)->values()->all();
-        $stampForHeldRows = static function () use ($rows, $identity_source, $invoiceId, $renewals): string {
+        $attemptIds = $operations->filter(static fn (Operation $op) => $op->action === 'renew' || ManagementAttempt::applies($op->action))
+            ->pluck('id')->map(static fn ($id) => (int) $id)->values()->all();
+        $stampForHeldRows = static function () use ($rows, $identity_source, $invoiceId, $attemptIds): string {
             return hash('sha256', json_encode([
                 array_map(static fn ($row) => $row instanceof Operation ? RenewalProof::stampRow($row)
                     : (method_exists($row, 'getRawOriginal') ? $row->getRawOriginal() : (array) $row), $rows),
                 $identity_source,
                 ...($invoiceId !== null ? [['invoice_scope' => $invoiceId]] : []),
-                ...($renewals ? [OperationAttempts::stamp($renewals)] : []),
+                ...($attemptIds ? [OperationAttempts::stamp($attemptIds)] : []),
             ], JSON_THROW_ON_ERROR));
         };
         $stamp = $stampForHeldRows();

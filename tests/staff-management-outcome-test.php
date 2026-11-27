@@ -48,7 +48,7 @@ $queued=$submit($d->fresh(),$driver,'lock',['locked'=>true]);same('queued',$queu
 $page($queued)->assertActionHidden('mark_failed');commerceReject(fn()=>$run($queued));
 [$busyDomain,$busyDriver]=$holding(placeholderComFixtureName('outcome-busy-placeholder.com'));
 $state->apply=false;Cache::flush();$busy=$submit($busyDomain,$busyDriver,'lock',['locked'=>false]);same('uncertain',$management->run($busy->id,$busyDriver)->state,'A second unconfirmed change');
-DB::table('domains_operations')->where('id',$busy->id)->update(['state'=>'running','lease_expires_at'=>$clock->now()->modify('+5 minutes')]);
+DB::table('domains_operations')->where('id',$busy->id)->update(['state'=>'running']);
 $page($busy)->assertActionHidden('mark_failed');commerceReject(fn()=>$run($busy));same('running',$busy->fresh()->state,'A change being sent is left alone');
 // A confirmed change is already settled.
 $state->apply=true;[$doneDomain,$doneDriver]=$holding(placeholderComFixtureName('outcome-done-placeholder.com'));

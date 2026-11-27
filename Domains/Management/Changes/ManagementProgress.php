@@ -49,6 +49,7 @@ final class ManagementProgress
         $pending=(clone $scope)->where('management_pending',true)->selectRaw('MAX(id)')->groupBy('action');
         // At most three rows per action; pending selection is independent of finished history.
         $candidates=(clone $scope)->where(fn($q)=>$q->whereIn('id',$latest)->orWhereIn('id',$retained)->orWhereIn('id',$pending))->orderByDesc('id')->limit(3*count(self::ACTIONS))->get();
+        Operation::loadManagementAttempts($candidates);
         foreach($candidates as $op){
             $key=self::setting($op->action);
             try {

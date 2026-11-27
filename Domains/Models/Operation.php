@@ -8,11 +8,12 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\{Builder, Model};
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementAttempt;
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AttemptFacts, AttemptToken, OperationAttempts, OperationSchema};
 
 class Operation extends Model
 {
-    use HasAccountBinding;
+    use HasAccountBinding, HasManagementAttempt;
 
     /** Transaction-local capability evidence; never an attribute, relationship or persisted authority. */
     public ?Tld $catalogueTld = null;
@@ -53,6 +54,7 @@ class Operation extends Model
                 return $this->projectEvidence($field, $value, $row);
             },
             set: function (?array $value, array $row) use ($field): ?string {
+                $value = $this->keepManagementEvidence($field, $value);
                 $terminal = $field === 'attempt' ? $this->acquisitionTerminal($row) : [];
                 if ($attempt = $this->acquisition($row)) {
                     $value = $attempt->keepOperationFacts($field, array_replace($this->acquisitionEvidence($field, $row), $terminal), $value);
@@ -67,9 +69,11 @@ class Operation extends Model
     private function projectEvidence(string $field, ?string $value, array $row): ?array
     {
         if ($field === 'attempt' && ($row['action'] ?? null) === 'renew') { return []; }
+        if ($field === 'attempt' && ($management = $this->managementAttempt())) { return $management->attempt; }
         $stored = $this->decodeEvidence($value);
         $projection = $this->acquisitionEvidence($field, $row);
         if ($field === 'attempt') { $projection = array_replace($projection, $this->acquisitionTerminal($row)); }
+        $projection = array_replace($projection, $this->managementProjection($field));
         return $projection ? array_replace($stored ?? [], $projection) : $stored;
     }
 
@@ -178,6 +182,7 @@ class Operation extends Model
     public function setRawAttributes(array $attributes, $sync = false)
     {
         $this->reloadAcquisitionAttempt();
+        $this->reloadManagementAttempt();
         $this->noAcquisitionStep = array_key_exists('has_acquisition_step', $attributes) && $attributes['has_acquisition_step'] === null;
         unset($attributes['has_acquisition_step']);
         return parent::setRawAttributes($attributes, $sync);
@@ -187,7 +192,7 @@ class Operation extends Model
     {
         return Attribute::get(function ($value, array $row) {
             $acquisition = $this->acquisitionRow($row);
-            $start = $acquisition ? $acquisition['start'] : $value;
+            $start = $acquisition ? $acquisition['start'] : ($this->currentManagementFacts()?->claimedAt ?? $value);
             return $start === null ? null : $this->asDateTime($start)->toImmutable();
         })->withoutObjectCaching();
     }
@@ -200,7 +205,7 @@ class Operation extends Model
     protected function leaseExpiresAt(): Attribute
     {
         return Attribute::get(function ($value, array $row) {
-            $facts = $this->acquisitionRow($row)['facts'] ?? null;
+            $facts = $this->acquisitionRow($row)['facts'] ?? $this->currentManagementFacts();
             if (!$facts) { return $value === null ? null : $this->asDateTime($value)->toImmutable(); }
             return ($row['state'] ?? null) === 'running' && $facts->current && $facts->claimUntil !== null
                 ? $this->asDateTime($facts->claimUntil)->toImmutable() : null;
@@ -211,8 +216,12 @@ class Operation extends Model
     {
         $this->validatingUpdate = true;
         try {
-            return AcquisitionAttempt::key((string) $this->getRawOriginal('action'))
-                ? $this->updateAcquisition($query) : parent::performUpdate($query);
+            $action = (string) $this->getRawOriginal('action');
+            return match (true) {
+                AcquisitionAttempt::key($action) !== null => $this->updateAcquisition($query),
+                ManagementAttempt::applies($action) => $this->updateManagement($query),
+                default => parent::performUpdate($query),
+            };
         } finally {
             $this->validatingUpdate = false;
         }

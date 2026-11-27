@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, ManagementE
 // Old sealed attempts cannot claim a zero balance from an incomplete history.
 [$d, $driver, $op] = $uncertain('bound-legacy');
 $attempt = array_diff_key($op->fresh()->attempt, ['management_observation_attempts' => true]);
-DB::table('domains_operations')->where('id', $op->id)->update(['attempt' => $op->fresh()->forceFill(['attempt' => $attempt])->getAttributes()['attempt']]);
+restoreLegacyManagement($op, $attempt);
 $before = count($state->calls); $management->reconcile($op->id, $driver);
 same($before, count($state->calls), 'Unknown legacy usage refuses before I/O');
 commerceReject(fn () => $op->fresh()->update(['attempt' => [...$op->fresh()->attempt, 'management_observation_attempts' => 1]]));
@@ -40,7 +40,7 @@ same('queued',$submit($d,$driver,'lock',['locked'=>true])->state,'A new manageme
 // An unreviewed increment below the limit must reach the review guard.
 [$unreviewedDomain,$unreviewedDriver,$unreviewed]=$uncertain('bound-unreviewed-legacy');
 $unreviewedAttempt=array_diff_key($unreviewed->fresh()->attempt,['management_observation_attempts'=>true]);
-DB::table('domains_operations')->where('id',$unreviewed->id)->update(['attempt'=>$unreviewed->fresh()->forceFill(['attempt'=>$unreviewedAttempt])->getAttributes()['attempt']]);
+restoreLegacyManagement($unreviewed, $unreviewedAttempt);
 try{
     $unreviewed->fresh()->update(['attempt'=>[...$unreviewedAttempt,'management_legacy_observation_attempts'=>1]]);
     expect(false,'Unreviewed legacy increment must refuse below the cap');
@@ -61,7 +61,7 @@ same($portAudit,$portOp->fresh()->policy['staff_actions'],'Failed port ticket ca
 // Failed legacy reads spend slots durably; owner/background reconciliation cannot spend them.
 [$d,$driver,$op]=$uncertain('bound-legacy-failed');
 $attempt=array_diff_key($op->fresh()->attempt,['management_observation_attempts'=>true]);
-DB::table('domains_operations')->where('id',$op->id)->update(['attempt'=>$op->fresh()->forceFill(['attempt'=>$attempt])->getAttributes()['attempt']]);
+restoreLegacyManagement($op, $attempt);
 $driver=new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Management(
     $driver->capabilities()->binding,static function($origin,$command,$parameters,$timeout)use($exchange):string{
         $reply=$exchange($origin,$command,$parameters,$timeout);

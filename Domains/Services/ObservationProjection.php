@@ -110,7 +110,9 @@ final class ObservationProjection
             // Incomplete history cannot prove that acquisition nameservers are still current.
             $sections['nameservers']??=[];
         }
-        foreach ($ops->take(100) as $op) {
+        $visible = $ops->take(100);
+        Operation::loadManagementAttempts($visible);
+        foreach ($visible as $op) {
             if ($overflow && !in_array($op->action,['glue_add','glue_update','glue_delete'],true)) { continue; }
             try {
                 if ($op->authority_generation!==$d->authority_generation||!isset($op->policy['management'])||!ManagementEvidence::resolved($op,$d)) { continue; }
