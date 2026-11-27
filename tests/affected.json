@@ -21,6 +21,10 @@
     "composer.lock"
   ],
   "explicit": {
+    "Domains/Management/Changes/ManagementAuthority.php": ["tests/management-deadline-test.php", "tests/management-read-contention-test.php", "tests/management-send-recovery-test.php", "tests/management-durable-sequence-test.php"],
+    "Domains/Management/Records/DnsTemplateWrites.php": ["tests/staff-dns-template-controls-test.php", "tests/site-dns-default-test.php", "tests/template-recovery-test.php"],
+    "Domains/Operations/Reconciliation/AcquisitionCharges.php": ["tests/reconciliation-captured-test.php", "tests/reconciliation-history-test.php", "tests/reconciliation-authority-test.php"],
+    "Domains/Operations/Reconciliation/OperationTerminalProof.php": ["tests/terminal-proof-test.php", "tests/acquisition-retirement-test.php", "tests/unpaid-hold-test.php"],
     "Domains/Renewal/Execution/RenewalDecision.php": ["tests/renewal-dispatch-test.php", "tests/paid-renewal-hook-test.php"],
     "Domains/Renewal/Execution/RenewalAttempt.php": ["tests/renewal-attempt-reader-test.php", "tests/refund-renewals-test.php", "tests/registrar-balances-test.php", "tests/renewal-safety-test.php", "tests/renewal-completion-claims-test.php", "tests/staff-renewal-release-test.php", "tests/renewal-completion-test.php", "tests/lost-reply-status-test.php", "tests/registrar-renewal-answer-test.php", "tests/renewal-answer-retained-proof-test.php", "tests/captured-charge-review-test.php", "tests/terminal-proof-test.php", "tests/renewal-cycles-test.php", "tests/cancelled-renewal-payment-test.php", "tests/departure-credit-actions-test.php", "tests/reconciliation-original-attempt-recovery-test.php"],
     "Domains/Renewal/Execution/RenewalExecution.php": ["tests/renewal-worker-contention-test.php", "tests/paid-renewal-hook-test.php", "tests/test_installed_package_enom_renewal.py"],

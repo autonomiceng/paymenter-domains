@@ -67,3 +67,12 @@ regression includes a recent registration and an older renewal alongside the uni
 matching renewal. Unknown dates, invalid charges, unsupported shapes and competing
 renewals remain held. List rows must also say Order complete and processed before
 a detail can supply a candidate; cancelled or failed list rows cannot settle it.
+
+
+`reconciliation-history-test.php` distinguishes one exact charge settlement from a retained ambiguous
+match with no settlement. `reconciliation-captured-test.php` keeps the captured-refusal matrix,
+including amount, order, account, owner and expiry differences. `terminal-proof-test.php` checks
+that the local terminal decision belongs to the operation ledger and that credit precedes release.
+`captured-charge-review-test.php` groups changed charge and overrun by frozen captured reply.
+`captured-charge-history-test.php` groups current and expired history. `captured-charge-controls-test.php`
+keeps exact paid and complimentary completion on the normal renewal path.
