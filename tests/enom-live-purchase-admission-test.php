@@ -91,8 +91,11 @@ $resumeThroughQueue = static function (Operation $order, DateTimeImmutable $at) 
         $setTime($at);
         $wire();
         $window = AcquisitionResult::window($order);
-        app(RuntimeDispatch::class)->enqueue($order->id);
-        app(RuntimeDispatch::class)->enqueue($order->id);
+        DB::transaction(static function () use ($order, $jobs): void {
+            app(RuntimeDispatch::class)->enqueue($order->id);
+            app(RuntimeDispatch::class)->enqueue($order->id);
+            same(0, $jobs->count(), 'No wake is published before the transaction commits');
+        });
         $published = $jobs->count();
         $processing(false);
         $worker->runNextJob('database', $name, $options);
@@ -194,7 +197,8 @@ foreach (['funded', 'shortfall', 'deferred-live', 'deferred-expired', 'orders-sc
             FundsWaits::sweep($a->fresh(), $clock->now());
             FundsWaits::sweep($a->fresh(), $clock->now());
             $expectedCredit = $lateResponse ? PricingRule::minor($order->amount) : 0;
-            $observed[$case] = [$purchases(), $order->fresh()->state, $credit() - $before === $expectedCredit,
+            $current = $order->fresh();
+            $observed[$case] = [$purchases(), $current->state, $current->safe_code, $credit() - $before === $expectedCredit,
                 $afterFunds === null];
             $afterFunds = null;
             $processing(true);
@@ -320,8 +324,8 @@ same([
     'balance-resume-funded' => [false, true, 1, 1, true, true],
     'balance-resume-short' => [false, true, null, 0, 'rejected', true],
     'balance-deadline-paused' => [false, true, null, 0, 'rejected', true],
-    'balance-response-at-cutoff' => [0, 'rejected', true, true],
-    'balance-timely-local-refusal' => [0, 'held', true, true],
+    'balance-response-at-cutoff' => [0, 'rejected', 'registrar_balance_insufficient', true, true],
+    'balance-timely-local-refusal' => [0, 'held', 'processing', true, true],
     'balance-real-wake' => [1, [0, 'held', 'processing', 0], 1, 1, true],
 ], $observed, 'Purchase admission and financial outcomes follow the retained authorization '.json_encode($observed, JSON_THROW_ON_ERROR));
 $nativeSuccessful = true;
