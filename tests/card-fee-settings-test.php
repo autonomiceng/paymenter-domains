@@ -14,7 +14,7 @@ $permissions=[Staff::VIEW,Staff::POLICY];foreach(array_keys(Review::ACTIONS) as 
 $u=staffUser($permissions);Auth::setUser($u);$writer=new StaffSettingsWrites($native,$sellers,$bindings,true);
 $review=static fn(string $action,?int $tld)=>new Review($u->id,$t->server_id,$tld,$action,Review::ticket($u->id,$t->server_id,$tld,$action,Review::stamp($t->server_id,$tld)),'Update prices for these TLDs');
 $fee=static fn(string $percent,string $fixed)=>pricingForm(fee:['percent'=>$percent,'fixed'=>$fixed]);
-$saved=static fn()=>collect(Review::historyRows(App\Models\Server::findOrFail($t->server_id)))->where('phase','completed')->last();
+$saved=static fn()=>collect(Review::historyRows(App\Models\Server::findOrFail($t->server_id)))->where('phase','completed')->reject(fn($r)=>str_starts_with($r['action'],'catalogue_'))->last();
 $rows=static fn()=>Price::where('server_id',$t->server_id)->orderBy('id')->get()->map(fn($p)=>[$p->id,$p->revision,$p->retail,costEvidence($p)])->all();
 same(['percent'=>'2.90','fixed'=>'0.30'],CardFee::read(),'Default card fee');
 $oldRule=Pricing::rule($t);$before=$rows();

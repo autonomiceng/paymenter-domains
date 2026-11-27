@@ -51,7 +51,7 @@ final class ReminderSchedules
             if(!$old||$s->extension!=='Domains'||$old->account_fingerprint!==$account->account_fingerprint||(int)$old->revision!==$revision){throw new \DomainException('Reload the reminder schedule.');}
             if(self::storedDays($old->before_days)===null||self::storedDays($old->after_days)===null){throw new \DomainException('Reload the reminder schedule.');}
             $next=['enabled'=>$enabled,'before_days'=>json_encode($b),'after_days'=>json_encode($a)];
-            $entry=['actor_id'=>(int)$u->id,'reason'=>$reason,'at'=>gmdate(DATE_ATOM),'revision'=>$revision+1,
+            $entry=['actor_id'=>(int)$u->id,'reason'=>$reason,'at'=>now()->utc()->format(DATE_ATOM),'revision'=>$revision+1,
                 'before'=>['enabled'=>(bool)$old->enabled,'before_days'=>$old->before_days,'after_days'=>$old->after_days],'after'=>$next];
             AuditEvents::append((int)$s->id,'reminders',$entry);
             $q->update([...$next,'revision'=>$revision+1]);

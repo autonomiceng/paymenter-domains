@@ -102,7 +102,7 @@ $net=Tld::create(tldColumns(['server_id'=>$t->server_id,'registrar_key'=>$t->reg
 $before=array_map(fn(Price $p)=>$p->revision,$rows($t->fresh()));
 $summary=$writer->run(pricingReview($u->id),pricingForm(['mode'=>'markup_percent','markup'=>'50','round_up'=>'whole']),$now);
 same(['published'=>2,'failed'=>['Synthetic #'.$t->server_id=>['.net']],'skipped'=>[]],$summary,'Default change publishes followers and names skipped TLDs');
-$history=Review::historyRows(App\Models\Server::findOrFail($t->server_id));$outcome=array_pop($history);$save=array_pop($history);
+$history=array_values(array_filter(Review::historyRows(App\Models\Server::findOrFail($t->server_id)),fn($r)=>!str_starts_with($r['action'],'catalogue_')));$outcome=array_pop($history);$save=array_pop($history);
 same('publication_completed',$outcome['phase'],'Publication outcome is durably recorded after the loop');
 same($summary,$outcome['outcome'],'Reloaded outcome retains published count and failed TLDs');
 same('completed',$save['phase'],'Original local-save audit remains');

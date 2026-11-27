@@ -15,7 +15,7 @@ function restoreCommerceDatabase(?string $operationSnapshot = null, ?array &$cat
     if($path===''||$baseline===null||$baseline['pdo']!==$pdo||$pdo->inTransaction()
         ||$baseline['changes']!==(int)$pdo->query('SELECT total_changes()')->fetchColumn()
         ||$baseline['schema']!==(int)$pdo->query('PRAGMA schema_version')->fetchColumn()
-        ||config('audit.enabled')!==false||Carbon\Carbon::getTestNow()!==null
+        ||config('audit.enabled')!==false||Carbon\CarbonImmutable::now()->utc()->format(DATE_ATOM)!=='2026-10-18T12:00:00+00:00'
         ||app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->format(DATE_ATOM)!=='2026-10-18T12:00:00+00:00'){
         return false;
     }
@@ -29,6 +29,7 @@ function restoreCommerceDatabase(?string $operationSnapshot = null, ?array &$cat
     $pdo->exec('PRAGMA foreign_keys=OFF');
     foreach($objects as $object){$pdo->exec('DROP '.strtoupper($object['type']).' "'.str_replace('"','""',$object['name']).'"');}
     $pdo->exec($sql);$connection->useDefaultSchemaGrammar();
+    if (class_exists(NativeFixtureRandom::class, false)) { NativeFixtureRandom::resumeSnapshot($sql); }
     expect(preg_match('/^-- booted-models: (.+)$/m',$sql,$models)===1,'Installed snapshot records migration model boot order');
     foreach(json_decode($models[1],true,512,JSON_THROW_ON_ERROR) as $model){
         expect(is_subclass_of($model,Illuminate\Database\Eloquent\Model::class),'Installed snapshot model is an Eloquent model');new $model;

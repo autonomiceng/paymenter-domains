@@ -35,10 +35,13 @@ final class AuditEvents
         }catch(\Throwable){throw new \DomainException('Audit unavailable. Changes held.');}
     }
     public static function recent(int $server,string $family,int $limit=50,bool $lock=false): array
+    {return array_values(self::recentById($server,$family,$limit,$lock));}
+    /** Oldest first, keyed by archive id, so windows merged from one table keep their write order. */
+    public static function recentById(int $server,string $family,int $limit=50,bool $lock=false): array
     {
         if(!in_array($family,self::FAMILIES,true)||$limit<1||$limit>100){throw new \InvalidArgumentException('Invalid audit window.');}
         $q=DB::table(AuditArchives::TABLE)->where('server_id',$server)->where('family',$family)->whereNotNull('event_key')->orderByDesc('id')->limit($limit);
         if($lock){$q->lockForUpdate();}
-        return array_reverse($q->get()->map(static fn($r)=>self::decode($r->payload))->all());
+        return array_reverse($q->get()->mapWithKeys(static fn($r)=>[(int)$r->id=>self::decode($r->payload)])->all(),true);
     }
 }

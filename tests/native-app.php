@@ -22,6 +22,9 @@ foreach (['APP_ENV' => 'testing', 'APP_KEY' => 'base64:'.base64_encode(str_repea
     putenv($key.'='.$value); $_ENV[$key] = $_SERVER[$key] = $value;
 }
 $loader = require $fixture.'/vendor/autoload.php';
+require_once __DIR__.'/Support/fixture-clock.php';
+require_once __DIR__.'/Support/fixture-random.php';
+nativeFixtureClock();
 // A shared optimized vendor class map wins over PSR-4. Rebind only verified App classes
 // in memory so native closures and models originate in this fixture, without mutating vendor.
 $fixtureClasses = [];
@@ -61,6 +64,7 @@ if ($snapshot !== '') {
     $sql = file_get_contents($snapshot);
     same((string)getenv('PAYMENTER_TEST_DATABASE_SHA256'), hash('sha256', $sql), 'Migrated fixture snapshot retains admitted bytes');
     Illuminate\Support\Facades\DB::connection()->getPdo()->exec($sql);
+    NativeFixtureRandom::resumeSnapshot($sql);
     // Migration boot normally initializes the grammar before tests build schema inspectors.
     Illuminate\Support\Facades\DB::connection()->useDefaultSchemaGrammar();
     // foreignIdFor() boots models during migration, while fixture auditing is disabled.
@@ -78,4 +82,6 @@ if ($snapshot !== '') {
 $pdo=Illuminate\Support\Facades\DB::connection()->getPdo();
 $GLOBALS['nativeFixtureDatabase']=['pdo'=>$pdo,'changes'=>(int)$pdo->query('SELECT total_changes()')->fetchColumn(),
     'schema'=>(int)$pdo->query('PRAGMA schema_version')->fetchColumn()];
+// A file that compares exact case effects across processes and binds no FakeClock keeps the boot instant throughout.
+if (!($nativeFixedClock ?? false)) { nativeFixtureClockFollow(); }
 unset($nativeSetup);

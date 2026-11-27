@@ -1,6 +1,8 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+// Exact case effects are compared across processes, and no FakeClock is bound: keep the fixture boot instant.
+$nativeFixedClock=true;
 require __DIR__.'/Support/adoption-confirm.php';
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require_once __DIR__.'/Support/fixture-cases.php';

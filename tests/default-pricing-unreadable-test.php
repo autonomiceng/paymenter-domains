@@ -1,6 +1,8 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Native unreadable pricing repair dialogs and reload.
 declare(strict_types=1);
+// Exact case effects are compared across processes, and no FakeClock is bound: keep the fixture boot instant.
+$nativeFixedClock=true;
 // Native fixture exercises the real dialog, publication and sell-note callout together.
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 require_once __DIR__.'/Support/fixture-cases.php';

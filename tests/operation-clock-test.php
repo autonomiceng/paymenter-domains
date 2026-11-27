@@ -46,21 +46,24 @@ try {
     $restoreClockEvidence(); date_default_timezone_set($siteTimezone); $clock->instant = $ordinaryInstant; $preflight->during = null;
     Carbon\Carbon::setTestNow($ordinaryInstant); Carbon\CarbonImmutable::setTestNow($ordinaryInstant);
 }
-// Native datetime persistence drops offsets, so the monotonic clock must return site-local objects.
-$siteTimezone = date_default_timezone_get();
+// Native datetime persistence drops offsets, so the monotonic clock must return site-local objects. Elapsed time is set
+// explicitly, so the stored instant comes from the execution origin plus elapsed time, not from a wall read.
+$siteTimezone = date_default_timezone_get(); $framework = Carbon\CarbonImmutable::getTestNow();
 foreach (['America/Los_Angeles', 'Asia/Kolkata'] as $timezone) {
     $roundTrip = $new('clock-roundtrip-'.($timezone === 'Asia/Kolkata' ? 'east' : 'west').'.example.com');
     try {
-        date_default_timezone_set($timezone);
-        $systemClock = new \Paymenter\Extensions\Servers\Domains\Data\SystemClock;
-        $systemClock->withinExecution(function () use ($systemClock, $roundTrip): void {
+        date_default_timezone_set($timezone); $entry = new DateTimeImmutable('2026-10-18T12:00:00Z'); Carbon\CarbonImmutable::setTestNow($entry);
+        $elapsed = 0; $systemClock = new \Paymenter\Extensions\Servers\Domains\Data\SystemClock(static function () use (&$elapsed): int { return $elapsed; });
+        $systemClock->withinExecution(function () use ($systemClock, $roundTrip, $entry, $timezone, &$elapsed): void {
+            $elapsed = 2500000000;
             $instant = $systemClock->now();
+            same([$timezone, $entry->getTimestamp() + 2], [$instant->getTimezone()->getName(), $instant->getTimestamp()], 'Execution clock returns site-local origin plus elapsed time');
             $roundTrip->update(['started_at' => $instant, 'lease_expires_at' => $instant->modify('+360 seconds')]);
             $stored = $roundTrip->fresh();
             same($instant->getTimestamp(), $stored->started_at->getTimestamp(), 'Execution start survives native timezone round trip');
             same($instant->getTimestamp() + 360, $stored->lease_expires_at->getTimestamp(), 'Claim lease survives native timezone round trip');
         });
-    } finally { date_default_timezone_set($siteTimezone); }
+    } finally { date_default_timezone_set($siteTimezone); Carbon\CarbonImmutable::setTestNow($framework); }
 }
 echo 'Operation clock boundary checks passed'.PHP_EOL;
 $nativeSuccessful = true;
