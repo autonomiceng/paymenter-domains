@@ -52,8 +52,9 @@ function proveAcquisitionQueueDrain(Closure $upgrade): void
             $id = $jobs->insertGetId(['payload' => json_encode(['displayName' => $command, 'data' => ['commandName' => $command]], JSON_THROW_ON_ERROR),
                 'available_at' => $available, 'reserved_at' => $reserved]);
             $refuse($case);
-            expect($jobs->where('id', $id)->exists(), 'The installer preserves the '.$case);
-            $jobs->where('id', $id)->delete();
+            $row = (clone $jobs)->where('id', $id);
+            expect($row->exists(), 'The installer preserves the '.$case);
+            $row->delete();
         }
         $upgrade();
     } finally {
