@@ -178,7 +178,7 @@ foreach(['payment','missing_claim','authority','legacy_authority','configuration
     if($fault==='legacy_authority'){
         $restorePaid();
         [$claimed]=$claims->claim((int)$order->id);
-        $claims->finish($claimed)->update(['safe_code'=>'usd_balance_required']);
+        $claims->finish($claimed, holdReason: 'usd_balance_required');
     }else{
         $restoreBalanceHold();
     }
@@ -200,7 +200,7 @@ foreach(['payment','missing_claim','authority','legacy_authority','configuration
     $reads=count(FakeRegistrar::$readClaims);$reviewWork->operation((int)$changed->id);$changed=$changed->fresh();
     $code=match($fault){'payment','missing_claim'=>'balance_retry_funding_changed','authority','legacy_authority','configuration'=>'balance_retry_authority_changed','setup'=>'balance_retry_setup_changed'};
     same($code,$changed->safe_code,'Changed '.$fault.' has an actionable hold');
-    $retryDue=(int)DB::table('domains_runtime_operations')->where('operation_id',$changed->id)->value('due_at');
+    $retryDue=\Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResult::continuation($changed)->dueAt;
     expect($retryDue>$clock->now()->getTimestamp()&&$retryDue<=$clock->now()->getTimestamp()+21600,'Refused proof has a bounded later local check');
     $reviewWork->operation((int)$changed->id);
     same($reads,count(FakeRegistrar::$readClaims),'Diagnosing or checking refused proof performs no provider reads');
@@ -236,11 +236,12 @@ foreach(['payment','missing_claim','authority','legacy_authority','configuration
 }
 // A pre-claim row has no old financial claim to replace: repair of current funding needs no staff release.
 config(['domains.enom_writes.registration'=>true]);$unclaimed=$new(placeholderComFixtureName('retry-preclaim-payment-placeholder.com'));
-config(['domains.enom_writes.registration'=>false]);$unclaimed->update(['state'=>'held','safe_code'=>'usd_balance_required']);
+config(['domains.enom_writes.registration'=>false]);$unclaimed=$claims->holdUnclaimed($unclaimed->id,'usd_balance_required');
 App\Models\Invoice::whereKey($unclaimed->invoice_id)->update(['status'=>'pending']);
 expect(!\Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::candidate($unclaimed->fresh()),'Unpaid pre-claim row never promises an automatic send');
+$clock->instant=$clock->now()->modify('+900 seconds');CarbonCarbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
 $claims->readmitBalance((int)$unclaimed->id);
-expect((int)DB::table('domains_runtime_operations')->where('operation_id',$unclaimed->id)->value('due_at')>$clock->now()->getTimestamp(),'Unpaid pre-claim retry defers instead of remaining overdue');
+expect(\Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResult::continuation($unclaimed)->dueAt>$clock->now()->getTimestamp(),'Unpaid pre-claim retry defers instead of remaining overdue');
 Illuminate\Support\Facades\Auth::setUser($staff);$notice=RequestFacts::notice($unclaimed->fresh());
 same('invoice',$notice['link'],'Pre-claim payment issue opens the invoice');expect(!str_contains(json_encode($notice),'automatically'),'Unpaid pre-claim notice names the payment issue');
 App\Models\Invoice::whereKey($unclaimed->invoice_id)->update(['status'=>'paid']);
@@ -255,7 +256,7 @@ $result=$lowEngine->execute($failed->id);$claim=$result->attempt['claim_key'];$p
 same(['held','registrar_read_failed','absent'],[$result->state,$result->safe_code,$result->attempt['seal']],'A failed read is proven unsent');
 $failedPage=$open($result);
 $failedPage->assertSee("Not sent: couldn't read from the registrar. It will retry automatically.")->assertActionHidden('release');
-Illuminate\Support\Facades\Auth::setUser($staff);$nextTry=(int)DB::table('domains_runtime_operations')->where('operation_id',$result->id)->value('due_at');
+Illuminate\Support\Facades\Auth::setUser($staff);$nextTry=\Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResult::continuation($result)->dueAt;
 // The notice supplies the scheduled instant separately from its text; the rendered page keeps it as a time.
 same($nextTry,RequestFacts::notice($result)['next_try'],'A timed retry retains its queued instant');
 $retryPage=$failedPage->html();$retryDom=new DOMDocument;@$retryDom->loadHTML('<?xml encoding="utf-8"?>'.$retryPage);

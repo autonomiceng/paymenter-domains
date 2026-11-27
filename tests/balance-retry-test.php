@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\{Cache,DB,Queue};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, CostUnit, Disposition, DriverResult, Environment, Evidence, Money, QuoteEvidence, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionLane,AcquisitionResult};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, BalanceRetries, BalanceSchema, OperationClaims, RegistrarRegistry, Rdap, RenewalAcceptance, RuntimeComposition, RuntimeDispatch, RuntimePorts, RuntimeSchema, RuntimeWork, StaffAlertSchema, TransferPrecheck, WriteAcceptance, WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Management,Registration,Transfer};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
@@ -73,7 +74,7 @@ $advance=static function(int $seconds)use($clock):void {
     $clock->instant=$clock->now()->modify('+'.$seconds.' seconds');Cache::flush();
     Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
 };
-$due=static fn($op)=>(int)DB::table('domains_runtime_operations')->where('operation_id',$op->id)->value('due_at');
+$due=static fn($op)=>AcquisitionResult::continuation($op)->dueAt;
 $readCount=static fn()=>array_sum(array_map(static fn($r)=>count($r->calls),$state->readers));
 \Paymenter\Extensions\Servers\Domains\Services\ReminderSchema::install();
 require_once __DIR__.'/Support/fixture-cases.php';
@@ -165,7 +166,11 @@ $retry=static function(string $case,array &$failures)use($fixed):void {extract($
             $worker->operation($op->id);$worker->operation($op->id);
             same($before+1,$state->sends,$case.': funds send once without Release hold');
             // The retry backoff paces resends only; a sent order gets its normal status checks.
-            $sent=$op->fresh()->state;$wait=$due($op)-$clock->now()->getTimestamp();
+            $sent=$op->fresh()->state;
+            $dispatch->enqueue($op->id);
+            $delivery = DB::table('domains_runtime_operations')->where('operation_id',$op->id)->value('due_at');
+            $wait=$delivery-$clock->now()->getTimestamp();
+            expect($delivery !== null, 'A sent operation has a status delivery schedule');
             same([true,true],[in_array($sent,['pending','uncertain','running'],true),$wait<=300],$case.': the status check waits '.$wait.'s, not the retry backoff');
             if($case==='sent_cap'){
                 same('sealed',$op->fresh()->attempt['seal'],'A refusal after sending retains the seal');
@@ -206,7 +211,7 @@ $cases['stored']=static function()use($fixed,$pin,$report):void {extract($fixed)
         config(['domains.enom_writes.registration'=>false,'domains.enom_writes.transfer'=>false]);
         $original=$claimed?$claims->claim($op->id)[0]:null;
         if($original){$claims->finish($original,null,$oldCode);$op=$op->fresh();}
-        else{$op->update(['state'=>'held','safe_code'=>$oldCode]);}$state->query=OperationClaims::query($op,$op->domain);$state->funds='100.00';$before=$state->sends;$first=count($state->readers);
+        else{$op=$claims->holdUnclaimed($op->id,$oldCode);}$state->query=OperationClaims::query($op,$op->domain);$state->funds='100.00';$before=$state->sends;$first=count($state->readers);
         try {
         $dispatch->enqueue($op->id);$advance(900);$worker->operation($op->id);$worker->operation($op->id);
         same($before+1,$state->sends,$oldCode.': funded stored hold sends once without a click');
@@ -217,7 +222,7 @@ $cases['stored']=static function()use($fixed,$pin,$report):void {extract($fixed)
         }catch(Throwable $e){$failures[]=$oldCode.': '.$e->getMessage();}
     }
     $advance(61);config(['domains.enom_writes.registration'=>true]);$op=$new(placeholderComFixtureName('old-balance-low-placeholder.com'));
-    config(['domains.enom_writes.registration'=>false]);$op->update(['state'=>'held','safe_code'=>'usd_balance_required']);
+    config(['domains.enom_writes.registration'=>false]);$op=$claims->holdUnclaimed($op->id,'usd_balance_required');
     $state->query=OperationClaims::query($op,$op->domain);$state->funds='1.00';$before=$state->sends;
     try {
     $dispatch->enqueue($op->id);$advance(900);$worker->operation($op->id);
@@ -273,11 +278,14 @@ $cases['reads']=static function()use($fixed,$pin,$report):void {extract($fixed);
 // An old catch-all hold proves nothing. One fresh look, with no click, finds the real answer, and only then may this code mean what it says.
 $cases['legacy']=static function()use($fixed,$pin,$report):void {extract($fixed);
     $pin();$failures=[];
-    $legacy=static function(string $name)use($new,$worker,$state,$advance):Paymenter\Extensions\Servers\Domains\Models\Operation {
+    $legacy=static function(string $name)use($new,$worker,$state,$advance,$clock):Paymenter\Extensions\Servers\Domains\Models\Operation {
         $advance(61);config(['domains.enom_writes.registration'=>true]);$op=$new(placeholderComFixtureName($name));config(['domains.enom_writes.registration'=>false]);
         $state->query=OperationClaims::query($op,$op->domain);$state->available=null;$state->funds='100.00';$state->price='6.00';$worker->operation($op->id);$state->available=true;
         $old=$op->fresh();$policy=$old->policy;unset($policy['balance_retry'],$policy['read_retries']);$old->policy=$policy;
-        DB::table('domains_operations')->where('id',$op->id)->update(['safe_code'=>'write_acceptance_required','policy'=>$old->getAttributes()['policy']]);DB::table('domains_runtime_operations')->where('operation_id',$op->id)->delete();
+        DB::transaction(static function () use ($op,$old,$clock): void {
+            DB::table('domains_operations')->where('id',$op->id)->update(['safe_code'=>'write_acceptance_required','policy'=>$old->getAttributes()['policy']]);
+            AcquisitionResult::schedule($op, AcquisitionLane::BalanceWait, $clock->now()->getTimestamp()+900);
+        });
         return $op->fresh();
     };
     foreach(['sends'=>[true,'pending','registration_evidence_required',1],'taken'=>[false,'held','name_unavailable',0],'read'=>[null,'held','registrar_read_failed',0]] as $case=>[$available,$end,$code,$sent]){
@@ -285,13 +293,21 @@ $cases['legacy']=static function()use($fixed,$pin,$report):void {extract($fixed)
         try {
         $notice=Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($op);
         same(['Not sent: checking this order again.',null,null,null],[$notice['title'],$notice['body'],$notice['action']??null,$notice['link']??null],$case.': waiting words claim no cause and offer no click');
-        $worker->tickOperations();$advance(61);$worker->tickOperations();$due=DB::table('domains_runtime_operations')->where('operation_id',$op->id)->value('due_at');expect($due!==null,$case.': the runtime scan finds the old row');
-        $state->available=$available;$advance(900);$worker->operation($op->id);$worker->operation($op->id);$state->available=true;$after=$op->fresh();
+        Queue::fake();$worker->tickOperations();$advance(61);$worker->tickOperations();
+        same(0,Queue::pushed(\Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class,fn($job)=>$job->operationId===$op->id)->count(),$case.': the runtime scan waits until the saved due time');
+        $advance(839);$worker->tickOperations();
+        same(1,Queue::pushed(\Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class,fn($job)=>$job->operationId===$op->id)->count(),$case.': the runtime scan wakes the due row');
+        $state->available=$available;$worker->operation($op->id);$worker->operation($op->id);$state->available=true;$after=$op->fresh();
         same([$end,$code,$sent,$claim],[$after->state,$after->safe_code,$state->sends-$before,$after->attempt['claim_key']],$case.': one look replaces the old code with the real answer');
         }catch(Throwable $e){$failures[]='legacy '.$case.': '.$e->getMessage();}
     }
     // After that look this code comes only from a real acceptance check, so a new hold keeps its meaning and waits for its fix.
-    $after=$op->fresh();DB::table('domains_operations')->where('id',$op->id)->update(['safe_code'=>'write_acceptance_required']);$after=$op->fresh();
+    $after=$op->fresh();
+    DB::transaction(static function () use ($op): void {
+        DB::table('domains_operations')->where('id',$op->id)->update(['safe_code'=>'write_acceptance_required']);
+        AcquisitionResult::schedule($op, null, null);
+    });
+    $after=$op->fresh();
     expect(!BalanceRetries::legacyHold($after)&&!BalanceRetries::pending($after),'A second look is never scheduled');
     same('Not sent: Registrations off for this account.',Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($after)['title'],'A hold from current code keeps its meaning');
     $report($failures);

@@ -5,8 +5,20 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\{Crypt, DB};
 use Paymenter\Extensions\Servers\Domains\Data\{Money, SendState};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission, AcquisitionAttempt, AcquisitionResult,
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission, AcquisitionAttempt, AcquisitionLane, AcquisitionResult,
     AcquisitionResultSchema, AcquisitionWindow, AttemptToken, OperationSchema, OperationWriter, ReadToken, SealTerms, Transition, WireOutcome};
+use Paymenter\Extensions\Servers\Domains\Services\FundsWaits;
+
+/** These closure fixtures start from an already-confirmed provider shortfall. */
+function fixtureAcquisitionFundsWait(Operation $operation, DateTimeImmutable $started): void
+{
+    DB::transaction(static function () use ($operation, $started): void {
+        $current = Operation::whereKey($operation->id)->lockForUpdate()->firstOrFail();
+        $current->update(['state' => 'held', 'safe_code' => 'registrar_balance_insufficient']);
+        AcquisitionResult::schedule($current, AcquisitionLane::FundsWait,
+            $started->modify('+'.FundsWaits::WAIT_DAYS.' days')->getTimestamp(), $started);
+    });
+}
 
 /** Corrupt one persisted acquisition evidence row, bypassing the production writer only in the fixture. */
 function changeAcquisitionEvidence(Operation $op, string $kind, Closure $change): Closure

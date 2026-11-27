@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 require __DIR__.'/Support/operation-fixture.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
@@ -14,7 +15,8 @@ foreach(['register','transfer']as$action){
     commerceAdd($cart,$native->product($tlds[0],$action),$name);commerceCheckout($user,$cart)->assertHasNoErrors()->assertRedirect();
     echo 'Checkout complete: '.$action."\n";
     $op=Domain::where('domain',$name)->sole()->operations()->sole();
-    $op->update(['state'=>'held','safe_code'=>'registrar_balance_insufficient','policy'=>[...$op->policy,'funds_wait_at'=>$now->format(DATE_ATOM)]]);
+    fixtureAcquisitionFundsWait($op, $now);
+    $op->refresh();
     $account=Account::where('server_id',$op->server_id)->sole();$before=[$op->getRawOriginal(),$op->domain->getRawOriginal(),$nativeMoney()];
     $fail=(int)$op->service_id;
     DB::listen(static function($q)use(&$fail):void {

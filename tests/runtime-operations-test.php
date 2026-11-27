@@ -5,6 +5,7 @@ require __DIR__.'/Support/runtime-native-holdings.php';
 $nativeSuccessful=false;
 use Illuminate\Support\Facades\{DB,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResultSchema;
 use Paymenter\Extensions\Servers\Domains\Services\{RuntimeWork,RuntimePorts};
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
 
@@ -17,6 +18,7 @@ for($i=0;$i<28;$i++){
     $ids[]=DB::table('domains_operations')->insertGetId([...$original,'invoice_item_id'=>null,
         'operation_key'=>'operation-sweep-'.$i,'state'=>'queued',
         'authority_generation'=>$i===0?(int)$original['authority_generation']+1:$original['authority_generation']]);
+    if (in_array($original['action'], ['register','transfer'], true)) { AcquisitionResultSchema::insert(end($ids)); }
 }
 $tables=['domains_domains','domains_tlds','domains_prices','domains_observation_queues',
     'domains_reminder_schedules','invoices','invoice_items','invoice_transactions','services','credits'];
@@ -54,6 +56,7 @@ same($clock->now()->getTimestamp()+900,(int)DB::table('domains_runtime_operation
 echo "Bounded operations-only dispatch, durable backoff and producer isolation passed.\n";
 
 $correctionId=DB::table('domains_operations')->insertGetId([...$original,'invoice_item_id'=>null,'operation_key'=>'finished-correction-retry','state'=>'succeeded','safe_code'=>'registration_correction_required']);
+if (in_array($original['action'], ['register','transfer'], true)) { AcquisitionResultSchema::insert($correctionId); }
 $clock->instant=$clock->now()->modify('+61 seconds');$runtime->tickOperations();
 expect(Queue::pushed(RunOperation::class)->contains(fn($job)=>$job->operationId===$correctionId),'Operations turn schedules the existing correction producer for a completed registration');
 $nativeSuccessful=true;

@@ -2,6 +2,7 @@
 // Native checkout, locked recovery and notification planning need real Paymenter invoice/service rows.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 require __DIR__.'/Support/operation-fixture.php';
 use App\Models\{Credit,Invoice,InvoiceTransaction,Role,Service};
 use Illuminate\Support\Facades\{Auth,DB};
@@ -78,7 +79,8 @@ $check('runtime-discovered complimentary transfer accepts an owner code',functio
     same($before,$money(),'Runtime and auth-code entry invent no payment or credit');
 });
 $wait=$op->fresh();
-$wait->update(['state'=>'held','safe_code'=>'registrar_balance_insufficient','policy'=>[...$wait->policy,'funds_wait_at'=>$clock->now()->format(DATE_ATOM)]]);
+fixtureAcquisitionFundsWait($wait, $clock->now());
+$wait->refresh();
 $check('elapsed complimentary funds wait closes without payment or refund',function()use($wait,$clock,$money):void {
     $clock->instant=$clock->now()->modify('+3 days');
     $before=$money();$account=Account::where('server_id',$wait->server_id)->sole();

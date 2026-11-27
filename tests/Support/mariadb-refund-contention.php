@@ -3,6 +3,7 @@
 // A holder takes a row the refund credit needs after its tentative credit write: real deadlocks and lock wait timeouts.
 // Inversion: the holder takes an invoice, then the customer (AeStripe's order); Domains keeps customer before invoice.
 declare(strict_types=1);
+require_once __DIR__.'/acquisition-evidence-fixture.php';
 $deferDomainsBootstrap=true;require __DIR__.'/mariadb-bootstrap.php';
 require __DIR__.'/commerce.php';require __DIR__.'/native-commerce.php';
 PHPUnit\TextUI\Configuration\Registry::init((new PHPUnit\TextUI\CliArguments\Builder)->fromParameters([]),PHPUnit\TextUI\XmlConfiguration\DefaultConfiguration::create());
@@ -128,7 +129,8 @@ foreach($cases as $case=>$rounds){
         $proofs[]=$case;continue;
     }
     if($case==='funds'){
-        $op->update(['safe_code'=>'registrar_balance_insufficient','policy'=>[...$op->policy,'funds_wait_at'=>$clock->now()->modify('-4 days')->format(DATE_ATOM)]]);
+        fixtureAcquisitionFundsWait($op, $clock->now()->modify('-4 days'));
+        $op->refresh();
         $armed=['case'=>$case,'rounds'=>$rounds,'op'=>$op];$attempts=0;$signal($case.'-ready');
         FundsWaits::sweep($account,$clock->now());$armed=null;
         $reviews=DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','funds_wait_review')->count();
