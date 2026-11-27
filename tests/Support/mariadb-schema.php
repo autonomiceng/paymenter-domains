@@ -7,10 +7,61 @@ use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\{Artisan,DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Domains;
+use Paymenter\Extensions\Servers\Domains\Jobs\{ExecuteOperation, RunOperation};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Installation\{Registry,SchemaVerifier,Verification};
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionResultSchema,OperationSchema};
 use Paymenter\Extensions\Servers\Domains\Services\{AdoptionSchema,Installation,DomainAuditSchema};
+
+function proveAcquisitionQueueDrain(Closure $upgrade): void
+{
+    $name = 'acquisition-upgrade-fixture';
+    $connection = DB::getDefaultConnection();
+    $database = config('database.connections.'.$connection);
+    $defaultQueue = config('queue.default');
+    $database['prefix'] = DB::connection()->getTablePrefix().'wake_';
+    config([
+        'database.connections.'.$name => $database,
+        'queue.connections.'.$name => ['driver' => 'database', 'connection' => $name, 'table' => 'operation_jobs'],
+    ]);
+    $queue = DB::connection($name);
+    $schema = $queue->getSchemaBuilder();
+    $schema->create('operation_jobs', static function (Blueprint $table): void {
+        $table->id();
+        $table->text('payload');
+        $table->unsignedInteger('available_at');
+        $table->unsignedInteger('reserved_at')->nullable();
+    });
+    $jobs = $queue->table('operation_jobs');
+    $refuse = static function (string $case) use ($upgrade): void {
+        try { $upgrade(); throw new LogicException('Upgrade accepted '.$case); }
+        catch (DomainException) {}
+        expect(!Schema::hasTable(AcquisitionResultSchema::TABLE)
+            && !DB::table('migrations')->where('migration', Registry::ACQUISITION_RESULTS)->exists(),
+            'Queue refusal leaves the result table and migration record absent for '.$case);
+    };
+    try {
+        config(['queue.default' => 'redis']);
+        $refuse('a Redis queue');
+        config(['queue.default' => $name]);
+        foreach ([
+            ['ready job', RunOperation::class, time(), null],
+            ['delayed job', ExecuteOperation::class, time() + 3600, null],
+            ['reserved job', RunOperation::class, time(), time()],
+        ] as [$case, $command, $available, $reserved]) {
+            $id = $jobs->insertGetId(['payload' => json_encode(['displayName' => $command, 'data' => ['commandName' => $command]], JSON_THROW_ON_ERROR),
+                'available_at' => $available, 'reserved_at' => $reserved]);
+            $refuse($case);
+            expect($jobs->where('id', $id)->exists(), 'The installer preserves the '.$case);
+            $jobs->where('id', $id)->delete();
+        }
+        $upgrade();
+    } finally {
+        $schema->drop('operation_jobs');
+        DB::purge($name);
+        config(['queue.default' => $defaultQueue]);
+    }
+}
 
 same(getenv('DB_SOCKET'), DB::connection()->getConfig('unix_socket'), 'Resolved socket belongs to this disposable fixture');
 same(getenv('DB_DATABASE'), DB::connection()->getDatabaseName(), 'Resolved database belongs to this disposable fixture');
@@ -75,6 +126,8 @@ foreach (array_keys($references) as $reference) {
 // refuses a retained acquisition, then installs only after its disposable work is retired.
 Schema::drop(AcquisitionResultSchema::TABLE);
 DB::table('migrations')->where('migration', Registry::ACQUISITION_RESULTS)->delete();
+$queueDefault = config('queue.default');
+config(['queue.default' => 'database']);
 $fixture = DB::table('domains_operations')->insertGetId([
     'server_id' => 1, 'registrar_key' => 'enom', 'domain_id' => 1, 'service_id' => 1,
     'operation_key' => 'old-demo-acquisition', 'action' => 'register', 'state' => 'queued', 'currency' => 'USD',
@@ -88,7 +141,8 @@ DB::table('domains_operations')->where('id', $fixture)->delete();
 try { $entry->upgraded('0.0.1'); throw new LogicException('Upgrade accepted stranded work'); }
 catch (DomainException $error) { expect(str_contains($error->getMessage(), 'retire the demo acquisition fixtures'), 'Stranded work stops upgrade'); }
 DB::table('domains_runtime_operations')->where('operation_id', $fixture)->delete();
-$entry->upgraded('0.0.1');
+proveAcquisitionQueueDrain(static fn () => $entry->upgraded('0.0.1'));
+config(['queue.default' => $queueDefault]);
 expect(Schema::hasTable('domains_profile_operations'), 'The upgrade keeps the installed NameSilo contact ledger');
 expect(Verification::current(), 'The retained installer verified the upgrade before returning');
 same(1, DB::table('migrations')->where('migration', Registry::ACQUISITION_RESULTS)->count(), 'The targeted upgrade was recorded once');
