@@ -7,9 +7,10 @@ use Paymenter\Extensions\Servers\Domains\Money\Allocations\RenewalAllocationSche
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Catalogue\Pricing\PriceSchema;
 use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferSchema;
+use Paymenter\Extensions\Servers\Domains\Management\Records\{DnsTemplateClaimsSchema, DnsTemplatesSchema};
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
 use Paymenter\Extensions\Servers\Domains\Services\{AdoptionSchema,BalanceAlertSchema,BalanceSchema,BusinessSettingsSchema,
-    ComplimentaryAccountSchema,ContactProfileSchema,DnsTemplateClaimsSchema,DnsTemplatesSchema,DomainAuditSchema,
+    ComplimentaryAccountSchema,ContactProfileSchema,DomainAuditSchema,
     EnomLiveCallSchema,EnomTestSendLimitSchema,FoundationSchema,HistoryLinkSchema,MoneyWorkSchema,NativeIntentSchema,ObservationSchema,
     ProfileContactSchema,ReminderSchema,RetentionSchema,RuntimeSchema,StaffAlertSchema,StaffAuditSchema,
     UserDeletionSchema};

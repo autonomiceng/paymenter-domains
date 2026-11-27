@@ -80,6 +80,10 @@
  "Management/Changes/ManagementForms.php": [
   "Registrars\\NameSilo\\DnsForm"
  ],
+ "Management/Records/OwnerRecords.php": [
+  "Registrars\\NameSilo\\DnsForm",
+  "Registrars\\NameSilo\\DnsSequence"
+ ],
  "Models/Account.php": [
   "Services\\NameSiloSandbox"
  ],
@@ -307,10 +311,6 @@
  ],
  "Services/OwnerRecordInput.php": [
   "Registrars\\NameSilo\\Dns"
- ],
- "Services/OwnerRecords.php": [
-  "Registrars\\NameSilo\\DnsForm",
-  "Registrars\\NameSilo\\DnsSequence"
  ],
  "Services/PayCheck.php": [
   "Services\\EnomTestRegistration",
