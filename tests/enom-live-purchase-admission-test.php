@@ -2,10 +2,14 @@
 // Native worker admission after a sealed local refusal. The Enom wire is synthetic.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+use Illuminate\Contracts\Debug\ExceptionHandler;
+use Illuminate\Queue\{QueueManager, Worker, WorkerOptions};
+use Illuminate\Queue\Connectors\DatabaseConnector;
 use Illuminate\Support\Facades\{Auth, DB, Queue};
 use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
 use Paymenter\Extensions\Servers\Domains\Jobs\{ExecuteOperation, RunOperation};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResult;
 use Paymenter\Extensions\Servers\Domains\Services\{FundsWaits, NativeCatalogue, OperationClaims, PricingRule, Runtime, RuntimeDispatch, RuntimeWork, StaffOperationReview, StaffOperations};
 use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
 
@@ -47,6 +51,7 @@ $credit = static fn (): int => PricingRule::minor((string) (App\Models\Credit::w
 $processing = static fn (bool $enabled) => DB::table('domains_accounts')->where('id', $a->id)->update(['processing_enabled' => $enabled]);
 $atClaim = $atSeal = null;
 $pauseOrders = false;
+$afterFunds = null;
 Operation::updated(static function (Operation $op) use (&$atClaim, &$atSeal): void {
     if ($op->action !== 'register' || $op->state !== 'running') { return; }
     if ($atClaim && $op->isDirty('state')) {
@@ -58,17 +63,59 @@ Operation::updated(static function (Operation $op) use (&$atClaim, &$atSeal): vo
         $atSeal = null;
     }
 });
-DB::listen(static function ($query) use (&$pauseOrders, $processing): void {
+DB::listen(static function ($query) use (&$pauseOrders, &$afterFunds, $processing): void {
     if ($pauseOrders && DB::transactionLevel() === 0 && str_starts_with($query->sql, 'select * from "domains_accounts"')) {
         $pauseOrders = false;
         $processing(false);
     }
+    if ($afterFunds && str_starts_with($query->sql, 'update "domains_acquisition_results"')
+        && str_contains($query->sql, '"confirmed_shortfall_at"')) {
+        DB::afterCommit($afterFunds);
+        $afterFunds = null;
+    }
 });
+
+$resumeThroughQueue = static function (Operation $order, DateTimeImmutable $at) use ($clock, $setTime, $wire, $processing, $purchases): array {
+    $previous = Queue::getFacadeRoot();
+    $queue = new QueueManager(app());
+    $queue->addConnector('database', static fn () => new DatabaseConnector(app('db')));
+    $worker = new Worker($queue, app('events'), app(ExceptionHandler::class), static fn () => false);
+    $options = new WorkerOptions(sleep: 0, maxTries: 1);
+    $name = 'purchase-admission-witness';
+    $default = config('queue.default');
+    $defaultName = config('queue.connections.database.queue');
+    config(['queue.default' => 'database', 'queue.connections.database.queue' => $name]);
+    $jobs = DB::table('jobs')->where('queue', $name);
+    Queue::swap($queue);
+    try {
+        $setTime($at);
+        $wire();
+        $window = AcquisitionResult::window($order);
+        app(RuntimeDispatch::class)->enqueue($order->id);
+        app(RuntimeDispatch::class)->enqueue($order->id);
+        $published = $jobs->count();
+        $processing(false);
+        $worker->runNextJob('database', $name, $options);
+        $paused = [$jobs->count(), $order->fresh()->state, $order->fresh()->safe_code, $purchases()];
+        $processing(true);
+        $setTime($clock->now()->modify('+10 seconds'));
+        app(RuntimeDispatch::class)->enqueue($order->id);
+        $resumed = $jobs->count();
+        $worker->runNextJob('database', $name, $options);
+        $sealed = $order->fresh()->acquisitionSealWindow();
+        return [$published, $paused, $resumed, $purchases(),
+            $window !== null && $sealed === $window->seal(false)];
+    } finally {
+        Queue::swap($previous);
+        config(['queue.default' => $default, 'queue.connections.database.queue' => $defaultName]);
+    }
+};
 
 $observed = [];
 $day = $clock->now()->modify('+2 days');
 foreach (['funded', 'shortfall', 'deferred-live', 'deferred-expired', 'orders-scheduler', 'orders-job', 'orders-expired',
-    'balance-resume-funded', 'balance-resume-short', 'balance-deadline-paused'] as $index => $case) {
+    'balance-resume-funded', 'balance-resume-short', 'balance-deadline-paused',
+    'balance-response-at-cutoff', 'balance-timely-local-refusal', 'balance-real-wake'] as $index => $case) {
     $setTime($day->modify('+'.(4 * $index).' days'));
     $wire();
     Auth::setUser($staff);
@@ -117,10 +164,42 @@ foreach (['funded', 'shortfall', 'deferred-live', 'deferred-expired', 'orders-sc
         } catch (DomainException) {
             $refusedRelease = true;
         }
-        $setTime($deadline->modify('-120 seconds'));
+        $lateResponse = $case === 'balance-response-at-cutoff';
+        $localRefusal = $case === 'balance-timely-local-refusal';
+        $queuedWake = $case === 'balance-real-wake';
+        $setTime($deadline->modify($queuedWake ? '-5 minutes' : '-120 seconds'));
         Auth::setUser($staff);
         installedOfferEvidence($binding, $clock, true);
         expect(app(OperationClaims::class)->readmitBalance($order->id), 'The last automatic wait admits one replacement before day three');
+        if ($queuedWake) {
+            $observed[$case] = $resumeThroughQueue($order->fresh(), $clock->now()->modify('+245 seconds'));
+            continue;
+        }
+        if ($lateResponse || $localRefusal) {
+            $before = $credit();
+            $setTime($deadline->modify('-5 seconds'));
+            $wire();
+            if ($lateResponse) {
+                $GLOBALS['enomWire']['during'] = static function (array $form) use ($setTime, $deadline): void {
+                    if ($form['Command'] === 'GetBalance') { $setTime($deadline); }
+                };
+            } else {
+                $afterFunds = static function () use ($processing, $setTime, $deadline): void {
+                    $processing(false);
+                    $setTime($deadline);
+                };
+            }
+            $run($order);
+            $setTime($deadline);
+            FundsWaits::sweep($a->fresh(), $clock->now());
+            FundsWaits::sweep($a->fresh(), $clock->now());
+            $expectedCredit = $lateResponse ? PricingRule::minor($order->amount) : 0;
+            $observed[$case] = [$purchases(), $order->fresh()->state, $credit() - $before === $expectedCredit,
+                $afterFunds === null];
+            $afterFunds = null;
+            $processing(true);
+            continue;
+        }
         $processing(false);
         $wire(false);
         $run($order);
@@ -241,5 +320,8 @@ same([
     'balance-resume-funded' => [false, true, 1, 1, true, true],
     'balance-resume-short' => [false, true, null, 0, 'rejected', true],
     'balance-deadline-paused' => [false, true, null, 0, 'rejected', true],
+    'balance-response-at-cutoff' => [0, 'rejected', true, true],
+    'balance-timely-local-refusal' => [0, 'held', true, true],
+    'balance-real-wake' => [1, [0, 'held', 'processing', 0], 1, 1, true],
 ], $observed, 'Purchase admission and financial outcomes follow the retained authorization '.json_encode($observed, JSON_THROW_ON_ERROR));
 $nativeSuccessful = true;
