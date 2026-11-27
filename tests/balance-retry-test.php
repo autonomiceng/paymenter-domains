@@ -167,8 +167,12 @@ $retry=static function(string $case,array &$failures)use($fixed):void {extract($
             same($before+1,$state->sends,$case.': funds send once without Release hold');
             // The retry backoff paces resends only; a sent order gets its normal status checks.
             $sent=$op->fresh()->state;
-            $dispatch->enqueue($op->id);
-            $delivery = DB::table('domains_runtime_operations')->where('operation_id',$op->id)->value('due_at');
+            if ($case === 'transfer') {
+                $delivery = \Paymenter\Extensions\Servers\Domains\Services\TransferPolling::schedule($op->fresh(),$clock->now()->getTimestamp())['next_read_at'];
+            } else {
+                $dispatch->enqueue($op->id);
+                $delivery = DB::table('domains_runtime_operations')->where('operation_id',$op->id)->value('due_at');
+            }
             $wait=$delivery-$clock->now()->getTimestamp();
             expect($delivery !== null, 'A sent operation has a status delivery schedule');
             same([true,true],[in_array($sent,['pending','uncertain','running'],true),$wait<=300],$case.': the status check waits '.$wait.'s, not the retry backoff');

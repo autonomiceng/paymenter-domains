@@ -49,7 +49,8 @@ $open=fn($op)=>Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
 foreach(['usd_balance_required','enom_test_transfer_usd_balance_required'] as $code){
     $op=$held(placeholderComFixtureName('truth-'.str_replace('_','-',$code).'-placeholder.com'));
-    $op->update(['state'=>'held','safe_code'=>$code]);
+    $op->update(['state'=>'queued','safe_code'=>null]);
+    $op = $claims->holdUnclaimed($op->id,$code);
     $open($op)->assertSee('Not sent. Orders are off for this account.')->assertDontSee('check the registrar balance first')
         ->assertDontSee('Check balance')->assertDontSee('Open account')->assertActionHidden('release');
     $summary=\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($op->domain->fresh());
@@ -131,9 +132,12 @@ $clock->instant=$clock->now()->modify('+1800 seconds');
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
 config(['domains.enom_writes.registration'=>false]);
 $result=$lowEngine->execute($low->id);
-same($originalClaim,$result->attempt['claim_key'],'Balance recovery preserves the original unsent claim');
-same(['availability','quote'],end($readers)->calls,'Funded retry runs fresh availability and price after its first balance read');
-same($before+1,$writer->calls,'Funded readmission sends once');
+same(['held','name_unavailable',$before],[$result->state,$result->safe_code,$writer->calls],'An expired Staff Release restores its saved hold without sending');
+$open($result)->assertActionVisible('release')->callAction('release')->assertNotified('Hold released');
+$result=$lowEngine->execute($low->id);
+same($originalClaim,$result->attempt['claim_key'],'Reviewed recovery preserves the original unsent claim');
+same(['availability','quote','balance'],end($readers)->calls,'Reviewed recovery repeats the fresh preflight');
+same($before+1,$writer->calls,'A fresh reviewed Release sends once');
 $lowEngine->execute($low->id);same($before+1,$writer->calls,'Repeated execution never sends twice');
 expect(!OperationClaims::balanceRefusalRetryable($result),'Sealed or uncertain outcome cannot enter balance recovery');
 // A send recovered a day later must still reconcile its own order, charge and billing anchor.

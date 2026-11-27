@@ -241,8 +241,12 @@ final class AcquisitionResult
                 'window_started_at' => OperationAttempts::at($now),
                 'window_ends_at' => OperationAttempts::at($now->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds')),
                 'transfer_input_until' => $cutoff === null ? null : OperationAttempts::at($cutoff),
-                'window_expiry_reason' => isset($refused) ? 'acquisition_definitely_unsent'
-                    : (in_array($hold, ['namesilo_account_guard', 'registrar_price_increased'], true) ? $hold : 'write_rate_limited'),
+                'window_expiry_reason' => match (true) {
+                    isset($refused) => 'acquisition_definitely_unsent',
+                    in_array($hold, ['namesilo_account_guard', 'registrar_price_increased'], true) => $hold,
+                    $admission === AcquisitionAdmission::StaffRelease && $hold !== null && $hold !== 'processing' => $hold,
+                    default => 'write_rate_limited',
+                },
             ];
         }
         if ($admission === AcquisitionAdmission::FirstClaim) { $changes['first_claim_at'] = OperationAttempts::at($now); }

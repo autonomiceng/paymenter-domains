@@ -121,7 +121,9 @@ final class AcquisitionRetryProof
         try {
             $window = AcquisitionResult::window($op);
             $retry = BalanceRetry::from($op);
-            $released = BalanceRetries::owns($op);
+            // The old admission is negative-send proof for staff even after automatic ownership ends.
+            $released = BalanceRetries::owns($op) || $window?->origin === AcquisitionAdmission::Balance->value
+                || ($retry !== null && $window?->origin === AcquisitionAdmission::StaffRelease->value && $window->reason === $op->safe_code);
             if (!isset($op->attempt['claim_key']) && (!self::virgin($op)
                 || !in_array($op->safe_code, ['usd_balance_required', 'enom_test_transfer_usd_balance_required'], true) && $retry === null)) {
                 return false;

@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Holding\Adoption\AdoptionEnrollment;
 use Paymenter\Extensions\Servers\Domains\Holding\Retention\HistoryRetention;
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalExecution;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt,AcquisitionResultSchema,AcquisitionRetryProof};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt,AcquisitionLane,AcquisitionResultSchema,AcquisitionRetryProof};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\{DisputeRecoveries, RefundCandidates};
 /** Sole scheduler authority. Bounded durable account turns; each financial authority rechecks its own locks. */
 final readonly class RuntimeWork
@@ -31,7 +31,7 @@ final readonly class RuntimeWork
         try {
             $account = Account::where('server_id', $op->server_id)->first();
             $dispatch = app(RuntimeDispatch::class);
-            if (!$account || !$dispatch->current($op)) { return; }
+            if (!$account) { return; }
             if (AcquisitionAttempt::key($op->action) !== null) {
                 $runnable = $dispatch->acquisition($op, $account, true, $this->ports);
                 if ($runnable === null) { return; }
@@ -41,6 +41,7 @@ final readonly class RuntimeWork
                 } elseif ($this->ports->accepted($account)) { $this->ports->operation($op); }
                 return;
             }
+            if (!$dispatch->current($op, $account)) { return; }
             if ($account->processing_enabled && RenewalRetries::candidate($op)) { $op = RenewalRetries::recover($id, $this->clock); }
             if (($account->processing_enabled || in_array($op->state, ['pending','uncertain','running'], true))
                 && $this->ports->accepted($account)) { $this->ports->operation($op); }
@@ -105,7 +106,7 @@ final readonly class RuntimeWork
                 ->where(fn($q)=>$q->whereIn('state',['awaiting_payment','awaiting_code','queued','pending','uncertain','running'])
                     ->orWhere(fn($held)=>$held->where('state','held')->whereExists(fn($result)=>$result
                         ->from(AcquisitionResultSchema::TABLE)->whereColumn(AcquisitionResultSchema::TABLE.'.operation_id','domains_operations.id')
-                        ->whereIn('retry_lane',['balance_wait','price_wait','contact_wait'])))
+                        ->whereIn('retry_lane',[AcquisitionLane::BalanceWait->value, AcquisitionLane::PriceWait->value, AcquisitionLane::ContactWait->value])))
                     ->orWhere(fn($held)=>$held->whereIn('action',['register','transfer'])->where('state','held')->whereIn('safe_code',AcquisitionRetryProof::INTERRUPTED_HOLDS))
                     ->orWhere(fn($q)=>$q->where('action','register')->where('state','held')->where('safe_code','contact_details_required'))
                     ->orWhere(fn($q)=>$q->where('registrar_key','namesilo')->whereIn('action',['register','transfer'])->where('state','held')

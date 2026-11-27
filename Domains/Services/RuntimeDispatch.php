@@ -17,9 +17,9 @@ final readonly class RuntimeDispatch
             && $account->account_fingerprint === $op->account_fingerprint && $domain->account_fingerprint === $op->account_fingerprint
             && $domain->authority_generation === $op->authority_generation;
     }
-    public function current(Operation $op): bool
+    public function current(Operation $op, ?Account $account = null): bool
     {
-        $d=Domain::find($op->domain_id);$a=Account::where('server_id',$op->server_id)->first();
+        $d=Domain::find($op->domain_id);$a=$account ?? Account::where('server_id',$op->server_id)->first();
         if ($d && $op->action === 'renew' && in_array($op->state, ['awaiting_payment', 'queued'], true) && RenewalCycles::registrarVirgin($op) && RenewalStop::adopted(RenewalStop::read($d))) { ObligationAlerts::record($d, 'operation_review', $this->clock->now()->getTimestamp(), (int) $op->id); return false; }
         if (self::matchesHolding($op, $d, $a)) { return true; }
         if($d){ObligationAlerts::record($d,'operation_review',$this->clock->now()->getTimestamp(),(int)$op->id);}return false;
@@ -27,7 +27,6 @@ final readonly class RuntimeDispatch
     public function enqueue(int $id,bool $force=false): void
     {
         $op=Operation::findOrFail($id);
-        if (!$this->current($op)) { return; }
         if (AcquisitionAttempt::key($op->action) !== null) {
             $account = Account::where('server_id', $op->server_id)->first();
             $op = $account ? $this->acquisition($op, $account, false) : null;
@@ -40,7 +39,7 @@ final readonly class RuntimeDispatch
                 }
                 return;
             }
-        }
+        } elseif (!$this->current($op)) { return; }
         $instant=$this->clock->now();
         $cutoffRecovery=ExecutionWindow::pastTransferCutoff($op,$instant)&&AcquisitionRetryProof::interruptedHold($op);
         if($op->state==='held'&&!$cutoffRecovery&&!ManagementEvidence::recoverable($op)&&!RenewalRetries::candidate($op)&&!TransferPolling::applies($op)
@@ -73,6 +72,10 @@ final readonly class RuntimeDispatch
     {
         $instant = $this->clock->now();
         $id = (int) $op->id;
+        if (!$this->current($op, $account)) {
+            if (BalanceRetries::pending($op)) { app(OperationClaims::class)->readmitBalance($id); }
+            return null;
+        }
         $recovering = AcquisitionRetryProof::expiredClaim($op, $instant) || AcquisitionRetryProof::interruptedHold($op);
         if ($recovering && ExecutionWindow::pastTransferCutoff($op, $instant)) {
             app(OperationClaims::class)->holdUnclaimed($id, 'transfer_setup_review_required');
@@ -82,7 +85,8 @@ final readonly class RuntimeDispatch
             $paidTest = $op->action === 'register' && $op->state === 'awaiting_payment'
                 && \App\Models\Invoice::whereKey($op->invoice_id)->value('status') === 'paid'
                 && self::testRegistrationEnabled($account);
-            if ($recovering || $paidTest || $op->state === 'queued' && $op->acquisitionAttemptFacts()) {
+            if ($recovering || $paidTest || $op->state === 'queued'
+                && ($op->acquisitionAttemptFacts() || BalanceRetries::active($op))) {
                 app(OperationClaims::class)->holdUnclaimed($id, 'processing');
                 return null;
             }
