@@ -8,7 +8,7 @@ require __DIR__.'/Support/native-commerce.php';
 // Checklist and checkout render the extension's scoped native views.
 app('view')->addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 require_once __DIR__.'/Support/FakeRegistrar.php';
-use App\Models\{Category,Currency,Setting};
+use App\Models\{Category,Currency,Invoice,Setting};
 use Illuminate\Support\Facades\{Auth, DB, Queue};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{OperationActions, Staff};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities,CallerPorts,CallerRouting,Context,Edit,Intent,OfferReadiness,OfferScheduler,Query,CatalogueActivation};
@@ -17,7 +17,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Operation,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,OperationTerminalProof,PricingRule,Refunds,Runtime,RuntimePorts,RuntimeWork,SellerPolicies,StaffOperationReview,StaffOperations,Storefront};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,NativePaidHooks,OperationTerminalProof,PricingRule,Refunds,Runtime,RuntimeDispatch,RuntimePorts,RuntimeWork,SellerPolicies,StaffOperationReview,StaffOperations,Storefront};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 expect(CallerRouting::supportsSales('namesilo'),'Installed catalogue routes NameSilo sales through neutral gates');
 \Illuminate\Support\Facades\Schema::create('cache',static function($t):void {
@@ -195,6 +195,12 @@ $op=Operation::sole();same('namesilo',$op->registrar_key,'Checkout freezes the s
 same('13.00',$op->policy['price']['retail'],'Invoice retains the admitted price');
 // Exercise the installed worker's pre-claim gate with a real purchase seal and a verified order contact.
 \App\Helpers\ExtensionHelper::addPayment($op->invoice_id, null, $op->amount);
+same('paid', Invoice::findOrFail($op->invoice_id)->status, 'Native payment funds the request');
+same([], NativePaidHooks::serviceMissing(), 'Installed service events are ready for the paid worker');
+expect($account->fresh()->processing_enabled, 'Orders remain enabled for the paid worker');
+expect(app(RuntimePorts::class)->accepted($account->fresh()), 'The paid worker can compose the NameSilo runtime');
+expect(app(RuntimeDispatch::class)->current($op), 'The paid worker has the current holding');
+
 $runOrder = static fn () => (new RunOperation($op->id))->handle(app(RuntimeWork::class));
 $purchases = static fn (): int => array_count_values($GLOBALS['nsCatalogueCalls'])['registerDomain'] ?? 0;
 config(['domains.provider_send_guard' => static function ($provider, $environment, $command): void {

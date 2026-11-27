@@ -6,11 +6,11 @@ require_once __DIR__.'/Support/fixture-cases.php';
 require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 use App\Models\Credit;
 use Illuminate\Support\Facades\{Cache, Crypt, DB};
-use Paymenter\Extensions\Servers\Domains\Data\Disposition;
+use Paymenter\Extensions\Servers\Domains\Data\{Disposition, Money};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationSchema, StepKey};
-use Paymenter\Extensions\Servers\Domains\Services\{FundsWaits, HoldingLocks, MoneyWorkSchema, PricingRule, RefundProof, Refunds, WriteAcceptance};
+use Paymenter\Extensions\Servers\Domains\Services\{FundsWaits, HoldingLocks, MoneyWorkSchema, PricingRule, RefundProof, Refunds, WriteAcceptance, WriteHeld};
 // Claim, seal, funds cutoff and send outcome cases share the one prepared claim fixture and clock. Each makes
 // its own paid native checkout; the reset restores rows, payments, attempts, listeners, cache and fakes after it.
 $cases['claims'] = static function () use ($new, $engine, $writer, $assertNoSend): void {
@@ -128,14 +128,12 @@ $cases['inherited-refund-snapshot'] = static function () use ($new, $engine): vo
     } finally { $connection->setQueryGrammar($original); }
 };
 $cases['funds-cutoff'] = static function () use ($new, $engine, $preflight, $clock, $user, $assertNoSend): void {
-    // The real worker must release its own unsealed claim when the funds cutoff passes during preflight.
-    $op=$new('funds-seal-cutoff.example.com');
-    $op->update(['policy'=>[...$op->policy,'funds_wait_at'=>$clock->now()->modify('-3 days +1 second')->format(DATE_ATOM)]]);
-    $preflight->during=static fn()=>$clock->instant=$clock->now()->modify('+2 seconds');
-    $result=$assertNoSend($op);$preflight->during=null;
-    same('registrar_balance_insufficient',$result->safe_code,'Elapsed funds wait keeps a sweepable unsent hold');
-    same(null,$result->lease_expires_at,'No running lease remains after refusal to seal');
-    $clock->instant=$clock->now()->modify('+'.(ExecuteOperation::LEASE_SECONDS+1).' seconds');
+    $op = $new('funds-seal-cutoff.example.com');
+    $preflight->during = static fn () => throw new WriteHeld('registrar_balance_insufficient', new Money('99.00', 'USD'));
+    $result = $assertNoSend($op); $preflight->during = null;
+    same('registrar_balance_insufficient', $result->safe_code, 'A confirmed shortfall records a sweepable unsent hold');
+    same(null, $result->lease_expires_at, 'No running lease remains after the shortfall');
+    $clock->instant = $clock->now()->modify('+3 days +1 second');
     $engine->execute($op->id);same('held',$op->fresh()->state,'Later worker cannot turn this no-send into stale_claim');
     $credit=fn()=>PricingRule::minor((string)(Credit::where('user_id',$user->id)->where('currency_code','USD')->value('amount')??'0.00'));$before=$credit();
     app()->instance(Refunds::class,new Refunds($clock));

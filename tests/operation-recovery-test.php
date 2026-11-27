@@ -11,6 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver, Ope
 use Paymenter\Extensions\Servers\Domains\Data\{AdmittedOperation, Capabilities, Capability, DispatchReadiness, Disposition, DriverResult, Evidence, Money, RequestContext, ResultReason, SendState, Support};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationAttempts;
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, DomainOperations, InvoiceBinding, OperationClaims};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
@@ -26,21 +27,36 @@ $recover = static function () use ($restore, $fixtureOperation, $user, $clock): 
     return $op;
 };
 
-// Active duplicate worker cannot claim; expired workers enter reconciliation, including definitely-unsealed ones.
-foreach ([false, true] as $seal) {
+// Active duplicates cannot claim. An expired unsealed worker is fenced before readmission.
+$recoveryCases = ['unsealed', 'sealed', 'legacy stale'];
+foreach ($recoveryCases as $phase) {
+    $seal = $phase === 'sealed';
     $op = $recover(); [$claimed, $domain, $binding] = $claims->claim($op->id);
     $nativeBeforeDuplicate = nativeFinancialSnapshot($op);
     $assertNoSend($op, 'running');
     same($nativeBeforeDuplicate, nativeFinancialSnapshot($op), 'Active duplicate worker preserves native/financial state');
     if ($seal) { $ready = $preflight->inspect($claimed, $domain, new RequestContext($binding, Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background, $now->modify('+300 seconds'), new Paymenter\Extensions\Servers\Domains\Data\RequestBudget(10), $clock)); $claims->seal($claimed, $ready, $clock->now()); }
-    $clock->instant = $clock->instant->modify('+361 seconds'); $result = $assertNoSend($op, 'uncertain'); same('stale_claim', $result->safe_code, 'Expired worker requires reconciliation');
+    $clock->instant = $clock->instant->modify('+361 seconds');
+    if ($phase === 'legacy stale') { $op->update(['state' => 'uncertain', 'safe_code' => 'stale_claim']); }
+    if ($seal) {
+        $result = $assertNoSend($op, 'uncertain');
+        same('stale_claim', $result->safe_code, 'Expired sealed worker requires reconciliation');
+    } else {
+        $calls = $writer->calls;
+        $result = $engine->execute($op->id);
+        same($calls + 1, $writer->calls, 'Readmission gives the fresh worker one send');
+        same('sealed', $result->attempt['seal'], 'Only the replacement can seal');
+        same($claimed->funding['claim'], $result->funding['claim'], 'Readmission preserves frozen funding');
+        expect(OperationAttempts::attempt($claimed->acquisitionWorker)->released, 'Readmission retires the original worker');
+    }
     $clock->instant = $clock->instant->modify('-361 seconds');
 }
-// Original workers must classify their own expired claim, whether preflight returns or throws.
+// An expired original worker must leave the unsealed claim for the next admission.
 foreach ([false, true] as $fail) {
     $op = $recover(); $preflight->fail = $fail;
     $preflight->during = static fn () => $clock->instant = $clock->instant->modify('+361 seconds');
-    $result = $assertNoSend($op, 'uncertain'); same('stale_claim', $result->safe_code, 'Original expired worker enters reconciliation');
+    $result = $assertNoSend($op, 'running');
+    same(null, $result->safe_code, 'An expired unsealed worker cannot leave a purchase reconciliation hold');
     same('absent', $result->attempt['seal'], 'Expired worker cannot seal');
     $clock->instant = $clock->instant->modify('-361 seconds'); $preflight->during = null; $preflight->fail = false;
 }

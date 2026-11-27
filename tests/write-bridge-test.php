@@ -12,8 +12,9 @@ $result = $engine->execute($op->id); same('held', $result->state, 'Disabled writ
 same(null, $result->attempt, 'Disabled write creates no attempt'); same(0, $preflight->calls, 'Disabled gate blocks read transport too'); same([], $transport->calls, 'No write transport');
 $stale = $new(placeholderComFixtureName('disabled-stale-placeholder.com')); $claims->claim($stale->id);
 $clock->instant = $clock->now()->modify('+361 seconds'); $stale = $engine->execute($stale->id);
-same('uncertain', $stale->state, 'Disabled gate still quarantines expired workers'); same('stale_claim', $stale->safe_code, 'Stale worker reason');
-same([], $transport->calls, 'Quarantine never sends'); $clock->instant = $clock->now()->modify('-361 seconds');
+same(['held', 'write_disabled', 'absent', null], [$stale->state, $stale->safe_code, $stale->attempt['seal'], $stale->lease_expires_at],
+    'Disabled writes leave the expired unsealed worker in an admission hold');
+same([], $transport->calls, 'The admission hold sends nothing'); $clock->instant = $clock->now()->modify('-361 seconds');
 $bridge = $build($enomBinding); $op = $new(placeholderComFixtureName('bridge-enom-placeholder.com'));
 $result = $engine->execute($op->id); same(1, count($transport->calls), 'Enom bridge called once');
 same('uncertain', $result->state, 'Bridge does not interpret outcome'); $call = $transport->calls[0];

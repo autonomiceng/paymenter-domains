@@ -20,11 +20,11 @@ foreach (['sealed', 'expired'] as $mode) {
     $op = $new(reservedFixtureName($mode.'.example.com'));
     if ($mode === 'sealed') { $op = $engine->execute($op->id); }
     else { [$claimed] = $claims->claim($op->id); $clock->instant = $clock->now()->modify('+361 seconds'); $op = $claims->finish($claimed); }
-    same('uncertain', $op->state, $mode.' worker is uncertain before terminal proof');
-    same($mode === 'sealed' ? 'reconciliation_required' : 'stale_claim', $op->safe_code, $mode.' worker retains its expected reason');
+    $expected = $mode === 'sealed' ? ['uncertain', 'reconciliation_required', 'sealed'] : ['running', null, 'absent'];
+    same($expected, [$op->state, $op->safe_code, $op->attempt['seal']], $mode.' worker is still awaiting the next job');
     commerceReject(fn () => OperationTerminalProof::encode($claims, $op->id));
     commerceReject(fn () => DomainReservations::releaseTerminal($op->domain->domain));
-    same($op->domain->domain, $op->domain->fresh()->reservation_name, 'Uncertain/expired facts cannot release');
+    same($op->domain->domain, $op->domain->fresh()->reservation_name, 'An unresolved or expired worker cannot release the reservation');
     $clock->instant = $now;
 }
 // Missing terminal send evidence must refuse quietly in both claim shapes.
@@ -40,6 +40,14 @@ foreach (['register','transfer'] as $action) {
             'funding'=>$claimed?['claim'=>[]]:[],'cost'=>[],'policy'=>[],
             'started_at'=>$claimed?$now:null,'request_fingerprint'=>$claimed?str_repeat('a',64):null]);
         expect(\Paymenter\Extensions\Servers\Domains\Services\OperationClaims::testCallRefusalUnsent($proof),'Complete terminal proof qualifies');
+        if ($action === 'register' && $claimed) {
+            $domain = $result->domain;
+            $proof->fill($domain->only(['server_id', 'service_id', 'account_fingerprint']));
+            expect(OperationTerminalProof::safe($proof, $domain), 'Registration terminal proof accepts earlier cap history');
+            $foreign = clone $proof;
+            $foreign->attempt = [...$attempt, 'terminal' => ['operation_key' => $key, 'generation' => 2]];
+            expect(!OperationTerminalProof::safe($foreign, $domain), 'Earlier cap history cannot validate a foreign terminal decision');
+        }
         foreach ([['seal'],['send_state'],['seal','send_state']] as $missing) {
             $broken=clone $proof;$facts=$attempt;foreach($missing as $field){unset($facts[$field]);}$broken->attempt=$facts;
             set_error_handler(static function(int $severity,string $message,string $file,int $line):never{throw new ErrorException($message,0,$severity,$file,$line);});

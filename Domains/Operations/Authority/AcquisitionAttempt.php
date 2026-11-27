@@ -49,7 +49,7 @@ final readonly class AcquisitionAttempt
             if (!self::dispositionCandidate($op, $lock)) { return null; }
             $id = (int) $op->id;
             $latest = OperationAttempts::latest($id, $key, $lock);
-            if (!$latest || OperationAttempts::unsentPurchase($id, $key, $lock) !== true
+            if (!$latest || $latest->token != $op->acquisitionAttemptFacts()?->token || OperationAttempts::unsentPurchase($id, $key, $lock) !== true
                 || self::conflicts($op)
                 || array_intersect_key($op->receiptFunding(), ['claim' => true, 'seal' => true])
                 || array_intersect_key($op->cost ?? [], ['actual' => true, 'execution' => true])
