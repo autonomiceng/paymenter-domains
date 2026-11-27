@@ -2,6 +2,9 @@
 // Synthetic exact-order support recovery; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/namesilo-registration-fixture.php';
+require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
+use App\Models\Credit;
+use Illuminate\Support\Facades\Crypt;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{Environment,ExecutionRecord};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client,Driver};
@@ -35,10 +38,11 @@ $wire=new class($wireState) implements DeadlineTransport {
 $readRegistry=new \Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
 $readRegistry->register('namesilo',['token'],$verifier,fn($b,$c)=>new Driver(new Client($b,$c['token'],$wire),['renew'],$clock),authenticator:new class implements \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator {public function authenticate(Environment $environment,array $credentials):void { /* Synthetic local authentication. */ }});
 $reads=new AccountBindings($readRegistry);$reconcile=new OperationReconciliation($claims,$reads,$clock);
-foreach(['accepted','not_processed'] as $outcome){
+foreach(['accepted','not_processed','invalid_claim'] as $scenario){
+    $outcome = $scenario === 'invalid_claim' ? 'not_processed' : $scenario;
     $clock->instant=new DateTimeImmutable('2026-10-18T12:00:00Z');$makeEngine($binding,$exchange);
     $registration->mode=$outcome==='accepted'?'300':'unknown';
-    $op=$runRegistration($nsNew(placeholderComFixtureName('support-'.str_replace('_','-',$outcome).'-placeholder.com')));$attempt=$op->attempt;$calls=$registration->calls;
+    $op=$runRegistration($nsNew(placeholderComFixtureName('support-'.str_replace('_','-',$scenario).'-placeholder.com')));$attempt=$op->attempt;$calls=$registration->calls;
     $wireState->name=$op->domain->domain;$wireState->calls=[];$wireState->fault=$outcome==='not_processed'?'unowned':'';
     commerceReject(fn()=>$settings->run($review($op),$input($op,$outcome),$clock->now()));
     $clock->instant=$clock->now()->modify('+25 hours');
@@ -52,6 +56,27 @@ foreach(['accepted','not_processed'] as $outcome){
     same('listOrders',$wireState->calls[0]??null,'One status check read the order history');expect(!in_array('registerDomain',$wireState->calls,true),'A status check never sends');
     expect(RegistrarCheck::attempted($op),'The status check is saved for this attempt');
     same(null,$op->attempt['reconciliation']??null,'An empty order history settles nothing');
+    if ($scenario === 'invalid_claim') {
+        // Restore the installed legacy format with a saved check for the same malformed claim.
+        restoreAcquisitionFixture([...$op->getRawOriginal(),
+            'attempt' => Crypt::encryptString(json_encode([...$attempt, 'claim_key' => 'invalid-legacy-claim'], JSON_THROW_ON_ERROR)),
+            'funding' => Crypt::encryptString(json_encode($op->funding, JSON_THROW_ON_ERROR)),
+            'started_at' => OperationAttempts::at($op->started_at), 'request_fingerprint' => $op->request_fingerprint]);
+        $op->refresh();
+        $policy = $op->policy;
+        $policy['status_check']['attempt_identity'] = EnomAnswers::identity($op);
+        $op->update(['policy' => $policy]);
+        $snapshot = static fn () => [$op->fresh()->getRawOriginal(), $op->domain->fresh()->getRawOriginal(),
+            Credit::where('user_id', $op->domain->user_id)->sum('amount'),
+            OperationAttempts::sealed((int) $op->id, new StepKey('register', 1))];
+        $before = $snapshot();
+        $refused = false;
+        try { $settings->run($review($op), $input($op, $outcome), $clock->now()); }
+        catch (DomainException) { $refused = true; }
+        expect($refused, 'A negative answer requires a sealed claim that can retain it');
+        same($before, $snapshot(), 'An unadoptable sealed claim keeps its request, holding and payment unchanged');
+        continue;
+    }
     $wireState->calls=[];
     if($outcome==='accepted'){
         $bad=$input($op,'not_processed');commerceReject(fn()=>$settings->run($review($op),$bad,$clock->now()));

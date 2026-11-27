@@ -216,6 +216,8 @@ class RegistrarAnswers
                         throw new \DomainException('This request changed. Reload the page and select it again.');
                     }
                     $op->reloadAcquisitionAttempt();
+                } elseif ($outcome === 'not_processed') {
+                    throw new \DomainException('This request changed. Reload the page and select it again.');
                 }
             }
             $policy=[...$op->policy,'enom_answer'=>$answer];
