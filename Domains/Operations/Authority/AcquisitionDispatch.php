@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, SealPreflight, WriteG
 use Paymenter\Extensions\Servers\Domains\Data\{Action, AdmittedOperation, DispatchReadiness, RequestContext};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{ContactProfileHold, ContactSetup, ProfileAuthorityMismatch,
+use Paymenter\Extensions\Servers\Domains\Services\{ContactProfileHold, ContactSetup, OperationClaims, ProfileAuthorityMismatch,
     ReadDeferred, RuntimeIneligible, RuntimeReason, TransferInputs, WriteAcceptance, WriteHeld};
 
 /** Final preflight and just-in-time authority for a reserved acquisition exchange. */
@@ -19,10 +19,16 @@ final readonly class AcquisitionDispatch
     public function seal(Operation $claimed, DispatchReadiness $ready, \DateTimeImmutable $entry, ?SealPreflight $preflight = null, ?WriteGate $writer = null, ?RequestContext $wire = null): ?Operation
     {
         return $this->authority->locked((int) $claimed->id, function ($op, $domain, $all, $funding, $server, $account) use ($claimed, $ready, $entry, $preflight, $writer, $wire): ?Operation {
-            if (!AcquisitionAttempt::sameClaim($op, $claimed)) { return null; }
-            if ($this->authority->expire($op) || !AcquisitionRetryProof::unsealed($op)) { return null; }
+            $attempt = AcquisitionAttempt::lockedClaim($op, $claimed);
+            if ($attempt === null) { return null; }
+            if (!AcquisitionRetryProof::unsealed($op)) {
+                $this->authority->expire($op);
+                return null;
+            }
+            $continuation = AcquisitionResult::continuation($op, true);
             $op->setRelation('domain', $domain);
             $savedContact = ContactProfileHold::savedForRecovery($op, true) !== null;
+            $failure = null;
             try {
                 self::requireSameEvidence($op, $claimed); self::requireNoSendEvidence($op);
                 [$binding, $paid] = $this->authority->validate($op, $domain, $all, $funding, $server, $account);
@@ -32,21 +38,24 @@ final readonly class AcquisitionDispatch
                 if ($savedContact && ($op->funding['claim'] ?? null) !== $paid) {
                     throw new \DomainException('Contact funding changed.');
                 }
-                $cutoff = null;
-                if ($op->action === 'transfer') {
-                    $now = $this->clock->now();
-                    $cutoff = TransferInputs::deadline($op, $now);
-                    if ($cutoff === null || $cutoff <= $now) { throw new WriteHeld('transfer_setup_review_required'); }
-                }
                 ContactSetup::requireReady($op);
                 $preflight?->requireAtSeal($op, $domain, $ready);
                 $writer?->requireAtSeal($op, $domain, $ready);
-                $now = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'));
-                $ready->requireCurrent($binding, AcquisitionAuthority::query($op, $domain), AcquisitionAuthority::payloadDigest($op), $now);
-                $continuation = AcquisitionResult::continuation($op, true);
-                if ($continuation?->shortfallAt !== null) { AcquisitionResult::clearShortfall($op); }
                 $wire?->requireReservedCapacity();
-                $window = $continuation?->window ?? throw new \DomainException('Missing acquisition window.');
+            } catch (\Throwable $failure) {
+                // Use the same cutoff before a local refusal can overwrite the funds wait.
+            }
+            $now = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'));
+            if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $attempt) !== AcquisitionFundsCutoff::Proceed
+                || $this->authority->expire($op, $now)) { return null; }
+            try {
+                if ($failure) { throw $failure; }
+                $cutoff = $op->action === 'transfer' ? TransferInputs::deadline($op, $now) : null;
+                if ($op->action === 'transfer' && ($cutoff === null || $cutoff <= $now)) {
+                    throw new WriteHeld('transfer_setup_review_required');
+                }
+                $ready->requireCurrent($binding, AcquisitionAuthority::query($op, $domain), AcquisitionAuthority::payloadDigest($op), $now);
+                $window = $continuation->window ?? throw new \DomainException('Missing acquisition window.');
                 if (!$window->fits($now)) { throw new WriteHeld($window->blockedReason($now)); }
                 $lastSend = min($window->end,
                     $entry->setTimezone(new \DateTimeZone('UTC'))->modify('+'.(ExecuteOperation::EXECUTION_SECONDS - ExecuteOperation::FINISH_SECONDS).' seconds'));
@@ -60,10 +69,9 @@ final readonly class AcquisitionDispatch
                 $reason=$error instanceof WriteHeld?$error->reason:
                     ($error instanceof RuntimeIneligible && $error->reason === RuntimeReason::ProcessingOff
                         ? 'processing' : 'seal_authority_invalid');
-                $this->releasePreSeal($claimed);
-                $op->reloadAcquisitionAttempt();
-                $op->update(['state' => 'held', 'safe_code' => $reason, 'lease_expires_at' => null]);
-                \Paymenter\Extensions\Servers\Domains\Services\OperationClaims::recordHold($op, $this->clock->now());
+                if (AcquisitionAuthority::retirePreSeal($op, $attempt, $reason, $now)) {
+                    OperationClaims::recordHold($op, $now);
+                }
                 return null;
             }
             $until = min($lastSend, $op->lease_expires_at, $ready->validUntil, $wire?->deadline ?? $lastSend, $cutoff ?? $lastSend, $window->effectiveEnd());
@@ -90,11 +98,6 @@ final readonly class AcquisitionDispatch
         $op->acquisitionWorker = $token;
         $op->reloadAcquisitionAttempt();
         $op->update(['transition_revision' => $revision]);
-    }
-
-    private function releasePreSeal(Operation $claimed): void
-    {
-        $this->attempts->releasePreSeal($claimed->acquisitionWorker);
     }
 
     /** Authorizes nonmonetary fresh profile creation for this live, funded, unsealed claim only. */

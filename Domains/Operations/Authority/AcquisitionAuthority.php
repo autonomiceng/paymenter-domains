@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, Environment, Query};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, FreshTransaction, InvoiceFunding, TransferInputs};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, FreshTransaction, FundsWaits, InvoiceFunding, TransferInputs};
 
 /** Ordered native and holding locks, followed by the current acquisition authority checks. */
 final readonly class AcquisitionAuthority
@@ -91,9 +91,34 @@ final readonly class AcquisitionAuthority
         });
     }
 
-    public function expire(Operation $op): bool
+    /** Use the locked result and the exact worker, when the caller may retire it. */
+    public static function fundsCutoff(Operation $op, AcquisitionContinuation $continuation, \DateTimeImmutable $now,
+        ?AttemptFacts $worker = null): AcquisitionFundsCutoff
     {
-        $now = $this->clock->now();
+        if (!FundsWaits::deadlinePassed($continuation->shortfallAt, $now)) { return AcquisitionFundsCutoff::Proceed; }
+        if ($worker === null || !in_array($op->state, ['running', 'uncertain'], true) || $op->completed_at !== null
+            || AcquisitionAttempt::conflicts($op) || !AcquisitionRetryProof::unsealed($op)
+            || !OperationAttempts::unsealedUnsent($worker, true)
+            || (!$worker->current && !OperationAttempts::releasedUnsent($worker, true))) {
+            return AcquisitionFundsCutoff::Wait;
+        }
+        return self::retirePreSeal($op, $worker, 'registrar_balance_insufficient', $now)
+            ? AcquisitionFundsCutoff::RetiredForCredit : AcquisitionFundsCutoff::Wait;
+    }
+
+    /** Archive the unsealed attempt before a hold. The original clock remains available for the credit sweep. */
+    public static function retirePreSeal(Operation $op, AttemptFacts $attempt, string $reason, \DateTimeImmutable $now): bool
+    {
+        if ($attempt->current && OperationWriter::at($now)->releasePreSeal($attempt->token) !== Transition::Applied) {
+            return false;
+        }
+        $op->reloadAcquisitionAttempt();
+        return $op->update(['state' => 'held', 'safe_code' => $reason, 'lease_expires_at' => null]);
+    }
+
+    public function expire(Operation $op, ?\DateTimeImmutable $now = null): bool
+    {
+        $now ??= $this->clock->now();
         if ($op->lease_expires_at && $op->lease_expires_at > $now) { return false; }
         if (!AcquisitionRetryProof::expiredClaim($op, $now)) {
             $op->update(['state' => 'uncertain', 'safe_code' => 'stale_claim', 'lease_expires_at' => null]);

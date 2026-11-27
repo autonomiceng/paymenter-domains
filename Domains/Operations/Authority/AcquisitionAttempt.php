@@ -228,13 +228,21 @@ final readonly class AcquisitionAttempt
     }
     public static function sameClaim(Operation $a, Operation $b): bool
     {
+        return self::lockedClaim($a, $b) !== null;
+    }
+    public static function lockedClaim(Operation $a, Operation $b): ?AttemptFacts
+    {
         return $a->state === 'running' && $b->state === 'running' && $a->transition_revision === $b->transition_revision
-            && self::sameWorker($a, $b);
+            ? self::lockedWorker($a, $b) : null;
     }
     public static function sameWorker(Operation $a, Operation $b): bool
     {
-        if (!($token = $b->acquisitionWorker) || $token->operationId !== (int) $a->id) { return false; }
+        return self::lockedWorker($a, $b) !== null;
+    }
+    private static function lockedWorker(Operation $a, Operation $b): ?AttemptFacts
+    {
+        if (!($token = $b->acquisitionWorker) || $token->operationId !== (int) $a->id) { return null; }
         $facts = OperationAttempts::attempt($token, true);
-        return $facts?->current && !$facts->released && !self::conflicts($a);
+        return $facts?->current && !$facts->released && !self::conflicts($a) ? $facts : null;
     }
 }

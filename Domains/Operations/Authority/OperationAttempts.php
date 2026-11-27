@@ -38,9 +38,10 @@ final class OperationAttempts
             && $attempt->releasedAt !== null && $attempt->releasedAt >= $attempt->claimedAt;
     }
 
-    private static function unsealedUnsent(AttemptFacts $attempt, bool $lock): bool
+    public static function unsealedUnsent(AttemptFacts $attempt, bool $lock): bool
     {
-        return self::definitelyUnsent($attempt) && !self::hasAcquisitionSettlementEvidence($attempt->token, $lock, unsealed: true);
+        return !$attempt->sealed() && self::definitelyUnsent($attempt)
+            && !self::hasAcquisitionSettlementEvidence($attempt->token, $lock, unsealed: true);
     }
 
     /** Only the transport's durable local refusal proves the physical grant was unused. */

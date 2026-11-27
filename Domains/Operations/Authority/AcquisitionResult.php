@@ -49,11 +49,10 @@ final class AcquisitionResult
         ]);
     }
 
-    public static function clearShortfall(Operation $operation): void
+    public static function clearShortfall(Operation $operation, AcquisitionContinuation $continuation): void
     {
-        $row = self::row($operation, true);
-        if ($row->confirmed_shortfall_at !== null) {
-            self::update($operation, (int) $row->revision, ['confirmed_shortfall_at' => null]);
+        if ($continuation->shortfallAt !== null) {
+            self::update($operation, $continuation->revision, ['confirmed_shortfall_at' => null]);
         }
     }
 

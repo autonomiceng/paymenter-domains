@@ -12,7 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AdmittedOperation
     Money, Query, RequestContext, SendFailure, SendState};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, ProfileContactOperation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission, AcquisitionAttempt, AcquisitionAuthority, AcquisitionDispatch, AcquisitionLane, AcquisitionResult,
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission, AcquisitionAttempt, AcquisitionAuthority, AcquisitionDispatch, AcquisitionFundsCutoff, AcquisitionLane, AcquisitionResult,
     AcquisitionRetryProof, AcquisitionWindow, AttemptToken, OperationAttempts, OperationSchema, OperationWriter, Transition, WireOutcome};
 
 /** All financial checks run twice: claim and final seal. No provider callback runs under these locks. */
@@ -32,13 +32,16 @@ final class OperationClaims
     public function readmitBalance(int $id): bool
     {
         return $this->locked($id,function($op,$domain,$all,$funding,$server,$account):bool {
-            $now = $this->clock->now();
             $continuation = AcquisitionResult::continuation($op, true);
             if ($op->state !== 'held' || $continuation?->lane !== AcquisitionLane::BalanceWait
-                || !$continuation->due($now) || FundsWaits::elapsed($op, $now, true) || !$account->processing_enabled) { return false; }
+                || !$account->processing_enabled) { return false; }
             $facts=$funding->initialFacts($domain)+['account'=>$account,'operations'=>$all];
             $reason=AcquisitionRetryProof::balanceAdmissionReason($op,$facts);
             if($reason===null){try{$this->authority->requireProcessingLocked($server,$account);}catch(\Throwable){$reason='balance_retry_authority_changed';}}
+            $now = $this->clock->now();
+            if (!$continuation->due($now) || AcquisitionAuthority::fundsCutoff($op, $continuation, $now) !== AcquisitionFundsCutoff::Proceed) {
+                return false;
+            }
             if($reason!==null){
                 $review=in_array($reason,BalanceRetries::REVIEW_CODES,true);
                 if($review&&AcquisitionRetryProof::virgin($op)){
@@ -72,15 +75,18 @@ final class OperationClaims
     public function readmitOrdersOff(int $id): bool
     {
         return $this->locked($id,function($op,$domain,$all,$funding,$server,$account):bool {
-            $now = $this->clock->now();
-            if(!$account->processing_enabled||FundsWaits::elapsed($op,$now,true)
+            if(!$account->processing_enabled
                 ||!AcquisitionRetryProof::ordersOffReturns($op,fn()=>$funding->initialFacts($domain)+['account'=>$account,'operations'=>$all])){return false;}
-            $window = AcquisitionResult::window($op, true);
+            $continuation = AcquisitionResult::continuation($op, true);
+            $contactBlocked = ContactStepRetries::candidate($op) && ContactProfileHold::releaseBlocked($op) !== null;
+            $now = $this->clock->now();
+            if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now) !== AcquisitionFundsCutoff::Proceed) { return false; }
+            $window = $continuation->window;
             if ($window && !$window->fits($now)) {
                 $this->expireWindow($op, $window, $now);
                 return false;
             }
-            if (ContactStepRetries::candidate($op) && ContactProfileHold::releaseBlocked($op) !== null) { return false; }
+            if ($contactBlocked) { return false; }
             $op->update(['state'=>'queued','safe_code'=>null]);
             // Details the customer still owes are their hold, not a quiet wait in the queue.
             try{ContactSetup::requireReady($op);}catch(\DomainException){DB::afterCommit(static fn()=>ContactRecovery::hold((int)$op->id));}
@@ -102,58 +108,72 @@ final class OperationClaims
         if (!$recover && !in_array($route->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) { return null; }
         return $this->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($startedAt, $recover): ?array {
             $op->setRelation('domain', $domain);
-            $now = $this->clock->now();
-            $contact = $op->state === 'queued' ? null : ContactProfileHold::forReadmission($op, $now, true);
-            if ($op->state !== 'queued' && ($contact || AcquisitionRetryProof::localRecovery($op, $now))) {
-                return $this->recoverUnsent($op, $domain, $all, $funding, $server, $account, $contact);
-            }
-            if ($recover && $op->state === 'queued') { return null; }
-            if ($op->state === 'running') {
-                $this->authority->expire($op);
-                return null; // Other expired claims continue to reconciliation.
+            if ($op->state !== 'queued') {
+                $routeAt = $this->clock->now();
+                $contact = ContactProfileHold::forReadmission($op, $routeAt, true);
+                if ($contact || AcquisitionRetryProof::localRecovery($op, $routeAt)) {
+                    return $this->recoverUnsent($op, $domain, $all, $funding, $server, $account, $contact);
+                }
+                if ($op->state === 'running') {
+                    $this->authority->expire($op, $routeAt);
+                    return null; // Other expired claims continue to reconciliation.
+                }
+            } elseif ($recover) {
+                return null;
             }
             if (!in_array($op->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) { return null; }
             $continuation = AcquisitionResult::continuation($op, true);
-            if (FundsWaits::deadlinePassed($continuation->shortfallAt, $now)
-                || in_array($continuation->lane, [AcquisitionLane::BalanceWait, AcquisitionLane::FundsWait,
-                    AcquisitionLane::PriceWait, AcquisitionLane::ContactWait], true)
-                || $continuation->lane !== null && !$continuation->due($now)) { return null; }
-            // Discovery may not have visited this order before dispatch starts.
-            ObservationWork::discardUnsent($domain,$this->clock->now(),$all);
+            if (in_array($continuation->lane, [AcquisitionLane::BalanceWait, AcquisitionLane::FundsWait,
+                AcquisitionLane::PriceWait, AcquisitionLane::ContactWait], true)) { return null; }
             if ($op->action === 'transfer' && !TransferInputs::validCode($op->payload['epp'] ?? null)) { return null; }
             $revision = $continuation->revision;
             $window = $continuation->window;
             $prior = AcquisitionAttempt::of((int) $op->id, $op->action, true);
             $first = AcquisitionResult::unclaimed($op) && AcquisitionRetryProof::virgin($op);
-            if (!$first && (!$prior || !$window || !AcquisitionResult::continues($op, $window, $prior->facts))) {
+            $compatible = $first || ($prior && $window && AcquisitionResult::continues($op, $window, $prior->facts));
+            $failure = null;
+            $contactReady = true;
+            if ($compatible) {
+                try { [$binding, $paid] = $this->authority->validate($op, $domain, $all, $funding, $server, $account); }
+                catch (\Throwable $failure) {}
+                if ($failure === null) {
+                    try { ContactSetup::requireReady($op); }
+                    catch (\DomainException) { $contactReady = false; }
+                }
+            }
+            // First-claim bounds and the funds cutoff use the clock after the locked authority reads.
+            $now = $this->clock->now();
+            if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now) !== AcquisitionFundsCutoff::Proceed
+                || $continuation->lane !== null && !$continuation->due($now)) { return null; }
+            // Discovery may not have visited this order before dispatch starts.
+            ObservationWork::discardUnsent($domain,$now,$all);
+            if (!$compatible) {
                 $op->update(['state' => 'uncertain', 'safe_code' => 'prior_attempt', 'lease_expires_at' => null]);
                 AcquisitionResult::schedule($op, null, null);
                 return null;
             }
-            if (ExecutionWindow::pastTransferCutoff($op, $this->clock->now())) {
+            if (ExecutionWindow::pastTransferCutoff($op, $now)) {
                 $op->update(['state' => 'held', 'safe_code' => 'transfer_setup_review_required']);
                 AcquisitionResult::schedule($op, null, null);
                 return null;
             }
-            try { [$binding, $paid] = $this->authority->validate($op, $domain, $all, $funding, $server, $account); }
-            catch (RuntimeIneligible $error) {
-                $reason = $error->reason === RuntimeReason::ProcessingOff ? 'processing' : 'claim_authority_invalid';
+            if ($failure instanceof RuntimeIneligible) {
+                $reason = $failure->reason === RuntimeReason::ProcessingOff ? 'processing' : 'claim_authority_invalid';
                 $op->update(['state' => 'held', 'safe_code' => $reason]);
                 self::recordHold($op, $now);
                 return null;
-            } catch (\Throwable) {
+            }
+            if ($failure !== null) {
                 $op->update(['state' => 'held', 'safe_code' => 'claim_authority_invalid']);
                 AcquisitionResult::schedule($op, null, null);
                 return null;
             }
-            try { ContactSetup::requireReady($op); }
-            catch (\DomainException) {
+            if (!$contactReady) {
                 // The contact service owns its transaction and rechecks payment/identity after commit.
                 DB::afterCommit(static fn () => ContactRecovery::hold((int) $op->id));
                 return null;
             }
-            // The worker still has its entry budget. First-claim bounds start after these fresh locked checks.
-            $now = $this->clock->now();
+            // The worker still has its entry budget.
             if ($startedAt !== null && ($startedAt > $now || $startedAt < $now->modify('-'.ExecuteOperation::EXECUTION_SECONDS.' seconds'))) {
                 $op->update(['state' => 'held', 'safe_code' => 'claim_authority_invalid']);
                 AcquisitionResult::schedule($op, null, null);
@@ -182,16 +202,14 @@ final class OperationClaims
     private function recoverUnsent(Operation $op, Domain $domain, Collection $all, InvoiceFunding $funding,
         Server $server, Account $account, ?ProfileContactOperation $contact): ?array
     {
-        $now = $this->clock->now();
         $prior = AcquisitionAttempt::of((int) $op->id, $op->action, true);
+        $continuation = AcquisitionResult::continuation($op, true);
+        $now = $this->clock->now();
         if (!$prior || AcquisitionAttempt::conflicts($op) || $prior->sealed()
             || !OperationAttempts::replaceable($prior->facts, $now, lock: true)) { return null; }
+        if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $prior->facts) !== AcquisitionFundsCutoff::Proceed) { return null; }
         if (ExecutionWindow::pastTransferCutoff($op, $now)) {
-            $this->holdRecovered($op, $prior, 'transfer_setup_review_required');
-            return null;
-        }
-        if (FundsWaits::elapsed($op, $now, true)) {
-            $this->holdRecovered($op, $prior, 'registrar_balance_insufficient', record: false);
+            $this->holdRecovered($op, $prior, 'transfer_setup_review_required', $now);
             return null;
         }
 
@@ -208,14 +226,14 @@ final class OperationClaims
             if ($expired) {
                 $reason = $error instanceof RuntimeIneligible && $error->reason === RuntimeReason::ProcessingOff
                     ? 'processing' : 'claim_authority_invalid';
-                $this->holdRecovered($op, $prior, $reason);
+                $this->holdRecovered($op, $prior, $reason, $now);
             }
             return null;
         }
 
-        $window = AcquisitionResult::window($op, true);
+        $window = $continuation->window;
         if ($window === null) {
-            $this->holdRecovered($op, $prior, 'claim_authority_invalid');
+            $this->holdRecovered($op, $prior, 'claim_authority_invalid', $now);
             return null;
         }
         $fits = $window->fits($now);
@@ -224,21 +242,20 @@ final class OperationClaims
             $start();
         } else {
             $admission = $contact === null ? AcquisitionAdmission::WorkerRecovery : AcquisitionAdmission::SavedContactRecovery;
-            if (!AcquisitionResult::admit($op, $admission, AcquisitionResult::revision($op), $prior->facts->token, $now, $start,
+            if (!AcquisitionResult::admit($op, $admission, $continuation->revision, $prior->facts->token, $now, $start,
                 expectedContact: $contact === null ? null : (int) $contact->id)) {
-                $this->holdRecovered($op, $prior, $window->blockedReason($now));
+                $this->holdRecovered($op, $prior, $window->blockedReason($now), $now);
                 return null;
             }
         }
         return [$op, $domain, $binding];
     }
 
-    private function holdRecovered(Operation $op, AcquisitionAttempt $prior, string $reason, bool $record = true): void
+    private function holdRecovered(Operation $op, AcquisitionAttempt $prior, string $reason, \DateTimeImmutable $now): void
     {
-        if ($prior->facts->current && $this->attempts->releasePreSeal($prior->facts->token) !== Transition::Applied) { return; }
-        $op->reloadAcquisitionAttempt();
-        $op->update(['state' => 'held', 'safe_code' => $reason, 'lease_expires_at' => null]);
-        if ($record) { self::recordHold($op, $this->clock->now()); }
+        if (AcquisitionAuthority::retirePreSeal($op, $prior->facts, $reason, $now)) {
+            self::recordHold($op, $now);
+        }
     }
 
     private function expireWindow(Operation $op, AcquisitionWindow $window, \DateTimeImmutable $now): void
@@ -306,22 +323,25 @@ final class OperationClaims
         return $token;
     }
 
-    /** Post-read/write bookkeeping needs only domain -> ordered operations, never financial authority again. */
+    /** Post-send bookkeeping needs only domain and operation locks. An open pre-seal wait also takes financial locks. */
     public function finish(Operation $claimed, ?DriverResult $result = null, ?string $holdReason = null, ?Money $holdCost = null, bool $locallyUnsent = false, ?SendFailure $failure = null): Operation
     {
         self::outside();
-        return DB::transaction(function () use ($claimed, $result, $holdReason, $holdCost, $locallyUnsent, $failure): Operation {
-            $domain = Domain::whereKey($claimed->domain_id)->lockForUpdate()->firstOrFail();
-            $all = Operation::where('domain_id', $claimed->domain_id)->orderBy('id')->lockForUpdate()->get();
-            $op = $all->firstWhere('id', $claimed->id);
-            if (!$op) { return $claimed->fresh(); }
+        $checkCutoff = AcquisitionRetryProof::unsealed($claimed) && AcquisitionResult::continuation($claimed)?->shortfallAt !== null;
+        $complete = function (Operation $op, Domain $domain) use ($claimed, $result, $holdReason, $holdCost, $locallyUnsent, $failure, $checkCutoff): Operation {
             $sealed = !AcquisitionRetryProof::unsealed($op);
-            $late = AcquisitionAttempt::sameWorker($op, $claimed) && $sealed
-                && $op->state === 'uncertain' && $op->safe_code === 'stale_claim';
-            if (!AcquisitionAttempt::sameClaim($op, $claimed) && !$late) { return $op; }
-            if (!$sealed && AcquisitionRetryProof::expiredClaim($op, $this->clock->now())) { return $op; }
-            $expired = $late || !$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now();
+            $late = $sealed && $op->state === 'uncertain' && $op->safe_code === 'stale_claim'
+                && AcquisitionAttempt::sameWorker($op, $claimed);
+            $worker = AcquisitionAttempt::lockedClaim($op, $claimed);
+            if ($worker === null && !$late) { return $op; }
+            $continuation = $checkCutoff && !$sealed ? AcquisitionResult::continuation($op, true) : null;
             $facts = $sealed ? OperationAttempts::attempt($claimed->acquisitionWorker, true) : null;
+            $now = $this->clock->now();
+            if ($continuation && AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $worker) !== AcquisitionFundsCutoff::Proceed) {
+                return $op;
+            }
+            if (!$sealed && AcquisitionRetryProof::expiredClaim($op, $now)) { return $op; }
+            $expired = $late || !$op->lease_expires_at || $op->lease_expires_at <= $now;
             $unsent = $facts !== null && !array_key_exists('execution', $op->attempt) && $locallyUnsent
                 && ($op->registrar_key === 'namesilo' || $op->registrar_key === 'enom' && $facts->grantConsumedAt === null)
                 && $result?->jsonSerialize() === ['disposition'=>'rejected','send_state'=>'definitely_unsent','reason'=>'unsent','discrepancies'=>[]];
@@ -349,11 +369,18 @@ final class OperationClaims
             $next = ['state' => $state, 'safe_code' => $reason, 'lease_expires_at' => null];
             $op->update(array_replace($next, $completion ?? []));
             if ($op->state === 'held') {
-                self::recordHold($op, $this->clock->now(), $holdCost, !$sealed && $reason === 'registrar_balance_insufficient');
+                self::recordHold($op, $now, $holdCost, !$sealed && $reason === 'registrar_balance_insufficient');
             } elseif (!in_array($op->state, ['succeeded', 'rejected', 'disposed'], true)) {
                 AcquisitionResult::schedule($op, null, null);
             }
             return $op;
+        };
+        if ($checkCutoff) { return $this->locked((int) $claimed->id, $complete); }
+        return DB::transaction(function () use ($claimed, $complete): Operation {
+            $domain = Domain::whereKey($claimed->domain_id)->lockForUpdate()->firstOrFail();
+            $all = Operation::where('domain_id', $claimed->domain_id)->orderBy('id')->lockForUpdate()->get();
+            $op = $all->firstWhere('id', $claimed->id);
+            return $op ? $complete($op, $domain) : $claimed->fresh();
         });
     }
 
@@ -416,23 +443,25 @@ final class OperationClaims
     public function holdTestCallCap(Operation $claimed): Operation
     {
         return $this->locked((int)$claimed->id,function($op)use($claimed):Operation {
-            if(!AcquisitionAttempt::sameClaim($op,$claimed)||!in_array($op->action,['register','transfer'],true)||$op->state!=='running') { return $op; }
+            $worker = AcquisitionAttempt::lockedClaim($op, $claimed);
+            if ($worker === null || AcquisitionAttempt::key($op->action) === null) { return $op; }
             $attempt=$op->attempt??[];$sealed=($attempt['seal']??null)==='sealed';
             try { AcquisitionDispatch::requireNoSendEvidence($op); } catch (\DomainException) { return $op; }
             if($sealed) {
                 if(($attempt['send_state']??null)!=='possibly_sent'||!isset($attempt['dispatch_attempted_at'],$attempt['authorized_cost'],$attempt[$op->action==='transfer'?'transfer_admission':'registration_admission'])) { return $op; }
                 if(!EnomTestCalls::purchaseUnconsumed($op->account_fingerprint,(int)$op->id)) { return $op; }
             } elseif(!AcquisitionRetryProof::unsealed($op)||($attempt['send_state']??null)!=='definitely_unsent') { return $op; }
-            return $this->refuseTestCapacity($op, $claimed->acquisitionWorker);
+            $continuation = AcquisitionResult::continuation($op, true);
+            $now = $this->clock->now();
+            if (!$sealed && AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $worker) !== AcquisitionFundsCutoff::Proceed) { return $op; }
+            return $this->refuseTestCapacity($op, $worker->token, $now, $continuation->lane === AcquisitionLane::BalancePurchase);
         });
     }
 
-    private function refuseTestCapacity(Operation $op, AttemptToken $token): Operation
+    private function refuseTestCapacity(Operation $op, AttemptToken $token, \DateTimeImmutable $now, bool $balance): Operation
     {
         $attempt = $op->attempt;
         $sealed = $attempt['seal'] === 'sealed';
-        $now = $this->clock->now();
-        $balance = BalanceRetries::active($op);
         if (!$balance && DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $op->id,
             'kind' => 'test_capacity', 'outcome' => 'fresh'])->count() >= 100) { return $op; }
         $proof = ['phase' => $sealed ? 'purchase' : 'preflight', 'refused_at' => $now->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM),
@@ -449,22 +478,26 @@ final class OperationClaims
     public function holdUnclaimed(int $id, string $reason): Operation
     {
         self::outside(); $route = Operation::findOrFail($id);
-        return DB::transaction(function () use ($route, $reason): Operation {
-            $held = Domain::whereKey($route->domain_id)->lockForUpdate()->firstOrFail();
-            $all = Operation::where('domain_id', $route->domain_id)->orderBy('id')->lockForUpdate()->get();
-            $op = $all->firstWhere('id', $route->id);
+        $checkCutoff = AcquisitionResult::continuation($route)?->shortfallAt !== null;
+        $hold = function (Operation $op, Domain $held) use ($reason, $checkCutoff): Operation {
             if ($held->adoptionPending()) { return $op; }
             if ($op->action === 'transfer' && $op->state === 'awaiting_code' && !TransferInputs::validCode($op->payload['epp'] ?? null)) { return $op; }
+            $continuation = $checkCutoff ? AcquisitionResult::continuation($op, true) : null;
+            $prior = $checkCutoff && in_array($op->state, ['running', 'uncertain'], true)
+                ? AcquisitionAttempt::of((int) $op->id, $op->action, true) : null;
             $now = $this->clock->now();
-            if (AcquisitionRetryProof::expiredClaim($op, $now) || AcquisitionRetryProof::interruptedHold($op)) {
-                $prior = AcquisitionAttempt::of((int) $op->id, $op->action, true);
+            $expired = AcquisitionRetryProof::expiredClaim($op, $now);
+            if ($continuation && AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $expired ? $prior?->facts : null)
+                !== AcquisitionFundsCutoff::Proceed) { return $op; }
+            if ($expired || AcquisitionRetryProof::interruptedHold($op)) {
+                $prior ??= AcquisitionAttempt::of((int) $op->id, $op->action, true);
                 if ($prior && !AcquisitionAttempt::conflicts($op)) {
-                    $this->holdRecovered($op, $prior, ExecutionWindow::pastTransferCutoff($op, $now) ? 'transfer_setup_review_required' : $reason);
+                    $this->holdRecovered($op, $prior, ExecutionWindow::pastTransferCutoff($op, $now) ? 'transfer_setup_review_required' : $reason, $now);
                 }
             } elseif ($op->state === 'running') {
-                $this->authority->expire($op);
+                $this->authority->expire($op, $now);
             } elseif (in_array($op->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) {
-                $window = AcquisitionResult::window($op, true);
+                $window = ($continuation ?? AcquisitionResult::continuation($op, true))?->window;
                 $prior = $op->acquisitionAttemptFacts();
                 if (AcquisitionResult::unclaimed($op) && AcquisitionRetryProof::virgin($op)
                     || $window && $prior && AcquisitionResult::continues($op, $window, $prior)) {
@@ -478,20 +511,32 @@ final class OperationClaims
                 }
             }
             return $op;
+        };
+        if ($checkCutoff) { return $this->locked($id, $hold); }
+        return DB::transaction(function () use ($route, $hold): Operation {
+            $held = Domain::whereKey($route->domain_id)->lockForUpdate()->firstOrFail();
+            $all = Operation::where('domain_id', $route->domain_id)->orderBy('id')->lockForUpdate()->get();
+            return $hold($all->firstWhere('id', $route->id), $held);
         });
     }
 
     public function requireProcessing(AccountBinding $binding): void { $this->authority->requireProcessing($binding); }
 
     /** Successful preflight can end a shortfall even when a later local gate stops the send. */
-    public function confirmFunds(Operation $claimed, DispatchReadiness $ready): void
+    public function confirmFunds(Operation $claimed, DispatchReadiness $ready): bool
     {
-        if (AcquisitionResult::continuation($claimed)?->shortfallAt === null) { return; }
-        $this->locked((int) $claimed->id, function ($op, $domain, $all, $funding, $server, $account) use ($claimed, $ready): void {
+        if (AcquisitionResult::continuation($claimed)?->shortfallAt === null) { return true; }
+        return $this->locked((int) $claimed->id, function ($op, $domain, $all, $funding, $server, $account) use ($claimed, $ready): bool {
+            $attempt = AcquisitionAttempt::lockedClaim($op, $claimed);
+            if ($attempt === null || !AcquisitionRetryProof::unsealed($op)) { return false; }
+            $continuation = AcquisitionResult::continuation($op, true);
+            $binding = AccountBindings::binding($account);
             $now = $this->clock->now();
-            if (!AcquisitionAttempt::sameClaim($op, $claimed) || !$op->lease_expires_at || $op->lease_expires_at <= $now) { return; }
-            $ready->requireCurrent(AccountBindings::binding($account), self::query($op, $domain), self::payloadDigest($op), $now);
-            AcquisitionResult::clearShortfall($op);
+            if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $attempt) !== AcquisitionFundsCutoff::Proceed
+                || !$op->lease_expires_at || $op->lease_expires_at <= $now) { return false; }
+            $ready->requireCurrent($binding, self::query($op, $domain), self::payloadDigest($op), $now);
+            AcquisitionResult::clearShortfall($op, $continuation);
+            return true;
         });
     }
 
