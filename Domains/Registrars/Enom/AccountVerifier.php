@@ -4,15 +4,17 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier as Verifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{CurlTransport, ReadCommand, ResponseParser, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, Environment as WireEnvironment, ReadCommand, Transport};
 use Paymenter\Extensions\Servers\Domains\Services\IdentityRefused;
 /** GetBalance authentication confirmed against the Enom reseller test environment, 2026-10.
  * Success does not echo UID: proof is authentication of this exact submitted UID/token pair.
  */
 final class AccountVerifier implements Verifier
 {
-    public function __construct(private readonly Environment $boundEnvironment,
-        #[\SensitiveParameter] private readonly Transport $transport = new CurlTransport) {}
+    private readonly Transport $transport;
+
+    public function __construct(private readonly Environment $boundEnvironment, #[\SensitiveParameter] ?Transport $transport = null)
+    { $this->transport = $transport ?? ReadAdapter::transport(); }
     public function verify(Environment $environment, #[\SensitiveParameter] array $credentials): string
     {
         if ($environment !== $this->boundEnvironment) { throw new IdentityRefused('identity_environment_refused'); }
@@ -23,8 +25,8 @@ final class AccountVerifier implements Verifier
             $token = $credentials['token'];
             if (trim($token) === '' || strlen($token) > 4096 || preg_match('/[\x00-\x1f\x7f]/', $token)) { throw new \InvalidArgumentException; }
             // Exactly one named account-only read, ten seconds total, no fallback/retry.
-            $reply = (new ResponseParser)->parse(ReadCommand::Balance,
-                $this->transport->send($this->boundEnvironment, ReadCommand::Balance, [], $credentials['uid'], $token, 10000));
+            $client = new Client(WireEnvironment::from($environment->value), $credentials['uid'], $token, $this->transport);
+            $reply = $client->read(ReadCommand::Balance, [], 10000);
         } catch (\Throwable) { throw new IdentityRefused('identity_unavailable'); }
         if ($reply->status === 'rejected' && $reply->code === 'identity_credentials_refused') { throw new IdentityRefused('identity_credentials_refused'); }
         if ($reply->status !== 'success' || $reply->value('errcount') !== '0'

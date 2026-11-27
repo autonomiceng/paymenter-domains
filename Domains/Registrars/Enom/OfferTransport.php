@@ -3,23 +3,26 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{CurlTransport, ReadCommand, Transport};
+use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Environment, ReadCommand, Transport};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, OperationClaims, TestCatalogue};
 
-/** Revalidate each physical read; CurlTransport retains daily admission and the deployment send guard. */
+/** Revalidate the accepted credential revision before each offer read. */
 final class OfferTransport implements Transport
 {
+    private readonly Transport $wire;
+
     public function __construct(private readonly AccountBindings $bindings, private readonly AccountBinding $binding,
-        #[\SensitiveParameter] private readonly string $revision, private readonly Transport $wire = new CurlTransport,
-        private readonly ?\Closure $current = null) {}
+        #[\SensitiveParameter] private readonly string $revision, ?Transport $wire = null,
+        private readonly ?\Closure $current = null)
+    { $this->wire = $wire ?? ReadAdapter::transport(); }
 
     public function send(Environment $environment, ReadCommand $command, #[\SensitiveParameter] array $parameters,
         #[\SensitiveParameter] string $uid, #[\SensitiveParameter] string $token, int $timeoutMs): string
     {
         OperationClaims::outside();
         if ($this->current) { ($this->current)(); }
-        if ($environment !== $this->binding->environment) { throw new \DomainException('Offer environment changed.'); }
+        if ($environment->value !== $this->binding->environment->value) { throw new \DomainException('Offer environment changed.'); }
         if (!TestCatalogue::enabled($this->binding)) { throw new \DomainException('Offer reads are unavailable for this deployment.'); }
         $credentials = $this->bindings->offerCredentials($this->binding, $this->revision);
         if (!hash_equals($credentials['uid'], $uid) || !hash_equals($credentials['token'], $token)) {

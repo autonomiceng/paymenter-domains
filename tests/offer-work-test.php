@@ -13,8 +13,8 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\Feed\OfferWork;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{Environment, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Driver, OfferFeed};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Driver, OfferFeed, ReadAdapter};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport, Environment as EnomEnvironment};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client as NsClient, Driver as NsDriver, OfferFeed as NsFeed};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport, Environment as NsEnvironment, RegistrarRequest, RequestContext as NsContext, TransportResponse};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, Installation, PricingRule};
@@ -37,7 +37,7 @@ $wire = new class implements Transport {
     public int $extra = 0;
     public ?ReadCommand $fail = null;
     public ?Closure $during = null;
-    public function send(Environment $environment, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string
+    public function send(EnomEnvironment $environment, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string
     {
         expect(DB::transactionLevel() === 0, 'Every provider read happens outside database locks');
         $this->calls[] = $command;
@@ -76,7 +76,7 @@ $nsWire = new class implements DeadlineTransport {
 };
 $factory = static fn ($binding) => $binding->registrarKey === 'namesilo'
     ? new NsFeed(new NsDriver(new NsClient($binding, 'placeholder-key', $nsWire), clock: $clock))
-    : new OfferFeed(new Driver(new Client($binding, Account::where('server_id', $binding->serverId)->sole()->stable_identity, 'placeholder-key', $wire), ['com', 'org', 'co.uk']),
+    : new OfferFeed(new Driver(new ReadAdapter($binding, Account::where('server_id', $binding->serverId)->sole()->stable_identity, 'placeholder-key', $wire), ['com', 'org', 'co.uk']),
         expansion: $binding->environment === Environment::Test ? \Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport::REVIEWED_EVIDENCE['enom'] : []);
 $allowance = 25;
 $worker = new OfferWork($writer, $clock, new AccountReadBudget($clock, 25), $factory,

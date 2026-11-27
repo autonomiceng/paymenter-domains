@@ -10,7 +10,8 @@ use Illuminate\Support\HtmlString;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Paymenter\Extensions\Servers\Domains\Data\HistoryAcceptance;
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, HistoryAcceptances, OperationReconciliation, RegistrarRegistry, StaffSettingsReview as Review};
 $out = renderOutput($argv[1] ?? null);
@@ -25,7 +26,7 @@ $history = new class implements Transport {
     }
 };
 $historyRegistry = new RegistrarRegistry;
-$historyRegistry->register('enom', ['token'], $verify, fn ($b, $c) => new Driver(new Client($b, 'account-enom', $c['token'], $history), ['com']));
+$historyRegistry->register('enom', ['token'], $verify, fn ($b, $c) => new Driver(new ReadAdapter($b, 'account-enom', $c['token'], $history), ['com']));
 $scheduled = new OperationReconciliation($claims, new AccountBindings($historyRegistry), $clock);
 app()->instance(AccountBindings::class, $bindings);
 $staff->role->update(['permissions' => [...$all, 'admin.domains.manage-policy', Review::permission('enom_answer')]]);

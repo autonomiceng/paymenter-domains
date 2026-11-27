@@ -2,8 +2,9 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
-use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence, CanonicalName, Evidence, ExpiryPrecision, HistoryScan, RequestContext, RequestDeadlineReached};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, ProtocolResult};
+use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence, Evidence, ExpiryPrecision, HistoryScan, RequestContext, RequestDeadlineReached};
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\CanonicalName;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, ProtocolResult};
 /** Accepted, counted Enom history only. No partial scan can establish uniqueness. A dense day continues on later scheduled
  * reads: each read lists every page again, keeps validated order outcomes bound to their listed IDs and dates, and reads
  * the next orders within the read budget. Only a full scan with every order resolved is complete. */
@@ -14,7 +15,7 @@ final class History
     /** Sanitized reasons a read could not finish the scan, saved with counts so a stuck scan can be diagnosed. */
     private const REFUSALS = ['read_budget', 'list_invalid', 'list_changed', 'list_too_large', 'list_duplicate', 'order_open', 'detail_ceiling',
         'detail_unavailable', 'detail_unsupported', 'order_date_changed', 'order_unreadable', 'multiple_matches', 'other_zone_candidate'];
-    public function __construct(private readonly Client $client) {}
+    public function __construct(private readonly ReadAdapter $client) {}
     public function inspect(AttemptEvidence $attempt, RequestContext $context): Evidence
     {
         if (!$attempt->historyAcceptance?->covers($attempt, $context->now())) { return new Evidence; }

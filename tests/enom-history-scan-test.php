@@ -5,7 +5,8 @@ require __DIR__.'/bootstrap.php';
 require __DIR__.'/Support/enom-history.php';
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, DateEvidence, DispatchSeal, DomainSnapshot, Environment, Evidence, ExecutionRecord, ExpiryPrecision, HistoryAcceptance, HistoryScan, Money, Query, RequestBudget, RequestContext, RequestOrigin, SendState};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport, Environment as EnomEnvironment};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\History;
 use Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence;
 // Sanitized from the Nov 14 TEST list for request 359: the same receipt times, page split and product mix; fictional IDs and names.
@@ -30,7 +31,7 @@ $wire = new class($times) implements Transport {
         }
         return $rows;
     }
-    public function send(Environment $e, ReadCommand $command, array $p, string $uid, string $token, int $ms): string {
+    public function send(EnomEnvironment $e, ReadCommand $command, array $p, string $uid, string $token, int $ms): string {
         $this->requests[] = [$command, $p]; $rows = $this->rows();
         if ($command === ReadCommand::Orders) {
             same(['11/12/2026', '11/14/2026'], [$p['BeginDate'], $p['EndDate']], 'The receipt days around the sealed window');
@@ -46,7 +47,7 @@ $wire = new class($times) implements Transport {
         return $body;
     }
 };
-$history = new History(new Client($binding, 'offline', 'token', $wire));
+$history = new History(new ReadAdapter($binding, 'offline', 'token', $wire));
 $start = new DateTimeImmutable('2026-11-12T15:06:18Z');
 $attempt = fn (?HistoryScan $scan, int $generation = 1) => new AttemptEvidence($binding, new Query('renew-359-placeholder.com', Action::Renew, 1), 'renew:140:g1:2027-11-12', $generation,
     ExecutionRecord::RecordedNull, SendState::PossiblySent, $start, $start->modify('+300 seconds'), new DateEvidence('2027-11-12', ExpiryPrecision::Date, 'acquisition_base'),
@@ -111,7 +112,7 @@ $raceClock = new class($clock->now()) implements Clock {
 };
 $raceWire = new class($wire, $raceClock, $deadline) implements Transport {
     public function __construct(private Transport $wire, private Clock $clock, private DateTimeImmutable $deadline) {}
-    public function send(Environment $e, ReadCommand $command, array $p, string $uid, string $token, int $ms): string {
+    public function send(EnomEnvironment $e, ReadCommand $command, array $p, string $uid, string $token, int $ms): string {
         $reply = $this->wire->send($e, $command, $p, $uid, $token, $ms);
         if ($command === ReadCommand::Order) { $this->clock->time = $this->deadline->modify('-500 microseconds'); }
         return $reply;
@@ -119,7 +120,7 @@ $raceWire = new class($wire, $raceClock, $deadline) implements Transport {
 };
 $wire->requests = [];
 $raceContext = new RequestContext($binding, RequestOrigin::Background, $deadline, new RequestBudget(21), $raceClock);
-$race = (new History(new Client($binding, 'offline', 'token', $raceWire)))->inspect($attempt(null), $raceContext);
+$race = (new History(new ReadAdapter($binding, 'offline', 'token', $raceWire)))->inspect($attempt(null), $raceContext);
 same([false, true, 1, ['read_budget'=>1]], [$race->historyComplete, $race->historyScan->progressed,
     $race->historyScan->state['resolved'], $race->historyScan->state['refusals']], 'A refused deadline claim retains the validated outcome as incomplete progress');
 same(['9003'], array_map('strval', array_keys($race->historyScan->state['orders'])), 'Only the validated order is saved');
@@ -130,7 +131,7 @@ same(null, $complete($race), 'Deadline progress cannot authorize completion');
 $raceClock->time = $clock->now();
 $lateWire = new class($wire, $raceClock, $deadline) implements Transport {
     public function __construct(private Transport $wire, private Clock $clock, private DateTimeImmutable $deadline) {}
-    public function send(Environment $e, ReadCommand $command, array $p, string $uid, string $token, int $ms): string {
+    public function send(EnomEnvironment $e, ReadCommand $command, array $p, string $uid, string $token, int $ms): string {
         $reply = $this->wire->send($e, $command, $p, $uid, $token, $ms);
         if ($command === ReadCommand::Order && ($p['OrderID'] ?? null) === '9020') { $this->clock->time = $this->deadline; }
         return $reply;
@@ -139,7 +140,7 @@ $lateWire = new class($wire, $raceClock, $deadline) implements Transport {
 $lateContext = new RequestContext($binding, RequestOrigin::Background, $deadline, new RequestBudget(40), $raceClock);
 $references = [];
 $lateContext->observe(static function ($candidate) use (&$references): void { $references[] = $candidate->providerReference; });
-$late = (new History(new Client($binding, 'offline', 'token', $lateWire)))->inspect($attempt(null), $lateContext);
+$late = (new History(new ReadAdapter($binding, 'offline', 'token', $lateWire)))->inspect($attempt(null), $lateContext);
 same([false, ['9020']], [$late->historyComplete, $references],
     'A matching charge read as the deadline expires still reaches the proof sink');
 same(null, $complete($late), 'A deadline-late charge cannot authorize completion');

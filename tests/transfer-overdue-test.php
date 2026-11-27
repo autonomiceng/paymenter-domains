@@ -17,7 +17,7 @@ EnomTestSendLimitSchema::install();
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class, $clock);
 $registry = new RegistrarRegistry;
 $registry->register('enom', ['token'], $verifier, static function ($binding, $credentials) use ($wire) {
-    $driver = new Enom\Driver(new Enom\Api\Client($binding, 'account-enom', $credentials['token'], $wire), ['com']);
+    $driver = new Enom\Driver(new Enom\ReadAdapter($binding, 'account-enom', $credentials['token'], $wire), ['com']);
     return new Enom\EnomTestReconciliationReader(new Enom\CataloguePreview($driver), $driver);
 });
 $readBindings = new AccountBindings($registry);

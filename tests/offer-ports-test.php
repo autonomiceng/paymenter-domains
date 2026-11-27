@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier, Clock};
 use Paymenter\Extensions\Servers\Domains\Data\{Environment, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, EnomTestCallLimit, EnomTestSendLimit, EnomTestSendLimitSchema, Installation, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\OfferTransport;
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport, Environment as EnomEnvironment};
 
 expect(is_file(dirname(__DIR__).'/Domains/Catalogue/Feed/OfferPorts.php'), 'Production offer ports compose verified credentials and our admitted read allowance');
 (new Installation)->install();
@@ -40,21 +40,21 @@ $revision = $ports->revision($binding);
 same(5, $ports->feed($binding)->priceReads(), 'The real Enom factory composes the bounded five-read feed without sending');
 $wire = new class implements Transport {
     public int $calls = 0;
-    public function send(Environment $environment, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string
+    public function send(EnomEnvironment $environment, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string
     { $this->calls++; return 'synthetic response'; }
 };
 $transport = new OfferTransport($bindings, $binding, $revision, $wire);
 foreach (['domains.enom_catalogue.enabled'=>false,'domains.enom_identity.environment'=>'live'] as $key=>$disabled) {
     $saved=config($key);config([$key=>$disabled]);
-    try { $transport->send(Environment::Test, ReadCommand::Tlds, [], 'offer-fixture', 'synthetic-first', 1000); throw new LogicException('Disabled deployment sent'); } catch (DomainException) {}
+    try { $transport->send(EnomEnvironment::Test, ReadCommand::Tlds, [], 'offer-fixture', 'synthetic-first', 1000); throw new LogicException('Disabled deployment sent'); } catch (DomainException) {}
     same(0,$wire->calls,'Physical offer sends recheck catalogue and identity deployment opt-ins');config([$key=>$saved]);
 }
-same('synthetic response', $transport->send(Environment::Test, ReadCommand::Tlds, [], 'offer-fixture', 'synthetic-first', 1000), 'A current offer transport reaches only the explicit fake wire');
+same('synthetic response', $transport->send(EnomEnvironment::Test, ReadCommand::Tlds, [], 'offer-fixture', 'synthetic-first', 1000), 'A current offer transport reaches only the explicit fake wire');
 $bindings->configure($server->id, 'enom', Environment::Test, ['uid' => 'offer-fixture', 'token' => 'synthetic-second']);
 expect($revision !== $ports->revision($binding), 'Verified rotation changes the offer credential revision without changing account identity');
 try { $bindings->offerCredentials($binding, $revision); throw new LogicException('Old revision accepted'); }
 catch (DomainException) {}
-try { $transport->send(Environment::Test, ReadCommand::Tlds, [], 'offer-fixture', 'synthetic-first', 1000); throw new LogicException('Old transport sent'); }
+try { $transport->send(EnomEnvironment::Test, ReadCommand::Tlds, [], 'offer-fixture', 'synthetic-first', 1000); throw new LogicException('Old transport sent'); }
 catch (DomainException) {}
 same(1, $wire->calls, 'Same-identity rotation refuses the old transport before another physical read');
 $currentGeneration = 4;
@@ -63,10 +63,10 @@ $generationGuard = static function () use (&$currentGeneration, $capturedGenerat
     if ($currentGeneration !== $capturedGeneration) { throw new DomainException('Synthetic generation changed.'); }
 };
 $transport = new OfferTransport($bindings, $binding, $ports->revision($binding), $wire, $generationGuard);
-$transport->send(Environment::Test, ReadCommand::Tlds, [], 'offer-fixture', 'synthetic-second', 1000);
+$transport->send(EnomEnvironment::Test, ReadCommand::Tlds, [], 'offer-fixture', 'synthetic-second', 1000);
 $currentGeneration++;
 $refusedGeneration = false;
-try { $transport->send(Environment::Test, ReadCommand::Tlds, [], 'offer-fixture', 'synthetic-second', 1000); }
+try { $transport->send(EnomEnvironment::Test, ReadCommand::Tlds, [], 'offer-fixture', 'synthetic-second', 1000); }
 catch (DomainException) { $refusedGeneration = true; }
 same(true, $refusedGeneration, 'Generation fence is rechecked for every physical read in a group');
 same(2, $wire->calls, 'A changed generation refuses before a second physical wire send');

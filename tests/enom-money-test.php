@@ -7,15 +7,15 @@ require_once __DIR__.'/Support/reserved-fixtures.php';
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, CostUnit, DispatchSeal, Discrepancy, Disposition,
     DriverResult, Environment, Evidence, ExecutionRecord, ExpiryPrecision, Money, PersistedExecution, Query, QuoteEvidence, RequestBudget, RequestContext, RequestOrigin, ResultReason, RenewalStatus, SendState};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolResult, ReadCommand, ResponseParser, Transport};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Driver, OrderCharge, Pricing};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ProtocolResult, ReadCommand, ResponseParser, Transport, Environment as EnomEnvironment};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Driver, OrderCharge, Pricing, ReadAdapter};
 $clock = new class implements Clock { public DateTimeImmutable $at; public function now(): DateTimeImmutable { return $this->at; } };
 $clock->at = new DateTimeImmutable('2026-10-18T12:00:00Z');
 $binding = new AccountBinding('enom', 1, Environment::Test, 'offline');
 $context = fn (int $budget = 8) => new RequestContext($binding, RequestOrigin::Background, $clock->now()->modify('+1 hour'), new RequestBudget($budget), $clock);
 $wire = new class implements Transport {
     public array $data = []; public array $calls = []; public bool $fail = false; public bool $reject = false; public ?ReadCommand $failCommand = null; public ?ReadCommand $rejectCommand = null;
-    public function send(Environment $environment, ReadCommand $command, #[\SensitiveParameter] array $parameters,
+    public function send(EnomEnvironment $environment, ReadCommand $command, #[\SensitiveParameter] array $parameters,
         #[\SensitiveParameter] string $uid, #[\SensitiveParameter] string $token, int $timeoutMs): string
     {
         $this->calls[] = [$command, $parameters];
@@ -24,7 +24,7 @@ $wire = new class implements Transport {
         return '<interface-response><Command>'.$command->value.'</Command><ErrCount>'.(($this->reject || $this->rejectCommand === $command) ? '1' : '0').'</ErrCount><Done>true</Done>'.($this->data[$command->name] ?? '').'</interface-response>';
     }
 };
-$driver = new Driver(new Client($binding, 'offline', 'private-token', $wire), ['com']);
+$driver = new Driver(new ReadAdapter($binding, 'offline', 'private-token', $wire), ['com']);
 $query = new Query('example.com', Action::Register, 3);
 $wire->data['ProductPrice'] = '<ProductPrice><ProductEnabled>true</ProductEnabled><Price>8.9550</Price></ProductPrice>';
 $quote = $driver->quote($query, $context());

@@ -87,9 +87,37 @@ foreach(['catalogue'=>['management','GetBalance'],'registration'=>['registration
 }
 foreach(['renewal'=>'Extend','management'=>'SetRegLock'] as $role=>$command){$typedRefusal(fn()=>$exchange($role)(EnomLive::route(),$command,[],25000));}
 config(['domains.enom_live.accounts'=>['live-uid'=>[...$accountConfig,'daily_call_cap'=>0]]]);
-$typedRefusal(fn()=>(new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\CurlTransport)->send(Environment::Live,Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Balance,[],'live-uid','LIVE-SECRET-TOKEN',25000));
+$typedRefusal(fn()=>Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter::transport()->send(Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Environment::Live,Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Balance,[],'live-uid','LIVE-SECRET-TOKEN',25000));
 config(['domains.enom_live.accounts'=>['live-uid'=>$accountConfig]]);$typedRefusal(fn()=>EnomLiveCalls::read('unbound-live-uid'));
 same($wireBefore,count($GLOBALS['enomWire']['forms']),'Physical guards send no fake requests');
+
+// The LIVE reservation is booked before the guard, but expires if UTC rolls after timeout configuration.
+$readTransport = Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter::transport();
+$usage = static fn () => (new Paymenter\Extensions\Servers\Domains\Services\LiveReservations(
+    new Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomLiveReservationPolicy))->usage($binding)['used'];
+$used = $usage();
+$oldTime = $clock->at;
+$optionsApplied = 0;
+$guardCalls = 0;
+config(['domains.provider_send_guard' => static function () use (&$guardCalls, $usage, $used): void {
+    ++$guardCalls;
+    same($used + 1, $usage(), 'LIVE read admission precedes the send guard');
+}]);
+resetWire(['configure' => static function () use (&$optionsApplied, $clock): void {
+    if (++$optionsApplied === 2) { $clock->at = $clock->at->modify('+1 day'); }
+}]);
+try {
+    $typedRefusal(fn () => $readTransport->send(Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Environment::Live,
+        Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Balance, [], 'live-uid', 'LIVE-SECRET-TOKEN', 25000));
+    same([1, 2, [], 1], [$guardCalls, $optionsApplied, $GLOBALS['enomWire']['forms'], $GLOBALS['enomWire']['closed']],
+        'A reservation that expires after timeout configuration never enters cURL');
+} finally {
+    config(['domains.provider_send_guard' => null]);
+    $clock->at = $oldTime;
+    resetWire(['reply' => $reply]);
+}
+same($used + 1, $usage(), 'The expired reservation remains booked on its original UTC day');
+
 $before=count($GLOBALS['enomWire']['forms']);
 foreach(['https://stage.example.com',null,'http://billing.example.com'] as $site){
     config(['domains.enom_live.site'=>$site]);expect(!$ports->accepted($a->fresh()),'Site mismatch refuses composition');

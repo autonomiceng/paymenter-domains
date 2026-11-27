@@ -4,14 +4,15 @@ declare(strict_types=1);
 require_once __DIR__.'/enom-history.php';
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, DateEvidence, DispatchSeal, DomainSnapshot, Environment, Evidence, ExecutionRecord, ExpiryPrecision, HistoryAcceptance, Money, Query, RequestBudget, RequestContext, RequestOrigin, SendState};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport, Environment as EnomEnvironment};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\History;
 use Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence;
 $live = new AccountBinding('enom', 2, Environment::Live, 'offline-live');
 /** $paging: 'absent' is the observed Live single page; 'kept' adds full TEST pagination; 'partial' and 'contradictory' are refusals. */
 $liveWire = new class implements Transport {
     public array $rows = []; public array $details = []; public string $paging = 'absent'; public array $requests = [];
-    public function send(Environment $e, ReadCommand $command, array $p, string $uid, string $token, int $ms): string {
+    public function send(EnomEnvironment $e, ReadCommand $command, array $p, string $uid, string $token, int $ms): string {
         $this->requests[] = [$command, $p];
         if ($command === ReadCommand::Order) { return $this->details[$p['OrderID']]; }
         $day = fn ($d) => DateTimeImmutable::createFromFormat('!m/d/Y', $d)->format('n/j/Y').' 12:00:00 AM';
@@ -25,7 +26,7 @@ $liveWire = new class implements Transport {
         return enomHistoryEnvelope($body);
     }
 };
-$liveHistory = new History(new Client($live, 'offline-live', 'token', $liveWire));
+$liveHistory = new History(new ReadAdapter($live, 'offline-live', 'token', $liveWire));
 // The renewal was sent 17:13-17:18 UTC on Jul 4: 10:13 AM Pacific, 11:13 AM Mountain.
 $liveStart = new DateTimeImmutable('2026-07-04T17:13:00Z'); $liveNow = new DateTimeImmutable('2026-07-05T00:00:00Z');
 $liveClock = new class($liveNow) implements Clock { public function __construct(public DateTimeImmutable $n) {} public function now(): DateTimeImmutable { return $this->n; } };

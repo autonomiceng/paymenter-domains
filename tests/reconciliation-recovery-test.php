@@ -184,7 +184,7 @@ $day = new class($wire, $observation) implements \Paymenter\Extensions\Servers\D
     }
 };
 $denseRegistry = new \Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
-$denseRegistry->register('enom', ['token'], $verify, fn ($b, $c) => new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($b, 'account-enom', $c['token'], $day), ['com']));
+$denseRegistry->register('enom', ['token'], $verify, fn ($b, $c) => new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter($b, 'account-enom', $c['token'], $day), ['com']));
 $denseReconcile = new \Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation($claims, new \Paymenter\Extensions\Servers\Domains\Services\AccountBindings($denseRegistry), $clock);
 $observation->reference = '7049'; $before = $writer->calls;
 $clock->instant = $clock->now()->modify('+3 days'); config(['domains.enom_identity.environment' => 'test']);

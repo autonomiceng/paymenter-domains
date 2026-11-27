@@ -4,7 +4,8 @@
 declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Disposition, Environment, RequestBudget, RequestContext, RequestOrigin};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolResult, ReadCommand, ResponseParser, RegistrationCommand, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ProtocolResult, ReadCommand, ResponseParser, RegistrationCommand, Transport, Environment as EnomEnvironment};
 ini_set('zend.exception_ignore_args', '0');
 function envelope(string $command, string $payload = ''): string
 {
@@ -149,7 +150,7 @@ $transport = new class implements Transport {
     public int $calls = 0;
     public bool $fail = false;
     public int $timeout = 0;
-    public function send(Environment $environment, ReadCommand $command, #[\SensitiveParameter] array $parameters,
+    public function send(EnomEnvironment $environment, ReadCommand $command, #[\SensitiveParameter] array $parameters,
         #[\SensitiveParameter] string $uid, #[\SensitiveParameter] string $token, int $timeoutMs): string
     {
         $this->calls++; $this->timeout = $timeoutMs;
@@ -160,13 +161,13 @@ $transport = new class implements Transport {
 foreach ([[new AccountBinding('namesilo', 1, Environment::Test, 'synthetic-uid'), 'synthetic-uid', 'token'],
     [$binding, 'other', 'token'], [$binding, 'synthetic-uid', ''], [$binding, 'synthetic-uid', str_repeat('x', 4097)],
     [$binding, 'synthetic-uid', "bad\ntoken"]] as [$invalidBinding, $uid, $token]) {
-    try { new Client($invalidBinding, $uid, $token, $transport); throw new LogicException('Expected credential refusal'); }
+    try { new ReadAdapter($invalidBinding, $uid, $token, $transport); throw new LogicException('Expected credential refusal'); }
     catch (InvalidArgumentException $e) {
         $trace = print_r($e->getTrace(), true);
         expect(!str_contains($trace, $invalidBinding->fingerprint) && !str_contains($trace, $uid), 'Constructor trace excludes binding/credentials');
     }
 }
-$client = new Client($binding, 'synthetic-uid', 'synthetic-token', $transport);
+$client = new ReadAdapter($binding, 'synthetic-uid', 'synthetic-token', $transport);
 $context = fn (int $limit = 10, ?AccountBinding $account = null, string $date = '+1 hour') => new RequestContext(
     $account ?? $binding, RequestOrigin::Background, new DateTimeImmutable($date), new RequestBudget($limit));
 $clock = new class implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock {

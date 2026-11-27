@@ -3,17 +3,20 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api;
 
-use Paymenter\Extensions\Servers\Domains\Data\Environment;
+use Paymenter\Extensions\Servers\Domains\Registrars\Contract\ReadRefusal;
 
 final class CurlTransport implements Transport
 {
+    /** @param \Closure(Environment, ReadCommand, string): \Closure $preflight Returns the final reservation check. */
+    public function __construct(private readonly \Closure $preflight) {}
+
     public function send(Environment $environment, ReadCommand $command, #[\SensitiveParameter] array $parameters,
         #[\SensitiveParameter] string $uid, #[\SensitiveParameter] string $token, int $timeoutMs): string
     {
         $handle = null;$deadline=hrtime(true)+max(0,$timeoutMs)*1000000;
         try {
             $command->validate($parameters);
-            if ($uid === '' || $token === '' || (getenv('SSLKEYLOGFILE') !== false && getenv('SSLKEYLOGFILE') !== '') || $timeoutMs < 1 || $timeoutMs > 25000) {
+            if ($uid === '' || $token === '' || (getenv('SSLKEYLOGFILE') !== false && getenv('SSLKEYLOGFILE') !== '') || $timeoutMs < 1 || $timeoutMs > Client::MAX_TIMEOUT_MS) {
                 throw new \RuntimeException('Registrar transport unavailable.');
             }
             $body = '';
@@ -40,20 +43,21 @@ final class CurlTransport implements Transport
                 },
             ];
             if (!curl_setopt_array($handle, $options)) { throw new \RuntimeException('Registrar transport incomplete.'); }
-            $day=$environment===Environment::Live?\Paymenter\Extensions\Servers\Domains\Services\EnomLiveCalls::read($uid):'';
-            \Paymenter\Extensions\Servers\Domains\Services\ProviderSendGuard::beforeSend('enom',$environment->value,$command->value);
-            // Counted before the last deadline check, so DB time cannot stretch the deadline.
-            \Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimit::admit($environment,$uid,$command->value);
-            $remaining=intdiv($deadline-hrtime(true),1000000);
-            if ($remaining<1) { throw new \RuntimeException('Registrar transport incomplete.'); }
-            $options[CURLOPT_CONNECTTIMEOUT_MS]=min(8000,$remaining);$options[CURLOPT_TIMEOUT_MS]=$remaining;
-            if (!curl_setopt_array($handle,$options)) { throw new \RuntimeException('Registrar transport incomplete.'); }
-            \Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::assertReservedDay($day);
+            $checkReservationDay = ($this->preflight)($environment, $command, $uid);
+            $remaining = intdiv($deadline - hrtime(true), 1000000);
+            if ($remaining < 1) { throw new \RuntimeException('Registrar transport incomplete.'); }
+            $options[CURLOPT_CONNECTTIMEOUT_MS] = min(8000, $remaining);
+            $options[CURLOPT_TIMEOUT_MS] = $remaining;
+            if (!curl_setopt_array($handle, $options)) {
+                throw new \RuntimeException('Registrar transport incomplete.');
+            }
+            $checkReservationDay();
             if (curl_exec($handle) === false || curl_getinfo($handle, CURLINFO_RESPONSE_CODE) !== 200) {
                 throw new \RuntimeException('Registrar transport incomplete.');
             }
             return $body;
-        } catch (\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit $error) { throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit($error->reason);
+        } catch (ReadRefusal $refusal) {
+            throw $refusal;
         } catch (\Throwable) {
             // Never retain credential-bearing cURL exceptions, callback arguments or their causes.
             throw new \RuntimeException('Registrar transport incomplete.');

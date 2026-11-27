@@ -4,7 +4,8 @@ declare(strict_types=1);
 require_once __DIR__.'/enom-history.php';
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Data\{Action,Environment,HistoryAcceptance};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client,ReadCommand,Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport, Environment as EnomEnvironment};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,HistoryAcceptances,OperationClaims,OperationReconciliation,PricingRule,Refunds,RegistrarRegistry,RuntimePorts,RuntimeWork,StaffOperationReview,StaffOperations};
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
@@ -18,7 +19,7 @@ require_once __DIR__.'/staff-panel.php';
     $s=(object)['name'=>'','bill'=>'','fault'=>'unique','calls'=>[],'drift'=>null];
     $wire=new class($s) implements Transport {
         public function __construct(private $s){}
-        public function send(Environment $env,ReadCommand $command,array $p,string $uid,string $token,int $timeoutMs):string {
+        public function send(EnomEnvironment $env,ReadCommand $command,array $p,string $uid,string $token,int $timeoutMs):string {
             same(0,DB::transactionLevel(),'Recovery provider reads run outside financial locks');
             $s=$this->s;$s->calls[]=$command->value;
             $body=match($command){
@@ -35,7 +36,7 @@ require_once __DIR__.'/staff-panel.php';
             return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$body.'</interface-response>';
         }
     };
-    $registry=new RegistrarRegistry;$registry->register('enom',['uid','token'],$verify,fn($b,$c)=>new Driver(new Client($b,$c['uid'],$c['token'],$wire),['com']));
+    $registry=new RegistrarRegistry;$registry->register('enom',['uid','token'],$verify,fn($b,$c)=>new Driver(new ReadAdapter($b,$c['uid'],$c['token'],$wire),['com']));
     $reads=new AccountBindings($registry);
     $rebuild=fn()=>new OperationReconciliation(new OperationClaims($reads,$clock),$reads,$clock);
     $prepare=static function(string $name,bool $captured=false)use($clock,$auth,$binding,$new,$worker,$reply,$s,$sellers,$tlds){

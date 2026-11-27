@@ -24,20 +24,20 @@ final class RegistrarFactories
                 if ($binding->environment !== $environment) { throw new IdentityRefused('identity_environment_refused'); }
                 if (!TestCatalogue::enabled($binding)) { throw new \DomainException('TEST catalogue reads are unavailable.'); }
                 $endings = self::endings($binding);
-                $driver=new Enom\Driver(new Enom\Api\Client($binding, $credentials['uid'], $credentials['token']), $endings);
+                $driver=new Enom\Driver(new Enom\ReadAdapter($binding, $credentials['uid'], $credentials['token']), $endings);
                 $preview=new Enom\CataloguePreview($driver);
                 return (EnomTestRegistration::enabled($binding)||(EnomTestRenewal::enabled($binding)||EnomTestManagement::enabled($binding)||EnomTestTransfer::enabled($binding))||EnomTestRegistration::recoveryEnabled($binding))?new Enom\EnomTestReconciliationReader($preview,$driver):$preview;
             },
             static function(AccountBinding $binding, #[\SensitiveParameter] array $credentials) use ($environment): Enom\Driver {
                 if ($binding->environment !== $environment) { throw new IdentityRefused('identity_environment_refused'); }
-                return new Enom\Driver(new Enom\Api\Client($binding, $credentials['uid'], $credentials['token']), []);
+                return new Enom\Driver(new Enom\ReadAdapter($binding, $credentials['uid'], $credentials['token']), []);
             }, true,
             static function(AccountBinding $binding, #[\SensitiveParameter] array $credentials) use ($environment): Enom\Driver {
                 if ($binding->environment !== $environment || !(EnomTestRegistration::enabled($binding)||EnomTestTransfer::enabled($binding))) {
                     throw new IdentityRefused('identity_environment_refused');
                 }
                 $endings=self::endings($binding);
-                return new Enom\Driver(new Enom\Api\Client($binding,$credentials['uid'],$credentials['token']),$endings);
+                return new Enom\Driver(new Enom\ReadAdapter($binding,$credentials['uid'],$credentials['token']),$endings);
             });
         return true;
     }
@@ -49,11 +49,11 @@ final class RegistrarFactories
         if ($enom) {
             $registry->register('enom', ['uid', 'token'], $enom, static function (AccountBinding $binding, #[\SensitiveParameter] array $credentials): Enom\Driver {
                 $endings = self::endings($binding);
-                return new Enom\Driver(new Enom\Api\Client($binding, $credentials['uid'], $credentials['token']), $endings);
+                return new Enom\Driver(new Enom\ReadAdapter($binding, $credentials['uid'], $credentials['token']), $endings);
             }, static fn(AccountBinding $binding, #[\SensitiveParameter] array $credentials): Enom\Driver =>
-                new Enom\Driver(new Enom\Api\Client($binding, $credentials['uid'], $credentials['token']), []),
+                new Enom\Driver(new Enom\ReadAdapter($binding, $credentials['uid'], $credentials['token']), []),
                 adoptionReaderFactory: static fn(AccountBinding $binding, #[\SensitiveParameter] array $credentials, \Paymenter\Extensions\Servers\Domains\Contracts\Clock $clock): Enom\EnomAdoptionReader =>
-                    new Enom\EnomAdoptionReader($binding, $credentials['uid'], $credentials['token'], new Enom\Api\CurlTransport, $clock, Runtime::limiter()));
+                    new Enom\EnomAdoptionReader($binding, $credentials['uid'], $credentials['token'], Enom\ReadAdapter::transport(), $clock, Runtime::limiter()));
         }
         if ($namesilo) {
             $registry->register('namesilo', ['api_key'], $namesilo, static function (AccountBinding $binding, #[\SensitiveParameter] array $credentials): NameSilo\Driver {

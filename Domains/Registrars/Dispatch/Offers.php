@@ -24,7 +24,7 @@ final class Offers
                 throw new \DomainException('Live offer reads unavailable.');
             }
             $transport = new Enom\OfferTransport($bindings, $binding, $revision, current: $current);
-            return new Enom\OfferFeed(new Enom\Driver(new Enom\Api\Client($binding, $credentials['uid'], $credentials['token'], $transport), []),
+            return new Enom\OfferFeed(new Enom\Driver(new Enom\ReadAdapter($binding, $credentials['uid'], $credentials['token'], $transport), []),
                 expansion: $binding->environment === Environment::Test ? TermSupport::REVIEWED_EVIDENCE['enom'] : []);
         }
         // #386 is an explicit dependency; never silently fall back to the unadmitted cURL transport.

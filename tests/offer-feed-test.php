@@ -7,7 +7,8 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\Feed\FeedRun;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CatalogueFreshness, Environment, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Driver as EnomDriver, OfferFeed as EnomFeed};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client as EnomClient, ReadCommand, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter as EnomClient;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport, Environment as EnomEnvironment};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client as NameSiloClient, Driver as NameSiloDriver, OfferFeed as NameSiloFeed};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport, Environment as WireEnvironment, RegistrarRequest, RequestContext as WireContext, TransportResponse};
 
@@ -34,7 +35,7 @@ $enomWire = new class implements Transport {
     public bool $omit = false;
     public ?int $fail = null;
     public ?Closure $during = null;
-    public function send(Environment $environment, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string
+    public function send(EnomEnvironment $environment, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string
     {
         $this->calls[] = [$environment, $command, $parameters, $timeoutMs];
         if ($this->during !== null) { ($this->during)(); }
@@ -67,7 +68,7 @@ foreach ([Environment::Test, Environment::Live] as $environment) {
     same(0, $c->budget->remaining(), 'Every feed wire consumes the bound request budget');
     same([1, 2, 5, 10], array_column(array_column(array_slice($enomWire->calls, 0, 4), 2), 'Years'), 'All four bucket requests use explicit years');
     foreach ($enomWire->calls as [$env, $command, $parameters, $timeout]) {
-        same($environment, $env, 'Both environments remain explicitly bound');
+        same(EnomEnvironment::from($environment->value), $env, 'Both environments remain explicitly bound');
         expect($timeout > 0 && $timeout <= 25000, 'Feed preserves transport deadline');
         if ($command === ReadCommand::RetailPricing) { same(1, $parameters['TLDOnly'], 'Account reseller feed has no hypothetical domain quantity'); }
     }

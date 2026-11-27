@@ -33,7 +33,8 @@ $stop = static function ($op, $completion) use ($clock): void {
 };
 
 use Paymenter\Extensions\Servers\Domains\Data\HistoryAcceptance;
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Transport};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
 use Paymenter\Extensions\Servers\Domains\Services\{HistoryAcceptances, RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion;
@@ -60,7 +61,7 @@ $wire = new class($transport, $state, $clock, $sent) implements Transport {
     }
 };
 $registry = new RegistrarRegistry;
-$registry->register('enom', ['token'], $verify, fn ($binding, $credentials) => new Driver(new Client($binding, 'account-enom', $credentials['token'], $wire), ['com']));
+$registry->register('enom', ['token'], $verify, fn ($binding, $credentials) => new Driver(new ReadAdapter($binding, 'account-enom', $credentials['token'], $wire), ['com']));
 $historyBindings = new AccountBindings($registry); $completion = new RenewalCompletion($historyBindings, $clock);
 $state->after = '2027-10-18'; $clock->instant = $sent->modify('+25 hours'); Cache::flush();
 $before = $credit(); $writes = $state->writes;

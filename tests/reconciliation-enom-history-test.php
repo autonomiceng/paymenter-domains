@@ -5,7 +5,8 @@ require __DIR__.'/bootstrap.php';
 require __DIR__.'/Support/enom-history.php';
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, DateEvidence, DispatchSeal, DomainSnapshot, Environment, Evidence, ExecutionRecord, ExpiryPrecision, HistoryAcceptance, OrderEvidence, Query, RequestBudget, RequestContext, RequestOrigin, SendState};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport, Environment as EnomEnvironment};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\History;
 use Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence;
 $clock = new class implements Clock { public function now(): DateTimeImmutable { return new DateTimeImmutable('2026-10-18T13:00:00Z'); } };
@@ -16,7 +17,7 @@ $attempt = new AttemptEvidence($binding, $query, 'original', 1, ExecutionRecord:
     $start, $start->modify('+300 seconds'), seal: DispatchSeal::Sealed, historyAcceptance: $policy);
 $wire = new class implements Transport {
     public string $fault = ''; public int $calls = 0; public array $requests = [];
-    public function send(Environment $e, ReadCommand $command, array $p, string $uid, string $token, int $ms): string {
+    public function send(EnomEnvironment $e, ReadCommand $command, array $p, string $uid, string $token, int $ms): string {
         $this->calls++; $this->requests[] = [$command, $p];
         if ($command === ReadCommand::Orders) {
             $rows = [];
@@ -63,7 +64,7 @@ $wire = new class implements Transport {
         return $body;
     }
 };
-$history = new History(new Client($binding, 'offline', 'token', $wire));
+$history = new History(new ReadAdapter($binding, 'offline', 'token', $wire));
 $domain = fn ($expiry) => new DomainSnapshot($binding, 'example.com', true, new DateEvidence($expiry, ExpiryPrecision::Date, 'synthetic'), false, providerReference: '456');
 $read = function () use ($history, $attempt, $clock, $binding) { return $history->inspect($attempt, new RequestContext($binding, RequestOrigin::Background, $clock->now()->modify('+250 seconds'), new RequestBudget(25), $clock)); };
 $before = $wire->calls;

@@ -53,7 +53,7 @@ $nsWire=new class implements \Paymenter\Extensions\Servers\Domains\Registrars\Na
     public function send($env,$origin,$request,$key):\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\TransportResponse{throw new LogicException('Unexpected send');}
     public function sendWithin($env,$origin,$request,$key,$timeoutMs):\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\TransportResponse{$this->calls++;throw new LogicException('Unexpected send');}
 };
-$drivers=[new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($e,'account-enom','synthetic',$enomWire),['com']),
+$drivers=[new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter($e,'account-enom','synthetic',$enomWire),['com']),
     new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Driver(new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Client($b,'synthetic',$nsWire))];
 \Illuminate\Support\Facades\Schema::rename('domains_read_budgets','unavailable_read_budgets');
 try{foreach($drivers as $driver){foreach([false,true] as $stop){
