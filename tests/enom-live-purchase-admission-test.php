@@ -6,7 +6,8 @@ use Illuminate\Support\Facades\{Auth, DB, Queue};
 use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
 use Paymenter\Extensions\Servers\Domains\Jobs\{ExecuteOperation, RunOperation};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{FundsWaits, NativeCatalogue, PricingRule, Runtime, RuntimeDispatch, RuntimeWork, StaffOperationReview, StaffOperations};
+use Paymenter\Extensions\Servers\Domains\Services\{FundsWaits, NativeCatalogue, OperationClaims, PricingRule, Runtime, RuntimeDispatch, RuntimeWork, StaffOperationReview, StaffOperations};
+use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
 
 $liveTransferRuntime = true;
 require __DIR__.'/enom-live-transfer-test.php';
@@ -66,7 +67,8 @@ DB::listen(static function ($query) use (&$pauseOrders, $processing): void {
 
 $observed = [];
 $day = $clock->now()->modify('+2 days');
-foreach (['funded', 'shortfall', 'deferred-live', 'deferred-expired', 'orders-scheduler', 'orders-job', 'orders-expired'] as $index => $case) {
+foreach (['funded', 'shortfall', 'deferred-live', 'deferred-expired', 'orders-scheduler', 'orders-job', 'orders-expired',
+    'balance-resume-funded', 'balance-resume-short', 'balance-deadline-paused'] as $index => $case) {
     $setTime($day->modify('+'.(4 * $index).' days'));
     $wire();
     Auth::setUser($staff);
@@ -96,6 +98,62 @@ foreach (['funded', 'shortfall', 'deferred-live', 'deferred-expired', 'orders-sc
     $ticket = StaffOperationReview::ticket($staff->id, $order->domain_id, $order->id, 'release',
         StaffOperationReview::stamp($order, $order->domain), $clock);
     (new StaffOperations($clock))->run($staff, $order->domain_id, $order->id, 'release', $ticket, 'Retry the proved-unsent order');
+
+    if (str_starts_with($case, 'balance-')) {
+        $wire(false);
+        $run($order);
+        $order->refresh();
+        same(['held', 'registrar_balance_insufficient', 0], [$order->state, $order->safe_code, $purchases()],
+            'The installed worker confirms the first shortfall before the Orders pause');
+        $firstWait = $clock->now();
+        $deadline = $firstWait->modify('+3 days');
+        Auth::setUser($staff);
+        $offered = HeldRelease::offered($order, $firstWait);
+        $review = StaffOperationReview::ticket($staff->id, $order->domain_id, $order->id, 'release',
+            StaffOperationReview::stamp($order, $order->domain), $clock);
+        $refusedRelease = false;
+        try {
+            (new StaffOperations($clock))->run($staff, $order->domain_id, $order->id, 'release', $review, 'Release an automatic wait');
+        } catch (DomainException) {
+            $refusedRelease = true;
+        }
+        $setTime($deadline->modify('-120 seconds'));
+        Auth::setUser($staff);
+        installedOfferEvidence($binding, $clock, true);
+        expect(app(OperationClaims::class)->readmitBalance($order->id), 'The last automatic wait admits one replacement before day three');
+        $processing(false);
+        $wire(false);
+        $run($order);
+        same(['held', 'processing', 0], [$order->fresh()->state, $order->fresh()->safe_code, $purchases()],
+            'A delivered job observes Orders off before the replacement claim');
+        $before = $credit();
+        $scheduled = null;
+        if ($case !== 'balance-deadline-paused') {
+            $processing(true);
+            $setTime($deadline->modify('-90 seconds'));
+            $wire($case === 'balance-resume-funded');
+            if ($case === 'balance-resume-funded') {
+                DB::table('domains_runtime_operations')->updateOrInsert(['operation_id' => $order->id],
+                    ['due_at' => $deadline->modify('+30 minutes')->getTimestamp()]);
+                Queue::fake([RunOperation::class]);
+                app(RuntimeDispatch::class)->enqueue($order->id);
+                $wakes = Queue::pushed(RunOperation::class, static fn (RunOperation $job) => $job->operationId === $order->id);
+                $scheduled = $wakes->count();
+                foreach ($wakes as $job) { $job->handle(app(RuntimeWork::class)); }
+            } else {
+                $run($order);
+            }
+        }
+        $setTime($deadline);
+        FundsWaits::sweep($a->fresh(), $clock->now());
+        FundsWaits::sweep($a->fresh(), $clock->now());
+        $funded = $case === 'balance-resume-funded';
+        $observed[$case] = [$offered, $refusedRelease, $scheduled, $purchases(),
+            $funded ? in_array($order->fresh()->state, ['pending', 'succeeded'], true) : $order->fresh()->state,
+            $credit() - $before === ($funded ? 0 : PricingRule::minor($order->amount))];
+        $processing(true);
+        continue;
+    }
 
     if (in_array($case, ['funded', 'shortfall'], true)) {
         $wire(false);
@@ -180,5 +238,8 @@ same([
     'orders-scheduler' => [1, true, true, 1],
     'orders-job' => [1, true, true, null],
     'orders-expired' => ['held', 'acquisition_definitely_unsent', 0, true],
+    'balance-resume-funded' => [false, true, 1, 1, true, true],
+    'balance-resume-short' => [false, true, null, 0, 'rejected', true],
+    'balance-deadline-paused' => [false, true, null, 0, 'rejected', true],
 ], $observed, 'Purchase admission and financial outcomes follow the retained authorization '.json_encode($observed, JSON_THROW_ON_ERROR));
 $nativeSuccessful = true;
