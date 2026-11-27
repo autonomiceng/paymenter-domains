@@ -35,7 +35,7 @@ final readonly class RuntimeWork
             if (AcquisitionAttempt::key($op->action) !== null) {
                 $runnable = $dispatch->acquisition($op, $account, true, $this->ports);
                 if ($runnable === null) { return; }
-                $op = $runnable;
+                [$op] = $runnable;
                 if ($op->state === 'succeeded' && $op->safe_code === 'registration_correction_required') {
                     if ($account->processing_enabled) { $this->ports->corrections($op->domain); }
                 } elseif ($this->ports->accepted($account)) { $this->ports->operation($op); }

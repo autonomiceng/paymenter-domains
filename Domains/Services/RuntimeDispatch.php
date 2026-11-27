@@ -29,13 +29,13 @@ final readonly class RuntimeDispatch
         $op=Operation::findOrFail($id);
         if (AcquisitionAttempt::key($op->action) !== null) {
             $account = Account::where('server_id', $op->server_id)->first();
-            $op = $account ? $this->acquisition($op, $account, false) : null;
-            if (!$op) { return; }
-            $continuation = self::statusWork($op) || $op->completed_at !== null ? null : AcquisitionResult::continuation($op);
-            if ($continuation?->lane !== null) {
+            $route = $account ? $this->acquisition($op, $account, false) : null;
+            if ($route === null) { return; }
+            [$op, $revision] = $route;
+            if ($revision !== null) {
                 // An older notification may still be queued. Its reservation cannot consume this continuation's wake.
-                if (Cache::add('domains-acquisition-wake:'.$id.':'.$continuation->revision, true, 60)) {
-                    RunOperation::dispatch($id, $continuation->revision)->afterCommit();
+                if (Cache::add('domains-acquisition-wake:'.$id.':'.$revision, true, 60)) {
+                    RunOperation::dispatch($id, $revision)->afterCommit();
                 }
                 return;
             }
@@ -67,8 +67,13 @@ final readonly class RuntimeDispatch
         if($due){RunOperation::dispatch($id)->afterCommit();}
     }
 
-    /** The scheduler and every delivered notification use the same current continuation and Orders gate. */
-    public function acquisition(Operation $op, Account $account, bool $delivered, ?RuntimePorts $ports = null): ?Operation
+    /**
+     * The scheduler and every delivered notification use the same current continuation and Orders gate.
+     * The revision fences delivery to the continuation whose due time this decision checked.
+     *
+     * @return array{Operation, ?int}|null
+     */
+    public function acquisition(Operation $op, Account $account, bool $delivered, ?RuntimePorts $ports = null): ?array
     {
         $instant = $this->clock->now();
         $id = (int) $op->id;
@@ -91,7 +96,7 @@ final readonly class RuntimeDispatch
                 app(OperationClaims::class)->holdUnclaimed($id, 'processing');
                 return null;
             }
-            return self::statusWork($op) ? $op : null;
+            return self::statusWork($op) ? [$op, null] : null;
         }
         if ($recovering && !($ports ?? app(RuntimePorts::class))->accepted($account)) {
             app(OperationClaims::class)->holdUnclaimed($id, 'write_disabled');
@@ -105,7 +110,7 @@ final readonly class RuntimeDispatch
             if (!app(OperationClaims::class)->readmitOrdersOff($id)) { return null; }
             $op->refresh();
         }
-        if (self::statusWork($op) || $op->completed_at !== null) { return $op; }
+        if (self::statusWork($op) || $op->completed_at !== null) { return [$op, null]; }
         $continuation = AcquisitionResult::continuation($op);
         if (FundsWaits::deadlinePassed($continuation?->shortfallAt, $instant)) { return null; }
         $lane = $continuation?->lane;
@@ -114,19 +119,23 @@ final readonly class RuntimeDispatch
         if ($op->state === 'held') {
             if (in_array($lane, [AcquisitionLane::BalanceWait, AcquisitionLane::ContactWait, AcquisitionLane::PriceWait], true)) {
                 if (!$continuation->due($instant)) { return null; }
-                if ($lane === AcquisitionLane::BalanceWait && !$delivered) { return $op; }
+                if ($lane === AcquisitionLane::BalanceWait && !$delivered) { return [$op, $continuation->revision]; }
                 $readmitted = match ($lane) {
                     AcquisitionLane::BalanceWait => app(OperationClaims::class)->readmitBalance($id),
                     AcquisitionLane::ContactWait => ContactStepRetries::readmit($id, $this->clock),
                     AcquisitionLane::PriceWait => PriceHoldRetries::readmit($id, $this->clock),
                 };
-                return $readmitted ? $op->fresh() : null;
+                if (!$readmitted || !($ready = $op->fresh()) || $ready->state !== 'queued') { return null; }
+                $admitted = AcquisitionResult::continuation($ready);
+                if (!in_array($admitted?->lane, [AcquisitionLane::Purchase, AcquisitionLane::BalancePurchase], true)
+                    || !$admitted->due($this->clock->now())) { return null; }
+                return [$ready, $admitted->revision];
             }
             if (!AcquisitionRetryProof::localRecovery($op, $instant)
                 && !ContactProfileHold::forReadmission($op, $instant) && !TransferPolling::applies($op)) { return null; }
         }
         if ($lane === AcquisitionLane::FundsWait) { return null; }
-        return $op;
+        return [$op, $lane === null ? null : $continuation->revision];
     }
 
     private static function statusWork(Operation $op): bool
