@@ -5,6 +5,7 @@ use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementProgress;
 require __DIR__.'/bootstrap.php';
 $transferEnvironment=\Paymenter\Extensions\Servers\Domains\Data\Environment::Live;
 require __DIR__.'/Support/management-namesilo.php';
+require_once __DIR__.'/Support/management-attempts.php';
 $legacyTransferExchange=$exchange;$exchange=static fn($o,$cmd,$p,$t)=>$legacyTransferExchange(str_replace('https://www.namesilo.com','https://ote.namesilo.com',$o),$cmd,$p,$t);
 $legacyManagementExchange=$managementExchange;$managementExchange=static fn($o,$cmd,$p,$t)=>$legacyManagementExchange(str_replace('https://www.namesilo.com','https://ote.namesilo.com',$o),$cmd,$p,$t);
 use Illuminate\Support\Facades\{Cache,DB};
@@ -66,12 +67,19 @@ $refusal=static function()use(&$binding,$dnsExchange,$wire):DnsManagement {
         $reservation->refused=false;return $dnsExchange($o,$cmd,$p,$t);
     });$driver->useReservation($reservation);return $driver;
 };
-foreach([false,true] as $partial) {
-    [$d,$driver]=$setup('unsent-'.($partial?'partial':'first'),[$a]);$wire->next=0;
+foreach (['first','partial','legacy-partial'] as $scenario) {
+    $partial = $scenario !== 'first';
+    [$d,$driver]=$setup('unsent-'.$scenario,[$a]);$wire->next=0;
     $driver=$refusal();$op=$submit($d,$driver,'dns',['records'=>[$want,$add]]);$ms->route='apibatch';
     if($partial){$management->run($op->id,$driver,RequestOrigin::Background);Cache::flush();}
     $wire->fault='prewire';$management->run($op->id,$driver,RequestOrigin::Background);
     $stuck=$d->operations()->where('action','dns')->where('safe_code','management_definitely_unsent')->sole();$evidence=$stuck->attempt;
+    if ($scenario === 'legacy-partial') {
+        $evidence['send_state'] = 'possibly_sent';
+        $evidence['management_observation_attempts'] = 1;
+        $evidence['management_read_at'] = $evidence['dispatch_attempted_at'];
+        restoreLegacyManagement($stuck, $evidence);
+    }
     same('sealed',$evidence['seal'],'Unconsumed child retains its original seal');
     expect(!ManagementProgress::for($d)['dns']['pending'],'Proven-unsent child restores the existing save control');
     $wire->fault='';$ms->route='api';$driver=new DnsManagement($binding,$dnsExchange);Cache::flush();

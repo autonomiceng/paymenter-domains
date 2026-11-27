@@ -32,9 +32,14 @@ final class ManagementEvidence
     public static function idle(Operation $op): bool
     {
         $a=$op->attempt??[];if(!self::deferrals($a)){return false;}
-        if(($a['management_unsent']??false)===true){return $op->registrar_key==='namesilo'&&isset($op->policy['management'])&&$op->funding_basis==='non_billable_management'
-            &&in_array($op->state,['held','rejected'],true)&&($a['seal']??null)==='sealed'&&in_array($a['send_state']??null, $op->managementAttempt() ? ['definitely_unsent'] : ['possibly_sent'], true)
-            &&isset($a['management_claim'],$a['dispatch_attempted_at'])&&$op->provider_order_id===null&&!array_key_exists('management_reads',$a)&&!array_key_exists('management_ack',$a);}
+        if (($a['management_unsent'] ?? false) === true) {
+            // Retirement can project the original refusal without creating an attempt row.
+            $sendState = $op->managementAttempt()?->facts ? 'definitely_unsent' : 'possibly_sent';
+            return $op->registrar_key === 'namesilo' && isset($op->policy['management']) && $op->funding_basis === 'non_billable_management'
+                && in_array($op->state, ['held', 'rejected'], true) && ($a['seal'] ?? null) === 'sealed' && ($a['send_state'] ?? null) === $sendState
+                && isset($a['management_claim'], $a['dispatch_attempted_at']) && $op->provider_order_id === null
+                && !array_key_exists('management_reads', $a) && !array_key_exists('management_ack', $a);
+        }
         if(($a['management_test_unsent']??false)===true){return isset($op->policy['management'])&&$op->funding_basis==='non_billable_management'
             &&in_array($op->state,['held','rejected'],true)&&($a['seal']??null)==='sealed'&&($a['send_state']??null)==='definitely_unsent'
             &&$op->provider_order_id===null&&!array_key_exists('management_reads',$a)&&!array_key_exists('management_ack',$a);}
