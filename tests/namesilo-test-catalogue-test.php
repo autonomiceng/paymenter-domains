@@ -34,8 +34,9 @@ function curl_exec($h): bool {
     same('ote.namesilo.com',$url['host'],'Catalogue and checkout use only OTE');
     $GLOBALS['nsCatalogueCalls'][]=$command;
     if ($command === 'contactAdd') {
-        $fields = ['first_name','last_name','company','address','address2','city','state','zip','country','email','phone'];
-        $GLOBALS['nsCatalogueContact'] = array_combine($fields, array_values($p));
+        $fields = ['first_name'=>'fn', 'last_name'=>'ln', 'company'=>'cp', 'address'=>'ad', 'address2'=>'ad2',
+            'city'=>'cy', 'state'=>'st', 'zip'=>'zp', 'country'=>'ct', 'email'=>'em', 'phone'=>'ph'];
+        $GLOBALS['nsCatalogueContact'] = array_map(static fn ($field) => $p[$field], $fields);
     }
     $reply=match($command){
         'getPrices'=>['code'=>300,'com'=>$GLOBALS['nsCatalogueRow']??['registration'=>'10.00','renew'=>'12.00','transfer'=>'11.00'],
