@@ -226,14 +226,15 @@ final class OperationReconciliation
             return $op;
         });
     }
-    /** A successor can take over reconciliation while a timely observation still belongs to the sealed attempt. */
+    /** Read takeover preserves timely evidence. A rejection closes the attempt to new observations. */
     private function retainPositiveObservation(Operation $op, Domain $holding, Account $account, AcquisitionRead $read,
         AcquisitionObservation $observation): void
     {
         $domain = $observation->facts?->domain;
         $attempt = $read->attempt;
-        if (!$read->token || !$observation->observedAt || !$domain || !$domain->binding->matches($attempt->binding)
-            || $domain->name !== $attempt->query->name || $holding->domain !== $attempt->query->name
+        if ($op->state === 'rejected' || !$read->token || !$observation->observedAt || !$domain
+            || !$domain->binding->matches($attempt->binding) || $domain->name !== $attempt->query->name
+            || $holding->domain !== $attempt->query->name
             || $op->operation_key !== $attempt->operationKey || $op->authority_generation !== $attempt->authorityGeneration
             || $holding->authority_generation !== $attempt->authorityGeneration
             || $op->account_fingerprint !== $attempt->binding->fingerprint

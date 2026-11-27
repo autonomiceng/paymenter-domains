@@ -5,7 +5,7 @@ require __DIR__.'/Support/transfer-completion-namesilo-fixture.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationWriter, ReadToken, StepKey};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,PricingRule,RefundProof,RegistrarCheck,RuntimeSchema,StaffSettingsReview as Review,StaffSettingsWrites,TransferRejections};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,PricingRule,RefundProof,RegistrarCheck,RuntimeSchema,StaffSettingsReview as Review,StaffSettingsWrites,TransferPolling,TransferRejections};
 app()->instance(Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);
 $staff=commerceUser();$permissions=['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.enom_answer','admin.domains.manage','admin.invoices.update'];
 $role=App\Models\Role::create(['name'=>'Registrar answers','permissions'=>$permissions]);$staff->update(['role_id'=>$role->id]);
@@ -102,6 +102,40 @@ foreach ([true, false] as $checkFirst) {
             'A check finishing after the rejected transfer writes no status or schedule');
     }
 }
+// A timely ownership reply can wait for its finishing lock while staff close the transfer.
+$late = $rejected('support-late-ownership', true);
+$step = new StepKey('transfer', 1);
+$sealed = OperationAttempts::sealed((int) $late->id, $step);
+$credit = static fn () => App\Models\Credit::where('user_id', $user->id)->sum('amount');
+$schedule = DB::table('domains_runtime_operations')->where('operation_id', $late->id);
+$snapshot = static fn ($op) => [$op->state, $op->policy, $op->funding, (array) $schedule->first(), $credit()];
+$clock->instant = new DateTimeImmutable('@'.TransferPolling::schedule($late, $clock->now()->getTimestamp())['next_read_at']);
+$observe->fault = 'rejectowned';
+$observe->calls = [];
+$armed = true;
+$closedSnapshot = null;
+DB::connection()->beforeExecuting(static function (string $sql, array $bindings, $db) use (
+    &$armed, &$closedSnapshot, $late, $step, $observe, $clock, $settings, $review, $answer, $snapshot
+): void {
+    if (!$armed || $db->transactionLevel() !== 0 || !in_array('getDomainInfo', $observe->calls, true)
+        || !str_starts_with($sql, 'select * from "domains_operations"') || $bindings !== [$late->id]) { return; }
+    $armed = false;
+    $until = OperationAttempts::sealed((int) $late->id, $step)->readUntil;
+    expect($until !== null && $until > $clock->now(), 'The ownership reply arrived before the read expired');
+    $clock->instant = $until;
+    $settings->run($review($late), $answer($late), $clock->now());
+    $closed = $late->fresh();
+    expect(TransferRejections::proved($closed, $closed->domain) && isset($closed->funding['refund']),
+        'Staff settle the rejection and return the payment before the check takes its finishing lock');
+    $closedSnapshot = $snapshot($closed);
+});
+$finished = $reconcile->run($late->id);
+expect(!$armed, 'The staff answer ran between the ownership reply and the finishing lock');
+same(null, OperationAttempts::evidence((int) $late->id, $sealed->token->attemptId, 'observation'),
+    'A check finishing after the final rejection adds no ownership evidence');
+same($closedSnapshot, $snapshot($finished), 'The late check leaves the rejection, schedule and refund unchanged');
+same(null, OperationAttempts::sealed((int) $late->id, $step)->readToken, 'The late check releases its read');
+
 // Original-receipt returns use the existing idempotent gateway recovery after a lost reply.
 require __DIR__.'/Support/money-receipt.php';
 $gateway=App\Models\Gateway::create(['extension'=>'MoneyReceipt','name'=>'Registrar receipt fixture','type'=>'gateway','enabled'=>true]);
