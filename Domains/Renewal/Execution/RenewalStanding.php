@@ -2,6 +2,7 @@
 // Enom d1392a8 managed renewal execution; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Renewal\Execution;
+use Paymenter\Extensions\Servers\Domains\Money\Allocations\RenewalReservation;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{Action, RenewalCode};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
@@ -11,7 +12,7 @@ final class RenewalStanding
 {
     public function __construct(private readonly AccountBindings $bindings, private readonly RenewalAcceptance $accepted,
         private readonly WriteFeatures $features, private readonly Clock $clock) {}
-    public function current(Operation $op, array $l): array
+    public function current(Operation $op, array $l): RenewalReservation|array
     {
         $this->configured($l);
         if (($deadline=LateRenewalQuote::deadline($op)) !== null) {
@@ -21,11 +22,11 @@ final class RenewalStanding
         if ($l['domain']->renewal_policy['automatic_spend_paused'] ?? false) { throw new RenewalHold('renewal_spend_paused', 'Renewal spending paused.'); }
         if ($op->expected_expires_at > $this->clock->now()->modify('+10 years')) { throw new \DomainException('Renewal term too long.'); }
         $funding = RenewalFunding::requireCurrent($op, $l);
-        if ($op->funding_basis === 'paid_invoice') {
+        if ($funding instanceof RenewalReservation) {
             // A gateway refund can reduce available money without changing any reserved native posting.
             $peers = Operation::where('invoice_id', $op->invoice_id)->orderBy('id')->lockForUpdate()->get();
             $money = InvoiceMoney::lockedRecord($l, $op->invoice_id, $peers);
-            RenewalDecision::requireFunding($funding['invoice_total_minor'], InvoiceMoney::held($money));
+            RenewalDecision::requireFunding($funding->invoiceTotalMinor(), InvoiceMoney::held($money));
         }
         return $funding;
     }

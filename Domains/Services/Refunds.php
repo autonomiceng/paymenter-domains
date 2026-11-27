@@ -2,6 +2,7 @@
 // Enom 444f31c/d1392a8 Services/Refunds.php; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Money\Native\MoneyLockContext;
 use App\Enums\InvoiceTransactionStatus;
 use App\Models\{Credit, InvoiceTransaction, User};
 use Illuminate\Support\Facades\{Cache, DB, Schema};
@@ -148,7 +149,7 @@ final readonly class Refunds
      * @return int the new account credit in minor units */
     public function departLocked(array $l, Operation $op, int &$released = 0): int
     {
-        if (!MoneyDecisions::running() || ($l['advisory'] ?? true) || !$l['operations']->contains(static fn ($row) => $row === $op)
+        if (!MoneyLockContext::ownsFullHolding($l) || ($l['advisory'] ?? true) || !$l['operations']->contains(static fn ($row) => $row === $op)
             || $op->state !== 'rejected' || self::closedReceipts($op) === null || !FundsWaits::closedRenewal($op, $l['domain'])) {
             throw new \DomainException('Closed renewal proof unavailable.');
         }

@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
 // Column declarations adapted from Enom d2c55e2.
+use Paymenter\Extensions\Servers\Domains\Money\Allocations\RenewalAllocationSchema;
 use Illuminate\Database\Schema\Blueprint;
 use Paymenter\Extensions\Servers\Domains\Installation\{Installer, TableSchema};
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
 
-/** Holdings, renewal funding postings and accounts. Registry also lists OperationSchema on its own. */
+/** Holdings and registrar accounts. */
 final class FoundationSchema extends TableSchema
 {
     protected static function definitions(): array
@@ -46,14 +47,6 @@ final class FoundationSchema extends TableSchema
                 $t->unsignedBigInteger('adoption_id')->nullable();
                 $t->index(['server_id', 'id']);
             },
-            RenewalFundingLedger::TABLE => static function (Blueprint $t): void {
-                $t->unsignedBigInteger('invoice_item_id');
-                $t->unsignedTinyInteger('retry_number');
-                $t->enum('source', ['item', 'payment']);
-                $t->unsignedBigInteger('source_id');
-                $t->bigInteger('amount_minor');
-                $t->primary(['invoice_item_id', 'retry_number', 'source', 'source_id']);
-            },
             'domains_accounts' => static function (Blueprint $t): void {
                 $t->id();
                 $t->unsignedBigInteger('server_id');
@@ -73,13 +66,14 @@ final class FoundationSchema extends TableSchema
     }
 
     /**
-     * Fixtures and commerce install the holding foundation with its operations in one call; each part verifies its own
-     * tables. The two inventories are checked together first, so retained foundation tables never get new empty operation tables.
+     * Fixtures and commerce install the holding, operation and allocation schemas in one call. The inventories
+     * are checked together before any table is created.
      */
     public static function install(): void
     {
-        self::requireWhole([...self::tables(), ...OperationSchema::tables()], Installer::recovering());
+        self::requireWhole([...self::tables(), ...OperationSchema::tables(), ...RenewalAllocationSchema::tables()], Installer::recovering());
         parent::install();
         OperationSchema::install();
+        RenewalAllocationSchema::install();
     }
 }

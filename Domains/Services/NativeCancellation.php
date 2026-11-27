@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Money\Native\HoldingNativeLocks;
 use App\Models\{Invoice,InvoiceItem,Service,ServiceCancellation};
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\{DB,Schema};
@@ -100,8 +101,8 @@ final class NativeCancellation
         $write=static function()use($seed,$kind,$cancellation,$closing):void {
             $invoiceIds=InvoiceItem::where('reference_type',$seed->getMorphClass())->where('reference_id',$seed->id)->pluck('invoice_id')
                 ->merge(Operation::where('service_id',$seed->id)->whereNotNull('invoice_id')->pluck('invoice_id'))->unique()->sort()->values();
-            $invoices=Invoice::whereKey($invoiceIds)->orderBy('id')->lockForUpdate()->get();
-            $items=InvoiceItem::whereIn('invoice_id',$invoiceIds)->orderBy('id')->lockForUpdate()->get();
+            $invoices=HoldingNativeLocks::rows(Invoice::whereKey($invoiceIds));
+            $items=HoldingNativeLocks::rows(InvoiceItem::whereIn('invoice_id', $invoiceIds));
             [$orders, $services]=HoldingNativeLocks::lockServices($items->where('reference_type',$seed->getMorphClass())->pluck('reference_id')->push($seed->id)->unique()->all());
             $service=$services->firstWhere('id',$seed->id);
             if(!$service){self::refuse('This domain changed while you were saving. Reload the page and try again.',(int)$seed->id,$kind);}

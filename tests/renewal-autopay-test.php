@@ -5,6 +5,7 @@ require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/reconciliation-fixture.php';
 require_once __DIR__.'/Support/renewal-holding.php';
 require __DIR__.'/Support/staff-panel.php';
+use Paymenter\Extensions\Servers\Domains\Money\Allocations\{PostingSource, RenewalReservation};
 use App\Helpers\ExtensionHelper;
 use App\Models\{BillingAgreement, Credit, Gateway, Invoice, Notification, NotificationTemplate, ServiceCancellation};
 use Illuminate\Support\Facades\{DB, Log, Mail, Queue};
@@ -58,7 +59,7 @@ $holder = static function (string $suffix) use ($acquire, $clock, $agreement) {
     return $d;
 };
 $operation = static fn (Invoice $i) => Operation::where('invoice_id', $i->id)->sole();
-$paidProof = static function (Operation $op): array {
+$paidProof = static function (Operation $op): RenewalReservation {
     return DB::transaction(fn () => RenewalFunding::requireCurrent($op->fresh(), HoldingLocks::take($op->domain()->firstOrFail())));
 };
 $credit = Credit::create(['user_id'=>$user->id, 'currency_code'=>'USD', 'amount'=>'0.00']);
@@ -82,7 +83,7 @@ same(1, count(DomainRenewalGateway::$calls), 'Issued scheduled invoice charges o
 same('paid', $i->fresh()->status, 'Successful native payment marks renewal invoice paid');
 same('submitted', $op->funding['auto_pay_result']['status'], 'Gateway acceptance is only submission');
 same('awaiting_payment', $op->state, 'Payment alone does not dispatch registrar renewal');
-same('paid_invoice', $paidProof($op)['basis'], 'Auto Pay uses existing paid-invoice funding path');
+same($op->invoice_id, $paidProof($op)->invoiceId, 'Auto Pay uses existing paid-invoice funding path');
 same($i->id, $billing->invoice($d->id)->id, 'Scheduler rerun returns existing invoice');
 same($i->id, $billing->invoice($d->id, $user)->id, 'Owner existing path returns same invoice');
 same(1, count(DomainRenewalGateway::$calls), 'Neither existing path charges again');
@@ -97,7 +98,9 @@ same('manual_renewal', $mo->funding['auto_pay']['reason'], 'Manual renewal never
 same($mi->id, $billing->invoice($manual->id)->id, 'Scheduled re-fetch cannot charge a manual invoice');
 ExtensionHelper::addPayment($mi, null, $mo->amount);
 $manualProof = $paidProof($mo); $autoProof = $paidProof($op);
-foreach (['basis','invoice_total_minor','succeeded_net_minor','currency'] as $key) { same($manualProof[$key], $autoProof[$key], 'Manual and automatic payment have identical funding semantics: '.$key); }
+same([$manualProof->invoiceTotalMinor(), array_sum($manualProof->postings(PostingSource::Payment))],
+    [$autoProof->invoiceTotalMinor(), array_sum($autoProof->postings(PostingSource::Payment))],
+    'Manual and automatic payment fund the same exact total');
 same(1, count(DomainRenewalGateway::$calls), 'Manual invoice paid interactively');
 \Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireUnsent($mo->fresh(), $manual);
 \Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireUnsent($op->fresh(), $d);
@@ -124,7 +127,7 @@ $beforeCharge = static fn ($op) => ExtensionHelper::addPayment($op->invoice_id, 
 $ri = $billing->invoice($partial->id);
 same('8.40', DomainRenewalGateway::$calls[2][1], 'Native charge uses current invoice remainder after partial credit payment');
 same('paid', $ri->fresh()->status, 'Remainder payment fully funds invoice');
-same('paid_invoice', $paidProof($operation($ri))['basis'], 'Partial credit plus charge uses unchanged funding path');
+same($ri->id, $paidProof($operation($ri))->invoiceId, 'Partial credit plus charge uses unchanged funding path');
 
 // Native failure notification is exercised with its real helper and an enabled synthetic app template.
 NotificationTemplate::updateOrCreate(['key'=>'invoice_payment_failed'], ['enabled'=>true,
@@ -145,7 +148,7 @@ commerceReject(fn () => $cycles->retireUnpaid($failOp->id));
 commerceReject(fn () => $cycles->retireUnpaid($failOp->id));
 same('pending', $failInvoice->fresh()->status, 'Unknown charge cannot retire unpaid debt');
 ExtensionHelper::addPayment($failInvoice, null, $failOp->amount, transactionId:'late-unknown');
-same('paid_invoice', $paidProof($failOp)['basis'], 'Late lost-response settlement funds the original invoice');
+same($failOp->invoice_id, $paidProof($failOp)->invoiceId, 'Late lost-response settlement funds the original invoice');
 same('unknown', $failOp->fresh()->funding['auto_pay_result']['status'], 'Late settlement preserves synchronous result');
 commerceReject(fn () => $cycles->retireUnpaid($failOp->id));
 $billing->invoice($failed->id); same($count+1, count(DomainRenewalGateway::$calls), 'Failed charge never automatically retries');
@@ -264,7 +267,7 @@ ExtensionHelper::addPayment($si, null, $submittedOp->amount, transactionId:'asyn
 ExtensionHelper::addPayment($si, null, $submittedOp->amount, transactionId:'asynchronous-charge');
 same(['Auto Pay: submitted', 'paid'], [RequestFacts::for($submittedOp, $grants)['auto_pay'], $si->fresh()->status], 'Late success updates staff invoice state');
 same($result, $submittedOp->fresh()->funding['auto_pay_result'], 'Submission result remains write-once through settlement');
-same('paid_invoice', $paidProof($submittedOp)['basis'], 'Asynchronous payment reaches native funding');
+same($submittedOp->invoice_id, $paidProof($submittedOp)->invoiceId, 'Asynchronous payment reaches native funding');
 $billing->invoice($submitted->id); $billing->invoice($submitted->id);
 same($count, count(DomainRenewalGateway::$calls), 'Repeated settlement and scheduler delivery never recollect');
 
@@ -322,7 +325,7 @@ same(false, RenewalAutoPay::account(null), 'No owner: account Off');
 \Paymenter\Extensions\Servers\Domains\Services\MoneyWorkSchema::install(); DomainRenewalGateway::$mode = 'paid';
 $busy = $holder('busy'); $count = count(DomainRenewalGateway::$calls); $fails = 2;
 BillingAgreement::retrieved(static function () use (&$fails, $busy): void {
-    if ($fails < 1 || !\Paymenter\Extensions\Servers\Domains\Services\MoneyDecisions::running()
+    if ($fails < 1 || DB::transactionLevel() !== 1
         || !isset(Operation::where('domain_id', $busy->id)->where('action', 'renew')->first()?->funding['auto_pay'])) { return; }
     $fails--; $cause = new PDOException('Synthetic deadlock'); $cause->errorInfo = ['40001', 1213, 'Synthetic'];
     throw new Illuminate\Database\QueryException('sqlite', 'synthetic charge check', [], $cause);

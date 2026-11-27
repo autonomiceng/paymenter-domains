@@ -2,7 +2,7 @@
 // Synthetic shared checkout/adoption deadlines; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/renewal-attempts.php';
-use Paymenter\Extensions\Servers\Domains\Services\RenewalFundingLedger;
+use Paymenter\Extensions\Servers\Domains\Money\Allocations\{RenewalAllocationSchema, RenewalFundingLedger};
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
@@ -13,7 +13,7 @@ return static function ($op, $domain, $binding, Closure $compose, $clock, $state
         if ($waiting && str_contains($query->sql, '"users"')) { $waiting = false; $setNow($clock->now()->modify('+'.$wait.' seconds')); }
     });
     $reset = static function () use ($op, $original, $state, $setNow, $entry): void {
-        DB::table(RenewalFundingLedger::TABLE)->where(['invoice_item_id' => $op->invoice_item_id, 'retry_number' => $op->retry_number])->delete();
+        DB::table(RenewalAllocationSchema::TABLE)->where(['invoice_item_id' => $op->invoice_item_id, 'retry_number' => $op->retry_number])->delete();
         // Each case starts with no attempt history: evidence, then attempts, then the step.
         $steps = DB::table(OperationSchema::STEPS)->where('operation_id', $op->id)->pluck('id');
         DB::table(OperationSchema::EVIDENCE)->where('operation_id', $op->id)->delete();
@@ -27,7 +27,7 @@ return static function ($op, $domain, $binding, Closure $compose, $clock, $state
         expect(in_array($result->state, ['held','queued'], true), 'Deadline refusal keeps unsent renewal');
         same(null, renewalAttempt($result), 'Deadline refusal creates no execution/seal proof');
         same(null, $result->provider_order_id, 'Deadline refusal creates no order proof');
-        expect(RenewalFundingLedger::entries($result) === ['item' => [], 'payment' => []] && !isset($result->funding['seal']), 'Deadline refusal never seals funding');
+        expect(RenewalFundingLedger::reservation($result) === null && !isset($result->funding['seal']), 'Deadline refusal never seals funding');
         same(0, $state->writes, 'Deadline refusal sends no renewal');
         same($money, $nativeMoney(), 'Native finance unchanged on no-send');
     };

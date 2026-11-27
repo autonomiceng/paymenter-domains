@@ -2,13 +2,15 @@
 // Enom d1392a8 managed renewal execution; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Renewal\Execution;
+use Paymenter\Extensions\Servers\Domains\Money\Allocations\{RenewalFundingLedger, RenewalReservation};
+use Paymenter\Extensions\Servers\Domains\Money\Native\{MoneyDecisions, MoneyLockContext};
 use Illuminate\Support\Facades\{DB, Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AdmittedOperation, DateEvidence, ExpiryPrecision, Money, Query, RenewalCode, RenewalDecision as AdmissionDecision, RenewalRequest, RequestBudget, RequestContext, RequestOrigin, SendFailure, SendState};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AttemptToken, OperationAttempts, OperationWriter, SealTerms, StepKey, Transition, WireOutcome};
 use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\{RenewalUnsent, RenewalWriter};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, ComplimentaryCosts, EnomLateRenewal, EnomTestCallLimit, EnomTestCalls, EnomTestRenewal, EnomTestWriteReservation, EntryDeadline, FreshTransaction, FundsWaits, HoldingLocks, LateRenewalQuote, MoneyDecisions, MoneyRequest, ObligationAlerts, OperationClaims, ReadDeferred, RenewalAcceptance, RenewalAuthority, RenewalBusy, RenewalCycles, RenewalFunding, RenewalFundingLedger, RenewalHold, RenewalRefused, Runtime, WriteFeatures, WriteHeld, WriteMoney};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, ComplimentaryCosts, EnomLateRenewal, EnomTestCallLimit, EnomTestCalls, EnomTestRenewal, EnomTestWriteReservation, EntryDeadline, FreshTransaction, FundsWaits, HoldingLocks, LateRenewalQuote, MoneyRequest, ObligationAlerts, OperationClaims, ReadDeferred, RenewalAcceptance, RenewalAuthority, RenewalBusy, RenewalCycles, RenewalFunding, RenewalHold, RenewalRefused, Runtime, WriteFeatures, WriteHeld, WriteMoney};
 /** One sealed attempt. A durable row, request or admission decision is never a live grant. */
 final class RenewalExecution
 {
@@ -32,7 +34,7 @@ final class RenewalExecution
     private function runEntered(int $id, RenewalWriter $writer, \DateTimeImmutable $finishCap): Operation
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
-        $capture = $this->decide($seed, $id, fn (array $l) => $this->admit($l, $id));
+        $capture = $this->decide($seed, $id, fn (MoneyLockContext $locks) => $this->admit($locks, $id));
         if (!$capture) { return Operation::findOrFail($id); }
         [$capture, $admissionClaim] = $capture;
         // The account slot is reserved once. The second complete assessment refreshes every provider fact.
@@ -58,15 +60,16 @@ final class RenewalExecution
             return $descriptor?$this->dispatch($seed,$id,$descriptor,$reservedContext,$writer):Operation::findOrFail($id);
             }));
         } catch (\Throwable $error) {
-            $this->decide($seed, $id, fn (array $l) => $this->refuse($l, $id, $admissionClaim, $error, $refusals, $first, $ready));
+            $this->decide($seed, $id, fn (MoneyLockContext $locks) => $this->refuse($locks, $id, $admissionClaim, $error, $refusals, $first, $ready));
         }
         return Operation::findOrFail($id);
     }
     /** Admission under the holding locks: a claim revision and the renewal request, or null after any hold. */
-    private function admit(array $l, int $id): ?array
+    private function admit(MoneyLockContext $locks, int $id): ?array
     {
-        $op = $l['operations']->firstWhere('id', $id);
+        $op = $locks->operation($id);
         if ($op?->action !== 'renew') { return null; }
+        $l = $locks->facts();
         $claimed = OperationAttempts::current((int) $op->id, StepKey::renew(), true);
         $next = RenewalDecision::admission($op->state, $op->lease_expires_at, $claimed?->claiming($this->clock->now()) ? $claimed->claimUntil : null, $this->clock->now());
         if ($next === 'quarantine') {
@@ -126,7 +129,7 @@ final class RenewalExecution
         $reservedContext->requireReservedCapacity();$claim = $token->claimKey; $digest = hash('sha256', json_encode([$op->operation_key, $op->policy['renewal'], $op->payload], JSON_THROW_ON_ERROR));
         $now = $this->clock->now();
         // The sealed attempt records the post-seal revision; for a paid renewal it identifies the reserved postings.
-        if ($op->funding_basis === 'paid_invoice') { RenewalFundingLedger::reserve($op, $funding['entries']); $reservation = []; }
+        if ($funding instanceof RenewalReservation) { RenewalFundingLedger::reserve($funding); $reservation = []; }
         else { $reservation = ['funding' => [...($op->funding ?? []), 'claim' => $funding, 'seal' => $funding]]; }
         // The seal is the attempt row; the operation keeps its run state, start and request digest.
         $op->update([...$reservation, 'state' => 'running', 'started_at' => $now, 'lease_expires_at' => $now->modify('+360 seconds'),
@@ -136,19 +139,20 @@ final class RenewalExecution
         }
         $descriptor = new AdmittedOperation($binding, new Query($name, Action::Renew, (int) $op->term), $op->operation_key, $claim,
             $d->authority_generation, $claim, $digest, $ready->cost, new DateEvidence($op->base_expires_at->format('Y-m-d'), ExpiryPrecision::Date, 'renewal_base'));
-        $fresh = HoldingLocks::take($d); $this->grants[$descriptor] = [
-            'context' => $reservedContext, 'stamp' => $fresh['stamp'], 'id' => $id, 'revision' => $op->transition_revision,
+        $this->grants[$descriptor] = [
+            'context' => $reservedContext, 'stamp' => $l['stampForHeldRows'](), 'id' => $id, 'revision' => $op->transition_revision,
             'mode' => $ready->status->value, 'writer' => $writer, 'binding' => $binding, 'query' => $descriptor->query,
             'digest' => $digest, 'attempt' => $token,
         ];
         return $descriptor;
     }
     /** Records the hold for a claim that never reached the seal. */
-    private function refuse(array $l, int $id, array $admissionClaim, \Throwable $error, int $refusals, AdmissionDecision $first,
+    private function refuse(MoneyLockContext $locks, int $id, array $admissionClaim, \Throwable $error, int $refusals, AdmissionDecision $first,
         ?AdmissionDecision $ready): void
     {
-        $op = $l['operations']->firstWhere('id', $id); [$revision, $token] = $admissionClaim; $claim = OperationAttempts::attempt($token, true);
+        $op = $locks->operation($id); [$revision, $token] = $admissionClaim; $claim = OperationAttempts::attempt($token, true);
         if ($op && RenewalDecision::awaitsAdmission($op->state) && $op->transition_revision === $revision && $claim?->current && !$claim->sealed() && !$claim->released && RenewalCycles::registrarVirgin($op)) {
+            $l = $locks->facts();
             $reason = $error instanceof RenewalRefused ? $error->reason : ($error instanceof ReadDeferred?RenewalCode::Rate:RenewalCode::Changed);
             $retry = in_array($reason, [RenewalCode::Rate, RenewalCode::Reads, RenewalCode::Balance, RenewalCode::Changed, RenewalCode::Acceptance], true);
             $cap=EnomTestRenewal::enabled(AccountBindings::binding($l['account']))&&($error instanceof EnomTestCallLimit||EnomTestCalls::refusedSince($refusals));
@@ -171,8 +175,8 @@ final class RenewalExecution
         }
         finally { unset($this->grants[$descriptor]); }
         // A deferred reply record leaves the claim running; its lease ends and completion reads the registrar.
-        return $this->decide($seed, $id, function (array $l) use ($id, $descriptor, $token, $result, $failure, $context) {
-            $op = $l['operations']->firstWhere('id', $id);
+        return $this->decide($seed, $id, function (MoneyLockContext $locks) use ($id, $descriptor, $token, $result, $failure, $context) {
+            $op = $locks->operation($id);
             if (!$token instanceof AttemptToken || $op->state === 'succeeded') { return $op; }
             try { $result?->binding->requireMatch($descriptor->binding); } catch (\Throwable) { $result = null; }
             // The reply belongs to the exact attempt this grant sealed. A replaced attempt or an earlier reply projects nothing.
@@ -183,7 +187,7 @@ final class RenewalExecution
                 $context->deadline > $this->clock->now());
             // The recorded reply advances the renewal's revision once, whether or not its state changes.
             $op->update(['transition_revision' => $op->transition_revision + 1, 'provider_order_id' => $facts?->orderReference, ...$transition, 'lease_expires_at' => null,
-                'policy' => [...$op->policy, 'renewal_execution' => ['staff_alert' => true, 'reason' => $unsent ? 'renewal_definitely_unsent' : 'awaiting_unique_charge', 'refundable_later' => $unsent && $this->hasPayment($op, $l)]]]); return $op;
+                'policy' => [...$op->policy, 'renewal_execution' => ['staff_alert' => true, 'reason' => $unsent ? 'renewal_definitely_unsent' : 'awaiting_unique_charge', 'refundable_later' => $unsent && $this->hasPayment($op, $locks->facts())]]]); return $op;
         }) ?? Operation::findOrFail($id);
     }
     /** One locked step through the money runner. Contention twice changes nothing and queues the renewal; other errors throw. */
@@ -210,8 +214,8 @@ final class RenewalExecution
         try { FreshTransaction::run(function () use ($context, $grant, $writer) {
             $row = Operation::findOrFail($grant['id']); $l = HoldingLocks::take($row->domain()->firstOrFail()); $row = $l['operations']->firstWhere('id', $row->id);
             $funding = $this->standing->current($row, $l); $writer->requirePolicy($grant['binding'], $this->features, $this->accepted);
-            $matchesFunding = $row->funding_basis === 'paid_invoice'
-                ? RenewalFundingLedger::entries($row) === $funding['entries']
+            $matchesFunding = $funding instanceof RenewalReservation
+                ? RenewalFundingLedger::reservation($row) == $funding
                 : $row->funding['seal'] === $funding;
             // The sealed attempt row, not the JSON copy, carries the grant's claim, digest and revision.
             $attempt = OperationAttempts::attempt($grant['attempt'], true);

@@ -1,0 +1,124 @@
+<?php
+// MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+namespace Paymenter\Extensions\Servers\Domains\Money\Native;
+
+use Paymenter\Extensions\Servers\Domains\Services\{FreshTransaction, MoneyScopeChanged, NativeCancellation, NativeUserDeletion};
+
+use App\Models\{Invoice, InvoiceItem, InvoiceTransaction, Order, Plan, Product, Service, ServiceCancellation, TaxRate, User};
+use Illuminate\Database\Eloquent\{Builder, ModelNotFoundException};
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+
+/** Shared native prefix: owners, then invoices, then sorted orders and services. Payment rows are not in it: see transactions(). */
+final class HoldingNativeLocks
+{
+    public static function take(int $ownerId, int $serviceId, ?int $staffId = null, bool $advisory = false,
+        ?Domain $seed = null, ?int $expectedOrderId = null, bool $adoption = false, array $additionalServices = [], bool $completeInvoices = false, ?int $invoice = null): array
+    {
+        if (!$advisory && DB::transactionLevel() !== 1) { throw new \LogicException('Holding locks require the outer transaction.'); }
+        if ($invoice !== null && ($advisory || $adoption)) { throw new \LogicException('Invoice scope is only for locked money decisions.'); }
+        // Customer first, then invoices, as native checkout (Cart locks the user before inserting its invoice).
+        // Current locking reads also see invoices committed after an older native cron read view.
+        // All owner invoices precede ALL services, matching InvoiceFunding, including mixed invoices.
+        $opIds=$advisory?Operation::where('domain_id',$seed?->id)->orderByDesc('id')->limit(101)->pluck('id'):null;
+        if($advisory&&$opIds->count()>100){throw new \DomainException('Advisory operation history requires staff review.');}
+        $invoiceIds=$advisory?Operation::whereIn('id',$opIds)->whereNotNull('invoice_id')->limit(100)->pluck('invoice_id'):null;
+        $itemIds=$advisory?Operation::whereIn('id',$opIds)->limit(100)->pluck('invoice_item_id'):null;
+        // Adoption and unpaid retirement must see even a foreign-owner invoice referencing this service. Discover keys before invoices.
+        $related = $adoption ? InvoiceItem::where('reference_type', (new Service)->getMorphClass())->where('reference_id', $serviceId)->pluck('invoice_id') : collect();
+        $owner = !$advisory;
+        $users = User::whereKey(array_filter([$ownerId, $staffId]))->orderBy('id')->when($owner,fn($q)=>$q->lockForUpdate())->get();
+        if (!$advisory) { NativeUserDeletion::requireOwner($ownerId); }
+        $user = $users->firstWhere('id', $ownerId) ?? throw new \DomainException('Missing owner.');
+        $staff = $staffId === null ? null : $users->firstWhere('id', $staffId);
+        if ($staff) { $staff->setRelation('role', $staff->role()->when($owner,fn($q)=>$q->lockForUpdate())->first()); }
+        $user->setRelation('properties', $user->properties()->orderBy('id')->when($owner,fn($q)=>$q->lockForUpdate())->get());
+        $credit = $user->credits()->where('currency_code', 'USD')->when($owner,fn($q)=>$q->lockForUpdate())->first();
+        // Invoice scope locks one invoice by key; an invoice that moved to another owner ends the attempt.
+        $invoiceQuery = Invoice::query()->when($invoice !== null, fn ($q) => $q->whereKey($invoice), fn ($q) => $q->where(fn ($q) => $q->where('user_id', $user->id)->when($adoption, fn ($q) => $q->orWhereIn('id', $related))))->when($advisory,fn($q)=>$q->whereIn('id',$invoiceIds->merge($related)));
+        $invoices = self::rows($invoiceQuery, $advisory);
+        $ids = $invoices->pluck('id');
+        if ($invoice !== null && (int) $invoices->first()?->user_id !== (int) $user->id) { throw new MoneyScopeChanged('The scoped invoice changed owner.'); }
+        $itemQuery = InvoiceItem::where(fn ($q) => $q->whereIn('invoice_id', $ids)->when($adoption, fn ($q) => $q->orWhere(fn ($q) => $q->where('reference_type', (new Service)->getMorphClass())->where('reference_id', $serviceId))))->when($advisory&&!$completeInvoices,fn($q)=>$q->where(fn ($q) => $q->whereIn('id', $itemIds)->when($adoption, fn ($q) => $q->orWhere(fn ($q) => $q->where('reference_type', (new Service)->getMorphClass())->where('reference_id', $serviceId)))));
+        $items = self::rows($itemQuery, $advisory);
+        // A current item read must cover discovery, even if an older read view hid a foreign invoice.
+        // Missing invoice locks abort here, before any order/service/ledger locks; never acquire them late.
+        if ($adoption && $items->pluck('invoice_id')->diff($ids)->isNotEmpty()) { throw new \DomainException('Adoption invoice coverage changed. Verify again.'); }
+        $checkout = self::checkout($items, [$serviceId, ...$additionalServices], $advisory, $expectedOrderId === null ? [] : [$expectedOrderId]);
+        $orders = $checkout->orders; $services = $checkout->services;
+        $products = $checkout->products; $plans = $checkout->plans; $cancel = $checkout->cancellations;
+        $service = $services->firstWhere('id', $serviceId) ?? throw new \DomainException('Missing holding service.');
+        $product = $products->firstWhere('id', $service->product_id); $plan = $plans->firstWhere('id', $service->plan_id);
+        $configs = $service->configs()->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        $relatedProperties = \App\Models\Property::where('model_type', $service->getMorphClass())->whereIn('model_id', $additionalServices)->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        $properties = $service->properties()->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        if (!$product || !$plan) { throw new \DomainException('Missing holding route.'); }
+        $markers = $product->settings()->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        $upgrades = DB::table('product_upgrades')->where('product_id', $product->id)->orWhere('upgrade_id', $product->id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        $links = DB::table('config_option_products')->where('product_id', $product->id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        $tax = self::tax($user, $advisory);
+        return compact('user', 'staff', 'credit', 'invoices', 'items', 'orders', 'services', 'products', 'plans', 'service', 'product', 'plan', 'cancel', 'configs', 'properties', 'markers', 'upgrades', 'links', 'tax', 'opIds', 'relatedProperties');
+    }
+
+    /** A receipt starts at the invoice and never adds an owner lock behind it. */
+    public static function receipt(int $invoiceId): ReceiptLocks
+    {
+        $invoice = self::rows(Invoice::whereKey($invoiceId))->first()
+            ?? throw (new ModelNotFoundException)->setModel(Invoice::class, [$invoiceId]);
+        $items = self::rows(InvoiceItem::where('invoice_id', $invoiceId));
+        return new ReceiptLocks($invoice, $items, self::checkout($items));
+    }
+
+    public static function rows(Builder $query, bool $advisory = false): Collection
+    {
+        return $query->orderBy('id')->when(!$advisory, fn ($q) => $q->lockForUpdate())->get();
+    }
+
+    /** Invoice and item locks are already held. The native receipt never takes owner or credit locks here. */
+    public static function checkout(Collection $items, array $additionalServices = [], bool $advisory = false, array $expectedOrderIds = []): CheckoutLocks
+    {
+        $serviceIds = $items->where('reference_type', (new Service)->getMorphClass())->pluck('reference_id')->merge($additionalServices)->unique()->all();
+        [$orders, $services] = self::lockServices($serviceIds, $advisory, $expectedOrderIds);
+        $products = Product::whereKey($services->pluck('product_id'))->orderBy('id')->when(!$advisory, fn ($q) => $q->lockForUpdate())->get();
+        $plans = Plan::whereKey($services->pluck('plan_id'))->orderBy('id')->when(!$advisory, fn ($q) => $q->lockForUpdate())->get();
+        $cancel = ServiceCancellation::whereIn('service_id', $serviceIds)->orderBy('id')->when(!$advisory, fn ($q) => $q->lockForUpdate())->get();
+        return new CheckoutLocks($orders, $services, $products, $plans, NativeCancellation::withIntents($cancel, $serviceIds, $advisory));
+    }
+
+    /** Payment rows of invoices the caller already holds locked. Core inserts or settles a payment only under that
+     * invoice's row lock, so a current read needs no lock on invoice_transactions. A FreshTransaction reads them plainly
+     * (READ COMMITTED). A caller that joins a core transaction, such as the cron's single run, has a read view that can
+     * predate the invoice lock; only a locking read is current there, so it keeps one, taken last. Receipts never get here. */
+    public static function transactions($invoiceIds, bool $advisory = false): \Illuminate\Support\Collection
+    {
+        $current = $advisory || FreshTransaction::active();
+        $rows = InvoiceTransaction::whereIn('invoice_id', $invoiceIds)->when($advisory,fn($q)=>$q->limit(101))->orderBy('id')->when(!$current,fn($q)=>$q->lockForUpdate())->get();
+        if ($advisory && $rows->count() > 100) { throw new \DomainException('Advisory payment history requires staff review.'); }
+        return $rows;
+    }
+
+    /** Native Settings::tax selection, using current locked rows rather than a cached read view. */
+    public static function tax(\App\Models\User $user, bool $advisory = true): TaxRate|int
+    {
+        $country = $user->properties->where('key', 'country')->value('value');
+        if ($country) { $country = array_search($country, config('app.countries')) ?: $country; }
+        return TaxRate::whereIn('country', [$country, 'all'])->orderByRaw('country = ? desc', [$country])->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->first() ?? 0;
+    }
+
+    /** Shared current-read prefix for mixed invoices. Never acquire an order after a service. */
+    public static function lockServices(array $serviceIds, bool $advisory = false, array $expectedOrderIds = []): array
+    {
+        if (!$advisory && DB::transactionLevel() !== 1) { throw new \LogicException('Identity locks join the outer transaction.'); }
+        $orderIds = Service::whereKey($serviceIds)->pluck('order_id')->merge($expectedOrderIds)->filter()->unique();
+        $orders = Order::whereKey($orderIds)->orderBy('id')->when(!$advisory, fn ($q) => $q->lockForUpdate())->get();
+        $services = Service::whereKey($serviceIds)->orderBy('id')->when(!$advisory, fn ($q) => $q->lockForUpdate())->get();
+        foreach ($services as $service) {
+            if ($service->order_id !== null && !$orders->contains('id', $service->order_id)) {
+                throw new \DomainException('Holding native order changed.');
+            }
+        }
+        return [$orders, $services];
+    }
+}

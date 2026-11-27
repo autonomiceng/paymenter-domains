@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Installation;
 
+use Paymenter\Extensions\Servers\Domains\Money\Allocations\RenewalAllocationSchema;
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Catalogue\Pricing\PriceSchema;
 use Paymenter\Extensions\Servers\Domains\Catalogue\Publication\OfferSchema;
@@ -22,6 +23,7 @@ final class Registry
     public const SCHEMAS = [
         FoundationSchema::class,
         OperationSchema::class,
+        RenewalAllocationSchema::class,
         OfferSchema::class,
         PriceSchema::class,
         ContactProfileSchema::class,

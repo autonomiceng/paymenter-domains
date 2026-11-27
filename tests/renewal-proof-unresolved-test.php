@@ -5,7 +5,7 @@ require __DIR__.'/Support/renewal-execution.php';
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, MoneyDecisions, OperationReconciliation, PricingRule, RegistrarAnswers, StaffSettingsReview as Review, StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, OperationReconciliation, PricingRule, RegistrarAnswers, StaffSettingsReview as Review, StaffSettingsWrites};
 app()->instance(Clock::class, $clock);
 $staff = commerceUser();
 $staff->update(['role_id' => App\Models\Role::create(['name' => 'Renewal proof unresolved', 'permissions' => [
@@ -62,7 +62,7 @@ $liveExpected = [true, 0, $priorState, true, true, 0, 0];
 // its claim stays, and the next lagging check takes it over and counts the last poll. Not processed stays refused.
 $failing = 0;
 DB::listen(static function ($q) use (&$failing): void {
-    if ($failing > 0 && DB::transactionLevel() === 1 && !MoneyDecisions::running() && str_contains($q->sql, 'domains_operations')) {
+    if ($failing > 0 && DB::transactionLevel() === 1 && str_contains($q->sql, 'where "domains_operations"."id" = ?')) {
         $failing--; $e = new PDOException('Lock wait timeout exceeded'); $e->errorInfo = ['HY000', 1205, 'Lock wait timeout exceeded']; throw $e;
     }
 });

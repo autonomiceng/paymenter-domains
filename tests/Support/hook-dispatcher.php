@@ -12,8 +12,11 @@ $counts=static function(object $dispatcher):array {
     foreach($dispatcher->getRawListeners()as$event=>$listeners){foreach($listeners as$listener){
         $owner=null;$line='';
         if($listener instanceof Closure){
-            $file=(new ReflectionFunction($listener))->getFileName();
-            if($file&&str_contains($file,'/Domains/Services/')){$owner=basename($file,'.php');$line=' @'.(new ReflectionFunction($listener))->getStartLine();}
+            $reflection=new ReflectionFunction($listener);
+            $file=$reflection->getFileName();
+            if($file&&(str_contains($file,'/Domains/Services/')||str_contains($file,'/Domains/Money/Native/'))){
+                $owner=basename($file,'.php');$line=' @'.$reflection->getStartLine();
+            }
         }elseif(is_array($listener)&&is_string($listener[0])&&str_starts_with($listener[0],'Paymenter\\Extensions\\Servers\\Domains\\')){
             $owner=substr(strrchr($listener[0],'\\'),1);
         }

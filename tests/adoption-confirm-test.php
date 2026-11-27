@@ -4,6 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/Support/adoption-confirm.php';
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require_once __DIR__.'/Support/fixture-cases.php';
+use Paymenter\Extensions\Servers\Domains\Money\Allocations\RenewalReservation;
 use App\Models\{Invoice, InvoiceItem, Order, Product, Server, Service, ServiceCancellation};
 use Illuminate\Support\Facades\{DB, Queue};
 use Paymenter\Extensions\Servers\Domains\Data\{Money, RenewalRequest};
@@ -114,7 +115,9 @@ $op = Operation::create(['domain_id' => $d->id, 'service_id' => $d->service_id, 
         'product_id' => (int) $service->product_id, 'annual_plan_id' => (int) $service->plan_id, 'user_id' => (int) $service->user_id, 'order_id' => (int) $service->order_id]]]);
 $l = DB::transaction(fn () => HoldingLocks::take($d));
 $counterfactual = $l; $counterfactual['adoption'] = clone $a; $counterfactual['adoption']->do_not_renew = false; $counterfactual['cancel'] = collect();
-expect(RenewalFunding::requireCurrent($op, $counterfactual)['basis'] === 'paid_invoice', 'Funded fixture has no independent funding refusal masking DNR');
+$reservation = RenewalFunding::requireCurrent($op, $counterfactual);
+expect($reservation instanceof RenewalReservation, 'Funded fixture has no independent funding refusal masking DNR');
+same($op->fresh()->retry_number, $reservation->retryNumber, 'New paid renewal uses its stored attempt number');
 try {
     RenewalFunding::requireCurrent($op, $l);
     throw new LogicException('Funded issued execution admitted a stopped renewal');

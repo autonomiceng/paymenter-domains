@@ -2,6 +2,7 @@
 // Enom 444f31c/d1392a8 renewal funding; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Money\Allocations\{PostingSource, RenewalAllocation, RenewalReservation};
 use App\Enums\InvoiceTransactionStatus;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalDecision;
@@ -49,7 +50,7 @@ final class RenewalFunding
                 || RenewalCycles::moneyMoved($l, $other->invoice_id)) && !RefundPayment::retiredSettled($other, $l)) { throw new \DomainException('Retired renewal received financial activity.'); }
         }
     }
-    public static function requireCurrent(Operation $op, array $l, bool $sent = false): array
+    public static function requireCurrent(Operation $op, array $l, bool $sent = false): RenewalReservation|array
     {
         self::requireAuthority($op,$l,$sent);$d=$l['domain'];$r=$op->policy['renewal']??[];
         if ($op->funding_basis === 'complimentary') {
@@ -72,18 +73,17 @@ final class RenewalFunding
             || PricingRule::minor($item->price) !== PricingRule::minor($op->amount)) { throw new \DomainException('Renewal invoice authority changed.'); }
         $refusal = RenewalDecision::invoiceRefusal($invoice->due_at?->format('Y-m-d'), $op->policy['calendar']['due'] ?? null, $invoice->status);
         if ($refusal !== null) { throw new RenewalHold($refusal, 'Renewal invoice authority changed.'); }
-        $items = [];
+        $allocations = [];
         foreach ($l['items']->where('invoice_id', $invoice->id) as $row) {
             if (!ctype_digit((string) $row->quantity) || (int) $row->quantity < 1) { throw new \DomainException('Invalid renewal invoice.'); }
-            $items[(int) $row->id] = PricingRule::minor($row->price) * (int) $row->quantity;
+            $allocations[] = new RenewalAllocation(PostingSource::Item, (int) $row->id, PricingRule::minor($row->price) * (int) $row->quantity);
         }
-        $payments = self::payments($op, $l);
-        $total = array_sum($items);
-        $paid = array_sum($payments);
-        RenewalDecision::requireFunding($total, $paid);
-        return ['basis' => 'paid_invoice', 'invoice_id' => $invoice->id, 'invoice_item_id' => $item->id,
-            'invoice_total_minor' => $total, 'succeeded_net_minor' => $paid, 'transaction_ids' => array_keys($payments),
-            'entries' => ['item' => $items, 'payment' => $payments], 'currency' => 'USD'];
+        foreach (self::payments($op, $l) as $id => $amount) {
+            $allocations[] = new RenewalAllocation(PostingSource::Payment, $id, $amount);
+        }
+        $reservation = RenewalReservation::forOperation($op, $allocations);
+        RenewalDecision::requireFunding($reservation->invoiceTotalMinor(), array_sum($reservation->postings(PostingSource::Payment)));
+        return $reservation;
     }
 
     /** Signed minor amounts by native posting id, from the same locked invoice facts. */

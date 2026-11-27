@@ -2,10 +2,11 @@
 // Enom d1392a8 renewal completion; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Renewal\Execution;
+use Paymenter\Extensions\Servers\Domains\Money\Native\{MoneyDecisions, MoneyLockContext};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CapturedChargeReview, ComplimentaryCosts, ComplimentaryInvoices, EnomBillZones, EnomTestCallLimit, EntryDeadline, FreshTransaction, HistoryResumption, HoldingLocks, HoldingObservationWork, MoneyDecisions, MoneyOutcome, MoneyRequest, ObservationProjection, OperationClaims, OperationReconciliation, ReadDeferred, ReconciliationEvidence, RegistrarCheck, RenewalBusy, RenewalFunding, Runtime, StaffOperationReview, StaffReviewRefused};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CapturedChargeReview, ComplimentaryCosts, ComplimentaryInvoices, EnomBillZones, EnomTestCallLimit, EntryDeadline, FreshTransaction, HistoryResumption, HoldingLocks, HoldingObservationWork, MoneyOutcome, MoneyRequest, ObservationProjection, OperationClaims, OperationReconciliation, ReadDeferred, ReconciliationEvidence, RegistrarCheck, RenewalBusy, RenewalFunding, Runtime, StaffOperationReview, StaffReviewRefused};
 /** Bounded observation of the original sealed renewal. Never retries, refunds or invents expiry. */
 final readonly class RenewalCompletion
 {
@@ -20,11 +21,12 @@ final readonly class RenewalCompletion
     private function runEntered(int $id, \DateTimeImmutable $deadline, RegistrarCheck $check, bool $staff): Operation
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
-        $capture = $this->decide($seed, $id, function (array $l) use ($id, $check, $staff, $deadline) {
-            $op = $l['operations']->firstWhere('id', $id);
+        $capture = $this->decide($seed, $id, function (MoneyLockContext $locks) use ($id, $check, $staff, $deadline) {
+            $op = $locks->operation($id);
             if (!$op || !$this->eligible($op) || self::capturedChargeHeld($op)) { return null; }
             // One registrar check at a time per attempt: another check (staff, cron or retry) waits while this one runs.
             if (RenewalProof::running($op, $this->clock->now())) { if ($staff) { throw new StaffReviewRefused(MoneyDecisions::BUSY); } return null; }
+            $l = $locks->facts();
             $check->capture($op);
             $financial=CapturedChargeReview::hasProof($op);
             $policy = $op->policy; $policy['renewal_execution'] = ['staff_alert' => true, 'reason' => ($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT ? 'poll_limit_reached' : 'original_attempt_unresolved', 'refundable_later' => false];
@@ -46,7 +48,7 @@ final readonly class RenewalCompletion
                 $read=$financial?CapturedChargeReview::reserve($op,$this->clock):null;
             } catch (\PDOException|RenewalBusy $e) { throw $e; } catch (\Throwable) { return null; }
             $readProof = RenewalProof::open($op, $attempt, $deadline, $this->clock);
-            return [$attempt, HoldingLocks::take($l['domain'])['stamp'], $read, $readProof];
+            return [$attempt, $l['stampForHeldRows'](), $read, $readProof];
         }, $staff);
         if (!$capture) { return Operation::findOrFail($id); }
         [$attempt, $stamp,$financialRead,$saved] = $capture; $proof = null; $covered = false; $autoRenewConfirmed = false; $autoRenewUnconfirmed = $attempt->binding->registrarKey === 'namesilo'; $scan = null; $sample = null;
@@ -80,8 +82,8 @@ final readonly class RenewalCompletion
         try {
         // A check with nothing to project still releases its claim.
         if (!$financialRead && !$covered && !$autoRenewUnconfirmed && !$autoRenewConfirmed && !$ran) { return Operation::findOrFail($id); }
-        return $this->decide($seed, $id, function (array $l) use ($id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed,$financialRead,$check,$scan,$ran,$saved) {
-            $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
+        return $this->decide($seed, $id, function (MoneyLockContext $locks) use ($id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed,$financialRead,$check,$scan,$ran,$saved) {
+            $op = $locks->operation($id); $d = $locks->domain(); $l = $locks->facts();
             if (!$op || !$this->eligible($op) || $l['stamp'] !== $stamp || ($proof && $proof['provider_domain_id'] !== $d->provider_domain_id)) { return $op; }
             try { $this->bindings->requireReadableLocked($l['server'], $l['account']); RenewalFunding::requireCurrent($op, $l, true); }
             catch (\PDOException|RenewalBusy $e) { throw $e; } catch (\Throwable) { return $op; }
