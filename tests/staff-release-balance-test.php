@@ -243,7 +243,7 @@ config(['domains.enom_writes.registration'=>true]);$unclaimed=$new(placeholderCo
 config(['domains.enom_writes.registration'=>false]);$unclaimed=$claims->holdUnclaimed($unclaimed->id,'usd_balance_required');
 App\Models\Invoice::whereKey($unclaimed->invoice_id)->update(['status'=>'pending']);
 expect(!\Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::candidate($unclaimed->fresh()),'Unpaid pre-claim row never promises an automatic send');
-$clock->instant=$clock->now()->modify('+900 seconds');CarbonCarbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
+$clock->instant=$clock->now()->modify('+900 seconds');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
 $claims->readmitBalance((int)$unclaimed->id);
 expect(\Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResult::continuation($unclaimed)->dueAt>$clock->now()->getTimestamp(),'Unpaid pre-claim retry defers instead of remaining overdue');
 Illuminate\Support\Facades\Auth::setUser($staff);$notice=RequestFacts::notice($unclaimed->fresh());

@@ -30,6 +30,7 @@ final class BalanceRetries
     public static function legacyHold(Operation $op): bool
     {
         return $op->state==='held'&&$op->safe_code===self::LEGACY_CODE&&!isset($op->policy['balance_retry']['window_at'])
+            &&AcquisitionResult::continuation($op)?->lane === AcquisitionLane::BalanceWait
             &&($prior=$op->acquisitionAttemptFacts())!==null&&!$prior->sealed()&&AcquisitionRetryProof::releasedForReadmission($op,$prior)
             &&($op->action!=='register'||!AcquisitionRetryProof::catalogueRetry($op));
     }
@@ -53,7 +54,8 @@ final class BalanceRetries
     /** Called with the domain and operation locked, after a definitely-unsent finish. */
     public static function held(Operation $op,\DateTimeImmutable $now,?Money $cost=null,bool $confirmedShortfall=false): bool
     {
-        if (!in_array($op->safe_code, [...self::INITIAL_CODES, ...self::REVIEW_CODES, 'write_rate_limited', self::LEGACY_CODE], true)
+        if ((!in_array($op->safe_code, [...self::INITIAL_CODES, ...self::REVIEW_CODES, 'write_rate_limited'], true)
+                && !self::legacyHold($op))
             || !self::supported($op) || !OperationClaims::balanceRefusalRetryable($op)) { return false; }
         $retry=BalanceRetry::held($op,$now,$cost);
         // Tries cannot bound reads: a long balance wait says nothing about read health, and a balance answer proves it.

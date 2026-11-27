@@ -262,7 +262,7 @@ final class OperationClaims
     {
         if ($op->safe_code === 'processing') { return; }
         if ($op->safe_code === 'registrar_price_increased' && PriceHoldRetries::schedule($op, $now)
-            || ContactStepRetries::candidate($op) && ContactStepRetries::schedule($op, $now)
+            || ContactStepRetries::schedule($op, $now)
             || BalanceRetries::held($op, $now, $cost, $shortfall)) { return; }
         if ($shortfall) {
             $start = AcquisitionResult::continuation($op, true)?->shortfallAt ?? $now;

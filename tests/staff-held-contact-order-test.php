@@ -149,7 +149,8 @@ foreach([
     $row=clone $op;$row->safe_code=$code;
     $notice=RequestFacts::notice($row);
     if($code==='registrar_price_missing'){
-        expect(str_contains($notice['title'],'It will retry automatically'),'A pending price check needs the system rather than a staff retry');
+        same(null, $notice['next_try'] ?? null, 'Changing a display reason cannot schedule a price check');
+        expect(!str_contains($notice['title'],'It will retry automatically'),'A price label cannot promise a retry owned by another lane');
     }else{expect(str_contains((string)$notice['body'],$owner),'The page names who fixes '.$code);}
     same($destination,$notice['link'],'The page leads to the repair for '.$code);
     if($code==='future_hold'){
@@ -161,7 +162,7 @@ foreach([
 }
 
 // Orders off is the only wait for an unsent contact hold: the pages lead to the Orders switch, Release waits for Orders
-// while Cancel and refund stays, and the tick holds it as Orders off so it goes out once they are on, without a try.
+// while Cancel and refund stays, and the gate preserves the contact retry already scheduled.
 $paused=$heldOrder('held-contact-paused-release-placeholder.com');
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
 $before=[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$paused->attempt];
@@ -176,11 +177,15 @@ same(Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::accountU
     Paymenter\Extensions\Servers\Domains\Admin\Support\DomainNotices::notice($paused->domain->fresh())['action']['url']??null,'The domain notice opens the registrar Orders switch');
 expect(RequestFacts::reason($paused)!==Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::operationReason($paused),'The saved contact cause is not shown while Orders are off');
 expect(!ContactStepRetries::readmit($paused->id,$clock),'The tick does not release while Orders are off');
-same(['held','processing',0],[$paused->fresh()->state,$paused->fresh()->safe_code,ContactStepRetries::tries($paused->fresh())],'The tick holds it as Orders off without spending a try');
+$savedRetry = AcquisitionResult::continuation($paused->fresh());
+same(['held',ContactProfileHold::CODE,0],[$paused->fresh()->state,$paused->fresh()->safe_code,ContactStepRetries::tries($paused->fresh())],'Orders leaves the original contact hold and spends no try');
 Auth::login($costStaff);
 same('Not charged yet',RequestFacts::for($paused->fresh())['cost'],'An unsent contact order held for Orders off has no missing registrar charge');
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
-expect(ContactStepRetries::readmit($paused->id,$clock),'It goes back by itself once Orders are on');
+expect(!ContactStepRetries::readmit($paused->id,$clock),'Orders on leaves the retained contact due time in force');
+same($savedRetry->dueAt, AcquisitionResult::continuation($paused->fresh())->dueAt, 'Turning Orders off and on preserves the due time');
+$clock->instant = $clock->now()->setTimestamp($savedRetry->dueAt);
+expect(ContactStepRetries::readmit($paused->id,$clock),'It goes back by itself once the saved contact retry is due');
 same(['queued',null],[$paused->fresh()->state,$paused->fresh()->safe_code],'Orders on puts the order back in the queue');
 same($before,[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$paused->fresh()->attempt],'Nothing was sent and money and unsent proof are kept');
 same('Not charged yet',RequestFacts::for($paused->fresh())['cost'],'The unsent order back in the queue has no missing registrar charge');
