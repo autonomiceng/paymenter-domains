@@ -225,13 +225,13 @@ final readonly class OperationWriter
     }
 
     /**
-     * Retains the first positive observation of a sealed attempt. Any reader of the attempt may append it,
+     * Retains the first positive observation of the current sealed attempt. Any reader of that attempt may append it,
      * even after a successor took the read claim, so it changes no claim or stamp.
      */
     public function recordObservation(AttemptToken $token, array $observation, \DateTimeImmutable $observedAt): Transition
     {
         self::requireTransaction(); $facts = OperationAttempts::attempt($token, true);
-        if (!$facts?->sealed()) { return Transition::Stale; }
+        if (!$facts?->current || !$facts->sealed()) { return Transition::Stale; }
         return $this->append($token->operationId, $token->attemptId, 'observation', 'registrar_read', 'positive', $observation, 'observation', $observedAt)
             ? Transition::Applied : Transition::Stale;
     }

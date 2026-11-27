@@ -16,7 +16,7 @@ use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{CataloguePreview,EnomT
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,EnomTestRegistration,DomainObservation,ObservationSchema,ObservationWork,OperationReconciliation,ReconciliationEvidence,RegistrarAnswers,RegistrarCheck,Refunds,RenewalReplacements,StaffOperationReview,StaffOperations,StaffSettingsReview,StaffSyncReview};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAttempt,RenewalCompletion};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts,OperationSchema,StepKey};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts,OperationSchema,OperationWriter,ReadToken,StepKey};
 use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory;
 use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 \Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
@@ -39,6 +39,27 @@ $history=$check->fresh()->policy['staff_actions'];same('read_finished',end($hist
 $preflight->cost='8.95';
 [$captured]=$prepare(placeholderComFixtureName('staff-captured-placeholder.com'),'captured');
 $original=$captured->attempt;
+$callCount = count($observation->calls);
+$arrangedSuccessor = false;
+$successor = null;
+$writer = new OperationWriter($clock);
+DB::listen(static function ($query) use ($captured, $observation, $callCount, $clock, $writer, &$arrangedSuccessor, &$successor): void {
+    if ($arrangedSuccessor || count($observation->calls) <= $callCount || DB::transactionLevel() === 0
+        || !str_contains($query->sql, 'from "domains_operations" where "domain_id"')) { return; }
+    $arrangedSuccessor = true;
+    $clock->instant = $clock->now()->modify('+'.OperationReconciliation::READ_SECONDS.' seconds');
+    $sealed = OperationAttempts::sealed((int) $captured->id, new StepKey('register', 1), true);
+    $successor = $writer->openRead($sealed->token, $clock->now()->modify('+1 minute'));
+});
+$reconcile->run($captured->id);
+expect($successor instanceof ReadToken, 'A successor can claim the read after the first provider reply and deadline');
+$proof = OperationAttempts::evidence((int) $captured->id, $successor->attempt->attemptId, 'observation');
+same([true, 'uncertain', $successor->token], [$proof['evidence']['owned'] ?? null, $captured->fresh()->state,
+    OperationAttempts::attempt($successor->attempt)->readToken], 'The former reader retains ownership evidence without settling or releasing its successor');
+DB::transaction(static function () use ($captured, $writer, $successor): void {
+    $captured->newQuery()->whereKey($captured->id)->lockForUpdate()->firstOrFail();
+    $writer->closeRead($successor);
+});
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$captured->id])->callAction('recheck')->assertNotified('Registrar checked');
 same('succeeded',$captured->fresh()->state,'Staff settles captured order without another purchase');
 same($original,array_diff_key($captured->fresh()->attempt,['reconciliation'=>true]),'Staff recovery preserves original unknown execution');

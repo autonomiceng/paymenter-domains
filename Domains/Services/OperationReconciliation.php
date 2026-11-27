@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Contracts\TransferPoller;
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence, Evidence, NameserverEvidence, RequestBudget, RequestContext, RequestOrigin, TransferStatus};
-use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter, ReadToken, RetainedAcquisition};
 use Paymenter\Extensions\Servers\Domains\Operations\Reconciliation\{AcquisitionObservation, AcquisitionRead, AcquisitionSettlement};
 use Paymenter\Extensions\Servers\Domains\Registrars\{Enom, NameSilo};
@@ -158,10 +158,8 @@ final class OperationReconciliation
             &&($attempt->historyAcceptance?->covers($attempt,$this->clock->now())??false)&&($check->context?->exchanges()??0)>0;
         if (!$callCapBlocked) {
             return $this->claims->locked($id,function($op,$domain,$all,$funding,$server,$account)use ($read, $readStarted, $historyRead, $attempt, $check, $scan, $observed):Operation {
+                $this->retainPositiveObservation($op, $domain, $account, $read, $observed);
                 if (!$this->matchesRead($op, $domain, $read->stamp, $read->token)) { return $op; }
-                if ($account->account_fingerprint === $attempt->binding->fingerprint) {
-                    $this->retainPositiveObservation($read, $observed);
-                }
                 $policy=TransferPolling::finished($op->policy,$readStarted);
                 if ($read->watch && $readStarted) {
                     $result = $read->followup && ($check->context?->completedReads() ?? 0) > 0 ? 'unknown' : 'unavailable';
@@ -196,6 +194,7 @@ final class OperationReconciliation
         return $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($read, $observation, $check, $readStarted): Operation {
             $attempt = $read->attempt;
             $token = $read->token;
+            $this->retainPositiveObservation($op, $domain, $account, $read, $observation);
             if (!$this->matchesRead($op, $domain, $read->stamp, $token)) { return $op; }
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account, $read->followup);
@@ -205,7 +204,6 @@ final class OperationReconciliation
                 if(TransferPolling::applies($op)){$p=TransferPolling::finished($op->policy,$readStarted);$p['reconciliation']['staff_alert']=true;$p['reconciliation']['reason']='transfer_authority_changed';$op->update(['policy'=>$p]);}
                 return $op;
             }
-            $this->retainPositiveObservation($read, $observation);
             $policy = TransferPolling::finished($op->policy,$readStarted); $policy['reconciliation']['polls'] = ($policy['reconciliation']['polls'] ?? 0) + 1; $check->counted = true;
             if ($observation->scan) { $policy['history_scan'] = $observation->scan->saved(); }
             $policy['reconciliation']['staff_alert']=true;
@@ -228,13 +226,21 @@ final class OperationReconciliation
             return $op;
         });
     }
-    /** The caller already checked the matching read. Its deadline governs settlement and when the proof was observed. */
-    private function retainPositiveObservation(AcquisitionRead $read, AcquisitionObservation $observation): void
+    /** A successor can take over reconciliation while a timely observation still belongs to the sealed attempt. */
+    private function retainPositiveObservation(Operation $op, Domain $holding, Account $account, AcquisitionRead $read,
+        AcquisitionObservation $observation): void
     {
         $domain = $observation->facts?->domain;
         $attempt = $read->attempt;
         if (!$read->token || !$observation->observedAt || !$domain || !$domain->binding->matches($attempt->binding)
-            || $domain->name !== $attempt->query->name) { return; }
+            || $domain->name !== $attempt->query->name || $holding->domain !== $attempt->query->name
+            || $op->operation_key !== $attempt->operationKey || $op->authority_generation !== $attempt->authorityGeneration
+            || $holding->authority_generation !== $attempt->authorityGeneration
+            || $op->account_fingerprint !== $attempt->binding->fingerprint
+            || $holding->account_fingerprint !== $attempt->binding->fingerprint) { return; }
+        try { $binding = AccountBindings::binding($account); }
+        catch (\DomainException|\InvalidArgumentException|\ValueError) { return; }
+        if (!$binding->matches($attempt->binding)) { return; }
         $expiry = $domain->expiry?->value;
         $expected = $attempt->expectedExpiry;
         if ($domain->owned === true || ($expiry !== null && $expected && substr($expiry, 0, 10) === substr($expected->value, 0, 10))) {
