@@ -8,7 +8,6 @@ use Illuminate\Support\Facades\{Auth, DB};
 use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionResult};
 use Paymenter\Extensions\Servers\Domains\Services\{ReconciliationEvidence, Runtime, RuntimeWork, StaffOperationReview, StaffOperations, TransferInputs};
 
 $nativeSuccessful = false;
@@ -114,7 +113,7 @@ foreach ($priceTransfers as $phase => $order) {
         // A seal is reconciled against its own bounds, even if a retained staff audit entry becomes unreadable or is absent.
         $policy = $order->getRawOriginal('policy');
         $withoutAudit = clone $order;
-        $withoutAudit->policy = array_diff_key($order->operationPolicy(), ['staff_actions' => true]);
+        $withoutAudit->policy = array_diff_key($order->policy, ['staff_actions' => true]);
         DB::table('domains_operations')->where('id', $order->id)->update(['policy' => $withoutAudit->getAttributes()['policy']]);
         try {
             $proof = ReconciliationEvidence::attempt($order->fresh(), $order->domain, $binding);
