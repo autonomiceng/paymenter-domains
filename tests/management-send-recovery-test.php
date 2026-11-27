@@ -3,7 +3,8 @@
 declare(strict_types=1);
 require __DIR__.'/Support/management-send-bound.php';
 use Illuminate\Support\Facades\{Cache, DB};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{ManagementEvidenceKind, OperationAttempts, OperationSchema};
+use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementAttempt;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{ManagementEvidenceKind, OperationAttempts, OperationSchema, OperationWriter};
 use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, ManagementEvidence, WriteFeatures};
 // Old sealed attempts cannot claim a zero balance from an incomplete history.
 [$d, $driver, $op] = $uncertain('bound-legacy');
@@ -47,6 +48,22 @@ try{
     expect(false,'Unreviewed legacy increment must refuse below the cap');
 }catch(DomainException $error){same('Reviewed legacy management recovery required.',$error->getMessage(),'Review gate rejects unreviewed increment');}
 same($unreviewedAttempt,$unreviewed->fresh()->attempt,'Unreviewed increment retains the sealed evidence');
+// Commit a legacy adoption after the facts query has already found no attempt.
+$adoptBetweenReads = true;
+$started = $unreviewed->fresh()->started_at;
+DB::listen(static function ($query) use (&$adoptBetweenReads, $unreviewed, $unreviewedAttempt, $clock, $started): void {
+    if (!$adoptBetweenReads || !str_contains($query->sql, OperationSchema::ATTEMPTS)) { return; }
+    $adoptBetweenReads = false;
+    DB::transaction(static function () use ($unreviewed, $unreviewedAttempt, $clock, $started): void {
+        DB::table('domains_operations')->where('id', $unreviewed->id)->lockForUpdate()->first(['id']);
+        (new OperationWriter($clock))->adoptManagement($unreviewed->id, new DateTimeImmutable($unreviewedAttempt['dispatch_attempted_at']),
+            $started, $unreviewedAttempt, []);
+    });
+});
+$racedAttempt = ManagementAttempt::many([$unreviewed->id])[$unreviewed->id]['projection'];
+same(false, $adoptBetweenReads, 'Legacy adoption commits between the projection reads');
+same(null, $racedAttempt, 'Evidence from a newly adopted attempt cannot produce an empty projection');
+same($unreviewedAttempt, $unreviewed->fresh()->attempt, 'A fresh read projects the adopted evidence');
 // Port resolution belongs to the same one-use audited read as provider observation.
 [$portDomain,$portDriver,$portOp]=$uncertain('bound-port-failure');
 $review=\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::class;
@@ -109,6 +126,8 @@ $state->fault = '';
 same('uncertain', $management->reconcile($op->id,$driver)->state, 'Slow status read can leave the correction unconfirmed');
 same($before+2,count($state->calls),'Exhausted automatic correction still makes a slow status read');
 $lastRecoveryRead = $op->fresh()->attempt['management_recovery_read'];
+same([1, $op->operation_key], [$lastRecoveryRead['recovery_number'], $lastRecoveryRead['operation_key']],
+    'The saved readback belongs to the first recovery of this operation');
 $state->fault = 'GetRenew';
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\OwnerPorts::class,new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts(static fn()=>$driver));
 $before=count($state->calls);

@@ -39,6 +39,8 @@ final readonly class ManagementAttempt
         $deferrals = [];
         $retirement = null;
         foreach ($rows as $row) {
+            // A legacy attempt can be adopted between the facts and evidence reads.
+            if (!$facts && $row['attempt_id'] !== 0) { return null; }
             if ($row['unreadable'] ?? false) { throw new DecryptException('Management attempt evidence is unreadable.'); }
             $proof = $row['evidence'];
             $kind = $row['kind'];

@@ -100,8 +100,10 @@ final class OperationAttempts
         if (!$operationIds) { return []; }
         $reserve = ManagementEvidenceKind::ReserveRead->value;
         $readback = ManagementEvidenceKind::Readback->value;
+        // Lock the aggregate's inputs too so the bounds cannot use an earlier transaction snapshot.
         $recovery = DB::table(OperationSchema::EVIDENCE)->whereIn('operation_id', $operationIds)
             ->where(fn ($q) => $q->where(['kind' => $reserve, 'outcome' => 'recovery'])->orWhere('kind', $readback))
+            ->when($lock, fn ($q) => $q->lockForUpdate())
             ->groupBy('attempt_id')->select('attempt_id')
             ->selectRaw('MIN(CASE WHEN kind = ? THEN id END) AS first_reservation', [$reserve])
             ->selectRaw('MAX(CASE WHEN kind = ? THEN id END) AS last_reservation', [$reserve])
