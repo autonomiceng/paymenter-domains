@@ -7,8 +7,8 @@ require_once __DIR__.'/Support/native-financial-snapshot.php';
 require __DIR__.'/Support/WireLimit.php';
 use App\Models\Credit;
 use Filament\Schemas\Schema;
-use Illuminate\Support\Facades\{Crypt, DB};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction;
+use Illuminate\Support\Facades\{Auth, Crypt, DB};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{EnomAnswerAction, RequestFacts};
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,ReadLimiter};
 use Paymenter\Extensions\Servers\Domains\Data\{Environment,ExecutionRecord,HistoryAcceptance};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
@@ -74,6 +74,18 @@ foreach(['accepted','not_processed','invalid_claim','expired_read','inherited_re
         $policy = $op->policy;
         $policy['status_check']['attempt_identity'] = EnomAnswers::identity($op);
         $op->update(['policy' => $policy]);
+        // The lost reply is now outside the TEST history window, where this check would ask NameSilo for an answer.
+        $clock->instant = $clock->now()->modify('+31 days');
+        $wireState->calls = [];
+        $op = $reconcile->run($op->id);
+        $viewer = Auth::user();
+        Auth::setUser($staff);
+        $notice = RequestFacts::notice($op);
+        if ($viewer !== null) { Auth::setUser($viewer); }
+        expect((bool) preg_match('/\b(?:saved|local|original)\b.*\battempt\b/i', ($notice['title'] ?? '').' '.($notice['body'] ?? '')),
+            'The staff notice gives the local refusal for a NameSilo lost reply');
+        same([null, null, false, []], [$notice['action'] ?? null, $notice['primary'] ?? null,
+            EnomAnswers::ready($op, $clock->now()), $wireState->calls], 'The refusal offers no support step and makes no registrar call');
         $snapshot = static fn () => [$op->fresh()->getRawOriginal(), $op->domain->fresh()->getRawOriginal(),
             Credit::where('user_id', $op->domain->user_id)->sum('amount'),
             OperationAttempts::sealed((int) $op->id, new StepKey('register', 1))];

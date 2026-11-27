@@ -12,7 +12,10 @@ use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAttempt, Rene
 /** One bounded read result, shared by background work, staff feedback and customer notices. */
 final class RegistrarCheck
 {
+    public const ADOPTION_REFUSED = 'attempt_adoption_refused';
+
     public ?RequestContext $context = null;
+    public bool $adoptionRefused = false;
     public ?string $deferred = null;
     public ?string $awaitingAnswer = null;
     public ?int $answerAfter = null;
@@ -79,7 +82,7 @@ final class RegistrarCheck
                 : ($op->policy['reconciliation']['polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT && (!$watch || !TransferPolling::expected($op));
 
             $transferNext = $op->policy['reconciliation']['next_at'] ?? null;
-            if ($watch && TransferPolling::expired($op, $now)) {
+            if ($watch && !$this->adoptionRefused && TransferPolling::expired($op, $now)) {
                 $next = TransferPolling::schedule($op, $now)['next_read_at'];
             } elseif (Schema::hasTable('domains_runtime_operations') && !$stopped && $op->state !== 'succeeded' && ($outcome === 'deferred' || $outcome === 'checked')) {
                 if ($watch) { $next = max($now + 60, (int) $transferNext); }
@@ -90,7 +93,7 @@ final class RegistrarCheck
                 }
             }
             self::saveResult($op, ['outcome' => $outcome, 'at' => $now, 'started' => $this->started, 'order' => $this->order,
-                'next_at' => $next, 'reason' => $this->deferred, 'attempt_identity' => $this->identity,
+                'next_at' => $next, 'reason' => $this->adoptionRefused ? self::ADOPTION_REFUSED : $this->deferred, 'attempt_identity' => $this->identity,
                 'read_attempted' => ($this->context?->exchanges() ?? 0) > 0 || self::attempted($op), 'facts' => $this->facts,
                 ...($this->awaitingAnswer !== null ? ['registrar' => $this->awaitingAnswer, 'answer_after' => $this->answerAfter] : [])]);
             return $op;
@@ -147,6 +150,9 @@ final class RegistrarCheck
     /** Plain words used everywhere this result appears. No provider payload enters the policy or UI. */
     public static function words(?array $check, bool $completed = false): array
     {
+        if (($check['reason'] ?? null) === self::ADOPTION_REFUSED) {
+            return ['title' => 'Paymenter could not verify the saved attempt', 'body' => null];
+        }
         $next = isset($check['next_at']) ? self::at((int) $check['next_at']) : null;
         return match ($check['outcome'] ?? null) {
             'awaiting_answer' => self::answerWords($check),
@@ -213,6 +219,9 @@ final class RegistrarCheck
                 $same = hash_equals(RegistrarAnswers::identity($op, $renewal), (string) $check['attempt_identity']);
             } catch (DecryptException) { return null; }
             if (!$same) { $check = null; }
+        }
+        if (($check['reason'] ?? null) === self::ADOPTION_REFUSED) {
+            return in_array($op->state, ['running', 'pending', 'uncertain', 'held'], true) ? $check : null;
         }
         // An Enom lost reply is read before staff ask Enom for a case.
         if ($op->action==='register'&&$op->registrar_key==='enom'&&in_array($op->state,['running','pending','uncertain'],true)

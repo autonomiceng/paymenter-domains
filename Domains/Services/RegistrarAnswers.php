@@ -54,7 +54,10 @@ class RegistrarAnswers
     public static function ready(Operation $op,\DateTimeImmutable $now): bool
     {
         if(!self::eligible($op,$now)){return false;}
-        try{$d=$op->domain()->firstOrFail();return self::readFirst($op,ReconciliationEvidence::attempt($op,$d,AccountBindings::binding(Account::where('server_id',$op->server_id)->sole())),$now);}
+        try{
+            if ($op->action !== 'renew' && !RetainedAcquisition::adoptable($op, $now)) { return false; }
+            $d=$op->domain()->firstOrFail();return self::readFirst($op,ReconciliationEvidence::attempt($op,$d,AccountBindings::binding(Account::where('server_id',$op->server_id)->sole())),$now);
+        }
         catch(\Throwable){return false;}
     }
     /** A sent Enom renewal that kept Enom's order number, with no proof or charge, whose checks stopped at the limit. Staff

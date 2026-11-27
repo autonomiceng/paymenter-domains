@@ -47,8 +47,9 @@ final class OperationReconciliation
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account, $followup);
                 $attempt = AcquisitionRead::originalEvidence($op, $domain, $binding);
-                if (!$attempt) {
-                    $this->unresolved($op, 'attempt_adoption_refused');
+                if (!$attempt || !RetainedAcquisition::adoptable($op, $this->clock->now())) {
+                    $this->unresolved($op, RegistrarCheck::ADOPTION_REFUSED);
+                    $check->adoptionRefused = true;
                     return null;
                 }
                 if (HistoryResumption::apply($op, $attempt, $this->clock->now())) { $op->refresh(); }
@@ -70,7 +71,8 @@ final class OperationReconciliation
                 $until = new \DateTimeImmutable('@'.$deadline);
                 $sealed = RetainedAcquisition::adopt($op, $this->attempts, $this->clock->now());
                 if (!$sealed?->sealed()) {
-                    $this->unresolved($op, 'attempt_adoption_refused');
+                    $this->unresolved($op, RegistrarCheck::ADOPTION_REFUSED);
+                    $check->adoptionRefused = true;
                     return null;
                 }
                 if ($deadline <= $now || $sealed->facts->reading($this->clock->now())) { return null; }
