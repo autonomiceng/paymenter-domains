@@ -35,7 +35,8 @@ final class AcquisitionRetryProof
     public static function capacityRetry(Operation $op): bool
     {
         $a=$op->attempt??[];$history=$a['test_call_refusals']??[];
-        return self::unsealed($op)&&isset($a['claim_key'],$a['capacity_deferrals'])&&is_array($a['capacity_deferrals'])
+        return self::unsealed($op)&&($a['send_state']??null)==='definitely_unsent'
+            &&isset($a['claim_key'],$a['capacity_deferrals'])&&is_array($a['capacity_deferrals'])
             &&count($a['capacity_deferrals'])<=5&&(!array_key_exists('test_call_refusals',$a)||self::testCallHistory($history))
             &&!array_diff(array_keys($a),['claim_key','seal','send_state','capacity_deferrals','test_call_refusals']);
     }

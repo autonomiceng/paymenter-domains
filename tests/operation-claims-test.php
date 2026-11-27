@@ -3,8 +3,9 @@
 declare(strict_types=1);
 require __DIR__.'/Support/operation-claims.php';
 require_once __DIR__.'/Support/fixture-cases.php';
+require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 use App\Models\Credit;
-use Illuminate\Support\Facades\{Cache, DB};
+use Illuminate\Support\Facades\{Cache, Crypt, DB};
 use Paymenter\Extensions\Servers\Domains\Data\Disposition;
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
@@ -44,6 +45,22 @@ $cases['attempt-authority'] = static function () use ($new, $engine, $writer): v
         $engine->execute($result->id);
         same($before + 1, $writer->calls, 'A restarted worker cannot send again');
     }
+};
+$cases['possibly-sent-capacity-retry'] = static function () use ($new, $claims, $clock): void {
+    $op = $new('capacity-prior-send.example.com');
+    [$claimed] = $claims->claim($op->id);
+    $attempt = [...$claimed->attempt, 'send_state' => 'possibly_sent',
+        'capacity_deferrals' => [$clock->now()->format(DATE_ATOM)]];
+    restoreAcquisitionFixture([...$claimed->getRawOriginal(), 'state' => 'queued', 'safe_code' => 'write_rate_limited',
+        'attempt' => Crypt::encryptString(json_encode($attempt, JSON_THROW_ON_ERROR)),
+        'funding' => Crypt::encryptString(json_encode($claimed->funding, JSON_THROW_ON_ERROR)),
+        'started_at' => OperationAttempts::at($claimed->started_at), 'request_fingerprint' => $claimed->request_fingerprint]);
+
+    $retry = $claims->claim($op->id);
+    $current = $op->fresh();
+    same([false, 'uncertain', 'prior_attempt', 'possibly_sent'],
+        [$retry !== null, $current->state, $current->safe_code, $current->attempt['send_state']],
+        'A legacy capacity deferral preserves possible send evidence and gives no worker another claim');
 };
 $cases['stale-claim-evidence'] = static function () use ($new, $engine, $preflight, $writer): void {
     $op = $new('stale-claim.example.com');
