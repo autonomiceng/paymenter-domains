@@ -289,14 +289,17 @@ class Operation extends Model
 
     private function updateAcquisition(Builder $query): bool
     {
-        if ($this->isDirty('state') && in_array($this->state, ['succeeded', 'rejected', 'disposed'], true)) {
-            return $this->getConnection()->transaction(function () use ($query): bool {
-                if (!$this->saveAcquisition($query)) { return false; }
-                AcquisitionResult::close($this);
-                return true;
-            });
+        if (!$this->isDirty('state') || !in_array($this->state, ['succeeded', 'rejected', 'disposed'], true)) {
+            return $this->saveAcquisition($query);
         }
-        return $this->saveAcquisition($query);
+
+        $connection = $this->getConnection();
+        $write = function () use ($query): bool {
+            if (!$this->saveAcquisition($query)) { return false; }
+            AcquisitionResult::close($this);
+            return true;
+        };
+        return $connection->transactionLevel() ? $write() : $connection->transaction($write);
     }
 
     private function saveAcquisition(Builder $query): bool

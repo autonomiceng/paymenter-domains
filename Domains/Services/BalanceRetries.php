@@ -30,7 +30,6 @@ final class BalanceRetries
     public static function legacyHold(Operation $op): bool
     {
         return $op->state==='held'&&$op->safe_code===self::LEGACY_CODE&&!isset($op->policy['balance_retry']['window_at'])
-            &&AcquisitionResult::continuation($op)?->lane === AcquisitionLane::BalanceWait
             &&($prior=$op->acquisitionAttemptFacts())!==null&&!$prior->sealed()&&AcquisitionRetryProof::releasedForReadmission($op,$prior)
             &&($op->action!=='register'||!AcquisitionRetryProof::catalogueRetry($op));
     }
