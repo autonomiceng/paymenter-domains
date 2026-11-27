@@ -53,12 +53,7 @@ trait ManagementRequests
         if (!preg_match('/^[a-f0-9]{64}$/D', $nonce) || !in_array($reason,['owner_request','staff_correction'],true)) { throw new \DomainException('Invalid management request identity.'); }
         $seed = Domain::findOrFail($id); $paid = in_array($action, ['privacy_purchase', 'privacy_renew'], true); $terms = null; $initial = null;
         if ($paid) {
-            [$request, $initial, $existing] = FreshTransaction::run(function () use ($seed, $actor, $action, $nonce, $driver) {
-                $l = HoldingLocks::take($seed, (int) $actor->id); $this->authority($l, (int) $actor->id, $action, $driver);
-                if($driver->capabilities()->privacy!==PrivacyMode::Paid){throw new \DomainException('Paid privacy unsupported.');}
-                $old = $l['operations']->firstWhere('operation_key', 'manage:'.$seed->id.':'.$nonce) ?? ManagementPrivacy::pending($l,$action);
-                return [new ManagementRequest(AccountBindings::binding($l['account']), 'manage:'.$seed->id.':'.$nonce, $seed->domain, $action, [], $seed->provider_domain_id), $l['stamp'], $old];
-            });
+            [$request, $initial, $existing] = $this->privacyRequest($seed, $actor, $action, $nonce, $driver);
             if ($existing) { if ($existing->action !== $action || (int)$existing->authorized_by !== (int)$actor->id) { throw new \DomainException('Management key reused.'); } return $existing; }
             $terms = $driver->billingTerms($request, new RequestContext($request->binding, RequestOrigin::Interactive, $deadline, new RequestBudget(10), $this->clock, Runtime::limiter()));
         }
@@ -110,6 +105,16 @@ trait ManagementRequests
             return ManagementSequence::create($data, $driver->prerequisite($action, $clean), $plan);
         });
     }
+    private function privacyRequest(Domain $seed, User $actor, string $action, string $nonce, ManagementProtocol $driver): array
+    {
+        return FreshTransaction::run(function () use ($seed, $actor, $action, $nonce, $driver) {
+            $l = HoldingLocks::take($seed, (int) $actor->id); $this->authority($l, (int) $actor->id, $action, $driver);
+            if($driver->capabilities()->privacy!==PrivacyMode::Paid){throw new \DomainException('Paid privacy unsupported.');}
+            $old = $l['operations']->firstWhere('operation_key', 'manage:'.$seed->id.':'.$nonce) ?? ManagementPrivacy::pending($l,$action);
+            return [new ManagementRequest(AccountBindings::binding($l['account']), 'manage:'.$seed->id.':'.$nonce, $seed->domain, $action, [], $seed->provider_domain_id), $l['stamp'], $old];
+        });
+    }
+
     private function planRequest(ManagementProtocol $driver, Domain $seed, User $actor, string $action,
         #[\SensitiveParameter] array $payload, string $nonce, \DateTimeImmutable $deadline, bool $paid, ?string $correction): array
     {

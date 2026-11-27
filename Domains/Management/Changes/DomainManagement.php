@@ -54,17 +54,7 @@ final class DomainManagement
         if (ManagementEvidence::recoverable($op)) { $op = $this->resumePreparation($seed, $id); }
         if(!isset($op->policy['management'])){throw new \DomainException('Not a management operation.');}
         if ($op->state === 'running' && (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now())) {
-            return FreshTransaction::run(function () use ($seed, $id): Operation {
-                $op = HoldingLocks::take($seed)['operations']->firstWhere('id', $id);
-                if ($op->state === 'running' && (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now())) {
-                    $facts = $op->managementAttempt()?->facts;
-                    if ($facts?->current && !$facts->sealed()) { $this->attempts->stop($op, $facts->token); }
-                    $op->update(['state'=>($op->attempt['seal']??null)==='sealed'?'uncertain':'held',
-                        'safe_code'=>'management_unconfirmed', ...($facts ? [] : ['lease_expires_at'=>null])]);
-                    ManagementEvidence::finishExhausted($op, $this->clock->now());
-                }
-                return $op;
-            });
+            return $this->expireRunning($seed, $id);
         }
         if (!in_array($op->state, ['queued', 'awaiting_payment'], true) || (($op->attempt ?? []) !== []&&!ManagementEvidence::retryable($op))) { return $op; }
         if ($op->funding_basis === 'paid_invoice' && \App\Models\Invoice::find($op->invoice_id)?->status !== 'paid') { return $op; }
@@ -109,6 +99,21 @@ final class DomainManagement
         } catch (\Throwable $error) {
             return $this->stopWorker($seed, $id, $driver, $token, $read, $error, $refusals);
         }
+    }
+
+    private function expireRunning(Domain $seed, int $id): Operation
+    {
+        return FreshTransaction::run(function () use ($seed, $id): Operation {
+            $op = HoldingLocks::take($seed)['operations']->firstWhere('id', $id);
+            if ($op->state === 'running' && (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now())) {
+                $facts = $op->managementAttempt()?->facts;
+                if ($facts?->current && !$facts->sealed()) { $this->attempts->stop($op, $facts->token); }
+                $op->update(['state'=>($op->attempt['seal']??null)==='sealed'?'uncertain':'held',
+                    'safe_code'=>'management_unconfirmed', ...($facts ? [] : ['lease_expires_at'=>null])]);
+                ManagementEvidence::finishExhausted($op, $this->clock->now());
+            }
+            return $op;
+        });
     }
 
     private function resumePreparation(Domain $seed, int $id): Operation

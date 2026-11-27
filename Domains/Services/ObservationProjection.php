@@ -86,7 +86,7 @@ final class ObservationProjection
     }
     public static function sections(Domain $d): array
     {
-        $sections=[]; $glue=[]; $reads=[]; $inventory=ObservationRecords::current($d);
+        $sections=[]; $glue=[]; $inventory=ObservationRecords::current($d);
         $snapshot=$d->observation['sections']['nameservers']??null;
         $snapshot=is_array($snapshot)&&self::matches($d,$snapshot)&&($snapshot['operation_key']??null)==='observation'?$snapshot:null;
         if ($snapshot) { $sections['nameservers']=$snapshot; }
@@ -110,22 +110,7 @@ final class ObservationProjection
             // Incomplete history cannot prove that acquisition nameservers are still current.
             $sections['nameservers']??=[];
         }
-        $visible = $ops->take(100);
-        Operation::loadManagementAttempts($visible);
-        foreach ($visible as $op) {
-            if ($overflow && !in_array($op->action,['glue_add','glue_update','glue_delete'],true)) { continue; }
-            try {
-                if ($op->authority_generation!==$d->authority_generation||!isset($op->policy['management'])||!ManagementEvidence::resolved($op,$d)) { continue; }
-                $confirmedReads=ManagementReadRecovery::reads($op);
-            } catch (\Illuminate\Contracts\Encryption\DecryptException) {
-                // Unreadable history supplies no evidence; ManagementProgress shows its own warning.
-                continue;
-            }
-            foreach ($confirmedReads as $read) {
-                if (($read['confirmed']??false)!==true || ($inventory && in_array($op->action,['dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'],true) && ($read['sequence']??0)<=$inventory['sequence'])) { continue; }
-                $reads[]=['op'=>$op,'read'=>$read];
-            }
-        }
+        $reads = self::managementReads($d, $ops->take(100), $overflow, $inventory);
         foreach ($d->observation['record_reads']??[] as $read) {
             if (($read['identity']??null)===ObservationRecords::identity($d) && is_string($read['at']??null) && (!$inventory || ($read['at']>=$inventory['at'] && ($read['sequence']??0)>$inventory['sequence']))) { $reads[]=['op'=>(object)['action'=>$read['action'],'id'=>PHP_INT_MAX],'read'=>$read]; }
         }
@@ -145,6 +130,27 @@ final class ObservationProjection
         if ($gap || count($glue)>GlueDiscoveryLimit::HOSTS) { unset($sections['dns'],$sections['srv'],$sections['ds']); }
         $sections['known_glue']=$glue; return $sections;
     }
+    private static function managementReads(Domain $d, iterable $visible, bool $overflow, ?array $inventory): array
+    {
+        $reads = [];
+        Operation::loadManagementAttempts($visible);
+        foreach ($visible as $op) {
+            if ($overflow && !in_array($op->action,['glue_add','glue_update','glue_delete'],true)) { continue; }
+            try {
+                if ($op->authority_generation!==$d->authority_generation||!isset($op->policy['management'])||!ManagementEvidence::resolved($op,$d)) { continue; }
+                $confirmedReads=ManagementReadRecovery::reads($op);
+            } catch (\Illuminate\Contracts\Encryption\DecryptException) {
+                // Unreadable history supplies no evidence; ManagementProgress shows its own warning.
+                continue;
+            }
+            foreach ($confirmedReads as $read) {
+                if (($read['confirmed']??false)!==true || ($inventory && in_array($op->action,['dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'],true) && ($read['sequence']??0)<=$inventory['sequence'])) { continue; }
+                $reads[]=['op'=>$op,'read'=>$read];
+            }
+        }
+        return $reads;
+    }
+
     /** UI evidence DTO: registrar reads only; public DNS cannot advance these states or times. */
     public static function recordStatus(Domain $d, \DateTimeImmutable $now): array
     {

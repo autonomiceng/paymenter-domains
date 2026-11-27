@@ -64,39 +64,42 @@ trait GuardsOperation
         static::updating(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::noteReturn($operation));
         static::updated(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::settle($operation));
         static::updated(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\RequestAlerts::changed($operation));
-        static::updating(static function (self $operation): void {
-            $before = $operation->getOriginal('policy') ?? []; $after = $operation->policy ?? [];
-            if (array_key_exists('contact_disposition', $before)
-                && (!array_key_exists('contact_disposition', $after) || $after['contact_disposition'] !== $before['contact_disposition'])) {
-                throw new \DomainException('Contact disposition is frozen.');
-            }
-            foreach (['staff_actions'=>100,'renewal_resumptions'=>20] as $key=>$limit) {
-                $history=$before[$key]??[]; $next=$after[$key]??[];
-                if(!is_array($history)||!is_array($next)||!array_is_list($next)||count($next)>$limit||count($next)<count($history)
-                    ||array_slice($next,0,count($history))!==$history){throw new \DomainException('Staff review history is append-only and bounded.');}
-            }
-            if(array_key_exists('renewal_replacement',$before)&&($after['renewal_replacement']??null)!==$before['renewal_replacement']){
-                throw new \DomainException('Renewal replacement review is retained.');
-            }
-            $history = $before['reconciliation_resumptions'] ?? []; $next = $after['reconciliation_resumptions'] ?? [];
-            if (!is_array($history) || !is_array($next) || !array_is_list($next) || count($next) > 20
-                || count($next) < count($history) || array_slice($next, 0, count($history)) !== $history) { throw new \DomainException('Reconciliation resumptions are append-only.'); }
-            if (array_key_exists('contact_readmissions', $before) || array_key_exists('contact_readmissions', $after)) {
-                $history = array_key_exists('contact_readmissions', $before) ? $before['contact_readmissions'] : []; $next = $after['contact_readmissions'] ?? null;
-                if (!is_array($history) || !array_is_list($history) || !is_array($next) || !array_is_list($next)
-                    || count($next) > 10 || count($next) < count($history) || array_slice($next, 0, count($history)) !== $history) {
-                    throw new \DomainException('Contact readmissions are append-only and bounded.');
-                }
-            }
-            self::guardAttempt($operation);
-            self::guardFunding($operation);
-            $old = $operation->getOriginal('attempt') ?? [];
-            $new = $operation->attempt ?? [];
-            if (($old['seal'] ?? null) === 'sealed' && ($new['seal'] ?? null) !== 'sealed') {
-                throw new \DomainException('Dispatch seals cannot be removed.');
-            }
-        });
+        static::updating(self::guardRetainedHistory(...));
         static::deleting(static function (): never { throw new \DomainException('Operation ledger rows are retained.'); });
+    }
+
+    private static function guardRetainedHistory(self $operation): void
+    {
+        $before = $operation->getOriginal('policy') ?? []; $after = $operation->policy ?? [];
+        if (array_key_exists('contact_disposition', $before)
+            && (!array_key_exists('contact_disposition', $after) || $after['contact_disposition'] !== $before['contact_disposition'])) {
+            throw new \DomainException('Contact disposition is frozen.');
+        }
+        foreach (['staff_actions'=>100,'renewal_resumptions'=>20] as $key=>$limit) {
+            $history=$before[$key]??[]; $next=$after[$key]??[];
+            if(!is_array($history)||!is_array($next)||!array_is_list($next)||count($next)>$limit||count($next)<count($history)
+                ||array_slice($next,0,count($history))!==$history){throw new \DomainException('Staff review history is append-only and bounded.');}
+        }
+        if(array_key_exists('renewal_replacement',$before)&&($after['renewal_replacement']??null)!==$before['renewal_replacement']){
+            throw new \DomainException('Renewal replacement review is retained.');
+        }
+        $history = $before['reconciliation_resumptions'] ?? []; $next = $after['reconciliation_resumptions'] ?? [];
+        if (!is_array($history) || !is_array($next) || !array_is_list($next) || count($next) > 20
+            || count($next) < count($history) || array_slice($next, 0, count($history)) !== $history) { throw new \DomainException('Reconciliation resumptions are append-only.'); }
+        if (array_key_exists('contact_readmissions', $before) || array_key_exists('contact_readmissions', $after)) {
+            $history = array_key_exists('contact_readmissions', $before) ? $before['contact_readmissions'] : []; $next = $after['contact_readmissions'] ?? null;
+            if (!is_array($history) || !array_is_list($history) || !is_array($next) || !array_is_list($next)
+                || count($next) > 10 || count($next) < count($history) || array_slice($next, 0, count($history)) !== $history) {
+                throw new \DomainException('Contact readmissions are append-only and bounded.');
+            }
+        }
+        self::guardAttempt($operation);
+        self::guardFunding($operation);
+        $old = $operation->getOriginal('attempt') ?? [];
+        $new = $operation->attempt ?? [];
+        if (($old['seal'] ?? null) === 'sealed' && ($new['seal'] ?? null) !== 'sealed') {
+            throw new \DomainException('Dispatch seals cannot be removed.');
+        }
     }
 
     private static function guardAttempt(self $operation): void
