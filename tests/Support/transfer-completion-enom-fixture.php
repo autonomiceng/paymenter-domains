@@ -17,7 +17,10 @@ $wire=new class($observe) implements Transport {
     public function send(EnomEnvironment $e, ReadCommand $command, array $p, string $uid, string $token, int $timeoutMs): string {
         same(0,DB::transactionLevel(),'Observation outside locks'); expect($timeoutMs>0 && $timeoutMs<=25000,'Bounded observation'); $s=$this->s;
         if($s->beforeSend){$hook=$s->beforeSend;$s->beforeSend=null;$hook();}
-        if($s->countSends){\Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimit::admit($e,$uid,$command->value);}
+        if ($s->countSends) {
+            \Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimit::admit(
+                Environment::from($e->value), $uid, $command->value);
+        }
         $s->calls[]=$command->value;
         if ($s->fault === 'down') { throw new RuntimeException('Synthetic outage'); }
         if ($s->during) { $hook=$s->during; $s->during=null; $hook(); }
