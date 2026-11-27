@@ -12,6 +12,7 @@ $liveTransferRuntime = true;
 require __DIR__.'/enom-live-transfer-test.php';
 $nativeSuccessful = false;
 
+$reset();
 $config = 'domains.enom_live.accounts.live-uid.daily_spend_limit_usd';
 config(['domains.enom_live.registration' => true, $config => '300.00']);
 $write('activate', ['registration' => true, 'renewal' => true, 'management' => false, 'transfer' => true, 'confirmed' => true]);
@@ -26,6 +27,10 @@ $setTime = static function (DateTimeImmutable $time) use ($clock): void {
 $wire = static function (bool $funded = true) use ($reset, $setupReply): void {
     $reset();
     $GLOBALS['enomWire']['reply'] = static function (array $form) use ($setupReply, $funded): string {
+        if ($form['Command'] === 'Purchase') {
+            return '<interface-response><Command>Purchase</Command><ErrCount>0</ErrCount><Done>true</Done>'
+                .'<RRPCode>200</RRPCode><OrderID>1234</OrderID><ExpirationDate>2027-10-21</ExpirationDate></interface-response>';
+        }
         $reply = $setupReply($form);
         return match ($form['Command']) {
             'Check' => str_replace('<RRPCode>211</RRPCode>', '<RRPCode>210</RRPCode>', $reply),
@@ -64,6 +69,8 @@ $day = $clock->now()->modify('+2 days');
 foreach (['funded', 'shortfall', 'deferred-live', 'deferred-expired', 'orders-scheduler', 'orders-job', 'orders-expired'] as $index => $case) {
     $setTime($day->modify('+'.(4 * $index).' days'));
     $wire();
+    installedOfferEvidence($binding, $clock, true);
+    DB::table('domains_runtime_turns')->where('server_id', $server->id)->update(['finished_at' => $clock->now()->getTimestamp()]);
     $cart = commerceCart($user);
     $name = placeholderComFixtureName('live-admission-'.$case.'-placeholder.com');
     commerceAdd($cart, $product, $name);
