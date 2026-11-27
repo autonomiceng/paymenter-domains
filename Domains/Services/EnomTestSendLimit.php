@@ -56,14 +56,13 @@ final class EnomTestSendLimit
             $catalogue=isset(self::$catalogue[$account])?CatalogueShare::limit($perDay,self::CATALOGUE_PERCENT):null;
             if($catalogue!==null){$command=self::CATALOGUE_MARK.$command;if(strlen($command)>32){throw new EnomTestCallLimit;}}
             if(isset(self::$checkoutHeadroom[$account])){$perDay=CatalogueShare::limit($perDay,self::$checkoutHeadroom[$account]);}
+            // Concurrent first use creates the row in autocommit before anyone locks it to count sends.
+            $row=DB::table(EnomTestSendLimitSchema::ACCOUNTS)->where('account',$account)->useWritePdo();
+            if(!(clone $row)->exists()){$row->insertOrIgnore(['account'=>$account]);}
             // A deadlock rolls back with nothing written, so the whole check is retried.
-            DB::transaction(static function()use($account,$command,$perDay,$perMinute,$catalogue):void {
-                $row=DB::table(EnomTestSendLimitSchema::ACCOUNTS)->where('account',$account);
-                // SQLite writes first to take its write lock before any count is read. MariaDB locks the row
-                // first: an insert that finds the row takes a shared lock, and two of those deadlock.
-                if(DB::getDriverName()==='sqlite'||!(clone $row)->lockForUpdate()->exists()){
-                    DB::table(EnomTestSendLimitSchema::ACCOUNTS)->insertOrIgnore(['account'=>$account]);
-                }
+            DB::transaction(static function()use($row,$account,$command,$perDay,$perMinute,$catalogue):void {
+                // SQLite needs a write to take its write lock before any count is read.
+                if(DB::getDriverName()==='sqlite'){(clone $row)->update(['account'=>$account]);}
                 (clone $row)->lockForUpdate()->sole();
                 $now=self::now();$sends=fn(int $seconds)=>DB::table(EnomTestSendLimitSchema::SENDS)->where('account',$account)->where('sent_at','>',$now-$seconds)->count();
                 if($sends(86400)>=$perDay||$sends(60)>=$perMinute||$catalogue!==null&&self::catalogueSends($account,$now)>=$catalogue){throw new EnomTestCallLimit('over_limit');}
