@@ -2,9 +2,10 @@
 // Synthetic support closure on native paid transfers; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/transfer-completion-namesilo-fixture.php';
+use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, StepKey};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,PricingRule,RefundProof,StaffSettingsReview as Review,StaffSettingsWrites,TransferRejections};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationWriter, ReadToken, StepKey};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,PricingRule,RefundProof,RegistrarCheck,RuntimeSchema,StaffSettingsReview as Review,StaffSettingsWrites,TransferRejections};
 app()->instance(Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);
 $staff=commerceUser();$permissions=['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.enom_answer','admin.domains.manage','admin.invoices.update'];
 $role=App\Models\Role::create(['name'=>'Registrar answers','permissions'=>$permissions]);$staff->update(['role_id'=>$role->id]);
@@ -70,9 +71,37 @@ commerceReject(fn()=>RefundProof::requireUnsent($op,$op->domain));
 commerceReject(fn()=>$op->update(['attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent']]));
 commerceReject(fn()=>$op->fresh()->update(['policy'=>array_diff_key($op->policy,['enom_answer'=>true])]));
 $writes=$state->calls;$engine->execute($op->id);same($writes,$state->calls,'Closure never repeats transferDomain');
-// A charged rejection also needs the same explicit support finality and settled refund.
-$charged=$rejected('support-charged',true);$settings->run($review($charged),$answer($charged),$clock->now());
-expect(TransferRejections::proved($charged->fresh(),$charged->domain->fresh()),'A failed charged order closes through support rather than guessed empty history');
+// The answer can close a charged transfer before or after an expired check finishes.
+RuntimeSchema::install();
+foreach ([true, false] as $checkFirst) {
+    $charged = $rejected($checkFirst ? 'support-check-first' : 'support-answer-first', true);
+    $check = new RegistrarCheck($clock);
+    $check->deferred = 'read_limit';
+    $writer = new OperationWriter($clock);
+    $until = $clock->now()->modify('+1 minute');
+    $read = DB::transaction(static function () use ($charged, $check, $writer, $until) {
+        $locked = $charged->newQuery()->whereKey($charged->id)->lockForUpdate()->firstOrFail();
+        $check->capture($locked);
+        $sealed = OperationAttempts::sealed((int) $locked->id, new StepKey('transfer', 1), true);
+        return $writer->openRead($sealed->token, $until);
+    });
+    expect($read instanceof ReadToken, 'The pending transfer owns the check before the answer');
+    $clock->instant = $until;
+    if ($checkFirst) {
+        $checked = $check->finish($charged, $read);
+        expect(isset($checked->policy['status_check']['next_at']), 'A check that finishes before the answer can schedule another read');
+    }
+    $settings->run($review($charged), $answer($charged), $clock->now());
+    $closed = $charged->fresh();
+    expect(TransferRejections::proved($closed, $closed->domain), 'The final answer settles the charged transfer and its refund');
+    if (!$checkFirst) {
+        $schedule = DB::table('domains_runtime_operations')->where('operation_id', $closed->id);
+        $before = [$closed->policy['status_check'], $schedule->value('due_at')];
+        $finished = $check->finish($closed, $read);
+        same($before, [$finished->policy['status_check'], $schedule->value('due_at')],
+            'A check finishing after the rejected transfer writes no status or schedule');
+    }
+}
 // Original-receipt returns use the existing idempotent gateway recovery after a lost reply.
 require __DIR__.'/Support/money-receipt.php';
 $gateway=App\Models\Gateway::create(['extension'=>'MoneyReceipt','name'=>'Registrar receipt fixture','type'=>'gateway','enabled'=>true]);

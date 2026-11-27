@@ -58,6 +58,7 @@ final class RegistrarCheck
                 if (!$writer->ownsRead($read, allowExpired: true)) { return $op; }
                 $writer->closeRead($read);
             }
+            if ($op->state === 'rejected' && $op->action === 'transfer' && $op->safe_code === TransferRejections::CODE) { return $op; }
             if ($this->identity===null || !hash_equals($this->identity,RegistrarAnswers::identity($op))) { return $op; }
             // A check, resume or answer saved after this check began is newer. This result must not replace it.
             $stored=$op->policy['status_check']??null;
