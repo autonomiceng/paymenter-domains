@@ -395,8 +395,9 @@ final class RequestFacts
     /** When a timed retry runs next, in the viewer's time zone like every other time here. Nothing once it is due: the next tick takes it. */
     private static function nextTry(Operation $op): ?int
     {
-        if (!BalanceRetries::pending($op)) { return null; }
-        $due=(int)\Illuminate\Support\Facades\DB::table('domains_runtime_operations')->where('operation_id',$op->id)->value('due_at');
+        $continuation = \Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResult::continuation($op);
+        if ($continuation?->lane !== \Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionLane::BalanceWait) { return null; }
+        $due = $continuation->dueAt;
         return $due>app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()?$due:null;
     }
     /** Only a financially confirmed, nameserver-only registration fallback needs no staff task. */

@@ -41,8 +41,12 @@ final readonly class AcquisitionDispatch
                 ContactSetup::requireReady($op);
                 $preflight?->requireAtSeal($op, $domain, $ready);
                 $writer?->requireAtSeal($op, $domain, $ready);
-                $wire?->requireReservedCapacity();$now = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'));
+                $now = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'));
                 $ready->requireCurrent($binding, AcquisitionAuthority::query($op, $domain), AcquisitionAuthority::payloadDigest($op), $now);
+                if (\Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::active($op)) {
+                    AcquisitionResult::clearShortfall($op);
+                }
+                $wire?->requireReservedCapacity();
                 $window = AcquisitionResult::window($op, true) ?? throw new \DomainException('Missing acquisition window.');
                 if (!$window->fits($now)) { throw new WriteHeld($window->blockedReason($now)); }
                 $lastSend = min($window->end,
@@ -59,14 +63,12 @@ final readonly class AcquisitionDispatch
                         ? 'processing' : 'seal_authority_invalid');
                 $this->releasePreSeal($claimed);
                 $op->reloadAcquisitionAttempt();
-                $op->update(['state' => 'held', 'safe_code' => $reason, 'lease_expires_at' => null]); return null;
+                $op->update(['state' => 'held', 'safe_code' => $reason, 'lease_expires_at' => null]);
+                \Paymenter\Extensions\Servers\Domains\Services\OperationClaims::recordHold($op, $this->clock->now());
+                return null;
             }
             $until = min($lastSend, $op->lease_expires_at, $ready->validUntil, $wire?->deadline ?? $lastSend, $cutoff ?? $lastSend, $window->effectiveEnd());
             $this->persistSeal($op, $claimed, $ready, $until, $paid, $window);
-            // A retry's backoff paces only this send. Once it may be sent, status checks keep their own schedule.
-            if (array_key_exists('balance_retry', $op->policy ?? [])) {
-                DB::table('domains_runtime_operations')->where('operation_id', $op->id)->where('due_at', '>', $now->getTimestamp())->update(['due_at' => $now->getTimestamp()]);
-            }
             return $op;
         });
     }

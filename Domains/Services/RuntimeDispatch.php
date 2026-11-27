@@ -2,9 +2,10 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionRetryProof;
+use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt,AcquisitionLane,AcquisitionResult,AcquisitionRetryProof};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 /** Durable poll backoff survives queue restarts; unique jobs bound worker backlog. */
 final readonly class RuntimeDispatch
@@ -26,28 +27,33 @@ final readonly class RuntimeDispatch
     public function enqueue(int $id,bool $force=false): void
     {
         $op=Operation::findOrFail($id);
-        ContactRecovery::retryAccount($id,$this->clock);$op=$op->fresh();
-        $balance=BalanceRetries::pending($op);
-        if(!$this->current($op)){if($balance){app(OperationClaims::class)->readmitBalance($id);}return;}
-        if(OperationClaims::ordersOffHold($op)){app(OperationClaims::class)->readmitOrdersOff($id);$op=$op->fresh();}
-        // An automatic retry runs now: its window opens at the readmission.
-        if(ContactStepRetries::candidate($op)&&ContactStepRetries::readmit($id,$this->clock)){$op=$op->fresh();$force=true;}
-        if(PriceHoldRetries::candidate($op)&&PriceHoldRetries::readmit($id,$this->clock)){$op=$op->fresh();$force=true;}
+        if (!$this->current($op)) { return; }
+        if (AcquisitionAttempt::key($op->action) !== null) {
+            $account = Account::where('server_id', $op->server_id)->first();
+            $op = $account ? $this->acquisition($op, $account, false) : null;
+            if (!$op) { return; }
+            $continuation = AcquisitionResult::continuation($op);
+            if ($continuation?->lane !== null && !self::statusWork($op)) {
+                // An older notification may still be queued. Its reservation cannot consume this continuation's wake.
+                if (Cache::add('domains-acquisition-wake:'.$id.':'.$continuation->revision, true, 60)) {
+                    RunOperation::dispatch($id, $continuation->revision)->afterCommit();
+                }
+                return;
+            }
+        }
         $instant=$this->clock->now();
         $cutoffRecovery=ExecutionWindow::pastTransferCutoff($op,$instant)&&AcquisitionRetryProof::interruptedHold($op);
         if($op->state==='held'&&!$cutoffRecovery&&!ManagementEvidence::recoverable($op)&&!RenewalRetries::candidate($op)&&!TransferPolling::applies($op)
-            &&(!($balance||AcquisitionRetryProof::localRecovery($op,$instant)||ContactProfileHold::forReadmission($op,$instant))||!Account::where('server_id',$op->server_id)->value('processing_enabled'))){return;}
+            &&(!(AcquisitionRetryProof::localRecovery($op,$instant)||ContactProfileHold::forReadmission($op,$instant))||!Account::where('server_id',$op->server_id)->value('processing_enabled'))){return;}
         $now=$instant->getTimestamp();
         if(!TransferPolling::due($op,$now)){return;}
-        $due=DB::transaction(function()use($id,$op,$now,$force,$balance):bool {
-            DB::table('domains_runtime_operations')->insertOrIgnore(['operation_id'=>$id,...($balance?['due_at'=>$now+900]:[])]);
+        $due=DB::transaction(function()use($id,$op,$now,$force):bool {
+            DB::table('domains_runtime_operations')->insertOrIgnore(['operation_id'=>$id]);
             $q=DB::table('domains_runtime_operations')->where('operation_id',$id);$row=(clone $q)->lockForUpdate()->first();
             // Input may have committed while dispatch waited for the runtime row. Read without taking another lock.
-            $op=$op->fresh();$balance=BalanceRetries::pending($op);
+            $op=$op->fresh();
             if(!TransferPolling::due($op,$now)){return false;}
-            // TransferPolling owns transfer pacing; balance readmission retains its own due entry.
-            if(($balance||!$force&&!TransferPolling::applies($op))&&(int)$row->due_at>$now){return false;}
-            if($balance){return true;} // The locked readmission consumes due_at, never a queued notification.
+            if(!$force&&!TransferPolling::applies($op)&&(int)$row->due_at>$now){return false;}
             $slowManagement=isset($op->policy['management'])&&in_array($op->state,['uncertain','running'],true)&&ManagementReadRecovery::exhausted($op->attempt);
             if($slowManagement){
                 $ready=ManagementReadRecovery::last($op->attempt)?->getTimestamp();
@@ -59,6 +65,73 @@ final readonly class RuntimeDispatch
             if(TransferPolling::applies($op)){$delay=60;}
             $q->update(['attempts'=>$attempts,'due_at'=>$now+$delay]);return true;
         });
-        if($due){\Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::dispatch($id)->afterCommit();}
+        if($due){RunOperation::dispatch($id)->afterCommit();}
+    }
+
+    /** The scheduler and every delivered notification use the same current continuation and Orders gate. */
+    public function acquisition(Operation $op, Account $account, bool $delivered, ?RuntimePorts $ports = null): ?Operation
+    {
+        $instant = $this->clock->now();
+        $id = (int) $op->id;
+        $recovering = AcquisitionRetryProof::expiredClaim($op, $instant) || AcquisitionRetryProof::interruptedHold($op);
+        if ($recovering && ExecutionWindow::pastTransferCutoff($op, $instant)) {
+            app(OperationClaims::class)->holdUnclaimed($id, 'transfer_setup_review_required');
+            return null;
+        }
+        if (!$account->processing_enabled) {
+            $paidTest = $op->action === 'register' && $op->state === 'awaiting_payment'
+                && \App\Models\Invoice::whereKey($op->invoice_id)->value('status') === 'paid'
+                && self::testRegistrationEnabled($account);
+            if ($recovering || $paidTest || $op->state === 'queued' && $op->acquisitionAttemptFacts()) {
+                app(OperationClaims::class)->holdUnclaimed($id, 'processing');
+                return null;
+            }
+            return self::statusWork($op) ? $op : null;
+        }
+        if ($recovering && !($ports ?? app(RuntimePorts::class))->accepted($account)) {
+            app(OperationClaims::class)->holdUnclaimed($id, 'write_disabled');
+            return null;
+        }
+        if ($op->state === 'held' && $op->safe_code === 'contact_details_required') {
+            ContactRecovery::retryAccount($id, $this->clock);
+            $op->refresh();
+        }
+        if ($op->state === 'held' && AcquisitionRetryProof::ordersOffHold($op)) {
+            if (!app(OperationClaims::class)->readmitOrdersOff($id)) { return null; }
+            $op->refresh();
+        }
+        $continuation = AcquisitionResult::continuation($op);
+        if ($continuation?->shortfallAt !== null
+            && $continuation->shortfallAt <= $instant->modify('-'.FundsWaits::WAIT_DAYS.' days') && !self::statusWork($op)) {
+            return null;
+        }
+        $lane = $continuation?->lane;
+        if ($op->state === 'held') {
+            if (in_array($lane, [AcquisitionLane::BalanceWait, AcquisitionLane::ContactWait, AcquisitionLane::PriceWait], true)) {
+                if (!$continuation->due($instant)) { return null; }
+                if ($lane === AcquisitionLane::BalanceWait && !$delivered) { return $op; }
+                $readmitted = match ($lane) {
+                    AcquisitionLane::BalanceWait => app(OperationClaims::class)->readmitBalance($id),
+                    AcquisitionLane::ContactWait => ContactStepRetries::readmit($id, $this->clock),
+                    AcquisitionLane::PriceWait => PriceHoldRetries::readmit($id, $this->clock),
+                };
+                return $readmitted ? $op->fresh() : null;
+            }
+            if (!AcquisitionRetryProof::localRecovery($op, $instant)
+                && !ContactProfileHold::forReadmission($op, $instant) && !TransferPolling::applies($op)) { return null; }
+        }
+        if ($lane === AcquisitionLane::FundsWait && !self::statusWork($op)) { return null; }
+        return $op;
+    }
+
+    private static function statusWork(Operation $op): bool
+    {
+        return in_array($op->state, ['pending','uncertain','running'], true) || TransferPolling::applies($op);
+    }
+
+    private static function testRegistrationEnabled(Account $account): bool
+    {
+        try { return EnomTestRegistration::enabled(AccountBindings::binding($account)); }
+        catch (\Throwable) { return false; }
     }
 }

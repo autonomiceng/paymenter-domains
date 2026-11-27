@@ -43,7 +43,7 @@ function restoreAcquisitionFixture(array $raw): void
         DB::table('domains_operations')->where('id', $raw['id'])->update($raw);
         if (AcquisitionAttempt::key($raw['action'])) {
             DB::table(AcquisitionResultSchema::TABLE)->where('operation_id', $raw['id'])->delete();
-            AcquisitionResult::create(Operation::findOrFail($raw['id']));
+            AcquisitionResultSchema::insert((int) $raw['id']);
         }
     });
 }

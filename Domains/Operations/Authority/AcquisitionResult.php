@@ -11,15 +11,50 @@ use Paymenter\Extensions\Servers\Domains\Services\{ContactProfileHold, ContactRe
 /** The admission state shared by successive workers of one acquisition. Writes hold the operation lock. */
 final class AcquisitionResult
 {
-    public static function create(Operation $operation): void
+    public static function continuation(Operation $operation, bool $lock = false): ?AcquisitionContinuation
     {
-        DB::table(AcquisitionResultSchema::TABLE)->insert(['operation_id' => $operation->id]);
+        if (!$operation->exists || $operation->id === null || AcquisitionAttempt::key($operation->action) === null) { return null; }
+        $row = self::row($operation, $lock);
+        return new AcquisitionContinuation(
+            (int) $row->revision,
+            $row->retry_lane === null ? null : AcquisitionLane::from($row->retry_lane),
+            $row->retry_due_at === null ? null : (int) $row->retry_due_at,
+            $row->confirmed_shortfall_at === null ? null : AcquisitionWindow::time($row->confirmed_shortfall_at),
+            self::readWindow($row),
+        );
     }
 
     public static function window(Operation $operation, bool $lock = false): ?AcquisitionWindow
     {
-        if (!$operation->exists || $operation->id === null || AcquisitionAttempt::key($operation->action) === null) { return null; }
-        return self::readWindow(self::row($operation, $lock));
+        return self::continuation($operation, $lock)?->window;
+    }
+
+    /** Retry outcomes never change the existing admission or the attempt's sealed bounds. */
+    public static function schedule(Operation $operation, ?AcquisitionLane $lane, ?int $dueAt,
+        ?\DateTimeImmutable $confirmedShortfall = null, bool $preserveShortfall = false): void
+    {
+        if (($lane === null) !== ($dueAt === null)
+            || $confirmedShortfall !== null && !in_array($lane, [AcquisitionLane::BalanceWait, AcquisitionLane::FundsWait], true)) {
+            throw new \LogicException('Invalid acquisition retry outcome.');
+        }
+        $row = self::row($operation, true);
+        $start = $preserveShortfall || $confirmedShortfall !== null ? $row->confirmed_shortfall_at : null;
+        if ($start === null && $confirmedShortfall !== null) {
+            $start = OperationAttempts::at($confirmedShortfall->setTimezone(new \DateTimeZone('UTC')));
+        }
+        if ($row->retry_lane === $lane?->value && ($row->retry_due_at === null ? null : (int) $row->retry_due_at) === $dueAt
+            && $row->confirmed_shortfall_at === $start) { return; }
+        self::update($operation, (int) $row->revision, [
+            'retry_lane' => $lane?->value, 'retry_due_at' => $dueAt, 'confirmed_shortfall_at' => $start,
+        ]);
+    }
+
+    public static function clearShortfall(Operation $operation): void
+    {
+        $row = self::row($operation, true);
+        if ($row->confirmed_shortfall_at !== null) {
+            self::update($operation, (int) $row->revision, ['confirmed_shortfall_at' => null]);
+        }
     }
 
     public static function revision(Operation $operation, bool $lock = true): int
@@ -87,6 +122,10 @@ final class AcquisitionResult
             throw new \DomainException('Acquisition admission changed.');
         }
         $hold = $operation->safe_code;
+        $oldLane = $row->retry_lane === null ? null : AcquisitionLane::from($row->retry_lane);
+        if ($oldLane?->ownsBalance() && !in_array($admission, [AcquisitionAdmission::Balance, AcquisitionAdmission::FirstClaim], true)) {
+            throw new \DomainException('The automatic balance retry owns this request.');
+        }
         $proof = ['operation_revision' => $operation->transition_revision, 'result_revision' => $expectedRevision,
             'state' => $operation->state, 'reason' => $hold, 'prior_attempt_id' => $latest?->token->attemptId];
         if ($admission === AcquisitionAdmission::FirstClaim) {
@@ -127,7 +166,9 @@ final class AcquisitionResult
                 ? AcquisitionRetryProof::currentTestRefusal($operation, true) : null;
             $valid = match ($admission) {
                 AcquisitionAdmission::TestCapacity => $refusal !== null,
-                AcquisitionAdmission::Balance => AcquisitionRetryProof::balanceRefusalRetryable($operation),
+                AcquisitionAdmission::Balance => $oldLane === AcquisitionLane::BalanceWait
+                    && (int) $row->retry_due_at <= $now->getTimestamp()
+                    && AcquisitionRetryProof::balanceRefusalRetryable($operation),
                 AcquisitionAdmission::Price => $hold === 'registrar_price_increased',
                 AcquisitionAdmission::CostApproval => $hold === 'registrar_price_increased' && $approvalId !== null
                     && DB::table('domains_complimentary_approvals')->where(['id' => $approvalId, 'operation_id' => $id,
@@ -170,9 +211,19 @@ final class AcquisitionResult
         $revision = $expectedRevision + 1;
         $authorityId = OperationWriter::at($now)->recordAcquisitionAdmission($id, $admission, $revision,
             $admission->startsWorker() ? $issued : $expectedAttempt, $proof);
-        $changes = ['revision' => $revision];
+        $balance = $admission === AcquisitionAdmission::Balance
+            || ($admission === AcquisitionAdmission::FirstClaim && $oldLane === AcquisitionLane::BalancePurchase);
+        $changes = [
+            'retry_lane' => $balance ? AcquisitionLane::BalancePurchase->value : AcquisitionLane::Purchase->value,
+            'retry_due_at' => $now->getTimestamp(),
+            'confirmed_shortfall_at' => $balance ? $row->confirmed_shortfall_at : null,
+        ];
+        if ($operation->state === 'held') {
+            $changes['retry_lane'] = $changes['retry_due_at'] = null;
+        }
         if ($saveWindow) {
             $changes += [
+                'window_revision' => $revision,
                 'window_origin' => $admission->value,
                 'window_reason' => $hold,
                 'window_authority_id' => $authorityId,
@@ -184,17 +235,22 @@ final class AcquisitionResult
             ];
         }
         if ($admission === AcquisitionAdmission::FirstClaim) { $changes['first_claim_at'] = OperationAttempts::at($now); }
-        if (self::query($operation)->where('revision', $expectedRevision)->update($changes) !== 1) {
+        self::update($operation, $expectedRevision, $changes);
+        return true;
+    }
+
+    private static function update(Operation $operation, int $revision, array $changes): void
+    {
+        if (self::query($operation)->where('revision', $revision)->update(['revision' => $revision + 1, ...$changes]) !== 1) {
             throw new \DomainException('Acquisition admission revision changed.');
         }
-        return true;
     }
 
     private static function readWindow(object $row): ?AcquisitionWindow
     {
         if ($row->window_started_at === null) { return null; }
         return new AcquisitionWindow(
-            (int) $row->revision,
+            (int) $row->window_revision,
             $row->window_origin,
             $row->window_reason,
             (int) $row->window_authority_id,

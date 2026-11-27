@@ -19,8 +19,6 @@ class Operation extends Model
     public ?Tld $catalogueTld = null;
     /** Exact worker authority, set by the claim or seal transaction and never persisted. */
     public ?AttemptToken $acquisitionWorker = null;
-    /** A fresh shortfall from this worker can continue a balance episode interrupted only by its own claim. */
-    public ?\DateTimeImmutable $fundsRetryAt = null;
     /** @var array{facts: AttemptFacts, action: string, start: ?\DateTimeImmutable}|array{}|null */
     private ?array $acquisitionRow = null;
     private AcquisitionAttempt|\Throwable|null $acquisitionAttempt = null;

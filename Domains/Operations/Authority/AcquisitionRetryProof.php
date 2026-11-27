@@ -64,7 +64,8 @@ final class AcquisitionRetryProof
     {
         if ($op->state !== 'held' || $op->safe_code !== 'processing' || AcquisitionAttempt::key($op->action) === null
             || ($op->action === 'transfer' && !TransferInputs::validCode($op->payload['epp'] ?? null))) { return false; }
-        if (!array_key_exists('balance_retry', $op->policy ?? []) && self::virgin($op)) { return true; }
+        if (AcquisitionResult::continuation($op)?->lane === AcquisitionLane::BalanceWait) { return false; }
+        if (self::virgin($op)) { return true; }
         $lock = \Illuminate\Support\Facades\DB::transactionLevel() > 0;
         $prior = $op->acquisitionAttemptFacts();
         $window = $prior ? AcquisitionResult::window($op, $lock) : null;
@@ -120,15 +121,15 @@ final class AcquisitionRetryProof
         try {
             $window = AcquisitionResult::window($op);
             $retry = BalanceRetry::from($op);
-            $released = $window?->origin === AcquisitionAdmission::Balance->value;
+            $released = BalanceRetries::owns($op);
             if (!isset($op->attempt['claim_key']) && (!self::virgin($op)
                 || !in_array($op->safe_code, ['usd_balance_required', 'enom_test_transfer_usd_balance_required'], true) && $retry === null)) {
                 return false;
             }
         } catch (\Throwable) { return false; }
-        $rateHold = $op->safe_code === 'write_rate_limited' && $window !== null
+        $rateHold = $op->safe_code === 'write_rate_limited' && ($released || ($window !== null
             && !in_array($window->origin, [AcquisitionAdmission::TestCapacity->value, AcquisitionAdmission::StaffRelease->value], true)
-            && self::capacityRetry($op) && $retry !== null;
+            && self::capacityRetry($op))) && $retry !== null;
         $review = in_array($op->safe_code, BalanceRetries::REVIEW_CODES, true) && $retry !== null;
         $held = $op->state === 'held' && in_array($op->safe_code, ExecutionWindow::BALANCE_HOLDS, true)
             && (in_array($op->safe_code, BalanceRetries::INITIAL_CODES, true) || $released || $rateHold || $review || BalanceRetries::legacyHold($op));

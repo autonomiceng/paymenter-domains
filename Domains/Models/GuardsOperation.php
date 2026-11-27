@@ -5,7 +5,6 @@ namespace Paymenter\Extensions\Servers\Domains\Models;
 
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionAttempt;
-use Paymenter\Extensions\Servers\Domains\Services\FundsWaits;
 
 trait GuardsOperation
 {
@@ -51,16 +50,6 @@ trait GuardsOperation
             }
             foreach (['funds_wait_until', 'native_acquisition_cancelled_at', 'native_acquisition_closure', 'held_order_refund', 'unpaid_retirement', 'account_complimentary', 'checkout', 'price', 'seller_revision', 'calendar', 'renewal', 'complimentary', 'management', 'privacy'] as $key) {
                 if (array_key_exists($key, $old) && ($new[$key] ?? null) !== $old[$key]) { throw new \DomainException('Checkout evidence is frozen.'); }
-            }
-            if (AcquisitionAttempt::key($operation->action)) {
-                if (!FundsWaits::balanceHold($operation)) { unset($new['funds_wait_at']); }
-                elseif ($operation->getOriginal('state') === 'held'
-                    && $operation->getOriginal('safe_code') === 'registrar_balance_insufficient'
-                    && isset($old['funds_wait_at']) && ($new['funds_wait_at'] ?? null) !== $old['funds_wait_at']) {
-                    throw new \DomainException('Checkout evidence is frozen.');
-                }
-                if ($operation->state !== 'queued' || $operation->safe_code !== null) { unset($new['funds_retry_at']); }
-                if ($new !== ($operation->policy ?? [])) { $operation->policy = $new; }
             }
             $old = $operation->getOriginal('cost') ?? []; $new = $operation->cost ?? [];
             foreach (['estimated', 'currency', 'unit', 'actual'] as $key) {

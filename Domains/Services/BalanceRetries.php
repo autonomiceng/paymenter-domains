@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\RegistrarDriver;
 use Paymenter\Extensions\Servers\Domains\Data\{BalanceRetry,DriverResult,Disposition,Money,RequestContext};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission, AcquisitionAttempt, AcquisitionResult, AcquisitionRetryProof};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission, AcquisitionLane, AcquisitionResult, AcquisitionRetryProof};
 /** Scheduling and the cheap first read. Readmission itself belongs to OperationClaims' ordered financial locks. */
 final class BalanceRetries
 {
@@ -25,9 +25,7 @@ final class BalanceRetries
     /** Work needing locked admission or diagnosis, even if its current proof can no longer authorize sending. */
     public static function pending(Operation $op): bool
     {
-        return $op->state==='held'&&(self::legacyHold($op)||in_array($op->safe_code,self::CODES,true)
-            &&(in_array($op->safe_code,self::INITIAL_CODES,true)||array_key_exists('balance_retry',$op->policy??[]))
-            &&!(in_array($op->safe_code,self::READ_CODES,true)&&self::reads($op)>=self::READ_LIMIT))&&self::supported($op);
+        return $op->state === 'held' && AcquisitionResult::continuation($op)?->lane === AcquisitionLane::BalanceWait;
     }
     public static function legacyHold(Operation $op): bool
     {
@@ -35,12 +33,14 @@ final class BalanceRetries
             &&($prior=$op->acquisitionAttemptFacts())!==null&&!$prior->sealed()&&AcquisitionRetryProof::releasedForReadmission($op,$prior)
             &&($op->action!=='register'||!AcquisitionRetryProof::catalogueRetry($op));
     }
-    /** Backoff history only selects the balance route while its current admission authorizes that route. */
+    /** The probe belongs to the admitted automatic lane. */
     public static function active(Operation $op): bool
     {
-        if (BalanceRetry::from($op)?->window === null) { return false; }
-        $window = AcquisitionResult::window($op);
-        return $window === null || in_array($window->origin, [AcquisitionAdmission::FirstClaim->value, AcquisitionAdmission::Balance->value], true);
+        return AcquisitionResult::continuation($op)?->lane === AcquisitionLane::BalancePurchase;
+    }
+    public static function owns(Operation $op): bool
+    {
+        return AcquisitionResult::continuation($op)?->lane?->ownsBalance() === true;
     }
     private static function reads(Operation $op): int {return (int)($op->policy['read_retries']??0);}
     public static function candidate(Operation $op): bool
@@ -51,17 +51,19 @@ final class BalanceRetries
             &&Account::where('server_id',$op->server_id)->value('environment')==='test';
     }
     /** Called with the domain and operation locked, after a definitely-unsent finish. */
-    public static function held(Operation $op,\DateTimeImmutable $now,?Money $cost=null): void
+    public static function held(Operation $op,\DateTimeImmutable $now,?Money $cost=null,bool $confirmedShortfall=false): bool
     {
-        if(!self::supported($op)||!OperationClaims::balanceRefusalRetryable($op)||!Schema::hasTable('domains_runtime_operations')){return;}
+        if(!self::supported($op)||!OperationClaims::balanceRefusalRetryable($op)){return false;}
         $retry=BalanceRetry::held($op,$now,$cost);
         // Tries cannot bound reads: a long balance wait says nothing about read health, and a balance answer proves it.
         $reads=self::reads($op);$read=in_array($op->safe_code,self::READ_CODES,true)||$reads>0&&$op->safe_code==='write_rate_limited';
         $reads=$read?$reads+1:(in_array($op->safe_code,self::BALANCE_CODES,true)?0:$reads);$stopped=$read&&$reads>=self::READ_LIMIT;
         $policy=[...$op->policy,'balance_retry'=>$retry->record];unset($policy['read_retries']);if($reads>0){$policy['read_retries']=$reads;}
         $op->update(['policy'=>$policy,'safe_code'=>$stopped&&$op->safe_code==='write_rate_limited'?'registrar_read_failed':$op->safe_code]);
-        DB::table('domains_runtime_operations')->updateOrInsert(['operation_id'=>$op->id],['due_at'=>$now->getTimestamp()+$retry->delay()]);
-        if($read&&!$stopped||$retry->cost===null&&$op->safe_code!=='registrar_balance_insufficient'&&!$stopped){return;} // A stored check alone proves no shortfall.
+        AcquisitionResult::schedule($op, $stopped ? null : AcquisitionLane::BalanceWait,
+            $stopped ? null : $now->getTimestamp() + $retry->delay(),
+            $confirmedShortfall && !$stopped ? $now : null, preserveShortfall: !$stopped);
+        if($read&&!$stopped||$retry->cost===null&&$op->safe_code!=='registrar_balance_insufficient'&&!$stopped){return true;} // A stored check alone proves no shortfall.
         // One durable alert and one native inbox receipt for this hold, regardless of retry count.
         if(Schema::hasTable('domains_obligation_alerts')){ObligationAlerts::record($op->domain,'operation_review',$now->getTimestamp(),(int)$op->id);}
         $key=($stopped?'read-hold:':'balance-hold:').$op->operation_key.':'.$op->authority_generation.':'.$retry->record['held_at'];
@@ -70,6 +72,7 @@ final class BalanceRetries
         $id=(int)$op->id;
         DB::afterCommit(static fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send(
             $stopped?'Registrar reads keep failing':'Registrar balance is too low',$line,'filament.admin.resources.registrar-requests.view',deliveryKey:$key,parameters:['record'=>$id]));
+        return true;
     }
     /** Our own rate guard proves nothing was sent, so nobody needs to act: it waits on the same timed retry as a balance hold. Called locked. */
     public static function rateHeld(Operation $op,\DateTimeImmutable $now): void
@@ -80,7 +83,7 @@ final class BalanceRetries
         // A contact step that sent nothing has no balance question; its bounded retries own it (ContactStepRetries).
         if(ContactProfileHold::unsent($op,retry:true)){return;}
         $op->update(['policy'=>[...$op->policy,'balance_retry'=>BalanceRetry::held($op,$now,null)->admitted($op,$now)->record]]);
-        if(self::candidate($op)){self::held($op,$now);}
+        self::held($op,$now);
     }
     /** Retry windows may advance only on locked held-to-queued admission; sent authority is retained. */
     public static function guard(Operation $op): void
