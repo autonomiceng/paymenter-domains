@@ -4,6 +4,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResult;
 require __DIR__.'/Support/namesilo-registration-fixture.php';
 require_once __DIR__.'/Support/staff-panel.php';
 require __DIR__.'/Support/money-receipt.php';
@@ -363,21 +364,28 @@ expect(new DateTimeImmutable($resent->attempt['dispatch_attempted_at'])>$release
 same($sentAt,Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::time(Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::sentAt($resent)),'The Sent to registrar row shows the retried send');
 echo "Orders off at the contact step resumes when Orders are on.\n";
 
-// Orders went off again just after the order went back to the queue, and stayed off past its send window. Once they
-// are on, its first try sends instead of holding again as Orders off.
+// Turning Orders on again does not extend a queued contact retry past its saved send window.
 $op=$order('held-contact-orders-off-lapsed-placeholder.com');$before=[$sent->contactAdd,$sent->registerDomain];
 $grants->fail=static function()use($account):void {DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);throw new DomainException('TEST NameSilo feature off.');};
 $paused=$execute($op);$grants->fail=null;$clock->instant=$clock->now()->modify('+60 seconds');Auth::login($staff);
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
 expect(ContactStepRetries::readmit($paused->id,$clock),'The order goes back to the queue once Orders are on');
+$window=AcquisitionResult::window($paused->fresh());
+expect($window!==null,'The retry has a saved window');
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
 $clock->instant=$clock->now()->modify('+'.(Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation::EXECUTION_SECONDS+60).' seconds');
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
-$sentAfter=$execute($paused->fresh());Auth::login($staff);
-expect(!($sentAfter->state==='held'&&$sentAfter->safe_code==='processing'),'Orders on: the first try does not hold as Orders off again');
-same([$before[0]+1,$before[1]+1],[$sent->contactAdd,$sent->registerDomain],'Orders on: the first try sends once');
+$held=$execute($paused->fresh());Auth::login($staff);
+same(['held','write_rate_limited'],[$held->state,$held->safe_code],'The elapsed contact retry holds');
+same($before,[$sent->contactAdd,$sent->registerDomain],'The elapsed retry sends nothing');
+expect($window==AcquisitionResult::window($held->fresh()),'The worker preserves the elapsed window');
+$run($held,'release');
+expect(AcquisitionResult::window($held->fresh())?->revision>$window->revision,'Staff Release saves a fresh window');
+$clock->instant=$clock->now()->modify('+30 seconds');
+$sentAfter=$execute($held->fresh());
+same([$before[0]+1,$before[1]+1],[$sent->contactAdd,$sent->registerDomain],'The explicit release sends once');
 same(0,ContactStepRetries::tries($sentAfter->fresh()),'Waiting for Orders spends no automatic try');
-echo "A queued contact retry whose window lapsed while Orders were off sends once they are on.\n";
+echo "A queued contact retry with an elapsed window needs a fresh admission.\n";
 
 // A contact hold with nothing sent retries by itself a few spaced times, then stays for staff. It never cancels or refunds.
 $op=$resetHeld();$viaGateway($op,'receipt_held_contact_auto_retry');
