@@ -17,6 +17,48 @@ final class DomainHistory
     /** @return list<Operation|array> */
     public static function entries(Domain $domain): array
     {
+        $rows = self::operationEntries($domain);
+        $holdings=[]; $audits=[];
+        try { $holdings=$domain->renewal_policy['staff_holdings']??[]; } catch (\Throwable) {}
+        $holdings=is_array($holdings)&&array_is_list($holdings)?array_filter($holdings,'is_array'):[];
+        try { $audits=DomainAudit::query()->where('subject_type','domain')->where('subject_id',$domain->id)->where('event','owner_auto_renew')->orderByDesc('id')->limit(100)->get(); }
+        catch (\Throwable) { $audits=collect(); }
+        try { $sync=$domain->observation['sync_history']??[]; } catch (\Throwable) { $sync=[]; }
+        $sync=is_array($sync)?array_filter(array_slice($sync,-20),'is_array'):[];
+        $ids=array_unique(array_filter([...array_map(fn(array $h)=>is_int($h['actor_id']??null)?$h['actor_id']:null,[...$holdings,...$sync]),...$audits->pluck('actor_id')->all()]));
+        $names=$ids?User::query()->whereIn('id',$ids)->get(['id','first_name','last_name'])->mapWithKeys(fn(User $u)=>[$u->id=>trim($u->first_name.' '.$u->last_name)])->all():[];
+        foreach (array_values($holdings) as $i=>$h) {
+            // A confirmed departure reads as its saved outcomes, one row each.
+            if (($h['action']??null)===HoldingDeparture::ACTION&&$domain->status==='departed') { array_push($rows,...DepartedHistory::rows($domain,$h,self::at($h['at']??null),$names[$h['actor_id']??0]??'Staff')); continue; }
+            $rows[]=['__key'=>'holding-'.$i,'time'=>self::at($h['at']??null),'event'=>self::HOLDINGS[$h['action']??'']??'Renewal changed',
+                'sub'=>is_string($h['reason']??null)&&$h['reason']!==(StaffOperationReview::ACTIONS[$h['action']??'']??null)?$h['reason']:null,'status'=>null,'by'=>$names[$h['actor_id']??0]??'Staff'];
+        }
+        foreach ($audits as $a) {
+            $enabled=null; try { $enabled=$a->data['enabled']??null; } catch (\Throwable) {}
+            $rows[]=['__key'=>'audit-'.$a->id,'time'=>$a->created_at,'event'=>$enabled===null?'Auto-renew changed':'Auto-renew turned '.($enabled?'on':'off'),
+                'sub'=>null,'status'=>null,'by'=>$names[$a->actor_id]??'Customer'];
+        }
+        $events=['Sync requested','Sync retry scheduled','Domain synced',"Couldn't read all records",'Records not read',"Couldn't sync domain",'Sync stopped','Sync needs a check'];
+        foreach (array_reverse($sync,true) as $i=>$entry) {
+            if (!in_array($entry['event']??null,$events,true)) { continue; }
+            $rows[]=['__key'=>'sync-'.$i,'__order'=>$i+1,'time'=>self::at($entry['at']??null),'event'=>$entry['event'],'sub'=>null,'status'=>null,
+                'by'=>is_string($entry['actor_name']??null)&&$entry['actor_name']!==''?$entry['actor_name']:($names[$entry['actor_id']??0]??'Staff')];
+        }
+        // Registrar reads that found the domain missing from our account: the one that opened the review, then its rechecks.
+        try { $reads=$domain->observation['departure_reads']??[]; } catch (\Throwable) { $reads=[]; }
+        foreach (is_array($reads)?array_slice($reads,-\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::READS):[] as $i=>$read) {
+            if (!is_array($read)||!is_int($read['at']??null)) { continue; }
+            $rows[]=['__key'=>'departure-'.$i,'__order'=>$i+1,'time'=>(new \DateTimeImmutable())->setTimestamp($read['at']),'event'=>($read['recheck']??false)?'Recheck':'Registrar read',
+                'sub'=>'Not in our registrar account.','status'=>$domain->status==='departed'?null:['label'=>'Under review','tone'=>'warning'],'by'=>'System'];
+        }
+        $at=fn(Operation|array $r)=>($r instanceof Operation?self::when($r):$r['time'])?->getTimestamp()??PHP_INT_MIN;
+        $order=static fn(Operation|array $r)=>$r instanceof Operation?[$r->id,0]:[$r['__request']??0,$r['__order']??0];
+        usort($rows,fn($a,$b)=>($at($b)<=>$at($a))?:($order($b)<=>$order($a)));
+        return $rows;
+    }
+    /** @return list<Operation|array> */
+    private static function operationEntries(Domain $domain): array
+    {
         $rows=DomainQueries::operations($domain)->with('invoice:id,status')->orderByDesc('id')->get()->all();
         Operation::loadAcquisitionAttempts($rows);
         Operation::loadManagementAttempts($rows);
@@ -61,42 +103,6 @@ final class DomainHistory
                 }
             } catch (\Throwable) { /* Unreadable payment evidence cannot hide the retained request history. */ }
         }
-        $holdings=[]; $audits=[];
-        try { $holdings=$domain->renewal_policy['staff_holdings']??[]; } catch (\Throwable) {}
-        $holdings=is_array($holdings)&&array_is_list($holdings)?array_filter($holdings,'is_array'):[];
-        try { $audits=DomainAudit::query()->where('subject_type','domain')->where('subject_id',$domain->id)->where('event','owner_auto_renew')->orderByDesc('id')->limit(100)->get(); }
-        catch (\Throwable) { $audits=collect(); }
-        try { $sync=$domain->observation['sync_history']??[]; } catch (\Throwable) { $sync=[]; }
-        $sync=is_array($sync)?array_filter(array_slice($sync,-20),'is_array'):[];
-        $ids=array_unique(array_filter([...array_map(fn(array $h)=>is_int($h['actor_id']??null)?$h['actor_id']:null,[...$holdings,...$sync]),...$audits->pluck('actor_id')->all()]));
-        $names=$ids?User::query()->whereIn('id',$ids)->get(['id','first_name','last_name'])->mapWithKeys(fn(User $u)=>[$u->id=>trim($u->first_name.' '.$u->last_name)])->all():[];
-        foreach (array_values($holdings) as $i=>$h) {
-            // A confirmed departure reads as its saved outcomes, one row each.
-            if (($h['action']??null)===HoldingDeparture::ACTION&&$domain->status==='departed') { array_push($rows,...DepartedHistory::rows($domain,$h,self::at($h['at']??null),$names[$h['actor_id']??0]??'Staff')); continue; }
-            $rows[]=['__key'=>'holding-'.$i,'time'=>self::at($h['at']??null),'event'=>self::HOLDINGS[$h['action']??'']??'Renewal changed',
-                'sub'=>is_string($h['reason']??null)&&$h['reason']!==(StaffOperationReview::ACTIONS[$h['action']??'']??null)?$h['reason']:null,'status'=>null,'by'=>$names[$h['actor_id']??0]??'Staff'];
-        }
-        foreach ($audits as $a) {
-            $enabled=null; try { $enabled=$a->data['enabled']??null; } catch (\Throwable) {}
-            $rows[]=['__key'=>'audit-'.$a->id,'time'=>$a->created_at,'event'=>$enabled===null?'Auto-renew changed':'Auto-renew turned '.($enabled?'on':'off'),
-                'sub'=>null,'status'=>null,'by'=>$names[$a->actor_id]??'Customer'];
-        }
-        $events=['Sync requested','Sync retry scheduled','Domain synced',"Couldn't read all records",'Records not read',"Couldn't sync domain",'Sync stopped','Sync needs a check'];
-        foreach (array_reverse($sync,true) as $i=>$entry) {
-            if (!in_array($entry['event']??null,$events,true)) { continue; }
-            $rows[]=['__key'=>'sync-'.$i,'__order'=>$i+1,'time'=>self::at($entry['at']??null),'event'=>$entry['event'],'sub'=>null,'status'=>null,
-                'by'=>is_string($entry['actor_name']??null)&&$entry['actor_name']!==''?$entry['actor_name']:($names[$entry['actor_id']??0]??'Staff')];
-        }
-        // Registrar reads that found the domain missing from our account: the one that opened the review, then its rechecks.
-        try { $reads=$domain->observation['departure_reads']??[]; } catch (\Throwable) { $reads=[]; }
-        foreach (is_array($reads)?array_slice($reads,-\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::READS):[] as $i=>$read) {
-            if (!is_array($read)||!is_int($read['at']??null)) { continue; }
-            $rows[]=['__key'=>'departure-'.$i,'__order'=>$i+1,'time'=>(new \DateTimeImmutable())->setTimestamp($read['at']),'event'=>($read['recheck']??false)?'Recheck':'Registrar read',
-                'sub'=>'Not in our registrar account.','status'=>$domain->status==='departed'?null:['label'=>'Under review','tone'=>'warning'],'by'=>'System'];
-        }
-        $at=fn(Operation|array $r)=>($r instanceof Operation?self::when($r):$r['time'])?->getTimestamp()??PHP_INT_MIN;
-        $order=static fn(Operation|array $r)=>$r instanceof Operation?[$r->id,0]:[$r['__request']??0,$r['__order']??0];
-        usort($rows,fn($a,$b)=>($at($b)<=>$at($a))?:($order($b)<=>$order($a)));
         return $rows;
     }
     public static function ordersOff(Domain $domain): bool
