@@ -16,7 +16,7 @@ use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{CataloguePreview,EnomT
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,EnomTestRegistration,DomainObservation,ObservationSchema,ObservationWork,OperationReconciliation,ReconciliationEvidence,RegistrarAnswers,RegistrarCheck,Refunds,RenewalReplacements,StaffOperationReview,StaffOperations,StaffSettingsReview,StaffSyncReview};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAttempt,RenewalCompletion};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts,OperationSchema,OperationWriter,ReadToken,StepKey};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts,OperationSchema,OperationWriter,ReadToken,StepKey,Transition};
 use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory;
 use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 \Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
@@ -271,6 +271,7 @@ $before=[$lost->attempt,$lost->funding,$lost->domain->reservation_name,$credit()
 $observedAt = $clock->now();
 $readStarted = count($observation->calls);
 $delayed = false;
+$beforeExpired = [$lost->fresh()->policy['status_check'], $lost->fresh()->policy['reconciliation']['polls'] ?? 0];
 DB::listen(static function ($query) use ($clock, $observation, $readStarted, &$delayed): void {
     if (!$delayed && count($observation->calls) > $readStarted && DB::transactionLevel() > 0
         && str_contains($query->sql, 'from "users"')) {
@@ -287,9 +288,12 @@ same([true, $observedAt->getTimestamp()], [$proof['evidence']['owned'] ?? null, 
 expect(in_array(ReadCommand::Info,$observation->calls,true),'Automatic recovery reads the domain before staff ask for a case');
 expect(!in_array(ReadCommand::Order,$observation->calls,true)&&!in_array(ReadCommand::Orders,$observation->calls,true),'Missing order identity and unaccepted history never allow an order search');
 $lost->refresh();
+$afterExpired = [$lost->policy['status_check'], $lost->policy['reconciliation']['polls'] ?? 0];
+$reconcile->run($lost->id);
+$lost->refresh();
 same(['owned'=>true,'expiry'=>'2027-10-18','expiry_precision'=>'date','charge_confirmed'=>false],$lost->policy['status_check']['facts'],'Domain facts are kept without inventing an original charge');
 same('awaiting_answer',$lost->policy['status_check']['outcome'],'Unknown original charge still needs the registrar answer');
-same(1,$lost->policy['reconciliation']['polls'],'A completed read of a lost reply counts toward the read limit');
+same($afterExpired[1] + 1, $lost->policy['reconciliation']['polls'], 'A live read of a lost reply counts once toward the read limit');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lost->id])->assertActionVisible('enom_answer')->assertSee('The original charge is still unconfirmed.');
 // While an automatic check is scheduled the system can still read the result, so the page sends no one to the registrar's support yet.
 $readPolicy=$lost->fresh()->policy;
@@ -366,8 +370,27 @@ $sealed = OperationAttempts::sealed((int) $lost->id, $step);
 $proof = OperationAttempts::evidence((int) $lost->id, $sealed->token->attemptId, 'observation');
 same(true, $proof['evidence']['owned'] ?? null, 'The exact sealed attempt retains ownership after a later check fails');
 DB::table(OperationSchema::EVIDENCE)->where(['attempt_id' => $sealed->token->attemptId, 'kind' => 'observation'])->delete();
-$recordNegativeAnswer($lost->fresh());
-same('rejected', $lost->fresh()->state, 'The same reviewed answer can close the request when the retained ownership evidence is absent');
+$orphan = DB::transaction(static function () use ($lost, $sealed, $writer, $clock): ReadToken {
+    $lost->newQuery()->whereKey($lost->id)->lockForUpdate()->firstOrFail();
+    return $writer->openRead($sealed->token, $clock->now()->modify('+30 seconds'));
+});
+$clock->instant = $orphan->until;
+$stale = null;
+$lost::updating(static function ($saving) use ($lost, $orphan, $writer, &$stale): void {
+    if ($saving->id !== $lost->id || !$saving->isDirty('state') || $saving->state !== 'rejected') { return; }
+    $stale = $writer->recordObservation($orphan->attempt, ['owned' => true, 'expiry' => '2027-10-18'], $orphan->until->modify('-1 second'));
+});
+$beforeCredit = $credit();
+$answerRefused = false;
+try { $recordNegativeAnswer($lost->fresh()); }
+catch (DomainException) { $answerRefused = true; }
+$afterCredit = $credit();
+same([$beforeExpired, false, 'rejected', Transition::Stale, null, (float) $lost->amount], [$afterExpired, $answerRefused, $lost->fresh()->state, $stale,
+    $lost->fresh()->acquisitionAttemptFacts()?->readToken, round((float) $afterCredit - (float) $beforeCredit, 2)],
+    'An expired check cannot publish status or a poll, and the final answer fences its old reader and credits once. '.json_encode([
+        $beforeExpired[0]['outcome'], $afterExpired[0]['outcome'], $beforeExpired[1], $afterExpired[1], $answerRefused, $stale?->value,
+    ]));
+same(null, app(Refunds::class)->creditRejected($lost->id), 'The approved payment was already returned');
 // A lost renewal reply outside its history window can still read the domain.
 DB::table('domains_accounts')->where('server_id',$lost->server_id)->update(['processing_enabled'=>true]);
 [$lostRenew,$lostDomain,$binding]=$makeRenewal(placeholderComFixtureName('staff-lost-renewal-placeholder.com'));

@@ -145,6 +145,10 @@ final class AcquisitionResult
         }
         $continuation = self::readContinuation($row);
         $now = $clock->now()->setTimezone(new \DateTimeZone('UTC'));
+        if ($latest?->current && $latest->sealed()) {
+            $state = AcquisitionLifecycle::settle($operation, $operation->domain, $now);
+            if ($state->fenced && $state->reason === 'expired_unused_grant') { return AcquisitionAdmissionOutcome::Unavailable; }
+        }
         if (AcquisitionAuthority::fundsCutoff($operation, $continuation, $now, $latest) !== AcquisitionAuthority::FUNDS_PROCEED) {
             return AcquisitionAdmissionOutcome::RetireForCredit;
         }

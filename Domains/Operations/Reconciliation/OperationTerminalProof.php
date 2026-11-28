@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, EnomAnswers, 
     OperationClaims, RefundProof, RegistrationRefusals, WriteHeld};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionRetryProof, OperationAttempts, OperationWriter, Transition};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionLifecycle, AcquisitionRetryProof, OperationAttempts, OperationWriter, Transition};
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 /** Closure records the acquisition’s own negative send proof. */
@@ -16,9 +16,12 @@ final class OperationTerminalProof
     public static function encode(OperationClaims $claims, int $id): Operation
     {
         return $claims->locked($id, static function ($op, $domain, $all, InvoiceFunding $funding): Operation {
+            $now = app(Clock::class)->now();
+            $state = AcquisitionLifecycle::settle($op, $domain, $now);
+            if ($state->fenced && $state->reason === 'expired_unused_grant') { return $op; }
             if (!self::unsentClaim($op, $domain, $all)) { throw new \DomainException('No definitely-unsent terminal proof.'); }
             if ($op->funding_basis === 'complimentary' && isset($op->funding['late_credits'])) { $funding->requireInitial($op, $domain); }
-            self::recordUnsent($op, $domain, app(Clock::class)->now());
+            self::recordUnsent($op, $domain, $now);
             $op->update(['state' => 'rejected']);
             if (!self::safe($op, $domain)) { throw new \DomainException('Terminal identity mismatch.'); }
             $domain->update(['status' => $op->action === 'transfer' ? 'transfer_rejected' : 'registration_rejected']); return $op;

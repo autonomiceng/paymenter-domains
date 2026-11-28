@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Operations\Reconciliation;
 
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionChargeMatch, OperationWriter, Transition};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionChargeMatch, AcquisitionReadPermit, OperationWriter, Transition};
 use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryInvoices, HoldingObservationWork, InvoiceFunding,
     ObservationProjection, RegistrationDns, RenewalStop, WriteMoney};
 
@@ -12,8 +12,9 @@ use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryInvoices, Holdin
 final class AcquisitionSettlement
 {
     public static function complete(Operation $op, Domain $domain, InvoiceFunding $funding, AcquisitionRead $read,
-        AcquisitionObservation $observed, array $policy, OperationWriter $writer, \DateTimeImmutable $now): void
+        AcquisitionObservation $observed, array $policy, OperationWriter $writer, AcquisitionReadPermit $permit): void
     {
+        $now = $permit->now;
         $proof = $observed->proof ?? throw new \LogicException('Settlement needs completion proof.');
         $nameservers = $observed->nameservers;
         $funding->completeInitial($op, $domain); // Persistence failures roll back the whole native/domain decision.
@@ -29,7 +30,7 @@ final class AcquisitionSettlement
             'cost' => [...($op->cost ?? []), 'actual' => $cost],
             'policy' => $policy, 'provider_order_id' => $proof['order_reference'], 'confirmed_expires_at' => $proof['expiry'],
             'completed_at' => $now, 'lease_expires_at' => null]);
-        if ($writer->settle($read->token, 'succeeded', ['reconciliation'=>$proof, 'charge_match'=>AcquisitionChargeMatch::Exact->value])
+        if ($writer->completeAcquisition($permit, ['reconciliation'=>$proof, 'charge_match'=>AcquisitionChargeMatch::Exact->value])
             !== Transition::Applied) {
             throw new \DomainException('Acquisition settlement authority changed.');
         }

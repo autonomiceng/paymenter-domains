@@ -19,10 +19,12 @@ final readonly class AcquisitionDispatch
     public function seal(Operation $claimed, DispatchReadiness $ready, \DateTimeImmutable $entry, ?SealPreflight $preflight = null, ?WriteGate $writer = null, ?RequestContext $wire = null): ?Operation
     {
         return $this->authority->locked((int) $claimed->id, function ($op, $domain, $all, $funding, $server, $account) use ($claimed, $ready, $entry, $preflight, $writer, $wire): ?Operation {
+            $now = $this->clock->now();
+            AcquisitionLifecycle::settle($op, $domain, $now);
             $attempt = AcquisitionAttempt::lockedClaim($op, $claimed);
             if ($attempt === null) { return null; }
             if (!AcquisitionRetryProof::unsealed($op)) {
-                $this->authority->expire($op);
+                $this->authority->expire($op, $now);
                 return null;
             }
             $continuation = AcquisitionResult::continuation($op, true);
@@ -130,7 +132,10 @@ final readonly class AcquisitionDispatch
     public function verifySend(Operation $sealed, AdmittedOperation $admitted, RequestContext $context,
         DispatchReadiness $ready, ?SealPreflight $preflight, WriteAcceptance $acceptance): array
     {
-        return $this->authority->locked((int) $sealed->id, function ($op, $domain, $all, $funding, $server, $account) use ($sealed, $admitted, $context, $ready, $preflight, $acceptance): array {
+        $result = $this->authority->locked((int) $sealed->id, function ($op, $domain, $all, $funding, $server, $account) use ($sealed, $admitted, $context, $ready, $preflight, $acceptance): array {
+            $now = $this->clock->now();
+            $state = AcquisitionLifecycle::settle($op, $domain, $now);
+            if ($state->fenced && $state->reason === 'expired_unused_grant') { return []; }
             [$binding, $paid] = $this->authority->validate($op, $domain, $all, $funding, $server, $account);
             $binding->requireMatch($admitted->binding); $binding->requireMatch($context->binding);
             ContactSetup::requireReady($op); $preflight?->requireAtSeal($op, $domain, $ready);
@@ -155,6 +160,8 @@ final readonly class AcquisitionDispatch
             }
             return $op->payload;
         });
+        if ($result === []) { throw new \DomainException('Sealed dispatch authority expired.'); }
+        return $result;
     }
 
     private static function requireSameEvidence(Operation $current, Operation $snapshot): void

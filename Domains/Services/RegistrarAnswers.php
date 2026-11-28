@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence,DateEvidence,ExpiryPrecision,RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationWriter, RetainedAcquisition, Transition};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionLifecycle, OperationAttempts, OperationWriter, RetainedAcquisition, Transition};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAttempt, RenewalCompletion, RenewalDecision, RenewalProof};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 /** An account-specific support answer is evidence, never permission to resend a purchase. */
@@ -131,6 +131,7 @@ class RegistrarAnswers
         $id = ($input['outcome'] ?? null) === 'not_processed' && $chosen->action === 'renew'
             ? self::recordRenewalRefund($seed, $review, $input, $now)
             : self::saveAnswer($seed, $review, $input, $now);
+        if ($id === null) { throw new \DomainException('This request changed. Reload the page and select it again.'); }
         if(in_array($input['outcome']??null,['not_processed','transfer_rejected'],true)){app(Refunds::class)->creditRejected($id);}
     }
 
@@ -166,6 +167,10 @@ class RegistrarAnswers
     {
         $l=HoldingLocks::take($seed,$review->actorId);$review->lockActor();$review->check(consume: !$admitting);
         $op=$l['operations']->firstWhere('id',(int)($input['operation_id']??0));$d=$l['domain'];
+        if ($op && $op->action !== 'renew' && $op->server_id === $review->serverId) {
+            $state = AcquisitionLifecycle::settle($op, $d, $now);
+            if ($state->fenced && $state->reason === 'expired_unused_grant') { return []; }
+        }
         if(!$op||$op->server_id!==$review->serverId||!self::eligible($op,$now)||($input['attempt_hash']??null)!==self::identity($op)
             ||$op->account_fingerprint!==$l['account']->account_fingerprint||$op->account_fingerprint!==$d->account_fingerprint
             ||$op->authority_generation!==$d->authority_generation){throw new \DomainException('This request changed. Reload the page and select it again.');}
@@ -208,10 +213,12 @@ class RegistrarAnswers
     }
 
     private static function saveAnswer(Domain $seed, StaffSettingsReview $review, array $input, \DateTimeImmutable $now,
-        ?RenewalProof $read = null): int
+        ?RenewalProof $read = null): ?int
     {
-        return FreshTransaction::run(function () use ($seed, $review, $input, $now, $read): int {
-            [$op, $d, $attempt, $answer] = self::reviewedAnswer($seed, $review, $input, $now);
+        return FreshTransaction::run(function () use ($seed, $review, $input, $now, $read): ?int {
+            $reviewed = self::reviewedAnswer($seed, $review, $input, $now);
+            if (!$reviewed) { return null; }
+            [$op, $d, $attempt, $answer] = $reviewed;
             $outcome = $answer['outcome']; $case = $answer['case_reference'];
             $transfer = $op->action === 'transfer'; $credit = isset($answer['unproven_order']);
             if ($outcome === 'not_processed' && $op->action === 'renew') {

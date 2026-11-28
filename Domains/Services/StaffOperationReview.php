@@ -131,8 +131,22 @@ final class StaffOperationReview
     public function local(\Closure $write): mixed
     {
         OperationClaims::outside(); $seed=Domain::findOrFail($this->domainId);
-        return FreshTransaction::run(function()use($seed,$write){$l=HoldingLocks::take($seed,$this->actorId);$this->check($l);
-            $result=$write($l['operations']->firstWhere('id',$this->operationId),$l);$this->record($l,$this->action==='recheck'?'read_requested':'completed');return $result;});
+        $result = FreshTransaction::run(function () use ($seed, $write): mixed {
+            $l = HoldingLocks::take($seed, $this->actorId);
+            $this->check($l);
+            $op = $l['operations']->firstWhere('id', $this->operationId);
+            $now = $this->clock->now();
+            if (in_array($this->action, ['recheck', 'release'], true)) {
+                $state = \Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionLifecycle::settle($op, $l['domain'], $now);
+                if ($state->fenced && $state->reason === 'expired_unused_grant') { return new StaffReviewRefused(self::CHANGED); }
+                $l['acquisition_at'] = $now;
+            }
+            $result = $write($op, $l);
+            $this->record($l, $this->action === 'recheck' ? 'read_requested' : 'completed');
+            return $result;
+        });
+        if ($result instanceof StaffReviewRefused) { throw $result; }
+        return $result;
     }
     public function read(\Closure $read): mixed
     {

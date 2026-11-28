@@ -15,7 +15,11 @@ final class HeldRelease
     /** Releases the current hold and records its acquisition bounds before the next worker can claim. */
     public static function release(Operation $op, array $l, Clock $clock): AcquisitionAdmissionOutcome
     {
-        $now = $clock->now();
+        $now = $l['acquisition_at'] ?? $clock->now();
+        if (!isset($l['acquisition_at'])) {
+            $state = AcquisitionLifecycle::settle($op, $l['domain'], $now);
+            if ($state->fenced && $state->reason === 'expired_unused_grant') { return AcquisitionAdmissionOutcome::Unavailable; }
+        }
         self::require($op,$l,$now);
         $policy=$op->policy??[];
         $reason = $op->safe_code;

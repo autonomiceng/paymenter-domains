@@ -16,13 +16,16 @@ trait CreditsRejectedRequests
     public function refundHeld(User $actor, int $id, string $reason, ?StaffOperationReview $review = null): ?array
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
-        FreshTransaction::run(function () use ($seed, $actor, $id, $reason, $review): void {
+        $accepted = FreshTransaction::run(function () use ($seed, $actor, $id, $reason, $review): bool {
             $l = HoldingLocks::take($seed, (int) $actor->id); $review?->check($l); $staffId = StaffFinancialRights::require($l, $reason);
             $op = $l['operations']->firstWhere('id', $id);
             if (!$op) { throw new \DomainException('Missing refund obligation.'); }
+            $now = $this->clock->now();
+            $state = \Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionLifecycle::settle($op, $l['domain'], $now);
+            if ($state->fenced && $state->reason === 'expired_unused_grant') { return false; }
             if (array_key_exists('refund_authorization', $op->funding ?? [])) {
                 if ($review || $op->state !== 'rejected') { throw new \DomainException('Invalid retained refund disposition.'); }
-                return;
+                return true;
             }
             if ($op->state !== 'held' || array_key_exists('refund', $op->funding ?? [])) { throw new \DomainException('Only held unpaid-to-provider requests may be closed.'); }
             $refused = RefundProof::requireUnsent($op, $l['domain']); RefundPayment::requireCurrent($op, $l);
@@ -32,7 +35,7 @@ trait CreditsRejectedRequests
             if ($op->action === 'transfer' && (($op->attempt ?? []) !== [] || $op->safe_code === 'transfer_not_registered')&&!$testUnsent&&!$claimedUnsent) {
                 throw new \DomainException('A fresh registry404 disposition is unavailable; retain this hold.');
             }
-            $audit = ['actor_id' => $staffId, 'reason' => $reason, 'at' => $this->clock->now()->format(DATE_ATOM),
+            $audit = ['actor_id' => $staffId, 'reason' => $reason, 'at' => $now->format(DATE_ATOM),
                 'operation_key' => $op->operation_key, 'generation' => $op->authority_generation];
             // Retain the decision if credit fails; retryPending independently rechecks funding and negative proof.
             ContactRecovery::financialDisposition($op, ['state' => 'rejected', 'safe_code' => 'refund_approved',
@@ -42,11 +45,11 @@ trait CreditsRejectedRequests
                 $op->update(['policy'=>[...($op->policy??[]),'held_order_refund'=>true]]);
             }
             if (in_array($op->action,['register','transfer'],true)&&(($op->attempt??[])===[]||$claimedUnsent||($op->action==='transfer'&&$testUnsent))) {
-                OperationTerminalProof::recordUnsent($op, $l['domain'], $this->clock->now());
+                OperationTerminalProof::recordUnsent($op, $l['domain'], $now);
                 if($claimedUnsent&&!OperationTerminalProof::safe($op,$l['domain'])){throw new \DomainException('Terminal identity mismatch.');}
             }
             AcquisitionRetirement::retainClosure($op,$l['transactions']->where('invoice_id',$op->invoice_id),
-                $l['invoices']->firstWhere('id',$op->invoice_id)?->status,$this->clock->now());
+                $l['invoices']->firstWhere('id',$op->invoice_id)?->status,$now);
             // The order and its service end in this commit, before any money moves: a refund that fails later leaves
             // a cancelled service and a retryable refund, never a refund for a live service.
             if (in_array($op->action, ['register', 'transfer'], true)) {
@@ -54,7 +57,9 @@ trait CreditsRejectedRequests
                 NativeDomainGuard::terminal($l, $op);
             }
             $review?->record($l);
+            return true;
         });
+        if (!$accepted) { throw new StaffReviewRefused(StaffOperationReview::CHANGED); }
         return $this->creditRejected($id);
     }
 

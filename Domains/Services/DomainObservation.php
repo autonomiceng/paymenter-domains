@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, ReadLimiter};
 use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget, RequestContext, RequestOrigin, TransferStatus};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionLifecycle, AcquisitionReadPermit, OperationWriter, ReadToken};
 use Paymenter\Extensions\Servers\Domains\Holding\Observation\{ObservationRecords, ObservationEligibility};
 /** Dormant read-only refresh. The financial reconciliation/completion services are never called. */
 final class DomainObservation
@@ -17,20 +18,38 @@ final class DomainObservation
     {
         OperationClaims::outside(); if($current){$current();} $seed=Domain::findOrFail($id);
         if (($generation!==null&&$seed->authority_generation!==$generation)||($fingerprint!==null&&$seed->account_fingerprint!==$fingerprint)) { throw new ReadDeferred('Stale observation work.'); }
-        [$binding,$stamp,$attempt,$seed,$knownGlue,$recordOverflow,$recordEnabled,$recordProtected]=FreshTransaction::run(function () use ($seed,$readRecords,$current): array {
-            $l=HoldingLocks::take($seed,beforeCatalogue:$current); $this->available($l); $this->bindings->requireReadableLocked($l['server'],$l['account']);
-            if (ObservationRecords::identity($seed)!==ObservationRecords::identity($l['domain'])) { throw new ReadDeferred('Stale observation work.'); }
-            $binding=AccountBindings::binding($l['account']); $attempt=null;
-            if ($l['domain']->status==='transfer_pending') {
-                $op=$l['operations']->first(fn($o)=>$o->action==='transfer'&&$o->authority_generation===$l['domain']->authority_generation&&in_array($o->state,['pending','uncertain','held'],true)&&($o->attempt['seal']??null)==='sealed');
-                if ($op) { $attempt=ReconciliationEvidence::attempt($op,$l['domain'],$binding); }
+        $capture = FreshTransaction::run(function () use ($seed, $readRecords, $current): ?array {
+            $l = HoldingLocks::take($seed, beforeCatalogue: $current);
+            $at = $this->clock->now();
+            $attempt = $read = null;
+            if ($l['domain']->status === 'transfer_pending') {
+                $op = $l['operations']->first(fn ($row) => $row->action === 'transfer'
+                    && $row->authority_generation === $l['domain']->authority_generation
+                    && in_array($row->state, ['running', 'pending', 'uncertain', 'held'], true));
+                if (!$op) { return null; }
+                $state = AcquisitionLifecycle::settle($op, $l['domain'], $at);
+                if (!$state->permitsRead() || $state->facts->reading($at) || $current && TransferPolling::applies($op)) {
+                    return null;
+                }
             }
-            $recordProtected=($this->records!==null || $this->observationReader!==null) && (!$this->recordGate || ($this->recordGate)($l));
-            $recordEnabled=$readRecords && $recordProtected;
-            $knownGlue=$recordEnabled ? (ObservationProjection::sections($l['domain'])['known_glue']??[]) : [];
-            $recordOverflow=count($knownGlue)>GlueDiscoveryLimit::HOSTS;
-            return [$binding,$l['stamp'],$attempt,$l['domain'],$knownGlue,$recordOverflow,$recordEnabled,$recordProtected];
+            $this->available($l);
+            $this->bindings->requireReadableLocked($l['server'], $l['account']);
+            if (ObservationRecords::identity($seed) !== ObservationRecords::identity($l['domain'])) { throw new ReadDeferred('Stale observation work.'); }
+            $binding = AccountBindings::binding($l['account']);
+            if (isset($state)) {
+                $attempt = ReconciliationEvidence::attempt($op, $l['domain'], $binding);
+                $read = OperationWriter::at($at)->openRead($state->facts->token, $at->modify('+250 seconds'));
+                if (!$read instanceof ReadToken) { return null; }
+            }
+            $recordProtected = ($this->records !== null || $this->observationReader !== null) && (!$this->recordGate || ($this->recordGate)($l));
+            $recordEnabled = $readRecords && $recordProtected;
+            $knownGlue = $recordEnabled ? (ObservationProjection::sections($l['domain'])['known_glue'] ?? []) : [];
+            $recordOverflow = count($knownGlue) > GlueDiscoveryLimit::HOSTS;
+            $stamp = $read ? ($l['stampForHeldRows'])() : $l['stamp'];
+            return [$binding, $stamp, $attempt, $l['domain'], $knownGlue, $recordOverflow, $recordEnabled, $recordProtected, $read];
         });
+        if (!$capture) { throw new ReadDeferred('Acquisition status read unavailable.'); }
+        [$binding, $stamp, $attempt, $seed, $knownGlue, $recordOverflow, $recordEnabled, $recordProtected, $read] = $capture;
         $credential=$current?$this->bindings->holdingCredentialRevision($binding):null;
         // Report only the configuration this attempt verified, never a later repaired configuration.
         if($attempted){$attempted($credential);}
@@ -38,7 +57,7 @@ final class DomainObservation
             $current();
             if(!hash_equals($credential,$this->bindings->holdingCredentialRevision($binding))){throw new ReadDeferred('Observation credentials changed.');}
         }:null;
-        $ctx=new RequestContext($binding,RequestOrigin::Background,$this->clock->now()->modify('+250 seconds'),new RequestBudget(25),$this->clock,$this->budget,stopOnReadFailure:true,readNameservers:true,current:$wireGuard,
+        $ctx=new RequestContext($binding,RequestOrigin::Background,$read?->until ?? $this->clock->now()->modify('+250 seconds'),new RequestBudget(25),$this->clock,$this->budget,stopOnReadFailure:true,readNameservers:true,current:$wireGuard,
             observationName:$recordEnabled && $seed->status==='active' && !$recordOverflow ? $seed->domain : null);
         $snapshot=null; $transfer=TransferStatus::Unknown; $records=null; $failed=false; $recordFailed=false; $deferred=false; $failureCode=null; $capabilities=null; $failedFamily=null;
         $recordHeld=ObservationRecords::held($seed) && !$readRecords;
@@ -81,11 +100,21 @@ final class DomainObservation
                 catch (\Throwable $error) { $records=['glue'=>['state'=>'partial','records'=>$knownGlue]]; $recordFailed=true; $failureCode=ReadFailure::code($error); }
             }
         }
-        $code=FreshTransaction::run(function () use ($seed,$binding,$stamp,$snapshot,$transfer,$records,$failed,$recordFailed,$deferred,$recordOverflow,$recordHeld,$recordEnabled,$readRecords,$failureCode,$current,$credential,$capabilities,$failedFamily): string {
-            $l=HoldingLocks::take($seed,beforeCatalogue:$current); $this->available($l); $this->bindings->requireReadableLocked($l['server'],$l['account']);
+        $code=FreshTransaction::run(function () use ($seed,$binding,$stamp,$snapshot,$transfer,$records,$failed,$recordFailed,$deferred,$recordOverflow,$recordHeld,$recordEnabled,$readRecords,$failureCode,$current,$credential,$capabilities,$failedFamily,$read): ?string {
+            $l=HoldingLocks::take($seed,beforeCatalogue:$current);
+            if ($read) {
+                $op = $l['operations']->firstWhere('id', $read->attempt->operationId);
+                $now = $this->clock->now();
+                if (!$op || !AcquisitionReadPermit::issue(AcquisitionLifecycle::settle($op, $l['domain'], $now), $read, $now)) {
+                    return null;
+                }
+                OperationWriter::at($now)->closeRead($read);
+            }
+            $this->available($l);
+            $this->bindings->requireReadableLocked($l['server'],$l['account']);
             $binding->requireMatch(AccountBindings::binding($l['account']));
             if($current&&!hash_equals($credential,$this->bindings->holdingCredentialRevision($binding))){throw new ReadDeferred('Observation credentials changed.');}
-            if ($stamp!==$l['stamp']) { throw new ReadDeferred('Observation authority changed.'); }
+            if ($stamp!==$l['stamp']) { return null; }
             if ($recordEnabled && $this->recordGate && !($this->recordGate)($l)) { throw new ReadDeferred('Record processing authority changed.'); }
             RenewalOwnership::retainAbsence($l['domain'],$this->clock->now(),$failed&&$failureCode==='domain_not_in_account');
             if ($records!==null && count($records['glue']['records']??[])>GlueDiscoveryLimit::HOSTS) { $records=null; $recordOverflow=true; }
@@ -114,6 +143,7 @@ final class DomainObservation
             if ($baseCode==='refreshed' && $readRecords && ($this->records!==null || $this->observationReader!==null) && !$recordEnabled) { return 'records_disabled'; }
             return $baseCode;
         });
+        if ($code === null) { throw new ReadDeferred('Observation authority changed.'); }
         FreshTransaction::run(function()use($seed,$code):void { $d=HoldingLocks::take($seed)['domain'];
             if(ObservationRecords::identity($d)===ObservationRecords::identity($seed)){DepartureChecks::capture($d,$this->clock->now()->getTimestamp(),$code==='domain_not_in_account');} });
         return $completion ? $completion($code,$wireGuard) : $code;

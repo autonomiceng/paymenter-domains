@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence,Evidence,RequestContext};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter,ReadToken,RetainedAcquisition};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionReadPermit,RetainedAcquisition};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAttempt, RenewalCompletion};
 /** One bounded read result, shared by background work, staff feedback and customer notices. */
 final class RegistrarCheck
@@ -31,9 +31,9 @@ final class RegistrarCheck
     private array $facts = [];
     /** Called under the check's first lock, after its eligibility check and before any other early return, so every result names its attempt.
      * The saved order number ranks checks, resumes and answers even when they start in the same second. */
-    public function capture(Operation $op): void
+    public function capture(Operation $op, ?\DateTimeImmutable $at = null): void
     {
-        $this->identity=RegistrarAnswers::identity($op);$this->seen=$op->policy['status_check']??null;$this->started=$this->clock->now()->getTimestamp();
+        $this->identity=RegistrarAnswers::identity($op);$this->seen=$op->policy['status_check']??null;$this->started=($at ?? $this->clock->now())->getTimestamp();
         $this->order=self::nextOrder($op);$op->update(['policy'=>[...TransferFollowup::retain($op),'status_check_order'=>$this->order]]);
     }
     private static function nextOrder(Operation $op): int { return max(0,(int)($op->policy['status_check_order']??0))+1; }
@@ -51,53 +51,71 @@ final class RegistrarCheck
     /** A replacement read owns this attempt's status now. */
     public function discard(): void { $this->identity = null; }
 
-    public function finish(Operation $result, ?ReadToken $read = null): Operation
+    /** Renewals retain their own status path and authority. */
+    public function finish(Operation $result): Operation
     {
-        return DB::transaction(function () use ($result, $read): Operation {
+        if ($result->action !== 'renew') { throw new \LogicException('Acquisition status requires its locked decision.'); }
+        return DB::transaction(function () use ($result): Operation {
             Domain::whereKey($result->domain_id)->lockForUpdate()->firstOrFail();
             $op = Operation::whereKey($result->id)->lockForUpdate()->firstOrFail();
-            if ($read) {
-                $writer = new OperationWriter($this->clock);
-                if (!$writer->ownsRead($read, allowExpired: true)) { return $op; }
-                $writer->closeRead($read);
-            }
-            if ($op->state === 'rejected' && $op->action === 'transfer' && $op->safe_code === TransferRejections::CODE) { return $op; }
-            if ($this->identity===null || !hash_equals($this->identity,RegistrarAnswers::identity($op))) { return $op; }
-            // A check, resume or answer saved after this check began is newer. This result must not replace it.
-            $stored=$op->policy['status_check']??null;
-            if ($stored!==$this->seen && $this->newer($stored)) { return $op; }
-            $now = $this->clock->now()->getTimestamp();
-            if ($op->state==='succeeded') { $this->awaitingAnswer=null; }
-            $outcome = $this->awaitingAnswer !== null ? 'awaiting_answer' : ($this->deferred !== null ? 'deferred' : (($this->context?->completedReads() ?? 0) > 0 ? 'checked' : 'unavailable'));
-            // A completed read of a lost reply counts toward the same read limit as any other check, once.
-            if ($this->awaitingAnswer!==null && !$this->counted && ($this->context?->completedReads()??0)>0) {
-                $policy=$op->policy;
-                if ($op->action==='renew') { $policy['renewal_polls']=($policy['renewal_polls']??0)+1; }
-                else { $policy['reconciliation']['polls']=($policy['reconciliation']['polls']??0)+1; }
-                $op->policy=$policy;
-            }
-            $next = null;
-            $watch = TransferPolling::applies($op);
-            $stopped = $op->action === 'renew' ? RenewalCompletion::capturedChargeHeld($op) || ($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT
-                : ($op->policy['reconciliation']['polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT && (!$watch || !TransferPolling::expected($op));
-
-            $transferNext = $op->policy['reconciliation']['next_at'] ?? null;
-            if ($watch && !$this->adoptionRefused && TransferPolling::expired($op, $now)) {
-                $next = TransferPolling::schedule($op, $now)['next_read_at'];
-            } elseif (Schema::hasTable('domains_runtime_operations') && !$stopped && $op->state !== 'succeeded' && ($outcome === 'deferred' || $outcome === 'checked')) {
-                if ($watch) { $next = max($now + 60, (int) $transferNext); }
-                else {
-                    $continued = $this->continued && $outcome === 'checked';
-                    $next = $continued ? $now + 60 : max($now + 300, (int) DB::table('domains_runtime_operations')->where('operation_id', $op->id)->value('due_at'));
-                    DB::table('domains_runtime_operations')->updateOrInsert(['operation_id' => $op->id], ['due_at' => $next, ...($continued ? ['attempts' => 0] : [])]);
-                }
-            }
-            self::saveResult($op, ['outcome' => $outcome, 'at' => $now, 'started' => $this->started, 'order' => $this->order,
-                'next_at' => $next, 'reason' => $this->adoptionRefused ? self::ADOPTION_REFUSED : $this->deferred, 'attempt_identity' => $this->identity,
-                'read_attempted' => ($this->context?->exchanges() ?? 0) > 0 || self::attempted($op), 'facts' => $this->facts,
-                ...($this->awaitingAnswer !== null ? ['registrar' => $this->awaitingAnswer, 'answer_after' => $this->answerAfter] : [])]);
-            return $op;
+            return $this->save($op, $this->clock->now()->getTimestamp());
         });
+    }
+
+    public function publishAcquisition(Operation $op, AcquisitionReadPermit $permit): void
+    {
+        if ((int) $op->id !== $permit->token->attempt->operationId || DB::transactionLevel() === 0) {
+            throw new \LogicException('Acquisition status requires its live read.');
+        }
+        $this->save($op, $permit->now->getTimestamp());
+    }
+
+    /** Capture can publish a scheduling decision without claiming that the registrar was checked. */
+    public function publishAcquisitionDeferral(Operation $op, \DateTimeImmutable $now): void
+    {
+        if (DB::transactionLevel() === 0 || $this->context !== null) {
+            throw new \LogicException('Acquisition deferrals belong to the capture decision.');
+        }
+        $this->save($op, $now->getTimestamp());
+    }
+
+    private function save(Operation $op, int $now): Operation
+    {
+        if ($op->state === 'rejected' && $op->action === 'transfer' && $op->safe_code === TransferRejections::CODE) { return $op; }
+        if ($this->identity===null || !hash_equals($this->identity,RegistrarAnswers::identity($op))) { return $op; }
+        // A check, resume or answer saved after this check began is newer. This result must not replace it.
+        $stored=$op->policy['status_check']??null;
+        if ($stored!==$this->seen && $this->newer($stored)) { return $op; }
+        if ($op->state==='succeeded') { $this->awaitingAnswer=null; }
+        $outcome = $this->awaitingAnswer !== null ? 'awaiting_answer' : ($this->deferred !== null ? 'deferred' : (($this->context?->completedReads() ?? 0) > 0 ? 'checked' : 'unavailable'));
+        // A completed read of a lost reply counts toward the same read limit as any other check, once.
+        if ($this->awaitingAnswer!==null && !$this->counted && ($this->context?->completedReads()??0)>0) {
+            $policy=$op->policy;
+            if ($op->action==='renew') { $policy['renewal_polls']=($policy['renewal_polls']??0)+1; }
+            else { $policy['reconciliation']['polls']=($policy['reconciliation']['polls']??0)+1; }
+            $op->policy=$policy;
+        }
+        $next = null;
+        $watch = TransferPolling::applies($op);
+        $stopped = $op->action === 'renew' ? RenewalCompletion::capturedChargeHeld($op) || ($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT
+            : ($op->policy['reconciliation']['polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT && (!$watch || !TransferPolling::expected($op));
+
+        $transferNext = $op->policy['reconciliation']['next_at'] ?? null;
+        if ($watch && !$this->adoptionRefused && TransferPolling::expired($op, $now)) {
+            $next = TransferPolling::schedule($op, $now)['next_read_at'];
+        } elseif (Schema::hasTable('domains_runtime_operations') && !$stopped && $op->state !== 'succeeded' && ($outcome === 'deferred' || $outcome === 'checked')) {
+            if ($watch) { $next = max($now + 60, (int) $transferNext); }
+            else {
+                $continued = $this->continued && $outcome === 'checked';
+                $next = $continued ? $now + 60 : max($now + 300, (int) DB::table('domains_runtime_operations')->where('operation_id', $op->id)->value('due_at'));
+                DB::table('domains_runtime_operations')->updateOrInsert(['operation_id' => $op->id], ['due_at' => $next, ...($continued ? ['attempts' => 0] : [])]);
+            }
+        }
+        self::saveResult($op, ['outcome' => $outcome, 'at' => $now, 'started' => $this->started, 'order' => $this->order,
+            'next_at' => $next, 'reason' => $this->adoptionRefused ? self::ADOPTION_REFUSED : $this->deferred, 'attempt_identity' => $this->identity,
+            'read_attempted' => ($this->context?->exchanges() ?? 0) > 0 || self::attempted($op), 'facts' => $this->facts,
+            ...($this->awaitingAnswer !== null ? ['registrar' => $this->awaitingAnswer, 'answer_after' => $this->answerAfter] : [])]);
+        return $op;
     }
     /** Called under the existing review locks; a resume resets scheduling, never the sealed attempt. */
     public static function resumed(Operation $op, int $now): void

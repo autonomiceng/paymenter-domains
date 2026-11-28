@@ -104,6 +104,32 @@ final readonly class OperationWriter
         return Transition::Applied;
     }
 
+    /** Apply the exact unused-grant decision already folded under the operation lock. */
+    public function retireUnusedPurchase(AcquisitionLifecycle $state): Transition
+    {
+        self::requireTransaction();
+        $facts = $state->facts;
+        if (!$state->retireSeal || !$facts || !OperationAttempts::purchaseStep($facts->token)
+            || $this->recordReply($facts->token, WireOutcome::localRefusal('expired_unused_grant')) !== Transition::Applied) {
+            return Transition::Stale;
+        }
+        $this->clearRead($facts, unresolved: false);
+        $this->release($facts, $this->clock->now());
+        return Transition::Applied;
+    }
+
+    /** Keep the last possible wire time for pacing. Registration may still retain a timely charge. */
+    public function fencePurchaseRead(AttemptFacts $facts, bool $preserveTimelyCharge): bool
+    {
+        self::requireTransaction();
+        if (!$facts->current || $facts->readToken === null || $facts->readUntil === null || $facts->reading($this->clock->now())
+            || $preserveTimelyCharge && $facts->readUnresolved) { return false; }
+        $changed = DB::table(OperationSchema::ATTEMPTS)->where('id', $facts->token->attemptId)->where('read_token', $facts->readToken)
+            ->update(['read_unresolved' => true, ...($preserveTimelyCharge ? [] : ['read_token' => null])]);
+        if ($changed === 1) { $this->bump($facts->token->stepId); }
+        return $changed === 1;
+    }
+
     /** Ends the step's current pre-seal claim, if any. A sealed attempt keeps its state. */
     public function releaseCurrent(int $operationId, StepKey $key): Transition
     {
@@ -200,8 +226,9 @@ final readonly class OperationWriter
         $facts = OperationAttempts::attempt($token, true);
         if (!$facts?->sealed() || !$facts->current
             || !OperationAttempts::evidence($token->operationId, $token->attemptId, 'reply')) { return Transition::Stale; }
-        return $this->append($token->operationId, $token->attemptId, 'decision', 'reply', $state, $proof, 'decision')
-            ? Transition::Applied : Transition::Stale;
+        if (!$this->append($token->operationId, $token->attemptId, 'decision', 'reply', $state, $proof, 'decision')) { return Transition::Stale; }
+        if (in_array($state, ['succeeded', 'rejected'], true)) { $this->clearRead($facts, $facts->readUnresolved); }
+        return Transition::Applied;
     }
 
     /** An audited answer belongs to the sealed acquisition. Final answers use its one settlement identity. */
@@ -217,14 +244,7 @@ final readonly class OperationWriter
         if (!$this->append($token->operationId, $token->attemptId, $kind, 'staff_answer', $outcome, ['answer' => $answer], $kind)) {
             return Transition::Stale;
         }
-        // The registrar's audited answer resolves the return. Retire an expired reader without giving automatic
-        // reconciliation negative send proof or allowing the orphan to replace the saved check.
-        if ($outcome === 'not_processed' && $facts->readToken !== null) {
-            DB::table(OperationSchema::ATTEMPTS)->where('id', $token->attemptId)->update([
-                'read_token' => null, 'read_until' => null, 'read_unresolved' => true,
-            ]);
-            $this->bump($token->stepId);
-        }
+        if ($kind === 'settlement') { $this->clearRead($facts, $facts->readUnresolved || $facts->readToken !== null); }
         return Transition::Applied;
     }
 
@@ -233,6 +253,7 @@ final readonly class OperationWriter
     {
         self::requireTransaction(); $now = $this->clock->now(); $facts = OperationAttempts::attempt($token, true);
         if (!$facts?->sealed() || !$facts->current || $until <= $now) { return Transition::Stale; }
+        if (OperationAttempts::purchaseStep($token) && !AcquisitionLifecycle::read($facts, $now, true)->permitsRead()) { return Transition::Stale; }
         if ($facts->reading($now)) { return Transition::Busy; }
         $inherited = $facts->readUnresolved || $facts->readToken !== null; $read = bin2hex(random_bytes(16));
         DB::table(OperationSchema::ATTEMPTS)->where('id', $token->attemptId)->update(['read_token' => $read,
@@ -267,6 +288,15 @@ final readonly class OperationWriter
         return true;
     }
 
+    private function clearRead(AttemptFacts $facts, bool $unresolved): void
+    {
+        if (!OperationAttempts::unresolvedRead($facts)) { return; }
+        DB::table(OperationSchema::ATTEMPTS)->where('id', $facts->token->attemptId)->update([
+            'read_token' => null, 'read_until' => null, 'read_unresolved' => $unresolved,
+        ]);
+        $this->bump($facts->token->stepId);
+    }
+
     /**
      * Retains the first positive observation of the current sealed attempt. Any reader of that attempt may append it,
      * even after a successor took the read claim, so it changes no claim or stamp.
@@ -274,7 +304,8 @@ final readonly class OperationWriter
     public function recordObservation(AttemptToken $token, array $observation, \DateTimeImmutable $observedAt): Transition
     {
         self::requireTransaction(); $facts = OperationAttempts::attempt($token, true);
-        if (!$facts?->current || !$facts->sealed()) { return Transition::Stale; }
+        if (!$facts?->current || !$facts->sealed()
+            || OperationAttempts::purchaseStep($token) && OperationAttempts::purchaseClosed($token)) { return Transition::Stale; }
         return $this->append($token->operationId, $token->attemptId, 'observation', 'registrar_read', 'positive', $observation, 'observation', $observedAt)
             ? Transition::Applied : Transition::Stale;
     }
@@ -284,6 +315,18 @@ final readonly class OperationWriter
      * may record it, and only while the grant is unspent.
      */
     public const NOT_SENT = 'not_sent';
+
+    public function completeAcquisition(AcquisitionReadPermit $permit, array $proof): Transition
+    {
+        self::requireTransaction();
+        $read = $permit->token;
+        $token = $read->attempt;
+        if (!$this->append($token->operationId, $token->attemptId, 'settlement', 'registrar_read', 'succeeded', $proof, 'settlement')) {
+            return Transition::Stale;
+        }
+        if (!$this->closeRead($read)) { throw new \DomainException('Acquisition read authority changed.'); }
+        return Transition::Applied;
+    }
 
     /**
      * Records the attempt's settlement through the read that found it. New positive proof only needs the read it came

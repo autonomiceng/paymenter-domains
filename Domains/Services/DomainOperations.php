@@ -51,7 +51,7 @@ final class DomainOperations
     {
         $entry = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'));
         OperationClaims::outside();
-        $route = Operation::findOrFail($id);
+        $route = $this->claims->purchaseRoute(Operation::findOrFail($id));
         $expired = AcquisitionRetryProof::expiredClaim($route, $entry);
         if (ExecutionWindow::pastTransferCutoff($route, $entry) && ($expired || AcquisitionRetryProof::interruptedHold($route))) {
             return $this->claims->holdUnclaimed($id, 'transfer_setup_review_required');

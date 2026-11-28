@@ -108,7 +108,10 @@ final class FundsWaits
             if(!self::due($op,$now)){return;}
             $decision=MoneyDecisions::run(new MoneyRequest($op->domain()->firstOrFail(),self::KIND,(int)$op->id),function(array $l)use($op,$now):?bool {
                 $current=$l['operations']->firstWhere('id',$op->id);
-                if(!$current||!self::due($current,$now,true)){return null;}
+                if (!$current) { return null; }
+                $state = \Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionLifecycle::settle($current, $l['domain'], $now);
+                if ($state->fenced && $state->reason === 'expired_unused_grant') { return null; }
+                if (!self::due($current, $now, true)) { return null; }
                 if($current->action==='renew'){
                     self::closeRenewal($current,$l,$now);
                     return true;

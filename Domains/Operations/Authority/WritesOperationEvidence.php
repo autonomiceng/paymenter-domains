@@ -11,7 +11,8 @@ trait WritesOperationEvidence
     public function recordAcquisitionCharges(ReadToken $read, AcquisitionChargeMatch $match, array $orders, \DateTimeImmutable $observedAt): Transition
     {
         self::requireTransaction();
-        if ($observedAt >= $read->until || !$this->ownsRead($read, allowExpired: true)) { return Transition::Stale; }
+        if ($observedAt >= $read->until || !$this->ownsRead($read, allowExpired: true)
+            || OperationAttempts::purchaseClosed($read->attempt)) { return Transition::Stale; }
         $a = $read->attempt;
         return $this->append($a->operationId, $a->attemptId, 'acquisition_charge', 'registrar_read',
             $match->value, ['orders'=>$orders], 'charge:'.$match->value, $observedAt) ? Transition::Applied : Transition::Stale;
