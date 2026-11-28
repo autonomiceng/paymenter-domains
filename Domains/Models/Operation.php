@@ -193,7 +193,7 @@ class Operation extends Model
     { $this->acquisitionResultSnapshot = null; }
 
     /** Batch acquisition facts for list readers. Date-only readers need no encrypted evidence. */
-    public static function loadAcquisitionAttempts(iterable $operations, bool $withEvidence = true, bool $lock = false): void
+    public static function loadAcquisitionAttempts(iterable $operations, bool $withEvidence = true, bool $lock = false, bool $withResult = true): void
     {
         $pending = $terminal = $results = [];
         foreach ($operations as $op) {
@@ -201,7 +201,7 @@ class Operation extends Model
                 && AcquisitionAttempt::key((string) $op->getRawOriginal('action')) !== null) {
                 $terminal[(int) $op->id][] = $op;
             }
-            if (!$lock && $withEvidence && $op->acquisitionResultSnapshot === null && $op->getRawOriginal('id') !== null
+            if (!$lock && $withEvidence && $withResult && $op->acquisitionResultSnapshot === null && $op->getRawOriginal('id') !== null
                 && AcquisitionAttempt::key((string) $op->getRawOriginal('action')) !== null) {
                 $results[(int) $op->id][] = $op;
             }
