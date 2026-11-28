@@ -3,7 +3,6 @@
 declare(strict_types=1);
 require __DIR__.'/Support/namesilo-registration-fixture.php';
 require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
-require_once __DIR__.'/Support/native-financial-snapshot.php';
 require __DIR__.'/Support/WireLimit.php';
 use App\Models\Credit;
 use Filament\Schemas\Schema;
@@ -139,24 +138,22 @@ foreach(['accepted','not_processed','invalid_claim','expired_read','inherited_re
     }
     if ($scenario === 'late_observation') {
         $token = OperationAttempts::sealed((int) $op->id, new StepKey('register', 1))->token;
-        // Save the observation after the answer row is written, before the operation's rejection is saved.
-        Operation::updating(static function (Operation $saving) use ($op, $token, $clock): void {
+        // Try to publish the old read in the answer transaction, before the operation state changes.
+        $observation = null;
+        Operation::updating(static function (Operation $saving) use ($op, $token, $clock, &$observation): void {
             if ($saving->id !== $op->id || !$saving->isDirty('state') || $saving->state !== 'rejected') { return; }
             same('not_processed', OperationAttempts::evidence($token->operationId, $token->attemptId, 'settlement')['outcome'] ?? null,
                 'The staff answer precedes the observation');
-            same(Transition::Applied, OperationWriter::at($clock->now())->recordObservation($token, ['owned' => true, 'expiry' => '2027-10-18'], $clock->now()),
-                'The sealed attempt retains the positive registrar observation');
+            $observation = OperationWriter::at($clock->now())->recordObservation($token, ['owned' => true, 'expiry' => '2027-10-18'],
+                $clock->now()->modify('-1 second'));
         });
-        $before = nativeFinancialSnapshot($op);
-        $refused = false;
-        try { $settings->run($review($op), $input($op, $outcome), $clock->now()); }
-        catch (DomainException) { $refused = true; }
+        $settings->run($review($op), $input($op, $outcome), $clock->now());
         $op->refresh();
-        same('positive', OperationAttempts::evidence($token->operationId, $token->attemptId, 'observation')['outcome'] ?? null,
-            'The positive observation is present when the return runs');
-        expect($refused, 'Positive registrar evidence on the sealed registration blocks the payment return');
-        same(null, $op->funding['refund'] ?? null, 'A refused return leaves no refund record');
-        same($before, nativeFinancialSnapshot($op), 'A refused return preserves the holding and payment');
+        same(Transition::Stale, $observation, 'The committed answer ends the earlier reader’s evidence authority');
+        same(null, OperationAttempts::evidence($token->operationId, $token->attemptId, 'observation'),
+            'The old reader cannot add ownership after the final answer');
+        expect(isset($op->funding['refund']), 'The final answer credits the original payment');
+        same(null, app(Refunds::class)->creditRejected($op->id), 'The final answer returns the original payment once');
         continue;
     }
     $settings->run($review($op),$input($op,$outcome),$clock->now());$op->refresh();

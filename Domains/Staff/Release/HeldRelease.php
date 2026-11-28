@@ -18,7 +18,7 @@ final class HeldRelease
         $now = $l['acquisition_at'] ?? $clock->now();
         if (!isset($l['acquisition_at'])) {
             $state = AcquisitionLifecycle::settle($op, $l['domain'], $now);
-            if ($state->fenced && $state->reason === 'expired_unused_grant') { return AcquisitionAdmissionOutcome::Unavailable; }
+            if ($state->retired) { return AcquisitionAdmissionOutcome::Unavailable; }
         }
         self::require($op,$l,$now);
         $policy=$op->policy??[];

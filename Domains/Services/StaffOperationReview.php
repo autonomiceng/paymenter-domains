@@ -138,7 +138,7 @@ final class StaffOperationReview
             $now = $this->clock->now();
             if (in_array($this->action, ['recheck', 'release'], true)) {
                 $state = \Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionLifecycle::settle($op, $l['domain'], $now);
-                if ($state->fenced && $state->reason === 'expired_unused_grant') { return new StaffReviewRefused(self::CHANGED); }
+                if ($state->retired) { return new StaffReviewRefused(self::CHANGED); }
                 $l['acquisition_at'] = $now;
             }
             $result = $write($op, $l);

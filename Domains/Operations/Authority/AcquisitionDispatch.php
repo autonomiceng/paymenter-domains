@@ -135,7 +135,7 @@ final readonly class AcquisitionDispatch
         $result = $this->authority->locked((int) $sealed->id, function ($op, $domain, $all, $funding, $server, $account) use ($sealed, $admitted, $context, $ready, $preflight, $acceptance): array {
             $now = $this->clock->now();
             $state = AcquisitionLifecycle::settle($op, $domain, $now);
-            if ($state->fenced && $state->reason === 'expired_unused_grant') { return []; }
+            if ($state->retired) { return []; }
             [$binding, $paid] = $this->authority->validate($op, $domain, $all, $funding, $server, $account);
             $binding->requireMatch($admitted->binding); $binding->requireMatch($context->binding);
             ContactSetup::requireReady($op); $preflight?->requireAtSeal($op, $domain, $ready);

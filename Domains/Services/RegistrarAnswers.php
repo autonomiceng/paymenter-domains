@@ -169,7 +169,7 @@ class RegistrarAnswers
         $op=$l['operations']->firstWhere('id',(int)($input['operation_id']??0));$d=$l['domain'];
         if ($op && $op->action !== 'renew' && $op->server_id === $review->serverId) {
             $state = AcquisitionLifecycle::settle($op, $d, $now);
-            if ($state->fenced && $state->reason === 'expired_unused_grant') { return []; }
+            if ($state->retired) { return []; }
         }
         if(!$op||$op->server_id!==$review->serverId||!self::eligible($op,$now)||($input['attempt_hash']??null)!==self::identity($op)
             ||$op->account_fingerprint!==$l['account']->account_fingerprint||$op->account_fingerprint!==$d->account_fingerprint

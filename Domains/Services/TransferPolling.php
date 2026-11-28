@@ -2,15 +2,17 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt,AcquisitionWindow,OperationAttempts};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionWindow;
 /** Read scheduling only. The sealed transfer's seven-day window never authorizes another purchase or a refund. */
 final class TransferPolling
 {
     public static function applies(Operation $op): bool
     {
-        return $op->action==='transfer' && ($op->attempt['seal']??null)==='sealed'
-            && (in_array($op->state,['pending','uncertain','running'],true)||$op->state==='held'&&$op->safe_code==='transfer_needs_action');
+        if ($op->action !== 'transfer' || !in_array($op->state, ['pending', 'uncertain', 'running'], true)
+            && !($op->state === 'held' && $op->safe_code === 'transfer_needs_action')) { return false; }
+        return $op->acquisitionLifecycle(app(Clock::class)->now())?->permitsRead() ?? (($op->attempt['seal'] ?? null) === 'sealed');
     }
     public static function ownsObservation(Domain $domain): bool
     {
@@ -66,13 +68,10 @@ final class TransferPolling
 
     public static function readUntil(Operation $op): ?int
     {
-        $key = AcquisitionAttempt::key($op->action);
-        $facts = $key ? OperationAttempts::sealed((int) $op->id, $key) : null;
-        if ($facts?->readUntil === null) { return null; }
+        if ($op->acquisitionAttemptFacts()?->readUntil === null) { return null; }
         try {
-            $attempt = AcquisitionAttempt::of((int) $op->id, $op->action);
-            return $attempt?->sealed() && $attempt->facts->token == $facts->token
-                ? $attempt->facts->readUntil?->getTimestamp() : null;
+            $state = $op->acquisitionLifecycle(app(Clock::class)->now());
+            return $state?->permitsRead() ? $state->facts->readUntil?->getTimestamp() : null;
         } catch (\DomainException|\Illuminate\Contracts\Encryption\DecryptException|\JsonException) {
             return null;
         }

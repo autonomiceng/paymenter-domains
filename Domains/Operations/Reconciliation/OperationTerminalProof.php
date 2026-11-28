@@ -18,7 +18,7 @@ final class OperationTerminalProof
         return $claims->locked($id, static function ($op, $domain, $all, InvoiceFunding $funding): Operation {
             $now = app(Clock::class)->now();
             $state = AcquisitionLifecycle::settle($op, $domain, $now);
-            if ($state->fenced && $state->reason === 'expired_unused_grant') { return $op; }
+            if ($state->retired) { return $op; }
             if (!self::unsentClaim($op, $domain, $all)) { throw new \DomainException('No definitely-unsent terminal proof.'); }
             if ($op->funding_basis === 'complimentary' && isset($op->funding['late_credits'])) { $funding->requireInitial($op, $domain); }
             self::recordUnsent($op, $domain, $now);

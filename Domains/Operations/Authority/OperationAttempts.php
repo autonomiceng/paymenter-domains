@@ -28,31 +28,22 @@ final class OperationAttempts
 
     public static function releasedUnsent(AttemptFacts $attempt, bool $lock = false): bool
     {
-        return self::orderedRelease($attempt)
-            && ($attempt->sealed() ? self::locallyRefused($attempt, $lock) : self::unsealedUnsent($attempt, $lock));
-    }
-
-    private static function orderedRelease(AttemptFacts $attempt): bool
-    {
-        return $attempt->released && !$attempt->current && $attempt->claimedAt !== null
-            && $attempt->releasedAt !== null && $attempt->releasedAt >= $attempt->claimedAt;
+        return $attempt->released && !$attempt->current
+            && AcquisitionLifecycle::read($attempt, now()->toImmutable(), $lock)->phase === AcquisitionPhase::ProvedUnsent;
     }
 
     public static function unsealedUnsent(AttemptFacts $attempt, bool $lock): bool
     {
-        return !$attempt->sealed() && self::definitelyUnsent($attempt)
-            && !self::hasAcquisitionSettlementEvidence($attempt->token, $lock, unsealed: true);
+        return !$attempt->sealed() && in_array(AcquisitionLifecycle::read($attempt, now()->toImmutable(), $lock)->phase,
+            [AcquisitionPhase::LiveAuthority, AcquisitionPhase::ProvedUnsent], true);
     }
 
-    /** Only the transport's durable local refusal proves the physical grant was unused. */
+    /** A reply proving a local refusal may authorize closing or retiring the exact sealed attempt. */
     public static function locallyRefused(AttemptFacts $attempt, bool $lock = false): bool
     {
-        if (!$attempt->sealed() || $attempt->claimedAt === null || $attempt->sealedAt < $attempt->claimedAt
-            || !self::definitelyUnsent($attempt)) { return false; }
-        $token = $attempt->token;
-        $reply = self::evidence($token->operationId, $token->attemptId, 'reply', $lock);
-        return ($reply['source'] ?? null) === 'local_refusal' && ($reply['outcome'] ?? null) === 'unsent'
-            && !self::hasAcquisitionSettlementEvidence($token, $lock);
+        if (!$attempt->sealed()) { return false; }
+        $state = AcquisitionLifecycle::read($attempt, now()->toImmutable(), $lock);
+        return $state->phase === AcquisitionPhase::ProvedUnsent && !$state->retireSeal;
     }
 
     /** Null means there is no purchase step. Every retained attempt must independently prove no send. */
@@ -85,8 +76,9 @@ final class OperationAttempts
 
     public static function replaceable(AttemptFacts $attempt, \DateTimeImmutable $now, bool $lock = false): bool
     {
-        return self::releasedUnsent($attempt, $lock) || ($attempt->current && !$attempt->released && !$attempt->sealed()
-            && self::recordedLease($attempt) && $attempt->claimUntil <= $now && self::unsealedUnsent($attempt, $lock));
+        if (!$attempt->released && (!$attempt->current || $attempt->sealed() || !self::recordedLease($attempt)
+            || $attempt->claimUntil > $now)) { return false; }
+        return AcquisitionLifecycle::read($attempt, $now, $lock)->phase === AcquisitionPhase::ProvedUnsent;
     }
 
     public static function step(int $operationId, StepKey $key, bool $lock = false): ?object

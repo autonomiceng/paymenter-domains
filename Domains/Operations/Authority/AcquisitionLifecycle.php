@@ -15,7 +15,7 @@ final readonly class AcquisitionLifecycle
     private const PUBLICATION = ['observation' => true, 'acquisition_charge' => true, 'held' => true, 'settlement' => true, 'answer' => true];
 
     private function __construct(public ?AttemptFacts $facts, public AcquisitionPhase $phase, public ?string $reason = null,
-        public bool $retireSeal = false, public bool $fenced = false) {}
+        public bool $retireSeal = false, public bool $fenced = false, public bool $retired = false) {}
 
     /** Read-only reduction also accepts batch-loaded evidence. A read marker is not proof of a send. */
     public static function reduce(AttemptFacts $facts, array $rows, \DateTimeImmutable $now, bool $contact = false): self
@@ -48,7 +48,8 @@ final readonly class AcquisitionLifecycle
             return new self($facts, AcquisitionPhase::ProvedUnsent, $reply['evidence']['reason'] ?? null);
         }
         if (!$facts->current || $facts->released) { return new self($facts, $phase); }
-        if ($contact && ($reply['source'] ?? null) === 'provider' && ($reply['outcome'] ?? null) === 'created') {
+        if ($contact && ($reply['source'] ?? null) === 'reply' && ($reply['outcome'] ?? null) === 'created'
+            && is_string($reply['evidence']['provider_id'] ?? null) && preg_match('/^[1-9][0-9]{0,19}$/D', $reply['evidence']['provider_id'])) {
             return new self($facts, AcquisitionPhase::ContactIdSaved);
         }
         if ($facts->sendState === SendState::PossiblySent && $facts->grantConsumedAt === null && !$reply && !$positive
@@ -65,11 +66,15 @@ final readonly class AcquisitionLifecycle
         return new self($facts, AcquisitionPhase::PossibleHandoff);
     }
 
-    public static function read(AttemptFacts $facts, \DateTimeImmutable $now, bool $lock = false): self
+    public static function read(AttemptFacts $facts, \DateTimeImmutable $now, bool $lock = false, bool $includeClosure = false): self
     {
         $token = $facts->token;
-        $rows = OperationAttempts::evidenceMany([$token->operationId], self::EVIDENCE, $lock)[$token->operationId][$token->attemptId] ?? [];
-        return self::reduce($facts, $rows, $now);
+        $rows = OperationAttempts::evidenceMany([$token->operationId], $includeClosure ? [...self::EVIDENCE, 'terminal'] : self::EVIDENCE,
+            $lock)[$token->operationId] ?? [];
+        if (isset($rows[0]['terminal'])) {
+            return new self($facts, $rows[0]['terminal'] === OperationAttempts::UNREADABLE ? AcquisitionPhase::Invalid : AcquisitionPhase::Terminal);
+        }
+        return self::reduce($facts, $rows[$token->attemptId] ?? [], $now);
     }
 
     /** Every retained attempt must independently prove no handoff. An active or expired seal needs a locked retirement first. */
@@ -106,7 +111,7 @@ final readonly class AcquisitionLifecycle
             if (!is_array($history) || !$history || array_pop($history)->token != $facts->token
                 || !self::unsentHistory($history, $rows, $now)
                 || $op->provider_order_id !== null || $op->confirmed_expires_at !== null
-                || array_intersect_key($op->cost ?? [], ['actual' => true, 'execution' => true])
+                || $op->request_fingerprint !== $facts->requestDigest || array_intersect_key($op->cost ?? [], ['actual' => true, 'execution' => true])
                 || array_key_exists('dispatch_attempted_at', $op->operationPolicy()) || AcquisitionAttempt::conflicts($op)
                 || $domain->provider_domain_id !== null || $domain->provider_order_id !== null || $domain->provider_expires_at !== null
                 || $domain->status !== ($op->action === 'transfer' ? 'transfer_pending' : 'registration_pending')
@@ -118,7 +123,7 @@ final readonly class AcquisitionLifecycle
             $op->update(['state' => 'held', 'lease_expires_at' => null, 'safe_code' => ExecutionWindow::pastTransferCutoff($op, $now)
                 ? 'transfer_setup_review_required' : 'acquisition_definitely_unsent']);
             OperationClaims::recordHold($op, $now);
-            return new self($op->acquisitionAttemptFacts(), AcquisitionPhase::ProvedUnsent, $state->reason, fenced: true);
+            return new self($op->acquisitionAttemptFacts(), AcquisitionPhase::ProvedUnsent, $state->reason, retired: true);
         }
         if ($facts->current && $facts->readToken !== null && $facts->readUntil !== null && $facts->readUntil <= $now
             && $writer->fencePurchaseRead($facts, preserveTimelyCharge: $op->action === 'register')) {

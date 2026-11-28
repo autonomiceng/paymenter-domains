@@ -282,7 +282,7 @@ final class OperationReconciliation
             $l=['domain'=>$domain,'operations'=>$all,'staff'=>$staff]; $review?->check($l);
             $at = $this->clock->now();
             $state = AcquisitionLifecycle::settle($op, $domain, $at);
-            if (!$this->eligible($op, $at) && $state->fenced) { return $op; }
+            if (!$this->eligible($op, $at) && ($state->retired || $state->fenced)) { return $op; }
             if (!$this->eligible($op, $at)) { throw new \DomainException('No unresolved attempt.'); }
             $this->authority($op, $domain, $all, $funding, $server, $account);
             $now = $at->getTimestamp();

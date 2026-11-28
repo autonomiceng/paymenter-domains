@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\{Builder, Model};
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementAttempt;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionResult, AcquisitionResultSchema, AttemptFacts, AttemptToken, OperationAttempts, OperationSchema};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionLifecycle, AcquisitionResult, AcquisitionResultSchema, AttemptFacts, AttemptToken, OperationAttempts, OperationSchema};
 
 class Operation extends Model
 {
@@ -167,6 +167,9 @@ class Operation extends Model
 
     public function acquisitionAttemptFacts(): ?AttemptFacts
     { return $this->acquisitionRow($this->attributes)['facts'] ?? null; }
+
+    public function acquisitionLifecycle(\DateTimeImmutable $now): ?AcquisitionLifecycle
+    { return $this->acquisition($this->attributes)?->lifecycle($now); }
 
     public function acquisitionSealWindow(): ?array
     { return $this->acquisition($this->attributes)?->sealedWindow(); }

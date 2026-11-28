@@ -8,7 +8,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{Money, SendState};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AttemptToken, OperationAttempts, OperationSchema, OperationWriter, ReadToken, SealTerms, StepKey, Transition, WireOutcome};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionLifecycle, AcquisitionReadPermit, AttemptToken, OperationAttempts, OperationSchema, OperationWriter, ReadToken, SealTerms, StepKey, Transition, WireOutcome};
 use Paymenter\Extensions\Servers\Domains\Services\FoundationSchema;
 
 // Registry does not install the operation tables yet; this test installs them beside the foundation.
@@ -243,11 +243,23 @@ try {
         expect($read instanceof ReadToken, 'Another worker can read the original send');
         DB::setDefaultConnection('writer_main');
         same(Transition::Busy, $in(fn () => $writer->openRead($claim, $later(60))), 'Other worker cannot replace the active read');
+        $finish = static function (ReadToken $candidate) use ($in, $writer, $clock): Transition {
+            return $in(static function () use ($writer, $candidate, $clock): Transition {
+                DB::table('domains_operations')->where('id', $candidate->attempt->operationId)->lockForUpdate()->first();
+                $now = $clock->now();
+                $facts = OperationAttempts::attempt($candidate->attempt, true);
+                $state = AcquisitionLifecycle::read($facts, $now, true);
+                $permit = AcquisitionReadPermit::issue($state, $candidate, $now);
+                return $permit ? $writer->completeAcquisition($permit, ['order' => '41']) : Transition::Stale;
+            });
+        };
         $wrongRead = new ReadToken($read->attempt, bin2hex(random_bytes(16)), $read->until, $read->inheritedUnresolved);
-        same(Transition::Stale, $in(fn () => $writer->settle($wrongRead, 'succeeded', ['order' => '42'])), 'A different read token cannot settle the open acquisition');
-        same(Transition::Applied, $in(fn () => $writer->settle($read, 'succeeded', ['order' => '41'])), 'Only the read authority can settle');
+        same(Transition::Stale, $finish($wrongRead), 'A different read token cannot settle the open acquisition');
+        same(Transition::Stale, $in(fn () => $writer->settle($read, 'succeeded', ['order' => '41'])), 'The renewal path cannot publish purchase completion');
+        same(Transition::Applied, $finish($read), 'Only the live acquisition permit can settle');
         DB::setDefaultConnection('writer_other');
-        same(Transition::Stale, $in(fn () => $writer->settle($read, 'succeeded', ['order' => '42'])), 'Settlement survives across independent connections');
+        same(Transition::Stale, $finish($read), 'Settlement closes the read across independent connections');
+        same(Transition::Stale, $in(fn () => $writer->openRead($claim, $later(60))), 'A completed purchase cannot open another read');
     }
 } finally { DB::setDefaultConnection('sqlite'); @unlink($file); }
 

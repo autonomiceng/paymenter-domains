@@ -11,7 +11,9 @@ use Paymenter\Extensions\Servers\Domains\Services\ContactProfileHold;
 /** Acquisition evidence as seen by checkout, staff, profile and refund readers. */
 final readonly class AcquisitionAttempt
 {
-    private const KINDS = ['claim', 'admission', 'reply', 'decision', 'test_capacity', 'capacity', 'answer', 'settlement'];
+    private const KINDS = [...AcquisitionLifecycle::EVIDENCE, 'test_capacity', 'capacity'];
+    private const PROJECTED = ['claim' => true, 'admission' => true, 'reply' => true, 'decision' => true,
+        'test_capacity' => true, 'capacity' => true, 'answer' => true, 'settlement' => true];
     private const HISTORY_KINDS = ['claim' => true, 'capacity' => true, 'test_capacity' => true];
 
     private function __construct(public AttemptFacts $facts, private string $action, private array $rows, private array $origin, private array $history) {}
@@ -48,17 +50,17 @@ final readonly class AcquisitionAttempt
         try {
             if (!self::dispositionCandidate($op, $lock)) { return null; }
             $id = (int) $op->id;
-            $latest = OperationAttempts::latest($id, $key, $lock);
-            if (!$latest || $latest->token != $op->acquisitionAttemptFacts()?->token || OperationAttempts::unsentPurchase($id, $key, $lock) !== true
+            $history = OperationAttempts::purchaseHistory($id, $key, $lock);
+            if (!$history) { return null; }
+            $latest = end($history);
+            $rows = OperationAttempts::evidenceMany([$id], self::KINDS, $lock)[$id] ?? [];
+            if ($latest->token != $op->acquisitionAttemptFacts()?->token
+                || !AcquisitionLifecycle::unsentHistory($history, $rows, now()->toImmutable())
                 || self::conflicts($op)
                 || array_intersect_key($op->receiptFunding(), ['claim' => true, 'seal' => true])
                 || array_intersect_key($op->cost ?? [], ['actual' => true, 'execution' => true])
                 || $op->provider_order_id !== null || $op->confirmed_expires_at !== null
                 || array_key_exists('dispatch_attempted_at', $op->operationPolicy())) { return null; }
-            $rows = OperationAttempts::evidenceMany([$id], self::KINDS, $lock)[$id] ?? [];
-            foreach ($rows as $evidence) {
-                if (isset($evidence['decision']) || in_array(OperationAttempts::UNREADABLE, $evidence, true)) { return null; }
-            }
             $attempt = self::fromRows($latest, $op->action, $rows);
             $claim = $attempt->rows['claim']['evidence'] ?? [];
             $admission = $attempt->rows['admission']['evidence'] ?? [];
@@ -88,7 +90,7 @@ final readonly class AcquisitionAttempt
         $history = [];
         ksort($rows);
         foreach ($rows as $id => $attempt) {
-            $evidence = $id === $facts->token->attemptId ? $attempt : array_intersect_key($attempt, self::HISTORY_KINDS);
+            $evidence = array_intersect_key($attempt, $id === $facts->token->attemptId ? self::PROJECTED : self::HISTORY_KINDS);
             if (in_array(OperationAttempts::UNREADABLE, $evidence, true)) { throw new DecryptException('Acquisition attempt evidence is unreadable.'); }
             if (isset($attempt['capacity']['recorded_at'])) { $history['capacity_deferrals'][] = $attempt['capacity']['recorded_at']; }
             if (($attempt['test_capacity']['outcome'] ?? null) === 'fresh') {
@@ -122,6 +124,9 @@ final readonly class AcquisitionAttempt
 
     public function hasOriginalClaim(): bool
     { return ($this->rows['test_capacity']['outcome'] ?? null) !== 'fresh'; }
+
+    public function lifecycle(\DateTimeImmutable $now): AcquisitionLifecycle
+    { return AcquisitionLifecycle::reduce($this->facts, $this->rows, $now); }
 
     public function sealed(): bool { return $this->facts->sealed() && !$this->facts->released; }
 

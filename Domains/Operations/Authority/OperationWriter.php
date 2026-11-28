@@ -237,7 +237,7 @@ final readonly class OperationWriter
         self::requireTransaction();
         $facts = OperationAttempts::attempt($token, true);
         $outcome = $answer['outcome'];
-        if (!$facts?->current || !$facts->sealed() || $facts->reading($this->clock->now())
+        if (!$facts?->current || !$facts->sealed() || $facts->reading($this->clock->now()) || OperationAttempts::purchaseClosed($token)
             || ($outcome === 'not_processed' && (($facts->readToken !== null && $facts->readUntil === null)
                 || OperationAttempts::hasAcquisitionSettlementEvidence($token, lock: true)))) { return Transition::Stale; }
         $kind = $outcome === 'accepted' ? 'answer' : 'settlement';
@@ -253,7 +253,8 @@ final readonly class OperationWriter
     {
         self::requireTransaction(); $now = $this->clock->now(); $facts = OperationAttempts::attempt($token, true);
         if (!$facts?->sealed() || !$facts->current || $until <= $now) { return Transition::Stale; }
-        if (OperationAttempts::purchaseStep($token) && !AcquisitionLifecycle::read($facts, $now, true)->permitsRead()) { return Transition::Stale; }
+        if (OperationAttempts::purchaseStep($token)
+            && !AcquisitionLifecycle::read($facts, $now, lock: true, includeClosure: true)->permitsRead()) { return Transition::Stale; }
         if ($facts->reading($now)) { return Transition::Busy; }
         $inherited = $facts->readUnresolved || $facts->readToken !== null; $read = bin2hex(random_bytes(16));
         DB::table(OperationSchema::ATTEMPTS)->where('id', $token->attemptId)->update(['read_token' => $read,
@@ -336,6 +337,7 @@ final readonly class OperationWriter
     public function settle(ReadToken $read, string $outcome, array $settlement): Transition
     {
         self::requireTransaction();
+        if (OperationAttempts::purchaseStep($read->attempt)) { return Transition::Stale; }
         $owned = $outcome === self::NOT_SENT
             ? $this->readCurrent($read) && OperationAttempts::attempt($read->attempt, true)?->grantConsumedAt === null
             : $this->ownsRead($read);
@@ -348,7 +350,7 @@ final readonly class OperationWriter
     public function hold(ReadToken $read, array $proof): Transition
     {
         self::requireTransaction();
-        if (!$this->ownsRead($read)) { return Transition::Stale; }
+        if (OperationAttempts::purchaseStep($read->attempt) || !$this->ownsRead($read)) { return Transition::Stale; }
         return $this->append($read->attempt->operationId, $read->attempt->attemptId, 'held', 'registrar_read', 'review', $proof, 'held')
             ? Transition::Applied : Transition::Stale;
     }
@@ -375,7 +377,7 @@ final readonly class OperationWriter
     public function recordUnprocessed(ReadToken $read, array $answer): Transition
     {
         self::requireTransaction(); $a = $read->attempt;
-        if (!$this->readCurrent($read)) { return Transition::Stale; }
+        if (OperationAttempts::purchaseStep($a) || !$this->readCurrent($read)) { return Transition::Stale; }
         if (OperationAttempts::hasAcquisitionSettlementEvidence($a, lock: true)) { return Transition::Stale; }
         return $this->append($a->operationId, $a->attemptId, 'answer', 'staff_answer', 'not_processed', $answer, 'settlement')
             ? Transition::Applied : Transition::Stale;
