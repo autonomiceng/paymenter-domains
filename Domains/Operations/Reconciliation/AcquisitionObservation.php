@@ -74,9 +74,9 @@ final readonly class AcquisitionObservation
     /** A matching charge can bar a negative answer even if the read cannot settle the purchase. */
     public function retainCharge(Operation $op, AcquisitionRead $read, OperationWriter $writer): void
     {
-        if ($op->state === 'rejected' || !$this->charges || $this->observedAt === null
-            || !$writer->ownsRead($read->token, allowExpired: $op->action === 'register')) { return; }
-        $writer->recordAcquisitionCharges($read->token, $this->charges->match, $this->charges->orders, $this->observedAt);
+        if ($op->state === 'rejected' || !$this->charges || $this->observedAt === null) { return; }
+        $writer->recordAcquisitionCharges($read->token, $this->charges->match, $this->charges->orders, $this->observedAt,
+            retainAfterDeadline: $op->action === 'register');
     }
 
     /** Read takeover preserves timely evidence. A rejection closes the attempt to new observations. */

@@ -267,8 +267,14 @@ final class OperationReconciliation
                 if ($permit) { $writer->closeRead($permit->token); }
                 return $op;
             }
-            $publish?->__invoke($op, $domain, $all, $funding, $server, $account, $permit, $writer);
-            $writer->closeRead($permit->token);
+            if ($publish) {
+                $publish($op, $domain, $all, $funding, $server, $account, $permit, $writer);
+            } else {
+                $observed->retainCharge($op, $read, $writer);
+            }
+            if ($op->state !== 'succeeded' && !$writer->closeRead($permit->token)) {
+                throw new \DomainException('Acquisition read authority changed.');
+            }
             $op->reloadAcquisitionAttempt();
             $check->publishAcquisition($op, $permit);
             return $op;

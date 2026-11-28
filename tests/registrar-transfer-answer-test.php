@@ -4,8 +4,8 @@ declare(strict_types=1);
 require __DIR__.'/Support/transfer-completion-namesilo-fixture.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationWriter, ReadToken, StepKey};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,PricingRule,RefundProof,RegistrarCheck,RuntimeSchema,StaffSettingsReview as Review,StaffSettingsWrites,TransferPolling,TransferRejections};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, StepKey};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,PricingRule,RefundProof,RuntimeSchema,StaffSettingsReview as Review,StaffSettingsWrites,TransferPolling,TransferRejections};
 app()->instance(Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);
 $staff=commerceUser();$permissions=['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.enom_answer','admin.domains.manage','admin.invoices.update'];
 $role=App\Models\Role::create(['name'=>'Registrar answers','permissions'=>$permissions]);$staff->update(['role_id'=>$role->id]);
@@ -75,32 +75,35 @@ $writes=$state->calls;$engine->execute($op->id);same($writes,$state->calls,'Clos
 RuntimeSchema::install();
 foreach ([true, false] as $checkFirst) {
     $charged = $rejected($checkFirst ? 'support-check-first' : 'support-answer-first', true);
-    $check = new RegistrarCheck($clock);
-    $check->deferred = 'read_limit';
-    $writer = new OperationWriter($clock);
-    $until = $clock->now()->modify('+1 minute');
-    $read = DB::transaction(static function () use ($charged, $check, $writer, $until) {
-        $locked = $charged->newQuery()->whereKey($charged->id)->lockForUpdate()->firstOrFail();
-        $check->capture($locked);
-        $sealed = OperationAttempts::sealed((int) $locked->id, new StepKey('transfer', 1), true);
-        return $writer->openRead($sealed->token, $until);
-    });
-    expect($read instanceof ReadToken, 'The pending transfer owns the check before the answer');
-    $clock->instant = $until;
+    $clock->instant = new DateTimeImmutable('@'.TransferPolling::schedule($charged, $clock->now()->getTimestamp())['next_read_at']);
+    $schedule = DB::table('domains_runtime_operations')->where('operation_id', $charged->id);
+    $snapshot = static function () use ($charged, $schedule): array {
+        $policy = $charged->fresh()->policy;
+        return [$policy['status_check'], $policy['reconciliation']['polls'] ?? 0, $schedule->value('due_at')];
+    };
+    $before = $snapshot();
+    $answerSnapshot = null;
+    $ran = false;
+    $observe->during = static function () use ($charged, $clock, $checkFirst, $settings, $review, $answer, $snapshot, &$answerSnapshot, &$ran): void {
+        $read = OperationAttempts::sealed((int) $charged->id, new StepKey('transfer', 1));
+        expect($read->reading($clock->now()), 'The pending transfer owns a live check before the answer');
+        $ran = true;
+        $clock->instant = $read->readUntil;
+        if (!$checkFirst) {
+            $settings->run($review($charged), $answer($charged), $clock->now());
+            $answerSnapshot = $snapshot();
+        }
+    };
+    $reconcile->run($charged->id);
+    expect($ran, 'The real transfer check reaches the provider fixture');
     if ($checkFirst) {
-        $checked = $check->finish($charged, $read);
-        expect(isset($checked->policy['status_check']['next_at']), 'A check that finishes before the answer can schedule another read');
+        same($before, $snapshot(), 'An expired check finishing before the answer writes no status, poll or schedule');
+        $settings->run($review($charged), $answer($charged), $clock->now());
+    } else {
+        same($answerSnapshot, $snapshot(), 'An expired check finishing after the answer writes no status, poll or schedule');
     }
-    $settings->run($review($charged), $answer($charged), $clock->now());
     $closed = $charged->fresh();
     expect(TransferRejections::proved($closed, $closed->domain), 'The final answer settles the charged transfer and its refund');
-    if (!$checkFirst) {
-        $schedule = DB::table('domains_runtime_operations')->where('operation_id', $closed->id);
-        $before = [$closed->policy['status_check'], $schedule->value('due_at')];
-        $finished = $check->finish($closed, $read);
-        same($before, [$finished->policy['status_check'], $schedule->value('due_at')],
-            'A check finishing after the rejected transfer writes no status or schedule');
-    }
 }
 // A timely ownership reply can wait for its finishing lock while staff close the transfer.
 $late = $rejected('support-late-ownership', true);

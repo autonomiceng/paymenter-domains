@@ -237,7 +237,8 @@ final readonly class OperationWriter
         self::requireTransaction();
         $facts = OperationAttempts::attempt($token, true);
         $outcome = $answer['outcome'];
-        if (!$facts?->current || !$facts->sealed() || $facts->reading($this->clock->now()) || OperationAttempts::purchaseClosed($token)
+        if (!$facts?->current || !$facts->sealed() || $facts->reading($this->clock->now())
+            || !AcquisitionLifecycle::read($facts, $this->clock->now(), lock: true, includeClosure: true)->permitsRead()
             || ($outcome === 'not_processed' && (($facts->readToken !== null && $facts->readUntil === null)
                 || OperationAttempts::hasAcquisitionSettlementEvidence($token, lock: true)))) { return Transition::Stale; }
         $kind = $outcome === 'accepted' ? 'answer' : 'settlement';
@@ -252,6 +253,7 @@ final readonly class OperationWriter
     public function openRead(AttemptToken $token, \DateTimeImmutable $until): ReadToken|Transition
     {
         self::requireTransaction(); $now = $this->clock->now(); $facts = OperationAttempts::attempt($token, true);
+        $until = new \DateTimeImmutable('@'.$until->getTimestamp());
         if (!$facts?->sealed() || !$facts->current || $until <= $now) { return Transition::Stale; }
         if (OperationAttempts::purchaseStep($token)
             && !AcquisitionLifecycle::read($facts, $now, lock: true, includeClosure: true)->permitsRead()) { return Transition::Stale; }
@@ -271,12 +273,12 @@ final readonly class OperationWriter
             && !$facts->readUnresolved && $facts->reading($now);
     }
 
-    /** A stale finisher cannot change the schedule or use its evidence once a successor owns the read. */
-    public function ownsRead(ReadToken $read, bool $allowExpired = false): bool
+    /** Match the current live read. */
+    public function ownsRead(ReadToken $read): bool
     {
         $facts = OperationAttempts::attempt($read->attempt, true);
         return $facts?->current && $facts->readToken !== null && hash_equals($facts->readToken, $read->token)
-            && ($allowExpired || $facts->reading($this->clock->now()));
+            && $facts->reading($this->clock->now());
     }
 
     /** Releases this read. A stale finisher cannot clear a successor; inherited uncertainty stays. */
@@ -306,7 +308,8 @@ final readonly class OperationWriter
     {
         self::requireTransaction(); $facts = OperationAttempts::attempt($token, true);
         if (!$facts?->current || !$facts->sealed()
-            || OperationAttempts::purchaseStep($token) && OperationAttempts::purchaseClosed($token)) { return Transition::Stale; }
+            || OperationAttempts::purchaseStep($token)
+                && !AcquisitionLifecycle::read($facts, $this->clock->now(), lock: true, includeClosure: true)->permitsRead()) { return Transition::Stale; }
         return $this->append($token->operationId, $token->attemptId, 'observation', 'registrar_read', 'positive', $observation, 'observation', $observedAt)
             ? Transition::Applied : Transition::Stale;
     }

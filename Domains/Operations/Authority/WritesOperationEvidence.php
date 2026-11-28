@@ -8,12 +8,16 @@ use Illuminate\Support\Facades\{Crypt, DB};
 
 trait WritesOperationEvidence
 {
-    public function recordAcquisitionCharges(ReadToken $read, AcquisitionChargeMatch $match, array $orders, \DateTimeImmutable $observedAt): Transition
+    public function recordAcquisitionCharges(ReadToken $read, AcquisitionChargeMatch $match, array $orders, \DateTimeImmutable $observedAt, bool $retainAfterDeadline): Transition
     {
         self::requireTransaction();
-        if ($observedAt >= $read->until || !$this->ownsRead($read, allowExpired: true)
-            || OperationAttempts::purchaseClosed($read->attempt)) { return Transition::Stale; }
         $a = $read->attempt;
+        $now = $this->clock->now();
+        if ($observedAt >= $read->until || (!$retainAfterDeadline && $now >= $read->until)) { return Transition::Stale; }
+        $facts = OperationAttempts::attempt($a, true);
+        if (!$facts || $facts->readToken === null || !hash_equals($facts->readToken, $read->token)
+            || $facts->readUntil != $read->until
+            || !AcquisitionLifecycle::read($facts, $now, lock: true, includeClosure: true)->permitsRead()) { return Transition::Stale; }
         return $this->append($a->operationId, $a->attemptId, 'acquisition_charge', 'registrar_read',
             $match->value, ['orders'=>$orders], 'charge:'.$match->value, $observedAt) ? Transition::Applied : Transition::Stale;
     }

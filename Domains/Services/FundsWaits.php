@@ -110,7 +110,7 @@ final class FundsWaits
                 $current=$l['operations']->firstWhere('id',$op->id);
                 if (!$current) { return null; }
                 $state = \Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionLifecycle::settle($current, $l['domain'], $now);
-                if ($state->retired) { return null; }
+                if ($state->retired || $state->fenced) { return null; }
                 if (!self::due($current, $now, true)) { return null; }
                 if($current->action==='renew'){
                     self::closeRenewal($current,$l,$now);

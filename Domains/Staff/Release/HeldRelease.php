@@ -18,7 +18,7 @@ final class HeldRelease
         $now = $l['acquisition_at'] ?? $clock->now();
         if (!isset($l['acquisition_at'])) {
             $state = AcquisitionLifecycle::settle($op, $l['domain'], $now);
-            if ($state->retired) { return AcquisitionAdmissionOutcome::Unavailable; }
+            if ($state->retired || $state->fenced) { return AcquisitionAdmissionOutcome::Unavailable; }
         }
         self::require($op,$l,$now);
         $policy=$op->policy??[];

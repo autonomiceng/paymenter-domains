@@ -149,4 +149,3 @@ foreach (['transfer' => $transferProduct, 'orphan-read' => $transferProduct] as 
 same([[], [$sentState, $polls, null, $status]], [$expired, $delayed],
     'Recheck retires unused purchases and expired transfer reads cannot publish: '.json_encode([$expired, $delayed]));
 $nativeSuccessful = true;
-

@@ -122,16 +122,6 @@ final class OperationAttempts
             ->where('sequence', 1)->whereIn('step_type', ['register', 'transfer'])->exists();
     }
 
-    /** A closed purchase has no remaining evidence or publication authority. */
-    public static function purchaseClosed(AttemptToken $token): bool
-    {
-        return DB::table(OperationSchema::EVIDENCE)->where('operation_id', $token->operationId)->where(function ($query) use ($token): void {
-            $query->where(fn ($q) => $q->whereNull('attempt_id')->where('kind', 'terminal'))
-                ->orWhere(fn ($q) => $q->where('attempt_id', $token->attemptId)->where(fn ($rows) => $rows->where('kind', 'settlement')
-                    ->orWhere(fn ($decision) => $decision->where('kind', 'decision')->whereIn('outcome', ['succeeded', 'rejected']))));
-        })->lockForUpdate()->first(['id']) !== null;
-    }
-
     /** The active sealed attempt. A TEST cap refusal may have retired an earlier seal. */
     public static function sealed(int $operationId, StepKey $key, bool $lock = false): ?AttemptFacts
     {

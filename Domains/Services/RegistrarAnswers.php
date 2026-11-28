@@ -163,14 +163,32 @@ class RegistrarAnswers
     }
 
     /** Validate the staff request under the holding locks both before the read and at the final decision. */
-    private static function reviewedAnswer(Domain $seed, StaffSettingsReview $review, array $input, \DateTimeImmutable $now, bool $admitting = false): array
+    private static function reviewedAnswer(Domain $seed, StaffSettingsReview $review, array $input, \DateTimeImmutable $now, bool $admitting = false): ?array
     {
-        $l=HoldingLocks::take($seed,$review->actorId);$review->lockActor();$review->check(consume: !$admitting);
-        $op=$l['operations']->firstWhere('id',(int)($input['operation_id']??0));$d=$l['domain'];
-        if ($op && $op->action !== 'renew' && $op->server_id === $review->serverId) {
+        $l = HoldingLocks::take($seed, $review->actorId);
+        $review->lockActor();
+        $op = $l['operations']->firstWhere('id', (int) ($input['operation_id'] ?? 0));
+        $purchase = $op && in_array($op->action, ['register', 'transfer'], true) && $op->server_id === $review->serverId;
+        $review->check(consume: !$admitting && !$purchase);
+        $d = $l['domain'];
+        $state = null;
+        if ($purchase) {
+            $now = app(Clock::class)->now();
             $state = AcquisitionLifecycle::settle($op, $d, $now);
-            if ($state->retired) { return []; }
+            if ($state->retired) { return null; }
         }
+        try {
+            [$attempt, $answer] = self::boundAnswer($op, $d, $l, $review, $input, $now);
+        } catch (\DomainException $error) {
+            if ($state?->fenced) { return null; }
+            throw $error;
+        }
+        return [$op, $d, $attempt, $answer, $now, $state];
+    }
+
+    private static function boundAnswer(?Operation $op, Domain $d, array $l, StaffSettingsReview $review, array $input,
+        \DateTimeImmutable $now): array
+    {
         if(!$op||$op->server_id!==$review->serverId||!self::eligible($op,$now)||($input['attempt_hash']??null)!==self::identity($op)
             ||$op->account_fingerprint!==$l['account']->account_fingerprint||$op->account_fingerprint!==$d->account_fingerprint
             ||$op->authority_generation!==$d->authority_generation){throw new \DomainException('This request changed. Reload the page and select it again.');}
@@ -209,7 +227,7 @@ class RegistrarAnswers
             if(!$l['staff']->hasPermission('admin.domains.manage')||!$l['staff']->hasPermission('admin.invoices.update')){throw new \DomainException('Refund permission required.');}
             if($op->funding_basis==='complimentary'){ComplimentaryInvoices::require($op,$l);}else{RefundPayment::requireCurrent($op,$l);}
         }
-        return [$op, $d, $attempt, $answer];
+        return [$attempt, $answer];
     }
 
     private static function saveAnswer(Domain $seed, StaffSettingsReview $review, array $input, \DateTimeImmutable $now,
@@ -218,7 +236,7 @@ class RegistrarAnswers
         return FreshTransaction::run(function () use ($seed, $review, $input, $now, $read): ?int {
             $reviewed = self::reviewedAnswer($seed, $review, $input, $now);
             if (!$reviewed) { return null; }
-            [$op, $d, $attempt, $answer] = $reviewed;
+            [$op, $d, $attempt, $answer, $now, $state] = $reviewed;
             $outcome = $answer['outcome']; $case = $answer['case_reference'];
             $transfer = $op->action === 'transfer'; $credit = isset($answer['unproven_order']);
             if ($outcome === 'not_processed' && $op->action === 'renew') {
@@ -232,8 +250,10 @@ class RegistrarAnswers
                 $writer = OperationWriter::at($now);
                 $retained = RetainedAcquisition::adopt($op, $writer, $now);
                 if (!$retained || $writer->recordAcquisitionAnswer($retained->facts->token, $answer) !== Transition::Applied) {
+                    if ($state?->fenced) { return null; }
                     throw new \DomainException('This request changed. Reload the page and select it again.');
                 }
+                $review->check();
                 $op->reloadAcquisitionAttempt();
             }
             $policy=[...$op->policy,'enom_answer'=>$answer];

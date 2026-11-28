@@ -22,7 +22,7 @@ trait CreditsRejectedRequests
             if (!$op) { throw new \DomainException('Missing refund obligation.'); }
             $now = $this->clock->now();
             $state = \Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionLifecycle::settle($op, $l['domain'], $now);
-            if ($state->retired) { return false; }
+            if ($state->retired || $state->fenced) { return false; }
             if (array_key_exists('refund_authorization', $op->funding ?? [])) {
                 if ($review || $op->state !== 'rejected') { throw new \DomainException('Invalid retained refund disposition.'); }
                 return true;

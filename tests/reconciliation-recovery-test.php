@@ -134,16 +134,17 @@ $observation->during = static function () use ($op, $clock, $observation, $recon
 };
 $reconcile->run($op->id); same('deferred', $op->fresh()->policy['status_check']['outcome'], 'A newer check keeps its result over the older check');
 $observation->during = null; $reconcile->run($op->id); same('checked', $op->fresh()->policy['status_check']['outcome'], 'The next check saves its own result');
-// Two checks that start in the same second keep the later one's result, whichever finishes first.
-$sameSecond = static function (bool $laterFirst) use ($op, $clock): string {
-    $earlier = new \Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck($clock); $later = new \Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck($clock);
-    foreach ([$earlier, $later] as $check) { DB::transaction(fn () => $check->capture(Operation::whereKey($op->id)->lockForUpdate()->sole())); }
-    $later->deferred = 'read_limit';
-    foreach ($laterFirst ? [$later, $earlier] : [$earlier, $later] as $check) { $check->finish($op->fresh()); }
+// A same-second resume retains its newer status, whether the live check finishes before or after it.
+$sameSecond = static function (bool $resumeFirst) use ($op, $clock, $observation, $reconcile): string {
+    $resume = static fn () => DB::transaction(static fn () => \Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::resumed(
+        Operation::whereKey($op->id)->lockForUpdate()->sole(), $clock->now()->getTimestamp()));
+    $observation->during = $resumeFirst ? $resume : null;
+    $reconcile->run($op->id);
+    if (!$resumeFirst) { $resume(); }
     return $op->fresh()->policy['status_check']['outcome'];
 };
-same('deferred', $sameSecond(false), 'A later check in the same second replaces an earlier check that finished first');
-same('deferred', $sameSecond(true), 'An earlier check in the same second never replaces a later one');
+same('scheduled', $sameSecond(false), 'A resume in the same second replaces a check that finished first');
+same('scheduled', $sameSecond(true), 'A check in the same second preserves the later resume');
 // A late check that finds the request already complete leaves the saved result alone.
 [$late] = $prepare(placeholderComFixtureName('late-check-placeholder.com'), 'captured'); $armed = true;
 DB::listen(static function ($query) use (&$armed, $late): void {
