@@ -13,7 +13,7 @@ final readonly class AcquisitionReadPermit
     public static function issue(AcquisitionLifecycle $state, ReadToken $token, \DateTimeImmutable $now): ?self
     {
         if (DB::transactionLevel() === 0) { throw new \LogicException('Publication requires a locked transaction.'); }
-        return $state->ownsReadIdentity($token) && $now < $token->until
+        return $state->authorizesPublication($token, $now)
             ? new self($token, $now) : null;
     }
 }

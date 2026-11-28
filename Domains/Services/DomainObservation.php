@@ -109,7 +109,11 @@ final class DomainObservation
             }
         }
         $code=FreshTransaction::run(function () use ($seed,$binding,$stamp,$snapshot,$transfer,$records,$failed,$recordFailed,$deferred,$recordOverflow,$recordHeld,$recordEnabled,$readRecords,$failureCode,$current,$credential,$capabilities,$failedFamily,$read): ?string {
-            $l=HoldingLocks::take($seed,beforeCatalogue:$current);
+            try { $l = HoldingLocks::take($seed, beforeCatalogue: $current); }
+            catch (\DomainException $error) {
+                if ($read) { return null; }
+                throw $error;
+            }
             if ($read) {
                 $op = $l['operations']->firstWhere('id', $read->attempt->operationId);
                 $now = $this->clock->now();
@@ -126,7 +130,7 @@ final class DomainObservation
                     $binding->requireMatch(AccountBindings::binding($l['account']));
                     InvoiceFunding::requireInitialFacts($op, $l);
                     if ($current && !hash_equals($credential, $this->bindings->holdingCredentialRevision($binding))) { throw new ReadDeferred('Observation credentials changed.'); }
-                } catch (\DomainException) {
+                } catch (\DomainException|\InvalidArgumentException) {
                     $writer->closePurchaseRead($permit);
                     return null;
                 }

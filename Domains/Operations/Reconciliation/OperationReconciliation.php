@@ -221,20 +221,7 @@ final class OperationReconciliation
     {
         return $this->finishRead($id, $read, $observation, $check, function ($op, $domain, $all, $funding, $server, $account, $permit, $writer)
             use ($read, $observation, $check, $readStarted): void {
-            $attempt = $read->attempt;
-            try {
-                $binding = $this->authority($op, $domain, $all, $funding, $server, $account, $read->followup);
-                $contract = self::contract(ReconciliationEvidence::attempt($op, $domain, $binding));
-                $binding->requireMatch($attempt->binding);
-            } catch (\Throwable) {
-                if ($op->action === 'register') { $observation->retainCharge($op, $read, $writer); }
-                if(TransferPolling::applies($op)){$p=TransferPolling::finished($op->policy,$readStarted);$p['reconciliation']['staff_alert']=true;$p['reconciliation']['reason']='transfer_authority_changed';$op->update(['policy'=>$p]);}
-                return;
-            }
-            if ((!$observation->proof && $contract === $read->contract) || ($contract !== $read->contract && $op->action === 'register')) {
-                $observation->retainCharge($op, $read, $writer);
-            }
-            if ($contract !== $read->contract) { return; }
+            if (!$observation->proof) { $observation->retainCharge($op, $read, $writer); }
             $policy = TransferPolling::finished($op->policy,$readStarted); $policy['reconciliation']['polls'] = ($policy['reconciliation']['polls'] ?? 0) + 1; $check->counted = true;
             $policy['reconciliation']['staff_alert']=true;
             if(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap','enom_test_reconciliation_send_guard'],true)){$op->safe_code='reconciliation_required';}
@@ -268,7 +255,8 @@ final class OperationReconciliation
             $observed->retainOwnership($op, $domain, $account, $read, $writer);
             if ($sameStamp) { $observed->retainScan($op, $domain, $account, $read, $state, $now); }
             $permit = AcquisitionReadPermit::issue($state, $read->token, $now);
-            if (!$permit || !$this->eligible($op, $now) || !$sameStamp) {
+            if (!$permit || !$sameStamp || !$this->eligible($op, $now)
+                || !$this->matchesReadScope($op, $domain, $all, $funding, $server, $account, $read)) {
                 if ($op->action === 'register') { $observed->retainCharge($op, $read, $writer); }
                 if ($permit) { $writer->closePurchaseRead($permit); }
                 return AcquisitionCheckResult::unavailable($op, $now >= $read->until ? 'read_expired' : 'read_changed');
@@ -285,6 +273,15 @@ final class OperationReconciliation
             $published = $check->publishAcquisition($op, $permit);
             return $published ? new AcquisitionCheckResult($op, $published) : AcquisitionCheckResult::unavailable($op, 'read_changed');
         });
+    }
+
+    private function matchesReadScope(Operation $op, Domain $domain, $all, $funding, $server, $account, AcquisitionRead $read): bool
+    {
+        try {
+            $binding = $this->authority($op, $domain, $all, $funding, $server, $account, $read->followup);
+            $binding->requireMatch($read->attempt->binding);
+            return self::contract(ReconciliationEvidence::attempt($op, $domain, $binding)) === $read->contract;
+        } catch (\DomainException|\InvalidArgumentException|\DateException) { return false; }
     }
 
     public function resume(int $id, string $reason, ?StaffOperationReview $review = null): Operation

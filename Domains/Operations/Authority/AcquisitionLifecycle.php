@@ -15,7 +15,8 @@ final readonly class AcquisitionLifecycle
     private const PUBLICATION = ['observation' => true, 'acquisition_charge' => true, 'held' => true, 'settlement' => true, 'answer' => true];
 
     private function __construct(public ?AttemptFacts $facts, public AcquisitionPhase $phase, public ?string $reason = null,
-        public bool $retireSeal = false, public bool $fenced = false, public bool $retired = false) {}
+        public bool $retireSeal = false, public bool $fenced = false, public bool $retired = false,
+        private ?\DateTimeImmutable $decisionAt = null) {}
 
     /** Read-only reduction also accepts batch-loaded evidence. A read marker is not proof of a send. */
     public static function reduce(AttemptFacts $facts, array $rows, \DateTimeImmutable $now, bool $contact = false): self
@@ -71,10 +72,12 @@ final readonly class AcquisitionLifecycle
         $token = $facts->token;
         $rows = OperationAttempts::evidenceMany([$token->operationId], $includeClosure ? [...self::EVIDENCE, 'terminal'] : self::EVIDENCE,
             $lock)[$token->operationId] ?? [];
-        if (isset($rows[0]['terminal'])) {
-            return new self($facts, $rows[0]['terminal'] === OperationAttempts::UNREADABLE ? AcquisitionPhase::Invalid : AcquisitionPhase::Terminal);
-        }
-        return self::reduce($facts, $rows[$token->attemptId] ?? [], $now);
+        $state = isset($rows[0]['terminal'])
+            ? new self($facts, $rows[0]['terminal'] === OperationAttempts::UNREADABLE ? AcquisitionPhase::Invalid : AcquisitionPhase::Terminal)
+            : self::reduce($facts, $rows[$token->attemptId] ?? [], $now);
+        return $lock && DB::transactionLevel() > 0
+            ? new self($facts, $state->phase, $state->reason, $state->retireSeal, decisionAt: $now)
+            : $state;
     }
 
     /** Every retained attempt must independently prove no handoff. An active or expired seal needs a locked retirement first. */
@@ -127,7 +130,7 @@ final readonly class AcquisitionLifecycle
         }
         if ($facts->current && $facts->readToken !== null && $facts->readUntil !== null && $facts->readUntil <= $now
             && $writer->fencePurchaseRead($facts, preserveTimelyCharge: $op->action === 'register')) {
-            return new self($facts, $state->phase, $state->reason, fenced: true);
+            return new self(OperationAttempts::attempt($facts->token, true), $state->phase, $state->reason, fenced: true, decisionAt: $now);
         }
         return $state;
     }
@@ -147,4 +150,7 @@ final readonly class AcquisitionLifecycle
         return $this->permitsRead() && $facts->token == $read->attempt && $facts->readToken !== null
             && hash_equals($facts->readToken, $read->token) && $facts->readUntil == $read->until;
     }
+
+    public function authorizesPublication(ReadToken $read, \DateTimeImmutable $now): bool
+    { return $this->decisionAt === $now && $this->ownsReadIdentity($read) && $now < $read->until; }
 }
