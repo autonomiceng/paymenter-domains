@@ -155,8 +155,8 @@ $account = Account::withVerifiedBindingWrite(static fn () => Account::create([
 ]));
 $binding = $account->only(['server_id', 'registrar_key', 'account_fingerprint']);
 $domain = Domain::create($binding + [
-    'service_id' => 1, 'user_id' => 1, 'domain' => 'result-fixture.com',
-    'sld' => 'result-fixture', 'tld' => 'com', 'status' => 'registration_pending',
+    'service_id' => 1, 'user_id' => 1, 'domain' => 'result-fixture.example',
+    'sld' => 'result-fixture', 'tld' => 'example', 'status' => 'registration_pending',
 ]);
 $beforeCreation = $snapshot();
 DB::beginTransaction();
