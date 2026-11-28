@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions;
 use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionPhase, OperationAttempts};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionPhase, OperationAttempts, OperationSchema};
 use Paymenter\Extensions\Servers\Domains\Services\{PricingRule, ReconciliationEvidence, Refunds, Runtime, RuntimeWork, StaffOperationReview, StaffOperations, TransferInputs};
 
 $nativeSuccessful = false;
@@ -203,6 +203,14 @@ installedOfferEvidence($binding, $clock, true);
 DB::table('domains_runtime_turns')->where('server_id', $server->id)->update(['finished_at' => $clock->now()->getTimestamp()]);
 $transferState->name = $released->domain->domain;
 $reset();
+$counterChecked = false;
+DB::listen(static function (\Illuminate\Database\Events\QueryExecuted $query) use ($released, $clock, &$counterChecked): void {
+    if (!$counterChecked && str_contains($query->sql, 'count(') && str_contains($query->sql, OperationSchema::EVIDENCE)
+        && $query->bindings === [$released->id, 'test_capacity', 'fresh']) {
+        $counterChecked = true;
+        $clock->at = $clock->at->modify('+1 second');
+    }
+});
 config(['domains.provider_send_guard' => static function ($registrar, $environment, $command): void {
     if ($command === 'TP_CreateOrder') { throw new \RuntimeException('Synthetic refusal before cURL'); }
 }]);
@@ -214,7 +222,13 @@ try {
 $released->refresh();
 same(['held', 'enom_test_transfer_call_cap', 0], [$released->state, $released->safe_code, $purchases()],
     'The sealed capacity refusal arrives before the cutoff without a purchase');
+expect($counterChecked, 'The installed worker crosses a second inside the counter-refusal transaction');
 $beforeRelease = $released->acquisitionAttemptFacts();
+$capacity = OperationAttempts::evidence($released->id, $beforeRelease->token->attemptId, 'test_capacity');
+$reply = OperationAttempts::evidence($released->id, $beforeRelease->token->attemptId, 'reply');
+same([$capacity['evidence']['refused_at'], $capacity['evidence']['refused_at'], $capacity['evidence']['refused_at']],
+    [$reply['recorded_at'], $capacity['recorded_at'], $beforeRelease->releasedAt->format(DATE_ATOM)],
+    'Reply, capacity refusal and release use the locked instant after the counter check');
 expect($beforeRelease?->sealed() && OperationAttempts::testCapacityRefusal($beforeRelease) !== null, 'This exact sealed refusal has one retry admission');
 $ticket = StaffOperationReview::ticket($staff->id, $released->domain_id, $released->id, 'release',
     StaffOperationReview::stamp($released, $released->domain), $clock);

@@ -8,7 +8,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{Money, SendState};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionLifecycle, AcquisitionReadPermit, AttemptToken, OperationAttempts, OperationSchema, OperationWriter, ReadToken, SealTerms, StepKey, Transition, WireOutcome};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionLifecycle, AcquisitionPhase, AcquisitionReadPermit, AttemptToken, OperationAttempts, OperationSchema, OperationWriter, ReadToken, SealTerms, StepKey, Transition, WireOutcome};
 use Paymenter\Extensions\Servers\Domains\Services\FoundationSchema;
 
 // Registry does not install the operation tables yet; this test installs them beside the foundation.
@@ -77,7 +77,12 @@ $previous = $in(fn () => $writer->claim($acquisitionId, $acquisition, $later(60)
 $in(fn () => $writer->seal($previous, $terms()));
 $refusal = ['phase' => 'purchase', 'refused_at' => $clock->now()->format(DATE_ATOM),
     'dispatch_attempted_at' => $clock->now()->format(DATE_ATOM), 'authorized_cost' => ['amount' => '8.120000', 'currency' => 'USD']];
-same(Transition::Applied, $in(fn () => $writer->refuseTestCapacity($previous, $refusal, false)), 'Local TEST refusal retires the sealed attempt');
+$clock->instant = $later(1);
+same(Transition::Applied, $in(fn () => $writer->refuseTestCapacity($previous, $refusal, false)), 'Retained TEST refusal was recorded one second after the counter stopped the call');
+$retired = OperationAttempts::attempt($previous);
+same(AcquisitionPhase::ProvedUnsent, AcquisitionLifecycle::read($retired, $clock->now())->phase,
+    'A retained counter refusal between the seal and the recorded release proves no send');
+expect(OperationAttempts::testCapacityRefusal($retired) !== null, 'The same retained timeline grants one TEST admission');
 $current = $in(fn () => $writer->claim($acquisitionId, $acquisition, $later(60), ['digest' => str_repeat('b', 64)]));
 $history = DB::table(OperationSchema::EVIDENCE)->where('attempt_id', $previous->attemptId);
 (clone $history)->where('kind', 'reply')->update(['evidence' => 'unreadable']);

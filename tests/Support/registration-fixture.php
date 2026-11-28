@@ -22,7 +22,7 @@ foreach (['enom', 'namesilo'] as $key) {
         // Match the commerce fixture's USD 6 annual cost; write-path cases must stay inside the frozen order.
         $quote = new QuoteEvidence($registration->query, new Money((6 * $registration->query->years).'.00', 'USD'), CostUnit::TermTotal, 'synthetic', $clock->now(), $clock->now()->modify('+120 seconds'));
         return new FakeRegistrar($b, new Capabilities($b, []), new DriverResult($b, Disposition::Accepted, SendState::Sent,
-            ResultReason::Acknowledged, new Evidence(quote: $quote, balance: new Money('100.00', 'USD'), available: true, premium: false)));
+            ResultReason::Acknowledged, new Evidence(quote: $quote, balance: new Money($registration->balance ?? '100.00', 'USD'), available: true, premium: false)));
     },authenticator:$key==='namesilo'&&($fixtureNameSiloLocal??true)?new class implements \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator {
         public function authenticate(Environment $environment,array $credentials):void { /* Synthetic local authentication. */ }
     }:null);

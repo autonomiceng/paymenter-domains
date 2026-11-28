@@ -14,6 +14,9 @@ $result = OperationTerminalProof::encode($claims, $op->id); same('rejected', $re
 $terminal = \Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationAttempts::evidence((int)$result->id, null, 'terminal');
 same('definitely_unsent', $terminal['outcome'] ?? null, 'Terminal proof belongs to the operation ledger');
 same($result->operation_key, $terminal['evidence']['operation_key'], 'Terminal proof identifies the retained operation');
+same($held->acquisitionAttemptFacts()->token->attemptId, $terminal['evidence']['attempt_id'], 'Terminal proof identifies the exact closed worker');
+same(AcquisitionClosureKind::Unsent, OperationAttempts::purchaseProof($result->fresh(), $clock->now())->closure,
+    'The typed closure reads back through the released predecessor');
 commerceReject(fn()=>DomainReservations::releaseTerminal($result->domain->domain));
 expect((new Refunds($clock))->creditRejected($result->id)!==null,'Exact unsent account credit commits through engine');
 DomainReservations::releaseTerminal($result->domain->domain); same(null, $result->domain->fresh()->reservation_name, 'Reservation service releases proven unsent only after credit');
@@ -28,6 +31,20 @@ foreach (['sealed', 'expired'] as $mode) {
     same($op->domain->domain, $op->domain->fresh()->reservation_name, 'An unresolved or expired worker cannot release the reservation');
     $clock->instant = $now;
 }
+// The pre-apply drain must resolve a legacy inline claim on the old build. New writers cannot legitimize it.
+$legacy = $new(reservedFixtureName('legacy-claimed.example.com'));
+Illuminate\Support\Facades\DB::table('domains_operations')->where('id', $legacy->id)->update([
+    'state' => 'held', 'safe_code' => 'name_unavailable', 'started_at' => $now,
+    'request_fingerprint' => str_repeat('a', 64),
+    'attempt' => Illuminate\Support\Facades\Crypt::encryptString(json_encode([
+        'claim_key' => str_repeat('b', 32), 'seal' => 'absent', 'send_state' => 'definitely_unsent',
+    ], JSON_THROW_ON_ERROR)),
+    'funding' => Illuminate\Support\Facades\Crypt::encryptString(json_encode(['claim' => []], JSON_THROW_ON_ERROR)),
+]);
+commerceReject(fn () => OperationTerminalProof::encode($claims, $legacy->id));
+same(null, OperationAttempts::evidence((int) $legacy->id, null, 'terminal'), 'An inline claim cannot acquire a new typed terminal');
+same('held', $legacy->fresh()->state, 'A drained-only legacy shape is left intact');
+
 // Missing terminal send evidence must refuse quietly in both claim shapes.
 foreach (['register','transfer'] as $action) {
     foreach ([false,true] as $claimed) {

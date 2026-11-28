@@ -4,7 +4,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResult;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionClosureKind,AcquisitionResult,OperationAttempts};
 require __DIR__.'/Support/namesilo-registration-fixture.php';
 require_once __DIR__.'/Support/staff-panel.php';
 require __DIR__.'/Support/money-receipt.php';
@@ -18,7 +18,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,WriteReservation};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Money};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation,ProfileContactOperation};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
-use Paymenter\Extensions\Servers\Domains\Services\{ContactProfileHold,ContactStepRetries,ReadDeferred,DomainOperations,OperationClaims,ProfileContactOperations,ProfileContactSchema,Refunds,RegistrationProfiles,StaffOperationReview,StaffOperations,StaffOperationWrites,WriteAcceptance,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{ContactProfileHold,ContactStepRetries,ReadDeferred,DomainOperations,FundsWaits,OperationClaims,ProfileContactOperations,ProfileContactSchema,Refunds,RegistrationProfiles,StaffOperationReview,StaffOperations,StaffOperationWrites,WriteAcceptance,WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\RegistrationPreflight;
 ProfileContactSchema::install();staffPanel();
 app()->instance(Clock::class,$clock);app()->instance(Refunds::class,new Refunds($clock));
@@ -275,6 +275,9 @@ same(['rejected','refund_approved'],[$op->fresh()->state,$op->fresh()->safe_code
 same(App\Models\Service::STATUS_CANCELLED,$serviceStatus($op),'The service stays cancelled when the refund fails');
 same(null,$op->fresh()->funding['refund']??null,'No refund was recorded');same($sends,MoneyReceiptGateway::$sends,'No refund was sent');
 same(true,$op->fresh()->policy['held_order_refund']??false,'The paid held-order cancellation records its own refund marker');
+$closed=OperationAttempts::purchaseProof($op->fresh(),$clock->now());
+same([AcquisitionClosureKind::Unsent,$op->acquisitionAttemptFacts()->token->attemptId],[$closed->closure,$closed->facts?->token->attemptId],
+    'An interrupted refund can read back its exact closed predecessor');
 $order=\Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::order($op->domain->fresh(),$op->fresh(),App\Models\Invoice::findOrFail($op->invoice_id));
 same(true,$order['refund_pending']??false,'Only the marked held-order refund projects the pending customer step');
 $policy=$op->fresh()->policy;
@@ -296,6 +299,35 @@ $refused(fn()=>$run($op->fresh(),'credit',$retryKey),'A repeated settled-refund 
 same($auditAfter,$op->fresh()->policy['staff_actions'],'The refused duplicate review writes no extra audit');
 same($sends+1,MoneyReceiptGateway::$sends,'Never a second refund');
 echo "A failed refund keeps the cancel and retries once.\n";
+
+// Orders can pause after a real balance retry queues, before there is any contact work.
+$restoreShortfall=nativeRegistrarCheckpoint($clock,$registration,$sent);
+$shortfall=$nsNew(placeholderComFixtureName('paused-shortfall-placeholder.com'));
+$shortfall->update(['payload'=>$shortfall->payload+['nameservers'=>['ns1.provider.example','ns2.provider.example'],'privacy'=>false]]);
+$registration->balance='1.00';
+$before=[$sent->contactAdd,$sent->registerDomain,MoneyReceiptGateway::$sends];
+$shortfall=$execute($shortfall);
+same(['held','registrar_balance_insufficient'],[$shortfall->state,$shortfall->safe_code],'The real preflight observes the shortfall');
+$clock->instant=$clock->now()->modify('+16 minutes');
+expect($claims->readmitBalance($shortfall->id),'The due shortfall retry is admitted before Orders turns off');
+$account=Account::where('server_id',$binding->serverId)->sole();
+DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
+$shortfall=$execute($shortfall);
+same(['held','processing',true,false],[$shortfall->state,$shortfall->safe_code,$shortfall->acquisitionAttemptFacts()!==null,
+    ProfileContactOperation::where('operation_id',$shortfall->id)->exists()],'Paused retry retains its purchase ledger before any contact preparation');
+$viaGateway($shortfall,'receipt_paused_shortfall');
+$clock->instant=$clock->now()->modify('+3 days');
+$account=$account->fresh();
+FundsWaits::sweep($account,$clock);
+$shortfall=$shortfall->fresh();
+same(['rejected','cancelled','original_payment'],[$shortfall->state,$serviceStatus($shortfall),$shortfall->funding['refund']['to']??null],
+    'The three-day sweep returns the recorded payment while Orders is off');
+same([ $before[0], $before[1], $before[2]+1 ],[$sent->contactAdd,$sent->registerDomain,MoneyReceiptGateway::$sends],
+    'The sweep returns one payment without sending contact or purchase traffic');
+FundsWaits::sweep($account,$clock);
+app(Refunds::class)->creditRejected($shortfall->id);
+same($before[2]+1,MoneyReceiptGateway::$sends,'Replaying the sweep and the refund never returns a second payment');
+$restoreShortfall();
 
 // Once the contact step may have reached NameSilo, both actions are refused.
 $op=$nsNew(placeholderComFixtureName('held-contact-sent-placeholder.com'));
