@@ -78,11 +78,9 @@ final class RequestFacts
             }
             if (array_key_exists('auto_pay',$f)) { $out['auto_pay']=Labels::autoPay($f['auto_pay_result']??$f['auto_pay']); }
             $codeMissing=$op->safe_code==='staff_review_required'&&OperationActions::customerOwes($op)==='code';
-            if ($op->state==='held' && ($op->safe_code==='transfer_setup_review_required'||$codeMissing) && ($op->attempt??[])===[] && OperationActions::transferCutoff($op)) {
-                try {
-                    \Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireUnsent($op,$op->domain);
-                    $out['cutoff']='Auth code deadline passed.';
-                } catch (\DomainException) { /* Sent or unknown outcomes keep the unconfirmed notice. */ }
+            if ($op->state === 'held' && ($op->safe_code === 'transfer_setup_review_required' || $codeMissing)
+                && OperationActions::transferCutoff($op) && OperationActions::relevant('refund', $op)) {
+                $out['cutoff'] = 'Auth code deadline passed.';
             }
             $admissionHold=$op->state==='held'&&RenewalCycles::registrarVirgin($op)&&ReleaseDecision::renewalAdmission((string)$op->action,$op->safe_code);
             if ($admissionHold&&OperationActions::relevant('release',$op)) { $out['admission']='Fix the cause, then release the hold.'; }
@@ -498,7 +496,7 @@ final class RequestFacts
             $payment=$review==='balance_retry_funding_changed';
             return ['title'=>rtrim(Labels::reason($review),'.').'.','tone'=>'warning',
                 'body'=>$payment?'Review the invoice. The system will check it again. If this order cannot go ahead, cancel and refund it.':'Restore the original order details. The system will check them again. If this order cannot go ahead, review its cancellation.',
-                'link'=>$payment?'invoice':'domain','action'=>$payment?'refund':null];
+                'link'=>$payment?'invoice':'domain','action'=>$payment&&OperationActions::relevant('refund',$op)?'refund':null];
         }
         if ($op->state==='held') {
             $reason=$facts['reason']??null;

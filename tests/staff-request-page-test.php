@@ -81,7 +81,7 @@ same([Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::ge
 $page->assertSee("Not sent: couldn't load the registrar account's settings.")->assertSee('Open account')->assertSeeHtml(e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$heldOp->server_id])))->assertDontSee('Release hold')->assertSee('History')
     ->assertSee('Registrar account')->assertSee('NameSilo, Test')->assertSee('Request created')
     ->assertDontSee('Domain not found')->assertDontSee('No time recorded')->assertDontSee('Review actions')->assertDontSee('Saved evidence')->assertDontSee('Request type')->assertDontSee('Customer credit');
-$page->assertActionHidden('release')->assertActionVisible('refund')->assertActionHidden('hold')->assertSee('More');
+$page->assertActionHidden('release')->assertActionHidden('refund')->assertActionHidden('hold')->assertDontSee('More');
 same(['recheck'],array_values(array_filter(['recheck','resume_reads'],fn($a)=>Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions::relevant($a,$heldOp->fresh()))),'One Check status at a time');
 // Each account cause names its own fix; provider evidence keeps release hidden.
 $links=[];
@@ -130,11 +130,20 @@ foreach(['renewal_invoice_unpaid'=>'invoice','renewal_funding_or_authority'=>'do
     DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>$code]);
     $notice=RequestFacts::notice($heldOp->fresh());same([$link,null],[$notice['link'],$notice['link_label']??null],'Own record for '.$code);
 }
-// Release cannot change these answers, so the way out is the one offered.
+// A final preflight refusal only offers cancellation on a proven unsent holding.
+$cost = $heldOp->fresh()->getRawOriginal('cost');
+$expiry = $held->getRawOriginal('provider_expires_at');
 foreach(['name_unavailable','premium_name','order_not_supported'] as $code){
-    DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>$code]);
+    DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>$code, 'cost'=>$cost]);
+    DB::table('domains_domains')->where('id',$held->id)->update(['provider_expires_at'=>$expiry]);
+    same(null,RequestFacts::notice($heldOp->fresh())['action'],'Conflicting facts block cancellation for '.$code);
+    DB::table('domains_operations')->where('id',$heldOp->id)->update(['cost'=>null]);
+    DB::table('domains_domains')->where('id',$held->id)->update(['provider_expires_at'=>null]);
     same('refund',RequestFacts::notice($heldOp->fresh())['action'],'Cancel is offered for '.$code);
 }
+Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertActionVisible('refund')->assertSee('More');
+DB::table('domains_operations')->where('id',$heldOp->id)->update(['cost'=>$cost]);
+DB::table('domains_domains')->where('id',$held->id)->update(['provider_expires_at'=>$expiry]);
 
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>'configuration_unavailable']);
 $facts=RequestFacts::for($heldOp->fresh());
