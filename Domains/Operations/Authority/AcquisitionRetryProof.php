@@ -269,7 +269,10 @@ final class AcquisitionRetryProof
             ||$op->lease_expires_at!==null||$op->provider_order_id!==null||$op->confirmed_expires_at!==null||$op->completed_at!==null
             ||array_key_exists('actual',$op->cost??[])||array_key_exists('execution',$op->cost??[])||array_key_exists('dispatch_attempted_at',$op->policy??[])
             ||array_diff(array_keys($f),['claim','seal','refund_authorization','refund','dispute_holds','financial_adjustments'])||array_key_exists('seal',$f)) { return false; }
-        $held=$op->state==='held'&&in_array($op->safe_code,$holdCodes,true);
+        $held = $op->state === 'held' && (in_array($op->safe_code, $holdCodes, true)
+            || ($op->action === 'transfer' && $op->safe_code === 'transfer_setup_review_required'
+                && ($attempt = $op->acquisitionAttemptFacts()) !== null
+                && OperationAttempts::testCapacityRefusal($attempt, \Illuminate\Support\Facades\DB::transactionLevel() > 0) !== null));
         $queued=$op->state==='queued'&&in_array($op->safe_code,[null,'write_rate_limited'],true);
         $approved=$op->state==='rejected'&&$op->safe_code==='refund_approved';
         $terminal=$op->state==='rejected'&&(in_array($op->safe_code,$holdCodes,true)||$approved)

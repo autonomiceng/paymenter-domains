@@ -4,12 +4,14 @@ declare(strict_types=1);
 $liveTransferRuntime=true;
 require __DIR__.'/enom-live-transfer-test.php';
 
+use App\Models\Credit;
 use Illuminate\Support\Facades\{Auth, DB};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions;
 use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationAttempts;
-use Paymenter\Extensions\Servers\Domains\Services\{ReconciliationEvidence, Runtime, RuntimeWork, StaffOperationReview, StaffOperations, TransferInputs};
+use Paymenter\Extensions\Servers\Domains\Services\{PricingRule, ReconciliationEvidence, Refunds, Runtime, RuntimeWork, StaffOperationReview, StaffOperations, TransferInputs};
 
 $nativeSuccessful = false;
 $instant = $clock->now();
@@ -172,4 +174,21 @@ same([
     'short budget' => ['held', 'transfer_setup_review_required', 0, false, false],
     'wire refusal' => ['held', 'transfer_setup_review_required', 0, true, true],
 ], $cutoffResults, 'Transfer cutoff keeps a full request budget and retains a physical refusal: '.json_encode($cutoffResults, JSON_THROW_ON_ERROR));
+
+$refused = $cutoffOrders['wire refusal']->fresh();
+Auth::setUser($staff);
+expect(!OperationActions::relevant('release', $refused), 'The expired transfer still cannot be released for purchase');
+expect(OperationActions::relevant('refund', $refused), 'Staff can cancel and credit the transfer proved unsent at cutoff');
+$credit = static fn (): int => PricingRule::minor((string) (Credit::where('user_id', $user->id)
+    ->where('currency_code', 'USD')->value('amount') ?? '0.00'));
+$expectedCredit = $credit() + PricingRule::minor($refused->amount);
+$ticket = StaffOperationReview::ticket($staff->id, $refused->domain_id, $refused->id, 'refund',
+    StaffOperationReview::stamp($refused, $refused->domain), $clock);
+(new StaffOperations($clock))->run($staff, $refused->domain_id, $refused->id, 'refund', $ticket, 'Cancel the unsent transfer');
+$closed = $refused->fresh();
+same(['rejected', 'refund_approved', 'cancelled', $expectedCredit],
+    [$closed->state, $closed->safe_code, $closed->domain->service->status, $credit()],
+    'Reviewed cancellation closes the transfer and credits its exact payment');
+same(null, app(Refunds::class)->creditRejected($closed->id), 'Repeating credit recovery has nothing to return');
+same([$expectedCredit, 0], [$credit(), $purchases()], 'Credit recovery leaves the balance intact and sends no purchase');
 $nativeSuccessful = true;
