@@ -36,7 +36,11 @@ final readonly class StaffOperations
                 else{app(OperationReconciliation::class)->resume($operation,'staff_review',$r);}break;
             case 'resume_observation':
                 $id=ObservationWork::currentId(Domain::findOrFail($domain));
-                if(!$id){throw new \DomainException('No scheduled read work matches the current domain account, generation and phase.');}
+                if (!$id) {
+                    // A stale submission still gets the locked review's refusal, including a live worker.
+                    return $r->local(static fn (): never => throw new \DomainException(
+                        'No scheduled read work matches the current domain account, generation and phase.'));
+                }
                 app(ObservationWork::class)->resume((int)$id,'staff_review',$r);break;
             case 'recheck':
                 $op=\Paymenter\Extensions\Servers\Domains\Models\Operation::findOrFail($operation);
