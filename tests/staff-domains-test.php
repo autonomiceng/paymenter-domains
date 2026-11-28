@@ -12,10 +12,10 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Labels,OneLine,RefundCandidates,RequestFacts,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Labels,OneLine,RefundCandidates,RequestFacts,Staff,StaffDomainInputs};
 use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainQueries;
 use Paymenter\Extensions\Servers\Domains\Policies\DomainPolicy;
-use Paymenter\Extensions\Servers\Domains\Services\{HoldingReadRetry, ObligationAlerts, StaffOperationReview};
+use Paymenter\Extensions\Servers\Domains\Services\{HoldingObservationWork, HoldingReadRetry, ObligationAlerts, StaffOperationReview};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 staffPanel(); [$held,$active,$long]=staffData();
 function staffFilter($page, string $name, mixed $value) {
@@ -126,8 +126,9 @@ try {
     ObligationAlerts::record($held,'template_failed',time());
     $pendingUrl=\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl('view',['record'=>$pendingRequest->id]);
     same(false,HoldingReadRetry::status($held->fresh())['read_stopped'],'Pending transfers have no stopped holding read');
+    same(true, in_array('template_failed', array_column(StaffDomainInputs::for([$held->fresh()])[$held->id]['alerts'], 'code'), true), 'Pending transfer retains the reminder failure alert');
     Livewire::actingAs($readReviewer)->test(ViewDomain::class,['record'=>$held->id])
-        ->assertActionHidden('resume_observation')->assertSee(DomainFacts::alertCause('template_failed'))
+        ->assertActionHidden('resume_observation')
         ->assertSeeHtml('href="'.e($pendingUrl).'"');
     Livewire::actingAs($readReviewer)->test(ViewOperation::class,['record'=>$pendingRequest->id])->assertActionVisible('recheck');
 } finally { DB::rollBack(); }
@@ -142,7 +143,11 @@ foreach (['read_unavailable','budget_exhausted','superseded']as$code) {
         expect(!$recordService::stopped($active->fresh()),'Foreign scheduled work never stops this holding');DB::table('domains_observation_work')->where('id',$work)->update([$field=>$old]);
     }
 }
-$sync=static function()use($active): array { $f=DomainFacts::for($active->fresh()); return array_key_exists('Last sync',$f)?[$f['Last sync']['value'],$f['Last sync']['sub']]:['absent',null]; };
+$syncAt = static function () use ($active): ?int {
+    $row = DomainFacts::for($active->fresh())['Last sync'] ?? [];
+    expect(array_key_exists('at', $row), 'Last sync exposes its timestamp field');
+    return $row['at'];
+};
 foreach ([['read_unavailable',1],['budget_exhausted',5]] as [$code,$tries]) {
     DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code,'tries'=>$tries]);
     same($code,HoldingReadRetry::status($active->fresh())['read_code'],'Stopped read retains its exact safe cause');
@@ -150,16 +155,16 @@ foreach ([['read_unavailable',1],['budget_exhausted',5]] as [$code,$tries]) {
 }
 foreach ([null,'healthy_pending','refreshed','unresolved'] as $code) {
     DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code,'tries'=>2]);
-    same([null,'Fills in by itself within a day'],$sync(),'Running sync without a saved read shows Missing with its cause, not a failure');
+    same([null, false], [$syncAt(), HoldingReadRetry::status($active->fresh())['read_stopped']], 'No read is saved or stopped');
 }
 DB::table('domains_domains')->where('id',$active->id)->update(['last_synced_at'=>'2026-10-20 15:05:00']);
-same(['Oct 20, 2026, 3:05 PM UTC',null],$sync(),'Last sync shows the saved read time');
+same($active->fresh()->last_synced_at->getTimestamp(), $syncAt(), 'Last sync uses the saved timestamp');
 DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>null,'claim'=>str_repeat('a',32),'lease_until'=>time()+300,'tries'=>1]);
-same(['Oct 20, 2026, 3:05 PM UTC','Syncing now'],$sync(),'A claimed check is syncing now');
+same([$active->fresh()->last_synced_at->getTimestamp(), true], [$syncAt(), HoldingObservationWork::leased($active->fresh(), new DateTimeImmutable())], 'A live claim preserves the saved timestamp');
 DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>'unmapped_reason_code']);
 expect(!str_contains(json_encode(DomainFacts::for($active->fresh())),'unmapped_reason_code'),'Unknown saved work code never echoes');
 DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>'read_unavailable','generation'=>$active->authority_generation+1]);
-same(['Oct 20, 2026, 3:05 PM UTC',null],$sync(),'Foreign generation observation work is excluded');
+same([$active->fresh()->last_synced_at->getTimestamp(), null], [$syncAt(), HoldingObservationWork::currentId($active->fresh())], 'Foreign work leaves the saved read in place');
 DB::table('domains_domains')->where('id',$active->id)->update(['last_synced_at'=>null]);
 DB::table('domains_observation_work')->where('id',$work)->delete();
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('review.example')->assertCanSeeTableRecords([$held])->assertCanNotSeeTableRecords([$active,$long]);

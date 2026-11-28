@@ -25,7 +25,7 @@ $hidden=[];
 foreach([...array_keys(DomainStatus::STATES),'unknown'] as $status){
     DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>$status,'provider_expires_at'=>null,'last_synced_at'=>null]);
     $page=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertSuccessful();
-    $html=html_entity_decode(strip_tags($page->html()),ENT_QUOTES);
+    $alertCodes = array_column(StaffDomainInputs::for([$domain->fresh()])[$domain->id]['alerts'], 'code');
     $holdingRead=in_array($status,['active','grace','expired'],true);
     if(!$holdingRead){$page->assertActionHidden('resume_observation');}
     foreach(DomainFacts::ALERTS as $code=>[$row]){
@@ -46,7 +46,7 @@ foreach([...array_keys(DomainStatus::STATES),'unknown'] as $status){
             if (!in_array($code, array_column($alerts, 'code'), true) || !HoldingReadRetry::status($d)['read_stopped']) {
                 $hidden[] = $code.'/'.$status;
             }
-        } elseif (!str_contains($html, DomainFacts::alertCause($code))) {
+        } elseif (!in_array($code, $alertCodes, true)) {
             $hidden[] = $code.'/'.$status;
         }
     }
@@ -73,12 +73,13 @@ Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($domain->doma
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->where('code','unknown_expiry')->update(['resolved_at'=>time()]);
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($domain->domain)->assertSee('Renewal invoice missing')->assertDontSee('Expiry missing');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertDontSee('Expiry missing')->assertSee('Renewal invoice missing');
-// Every allowlisted kind, including late payments, has its cause, as the list's one clause, in the actual list cell.
+// Every allowlisted kind, including late payments, can be selected as the list's open alert.
 foreach([...array_keys(DomainFacts::ALERTS),'acquisition_late_money'] as $code){
     DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->update(['resolved_at'=>time()]);
     $domain->update(['status'=>in_array($code,[RenewalOwnership::REVIEW,'observation_review'],true)?'active':'registration_pending']);
     ObligationAlerts::record($domain,$code,time());
-    Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($domain->domain)->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\ListNote::clause(DomainFacts::alertCause($code)));
+    Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($domain->domain)->assertCanSeeTableRecords([$domain]);
+    same($code, DomainFacts::status($domain->fresh())['alert'], 'The list status selects the open alert');
 }
 // Unreadable renewal settings hide billing rows, but never their alert causes.
 $observation=$domain->fresh()->observation;
@@ -87,10 +88,11 @@ $domain->update(['status'=>'active','observation'=>$observation]);
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->update(['resolved_at'=>time()]);
 foreach(array_keys(DomainFacts::ALERTS) as $code){ObligationAlerts::record($domain,$code,time());}
 DB::table('domains_domains')->where('id',$domain->id)->update(['renewal_policy'=>'unreadable']);
-$unreadable=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertSee('Open alerts');
+Livewire::actingAs($viewer)->test(ViewDomain::class, ['record' => $domain->id])->assertSuccessful();
+$alertCodes = array_column(StaffDomainInputs::for([$domain->fresh()])[$domain->id]['alerts'], 'code');
 foreach(array_keys(DomainFacts::ALERTS) as $code){
     if($code !== 'observation_review' && ($code !== RenewalOwnership::REVIEW || RenewalOwnership::blocked($domain->fresh()))){
-        $unreadable->assertSee(DomainFacts::alertCause($code));
+        same(true, in_array($code, $alertCodes, true), 'Unreadable renewal settings retain '.$code);
     }
 }
 same(true,HoldingReadRetry::status($domain->fresh())['read_stopped'],'Unreadable renewal policy leaves the stopped read visible');

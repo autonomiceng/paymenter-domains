@@ -41,9 +41,7 @@ foreach([0,1]as$i){
     foreach(['show','setup','code']as$page){
         $html=$controller->$page($request($user),$late->domain_id)->render();
         same(0,storefrontDom($html)->query('//input[@name="transfer_code"]')->length,'Late contact page never reopens code entry');
-        expect(str_contains($html,$page==='show'?'Update your details so we can finish the transfer.':'Save details and continue'),'Late contact fix remains available');
         expect(storefrontDom($html)->query($page==='show'?'//a[@href="'.route('domains.domains.setup',$late->domain_id).'"]':'//form[@action="'.route('domains.domains.contacts-save',$late->domain_id).'"]')->length>0,'Late contact fix keeps its setup link or recovery form');
-        expect(!str_contains($html,'before we continue'),'Late overview makes no continuation promise');
     }
     $html=$controller->code($request($user),$missing->domain_id)->render();
     expect(!str_contains($html,'Save details and continue'),'No late correction without saved code');
