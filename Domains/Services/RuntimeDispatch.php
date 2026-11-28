@@ -7,6 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt,AcquisitionLane,AcquisitionResult,AcquisitionRetryProof};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\Offers;
 /** Durable poll backoff survives queue restarts; unique jobs bound worker backlog. */
 final readonly class RuntimeDispatch
 {
@@ -143,7 +144,10 @@ final readonly class RuntimeDispatch
 
     private static function testRegistrationEnabled(Account $account): bool
     {
-        try { return EnomTestRegistration::enabled(AccountBindings::binding($account)); }
+        try {
+            $binding = AccountBindings::binding($account);
+            return $binding->registrarKey === 'enom' && Offers::salesFeature($binding, 'register', setup: true);
+        }
         catch (\Throwable) { return false; }
     }
 }
