@@ -2,9 +2,13 @@
 // Native family display over encrypted domain casts. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/storefront.php';
-use Paymenter\Extensions\Servers\Domains\Models\Domain;
+use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts;
 use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
-use Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies;
+use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionClosureKind, OperationWriter, Transition};
+use Paymenter\Extensions\Servers\Domains\Presentation\{DsState, RecordFamilies};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 $failures=[];
 $check=static function(bool $ok,string $message)use(&$failures):void{if(!$ok){$failures[]=$message;}};
 $same=static function($expected,$actual,string $message)use($check):void{$check($expected===$actual,$message);};
@@ -144,23 +148,52 @@ if(str_contains($customer,'Replacing the whole list')||str_contains($customer,'p
 // Customers never see the registrar's name.
 if(preg_match('/\b(enom|namesilo)\b/i',$dom->document->textContent)){$reviewFailures[]='Customer glue names the registrar';}
 expect($reviewFailures===[],implode('; ',$reviewFailures));
-// Cancellation alone never proves no send. Reuse the engine's terminal no-send proof.
-$cancelled=clone $enom;$cancelled->status='cancelled';$cancelled->observation=[];$cancelled->service_id=1;
-$op=new Paymenter\Extensions\Servers\Domains\Models\Operation(['domain_id'=>$cancelled->id,'service_id'=>1,'server_id'=>$cancelled->server_id,'registrar_key'=>'enom','account_fingerprint'=>$cancelled->account_fingerprint,'authority_generation'=>1,'action'=>'register','funding_basis'=>'paid_invoice','state'=>'rejected','safe_code'=>'acquisition_cancelled_unpaid','completed_at'=>$now,'funding'=>[],'cost'=>[],'policy'=>[]]);
-$op->attempt=Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof::attempt($op);$cancelled->setRelation('operations',collect([$op]));
-$facts=RecordFamilies::read($cancelled,$now);$cancelHtml=view('domains::partials.record-families',['recordFamilies'=>$facts,'staff'=>true])->render();
-expect(str_contains($cancelHtml,'Registration cancelled; no registrar records to check')&&!str_contains($cancelHtml,'Sync this domain'),'No-send cancellation has no fictional inventory');
+// Record the unpaid closure before ending the purchase.
+require_once __DIR__.'/Support/accounts.php';
+$cancelled = Domain::create([
+    ...fixtureAccount(1, 'enom', 'demo-c-records'),
+    'domain' => $enom->domain, 'sld' => 'orbit-example', 'tld' => 'com',
+    'user_id' => 1, 'service_id' => 1, 'status' => 'cancelled', 'observation' => [],
+]);
+$op = DB::transaction(static function () use ($cancelled, $now): Operation {
+    $op = Operation::create([
+        'domain_id' => $cancelled->id, 'service_id' => $cancelled->service_id, 'invoice_id' => 1,
+        'server_id' => $cancelled->server_id, 'registrar_key' => $cancelled->registrar_key,
+        'account_fingerprint' => $cancelled->account_fingerprint, 'authority_generation' => $cancelled->authority_generation,
+        'operation_key' => 'demo-c-unpaid-registration', 'action' => 'register', 'funding_basis' => 'paid_invoice',
+        'state' => 'awaiting_payment', 'currency' => 'USD',
+    ]);
+    same(Transition::Applied, OperationWriter::at($now)->recordTerminal((int) $op->id, AcquisitionClosureKind::Unpaid->value, [
+        'operation_key' => $op->operation_key,
+        'generation' => $op->authority_generation,
+        'invoice_id' => $op->invoice_id,
+        'transactions' => [],
+        'unfunded' => true,
+    ]), 'Unpaid closure is recorded for the cancelled purchase');
+    $op->update(['state' => 'rejected', 'safe_code' => UnpaidAcquisitionProof::CODE, 'completed_at' => $now]);
+    return $op->fresh();
+});
+$facts = RecordFamilies::read($cancelled, $now);
+same('registration', $facts['cancelled_without_records'], 'No-send cancellation has no fictional inventory');
+$cancelHtml = view('domains::partials.record-families', ['recordFamilies' => $facts, 'staff' => true])->render();
+same(0, storefrontDom($cancelHtml)->query('//*[@data-record-family]')->length, 'The cancelled purchase renders no registrar inventory rows');
 
 require_once __DIR__.'/Support/staff-panel.php';staffPanel();\Illuminate\Support\Facades\Auth::setUser(staffUser(array_keys(\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::permissions())));
-$fact=\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($cancelled);
+$active = clone $cancelled;
+$active->status = 'active';
+expect(DomainFacts::syncNow($active), 'Staff can Sync an active domain');
+expect(!DomainFacts::syncNow($cancelled), 'No-send cancellation offers no Sync');
+$fact = DsState::staff($cancelled);
+same('Not applicable', $fact['value'], 'Native staff DNSSEC agrees with proven no-send cancellation');
 $nativePage=new \Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
 $row=(new ReflectionMethod($nativePage,'row'))->invoke($nativePage,'DS records',$fact,[]);
 $dnssec=\Filament\Schemas\Schema::make($nativePage)->components([$row])->toHtml();
-// slop-sweep: the Registrar records head says the cancellation once (asserted above), so the DS row shows only Not applicable.
-expect(str_contains($dnssec,'Not applicable')&&!str_contains($dnssec,'Registration cancelled; no registrar records to check')&&!str_contains($dnssec,'Sync this domain'),'Native staff DNSSEC agrees with proven no-send cancellation');
-$op->attempt=['seal'=>'sealed','send_state'=>'possibly_sent'];
-expect(!str_contains(json_encode(\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($cancelled)),'Registration cancelled; no registrar records to check'),'Possible send cannot hide DS uncertainty');
-expect(!str_contains(json_encode(RecordFamilies::read($cancelled,$now)),'Registration cancelled; no registrar records to check'),'Possible send cannot use cancellation explanation');
-$cancelled->observation=['records'=>$r];
+same($fact['value'], storefrontDom($dnssec)->evaluate('normalize-space(//div[@class="domains-panel-row-v"])'),
+    'The native DNSSEC row shows the fact without a second cancellation notice');
+$possiblySent = clone $cancelled;
+$possiblySent->setRelation('operations', collect([$op->replicate()->fill(['attempt' => ['seal' => 'sealed', 'send_state' => 'possibly_sent']])]));
+same('Unknown', DsState::staff($possiblySent)['value'], 'Possible send cannot hide DS uncertainty');
+same(false, RecordFamilies::read($possiblySent, $now)['cancelled_without_records'], 'Possible send cannot use cancellation explanation');
+$cancelled->observation = ['records' => [...$r, 'identity' => ObservationRecords::identity($cancelled)]];
 expect(RecordFamilies::read($cancelled,$now)['at']!==null,'Cancellation preserves real historical inventory');
 $nativeSuccessful=true;echo "Demo C record-family UI passed.\n";
