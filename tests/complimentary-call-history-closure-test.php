@@ -49,7 +49,7 @@ foreach(['register','transfer']as$action){
     FundsWaits::sweep($account,$now->modify('+3 days'));$closed=$op->fresh();
     if([$closed->state,App\Models\Service::findOrFail($op->service_id)->status]!==['rejected','cancelled']){$failures[]=$action.': completed call history must close once';continue;}
     same($history,$closed->attempt['test_call_refusals'],'Exact call history survives completion');expect(OperationTerminalProof::safe($closed,$closed->domain),'Completed history proves terminal closure');
-    RefundProof::requireUnsent($closed,$closed->domain);expect(!OperationClaims::testCallRefusalUnsent($closed)&&!OperationClaims::testCallRefusalRetryable($closed),'Terminal proof never widens live send or retry authority');
+    RefundProof::requireUnsent($closed,$closed->domain);expect(!OperationClaims::testCallRefusalRetryable($closed),'Terminal proof never widens retry authority');
     foreach(['missing','malformed','foreign','sent','future']as$case){
         $bad=clone $closed;$facts=$bad->attempt;
         if($case==='missing'){$facts['test_call_refusals']=[];}

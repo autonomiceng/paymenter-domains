@@ -5,6 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Operations\Authority;
 
 enum AcquisitionPhase
 {
+    case Virgin;
     case LiveAuthority;
     case ProvedUnsent;
     case PossibleHandoff;

@@ -89,20 +89,18 @@ final class AcquisitionResult
         return self::row($operation, true)->first_claim_at === null && self::neverAttempted($operation);
     }
 
-    private static function neverAttempted(Operation $operation): bool
+    private static function neverAttempted(Operation $operation, ?\DateTimeImmutable $now = null): bool
     {
         $id = (int) $operation->id;
-        return !OperationAttempts::hasAttempts($id, AcquisitionAttempt::key($operation->action), true)
+        return AcquisitionRetryProof::virgin($operation, $now)
             && ($operation->registrar_key !== 'namesilo' || !ProfileContactOperation::where('operation_id', $id)->lockForUpdate()->first(['id']));
     }
 
     /** A queued worker can use the window's exact held attempt or a deferred worker on that same admission. */
-    public static function continues(Operation $operation, AcquisitionWindow $window, AttemptFacts $prior, bool $lock = true): bool
+    public static function continues(Operation $operation, AcquisitionWindow $window, AttemptFacts $prior, bool $lock = true, ?\DateTimeImmutable $now = null): bool
     {
-        if (!AcquisitionRetryProof::releasedForReadmission($operation, $prior, $lock)
-            || !self::ownsAttempt($operation, $window, $prior, $lock)
-            || ($window->expiryReason === 'acquisition_definitely_unsent'
-                && AcquisitionAttempt::purchaseRefusal($operation, $lock) === null)) { return false; }
+        if (!AcquisitionRetryProof::releasedForReadmission($operation, $prior, $lock, $now)
+            || !self::ownsAttempt($operation, $window, $prior, $lock)) { return false; }
         return $operation->safe_code === null
             || $operation->safe_code === 'processing'
             || ($operation->safe_code === 'write_rate_limited' && AcquisitionRetryProof::deferred($prior, $lock));
@@ -163,7 +161,7 @@ final class AcquisitionResult
         $proof = ['operation_revision' => $operation->transition_revision, 'result_revision' => $expectedRevision,
             'state' => $operation->state, 'reason' => $hold, 'prior_attempt_id' => $latest?->token->attemptId];
         if ($admission === AcquisitionAdmission::FirstClaim) {
-            if ($row->first_claim_at !== null || !self::neverAttempted($operation) || !AcquisitionRetryProof::virgin($operation)
+            if ($row->first_claim_at !== null || !self::neverAttempted($operation, $now)
                 || !in_array($operation->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) {
                 throw new \DomainException('Acquisition has already claimed a worker.');
             }
@@ -186,14 +184,15 @@ final class AcquisitionResult
             $proof['contact_operation_id'] = $contact?->id;
         } elseif ($admission === AcquisitionAdmission::ContactCorrection) {
             if ($operation->state !== 'held' || $hold !== 'contact_details_required' || $row->first_claim_at !== null
-                || !self::neverAttempted($operation) || !ContactRecovery::provenUnsent($operation)) {
+                || !self::neverAttempted($operation, $now) || !ContactRecovery::provenUnsent($operation, $now)) {
                 throw new \DomainException('The acquisition hold no longer permits contact correction.');
             }
         } else {
-            $refused = $admission === AcquisitionAdmission::StaffRelease
-                ? AcquisitionAttempt::purchaseRefusal($operation, true) : null;
+            $purchase = OperationAttempts::purchaseProof($operation, $now, lock: true);
+            $closeCurrent = $admission === AcquisitionAdmission::StaffRelease
+                && $purchase->canCloseUnsent() && $purchase->facts?->current && $purchase->facts->sealed();
             if ($operation->state !== 'held' || $operation->lease_expires_at !== null
-                || ($refused === null && !AcquisitionRetryProof::releasedForReadmission($operation, $latest, true))) {
+                || (!$closeCurrent && !AcquisitionRetryProof::releasedForReadmission($operation, $latest, true, $now, $purchase))) {
                 throw new \DomainException('The acquisition hold no longer permits release.');
             }
             $refusal = $admission === AcquisitionAdmission::TestCapacity
@@ -231,8 +230,8 @@ final class AcquisitionResult
             }
             $proof['approval_id'] = $approvalId;
         }
-        if (isset($refused) && $refused->current) {
-            if (OperationWriter::at($now)->releaseUnsentAcquisition($refused->token, requireUnusedGrant: false) !== Transition::Applied) {
+        if ($closeCurrent ?? false) {
+            if (OperationWriter::at($now)->releaseUnsentAcquisition($purchase) !== Transition::Applied) {
                 throw new \DomainException('The refused purchase has changed.');
             }
             $operation->reloadAcquisitionAttempt();

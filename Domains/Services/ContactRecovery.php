@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionPhase, OperationAttempts};
 use App\Models\{Product, Server, Service, User};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
@@ -117,7 +118,7 @@ final class ContactRecovery
         $domain=$l['domain'];
         if((int)$l['user']->id!==(int)$domain->user_id){throw new \DomainException('Contact ownership changed.');}
         InvoiceFunding::requireInitialFacts($op,$l);
-        self::identity($op,$domain,$l['service'],$l['product']);self::unsent($op);
+        self::identity($op,$domain,$l['service'],$l['product']);self::unsent($op, $now);
         if (!in_array($op->action, ['register', 'transfer'], true) || $op->state !== 'held' || $op->safe_code !== 'contact_details_required'
             || $domain->status !== ($op->action === 'register' ? 'registration_pending' : 'transfer_pending')
             || $domain->provider_order_id !== null || $domain->provider_domain_id !== null || $domain->provider_expires_at !== null
@@ -209,14 +210,21 @@ final class ContactRecovery
     }
 
     /** Read-only form eligibility uses the same evidence check as the locked writer. */
-    public static function provenUnsent(Operation $op): bool
+    public static function provenUnsent(Operation $op, ?\DateTimeImmutable $now = null): bool
     {
-        try { self::unsent($op); return true; }
+        try { self::unsent($op, $now); return true; }
         catch (\DomainException) { return false; }
     }
 
-    private static function unsent(Operation $op): void
+    private static function unsent(Operation $op, ?\DateTimeImmutable $now = null): void
     {
+        if (AcquisitionAttempt::key($op->action)) {
+            $proof = OperationAttempts::purchaseProof($op, $now ?? app(Clock::class)->now(), DB::transactionLevel() > 0);
+            if ($proof->phase !== AcquisitionPhase::Virgin || array_intersect(['refund', 'grant'], array_keys($op->receiptFunding()))) {
+                throw new \DomainException('This request is not proven unsent.');
+            }
+            return;
+        }
         $attempt = $op->attempt ?? [];
         if ($op->completed_at !== null || $op->started_at !== null || $op->lease_expires_at !== null || $op->request_fingerprint !== null
             || $op->provider_order_id !== null || $op->confirmed_expires_at !== null

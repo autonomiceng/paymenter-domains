@@ -27,6 +27,7 @@ class Operation extends Model
     private object|false|null $acquisitionResultSnapshot = null;
     private ?array $terminalProof = null;
     private ?string $terminalCiphertext = null;
+    private ?string $terminalOutcome = null;
     private bool $noAcquisitionStep = false;
     private bool $validatingUpdate = false;
 
@@ -84,17 +85,27 @@ class Operation extends Model
     private function acquisitionTerminal(array $row): array
     {
         if (!isset($row['id']) || ($row['state'] ?? null) !== 'rejected' || !AcquisitionAttempt::key($row['action'] ?? '')) { return []; }
-        if ($this->terminalCiphertext !== null) {
-            $terminal = OperationAttempts::decodeEvidence($this->terminalCiphertext);
-        } else {
-            $proof = $this->terminalProof ??= OperationAttempts::evidence((int) $row['id'], null, 'terminal') ?? [];
-            if ($proof === OperationAttempts::UNREADABLE) {
-                throw new \Illuminate\Contracts\Encryption\DecryptException('Acquisition terminal proof is unreadable.');
-            }
-            $terminal = in_array($proof['outcome'] ?? null, ['definitely_unsent', 'unpaid_closed'], true) ? $proof['evidence'] : null;
+        $proof = $this->purchaseTerminalEvidence();
+        if ($proof === OperationAttempts::UNREADABLE) {
+            throw new \Illuminate\Contracts\Encryption\DecryptException('Acquisition terminal proof is unreadable.');
         }
-        return $terminal === null ? [] : ['seal'=>'absent', 'send_state'=>'definitely_unsent', 'disposition'=>'rejected',
-            'rejection_basis'=>'definitely_unsent', 'terminal'=>$terminal];
+        $kind = $proof['outcome'] ?? null;
+        if (!in_array($kind, ['definitely_unsent', 'unpaid_closed', 'transfer_code_timeout'], true)) { return []; }
+        $terminal = $proof['evidence'];
+        unset($terminal['attempt_id']);
+        return ['seal'=>'absent', 'send_state'=>'definitely_unsent', 'disposition'=>'rejected',
+            'rejection_basis'=>'definitely_unsent', ($kind === 'transfer_code_timeout' ? 'transfer_timeout' : 'terminal')=>$terminal];
+    }
+
+    public function purchaseTerminalEvidence(): ?array
+    {
+        if (!$this->exists || $this->state !== 'rejected') { return null; }
+        if ($this->terminalCiphertext !== null) {
+            return ['source' => 'local', 'outcome' => $this->terminalOutcome,
+                'evidence' => OperationAttempts::decodeEvidence($this->terminalCiphertext)];
+        }
+        $proof = $this->terminalProof ??= OperationAttempts::evidence((int) $this->id, null, 'terminal') ?? [];
+        return $proof ?: null;
     }
 
     private function decodeEvidence(?string $value): ?array
@@ -126,16 +137,16 @@ class Operation extends Model
     /** Read step presence with the operation when the caller has a current view of the ledger. */
     public function scopeWithAcquisitionStep(Builder $query): Builder
     {
+        $terminal = DB::table(OperationSchema::EVIDENCE)->whereColumn('operation_id', 'domains_operations.id')->whereNull('attempt_id')
+            ->where('kind', 'terminal')->whereIn('domains_operations.action', ['register', 'transfer'])
+            ->where('domains_operations.state', 'rejected')->orderBy('id')->limit(1);
         return $query->addSelect([
             'has_acquisition_step' => DB::table(OperationSchema::STEPS)
                 ->select('id')->whereColumn('operation_id', 'domains_operations.id')
                 ->whereIn('step_type', ['register', 'transfer'])->where('sequence', 1)
                 ->whereColumn('step_type', 'domains_operations.action')->limit(1),
-            'acquisition_terminal_evidence' => DB::table(OperationSchema::EVIDENCE)
-                ->select('evidence')->whereColumn('operation_id', 'domains_operations.id')->whereNull('attempt_id')
-                ->where('kind', 'terminal')->whereIn('outcome', ['definitely_unsent', 'unpaid_closed'])
-                ->whereIn('domains_operations.action', ['register', 'transfer'])->where('domains_operations.state', 'rejected')
-                ->orderBy('id')->limit(1),
+            'acquisition_terminal_evidence' => (clone $terminal)->select('evidence'),
+            'acquisition_terminal_outcome' => (clone $terminal)->select('outcome')->where('source', 'local'),
         ]);
     }
 
@@ -244,6 +255,7 @@ class Operation extends Model
         $this->clearAcquisitionResultSnapshot();
         $this->terminalProof = null;
         $this->terminalCiphertext = null;
+        $this->terminalOutcome = null;
         $this->noAcquisitionStep = false;
     }
 
@@ -253,9 +265,10 @@ class Operation extends Model
         $this->reloadManagementAttempt();
         $this->noAcquisitionStep = array_key_exists('has_acquisition_step', $attributes) && $attributes['has_acquisition_step'] === null;
         $this->terminalCiphertext = $attributes['acquisition_terminal_evidence'] ?? null;
+        $this->terminalOutcome = $attributes['acquisition_terminal_outcome'] ?? null;
         if (array_key_exists('acquisition_terminal_evidence', $attributes) && $this->terminalCiphertext === null
             && ($attributes['state'] ?? null) === 'rejected') { $this->terminalProof = []; }
-        unset($attributes['has_acquisition_step'], $attributes['acquisition_terminal_evidence']);
+        unset($attributes['has_acquisition_step'], $attributes['acquisition_terminal_evidence'], $attributes['acquisition_terminal_outcome']);
         return parent::setRawAttributes($attributes, $sync);
     }
 

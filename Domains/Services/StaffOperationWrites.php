@@ -2,11 +2,12 @@
 // Enom444f31c staff DomainOperations paths; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementAuthority;
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt,AcquisitionResult};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionPhase, AcquisitionResult, OperationAttempts};
 /** Explicit local writers. Never clears attempt evidence, sends a request or releases paid uncertainty. */
 final class StaffOperationWrites
 {
@@ -34,7 +35,10 @@ final class StaffOperationWrites
     {
         if(!in_array($op->state,['succeeded','rejected'],true)||$op->lease_expires_at!==null) { throw new \DomainException('Terminal request required.'); }
         $refunded=$op->state==='rejected'&&$op->safe_code==='refund_approved'&&isset($op->funding['refund_authorization'],$op->funding['refund']);
-        if($refunded){RefundProof::requireUnsent($op,$l['domain']);RefundPayment::requireCurrent($op,$l);}
+        if ($refunded) {
+            RefundProof::requireUnsent($op, $l['domain']);
+            RefundPayment::requireCurrent($op, $l);
+        }
         $completed=$op->state==='succeeded'&&in_array($op->action,['register','transfer','renew'],true)
             &&RenewalAuthority::resolved($op,$l['domain'],AccountBindings::binding($l['account']));
         if(!$completed&&!$refunded&&!OperationTerminalProof::safe($op,$l['domain'])&&!ManagementEvidence::resolved($op,$l['domain'])) {
@@ -59,6 +63,15 @@ final class StaffOperationWrites
     /** The request was never attempted and nothing was sent. */
     public static function requireUnattempted(Operation $op,array $l): void
     {
+        if (AcquisitionAttempt::key($op->action)) {
+            $now = app(Clock::class)->now();
+            $proof = OperationAttempts::purchaseProof($op, $now, DB::transactionLevel() > 0);
+            if ($proof->phase !== AcquisitionPhase::Virgin || !FinancialAdjustments::registrarUnattemptedFunding($op)) {
+                throw new \DomainException('An original attempt cannot be readmitted.');
+            }
+            RefundProof::requirePurchase($op, $l['domain'], $now, proof: $proof);
+            return;
+        }
         // A renewal reads its attempt through the renewal attempt reader in registrarVirgin.
         if(($op->action==='renew'?!RenewalCycles::registrarVirgin($op):($op->attempt??[])!==[])||$op->started_at!==null||$op->request_fingerprint!==null||$op->completed_at!==null
             ||$op->lease_expires_at!==null||!FinancialAdjustments::registrarUnattemptedFunding($op)) { throw new \DomainException('An original attempt cannot be readmitted.'); }

@@ -12,7 +12,7 @@ use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\{Auth,Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{ContactProfileHold,DomainManagement,EnomTestRegistration,ManagementEvidence,ObservationWork,OperationFailure,OperationTerminalProof,RefundProof,StaffOperationReview,StaffOperations,StaffOperationWrites,StaffReviewRefused,StaffSyncReview,TransferInputs,TransferPolling};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,EnomTestRegistration,ManagementEvidence,ObservationWork,OperationFailure,OperationTerminalProof,RefundProof,StaffOperationReview,StaffOperations,StaffOperationWrites,StaffReviewRefused,StaffSyncReview,TransferInputs,TransferPolling};
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 use Paymenter\Extensions\Servers\Domains\Money\Returns\ReceiptReturns;
 use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
@@ -146,11 +146,10 @@ final class OperationActions
             'hold'=>StaffOperationWrites::canHold($op)&&self::customerOwes($op)===null,
             'release'=>HeldRelease::offered($op,app(Clock::class)->now()),
             'refund'=>$op->state==='held'&&$op->funding_basis==='paid_invoice'
-                &&($op->action==='transfer' ? self::transferRefundOffered($op)
-                    : self::registrationRefundOffered($op)),
+                &&self::refundOffered($op),
             // A closed unpaid order released its name, so Refunds can never credit it. Late money goes through the payment review.
             // Complimentary orders have no payment for the refund sweep; retry only their unfinished closure.
-            'credit'=>$op->state==='rejected'&&!ReceiptReturns::settled($op)&&!ReceiptReturns::releasedUnreadable($op)&&(($op->funding_basis==='paid_invoice'&&$op->safe_code!==UnpaidAcquisitionProof::CODE)
+            'credit'=>$op->state==='rejected'&&!ReceiptReturns::settled($op)&&!ReceiptReturns::releasedUnreadable($op)&&(($op->funding_basis==='paid_invoice'&&$op->safe_code!==UnpaidAcquisitionProof::CODE&&self::creditOffered($op))
                 ||($op->funding_basis==='complimentary'&&in_array($op->action,['register','transfer'],true)&&($d=$op->domain)
                     &&!self::complimentaryCloseBlocked($op)&&($d->status!==($op->action==='register'?'registration_rejected':'transfer_rejected')||$d->service?->status!==\App\Models\Service::STATUS_CANCELLED))),
             'replacement'=>$op->action==='renew'&&$op->state==='rejected',
@@ -162,28 +161,24 @@ final class OperationActions
                 :DomainManagement::canReconcile($op,app(Clock::class)->now()),
             default=>false};
     }
-    private static function registrationRefundOffered(Operation $op): bool
+    private static function refundOffered(Operation $op): bool
     {
         try {
-            if (\Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionAttempt::dispositionCandidate($op)) {
+            if (!in_array($op->action, ['register', 'transfer'], true)) {
                 RefundProof::requireUnsent($op, $op->domain);
                 return true;
             }
-            return $op->safe_code !== ContactProfileHold::CODE || ContactProfileHold::unsent($op);
+            $now = app(Clock::class)->now();
+            OperationTerminalProof::requirePurchaseClosure($op, $op->domain, $op->domain->operations, $now);
+            return true;
         } catch (\Throwable) { return false; }
     }
 
-    private static function transferRefundOffered(Operation $op): bool
+    private static function creditOffered(Operation $op): bool
     {
-        try {
-            $unsent = RefundProof::paidTransferPurchaseUnsent($op);
-            if ($unsent === null) {
-                return $op->safe_code !== ContactProfileHold::CODE || ContactProfileHold::unsent($op);
-            }
-            if (!$unsent || !RefundProof::transferDispositionAvailable($op)) { return false; }
-            RefundProof::requireUnsent($op, $op->domain);
-            return true;
-        } catch (\Throwable) { return false; }
+        if (!in_array($op->action, ['register', 'transfer'], true) || ReceiptReturns::plans($op)) { return true; }
+        try { RefundProof::requireReturnable($op, $op->domain); return true; }
+        catch (\Throwable) { return false; }
     }
 
     /** Presentation only: the writer repeats returnability under HoldingLocks. */

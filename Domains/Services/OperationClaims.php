@@ -129,7 +129,7 @@ final class OperationClaims
             $revision = $continuation->revision;
             $window = $continuation->window;
             $prior = AcquisitionAttempt::of((int) $op->id, $op->action, true);
-            $first = AcquisitionResult::unclaimed($op) && AcquisitionRetryProof::virgin($op);
+            $first = AcquisitionResult::unclaimed($op);
             $compatible = $first || ($prior && $window && AcquisitionResult::continues($op, $window, $prior->facts));
             $failure = null;
             $contactReady = true;
@@ -521,7 +521,7 @@ final class OperationClaims
             } elseif (in_array($op->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) {
                 $window = ($continuation ?? AcquisitionResult::continuation($op, true))?->window;
                 $prior = $op->acquisitionAttemptFacts();
-                if (AcquisitionResult::unclaimed($op) && AcquisitionRetryProof::virgin($op)
+                if (AcquisitionResult::unclaimed($op)
                     || $window && $prior && AcquisitionResult::continues($op, $window, $prior)) {
                     if (in_array($reason, AcquisitionRetryProof::TEST_CAPACITY_CODES, true)) { $reason = 'pre_send_interrupted'; }
                     if ($reason !== 'processing' && $window && !$window->fits($now)) {
@@ -586,8 +586,6 @@ final class OperationClaims
     public static function balanceRefusalRetryable(Operation $op): bool { return AcquisitionRetryProof::balanceRefusalRetryable($op); }
     public static function accountGuardRetryable(Operation $op): bool { return AcquisitionRetryProof::accountGuardRetryable($op); }
     public static function testCallRefusalRetryable(Operation $op): bool { return AcquisitionRetryProof::testCallRefusalRetryable($op); }
-    public static function testCallRefusalTerminal(Operation $op): bool { return AcquisitionRetryProof::testCallRefusalTerminal($op); }
-    public static function testCallRefusalUnsent(Operation $op): bool { return AcquisitionRetryProof::testCallRefusalUnsent($op); }
     public static function localDeferrals(array $attempt): bool { return AcquisitionRetryProof::localDeferrals($attempt); }
     public static function payloadDigest(Operation $op): string { return AcquisitionAuthority::payloadDigest($op); }
     public static function query(Operation $op, Domain $domain): Query { return AcquisitionAuthority::query($op, $domain); }

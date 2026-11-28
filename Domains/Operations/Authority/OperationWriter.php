@@ -89,18 +89,18 @@ final readonly class OperationWriter
         return Transition::Applied;
     }
 
-    /** Retire a purchase only after the ledger proves the sealed attempt never reached the wire. */
-    public function releaseUnsentAcquisition(AttemptToken $token, bool $requireUnusedGrant = true): Transition
+    /** Close the exact attempt selected by the locked purchase proof. */
+    public function releaseUnsentAcquisition(AcquisitionLifecycle $proof): Transition
     {
         self::requireTransaction();
-        $facts = OperationAttempts::attempt($token, true);
+        $facts = $proof->facts;
         $now = $this->clock->now();
-        if (!$facts?->current || $facts->released || $facts->claimedAt === null || $now < $facts->claimedAt
-            || $requireUnusedGrant && $facts->grantConsumedAt !== null
-            || !DB::table(OperationSchema::STEPS)->where('id', $token->stepId)->whereIn('step_type', ['register', 'transfer'])->exists()
-            || !OperationAttempts::locallyRefused($facts, lock: true)) { return Transition::Stale; }
-
-        $this->release($facts, $now);
+        if (!$proof->canCloseUnsent() || !$facts?->current || $facts->released || $facts->claimedAt === null
+            || $now < $facts->claimedAt || OperationAttempts::attempt($facts->token, true) != $facts) {
+            return Transition::Stale;
+        }
+        if ($facts->sealed()) { $this->release($facts, $now); }
+        else { $this->archive($facts, $now); }
         return Transition::Applied;
     }
 

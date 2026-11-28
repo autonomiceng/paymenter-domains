@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionPhase, OperationAttempts};
 use Paymenter\Extensions\Servers\Domains\Services\StaffReason;
 use Filament\Actions\Action;
 use Filament\Forms\Components\{Hidden,Textarea};
@@ -36,7 +37,13 @@ final class AcquisitionActions
         if(!Staff::can('admin.domains.manage')||!Staff::can(AcquisitionRetirement::PERMISSION)
             ||!in_array($d->status,['registration_pending','transfer_pending'],true)){return [];}
         // A paid order goes through Cancel and refund on its request.
-        try{$l=HoldingLocks::take($d,advisory:true);$stamp=StaffHoldingReview::stamp($l);if(UnpaidAcquisitionProof::paid($l)){return [];}}catch(\Throwable){return [];}
+        try {
+            $l = HoldingLocks::take($d, advisory: true);
+            $stamp = StaffHoldingReview::stamp($l);
+            $op = $l['operations']->first();
+            if (UnpaidAcquisitionProof::paid($l) || ($op && AcquisitionAttempt::key($op->action)
+                && OperationAttempts::purchaseProof($op, app(Clock::class)->now())->phase !== AcquisitionPhase::Virgin)) { return []; }
+        } catch (\Throwable) { return []; }
         return [Action::make('retire_unpaid')->label('Cancel order')->color('danger')->requiresConfirmation()
             ->modalHeading('Cancel order?')->modalDescription(self::DESCRIPTION)->modalSubmitActionLabel('Cancel order')->modalWidth('lg')
             ->schema([Hidden::make('review_key')->default(fn()=>StaffHoldingReview::ticket((int)Auth::id(),(int)$d->id,'retire_unpaid',$stamp,app(Clock::class))),

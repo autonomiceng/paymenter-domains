@@ -5,11 +5,12 @@ namespace Paymenter\Extensions\Servers\Domains\Money\Returns;
 
 use App\Models\{Credit, User};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionClosureKind, AcquisitionLifecycle};
 use Paymenter\Extensions\Servers\Domains\Operations\Reconciliation\OperationTerminalProof;
 use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement, ComplimentaryInvoices, ContactRecovery,
     FreshTransaction, FundsWaits, HoldingLocks, InvoiceMoney, MoneyDecisions, MoneyOutcome, NativeDomainGuard,
     OperationClaims, PricingRule, PrivacyRetirement, RefundProof, RegistrarAnswers, RegistrationRefusals, RenewalRetries,
-    StaffFinancialRights, StaffOperationReview, StaffReviewRefused, TransferRejections};
+    StaffFinancialRights, StaffOperationReview, StaffReviewRefused};
 
 trait CreditsRejectedRequests
 {
@@ -21,20 +22,18 @@ trait CreditsRejectedRequests
             $op = $l['operations']->firstWhere('id', $id);
             if (!$op) { throw new \DomainException('Missing refund obligation.'); }
             $now = $this->clock->now();
-            $state = \Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionLifecycle::settle($op, $l['domain'], $now);
+            $state = AcquisitionLifecycle::settle($op, $l['domain'], $now);
             if ($state->retired || $state->fenced) { return false; }
             if (array_key_exists('refund_authorization', $op->funding ?? [])) {
                 if ($review || $op->state !== 'rejected') { throw new \DomainException('Invalid retained refund disposition.'); }
                 return true;
             }
             if ($op->state !== 'held' || array_key_exists('refund', $op->funding ?? [])) { throw new \DomainException('Only held unpaid-to-provider requests may be closed.'); }
-            $refused = RefundProof::requireUnsent($op, $l['domain']); RefundPayment::requireCurrent($op, $l);
-            $testUnsent=OperationClaims::testCallRefusalUnsent($op);
-            $claimedUnsent=($refused !== null || $op->action==='transfer')
-                && OperationTerminalProof::unsentClaim($op,$l['domain'],$l['operations']);
-            if ($op->action === 'transfer' && (($op->attempt ?? []) !== [] || $op->safe_code === 'transfer_not_registered')&&!$testUnsent&&!$claimedUnsent) {
-                throw new \DomainException('A fresh registry404 disposition is unavailable; retain this hold.');
-            }
+            $purchase = AcquisitionAttempt::key($op->action);
+            $proof = $purchase ? OperationTerminalProof::requirePurchaseClosure($op, $l['domain'], $l['operations'], $now) : null;
+            if (!$purchase) { RefundProof::requireUnsent($op, $l['domain']); }
+            RefundPayment::requireCurrent($op, $l);
+            if ($proof) { OperationTerminalProof::recordUnsent($op, $proof, $now); }
             $audit = ['actor_id' => $staffId, 'reason' => $reason, 'at' => $now->format(DATE_ATOM),
                 'operation_key' => $op->operation_key, 'generation' => $op->authority_generation];
             // Retain the decision if credit fails; retryPending independently rechecks funding and negative proof.
@@ -43,10 +42,6 @@ trait CreditsRejectedRequests
             // The customer pending-refund step belongs only to this paid held-order cancellation, never a zero receipt or registrar refusal.
             if(in_array($op->action,['register','transfer'],true)&&$op->funding_basis==='paid_invoice'){
                 $op->update(['policy'=>[...($op->policy??[]),'held_order_refund'=>true]]);
-            }
-            if (in_array($op->action,['register','transfer'],true)&&(($op->attempt??[])===[]||$claimedUnsent||($op->action==='transfer'&&$testUnsent))) {
-                OperationTerminalProof::recordUnsent($op, $l['domain'], $now);
-                if($claimedUnsent&&!OperationTerminalProof::safe($op,$l['domain'])){throw new \DomainException('Terminal identity mismatch.');}
             }
             AcquisitionRetirement::retainClosure($op,$l['transactions']->where('invoice_id',$op->invoice_id),
                 $l['invoices']->firstWhere('id',$op->invoice_id)?->status,$now);
@@ -101,10 +96,8 @@ trait CreditsRejectedRequests
             || ((isset($op->funding['refund'])||self::closedReceipts($op)!==null)&&FundsWaits::closedRenewal($op,$l['domain'])))) { return $this->creditLate($op, $l, $review); }
         if (!$op || $op->state !== 'rejected' || array_key_exists('refund', $op->funding ?? [])) { if($review){throw new \DomainException('No pending account credit. Reload this page.');} return null; }
         if(RenewalRetries::resolved($op,$l['domain'])){$review?->record($l);return null;} // Its paid debt belongs to the proved retry, not a refund.
-        $refused = RefundProof::requireReturnable($op, $l['domain']);
-        if ($refused !== null && !OperationTerminalProof::safe($op, $l['domain'])) {
-            throw new \DomainException('No retained purchase disposition.');
-        }
+        $now = $this->clock->now();
+        $closure = RefundProof::requireReturnable($op, $l['domain'], $now);
         $approved = $op->funding['refund_authorization'] ?? null;
         if (array_key_exists('refund_authorization', $op->funding ?? []) && (!is_array($approved)
             || array_keys($approved) !== ['actor_id', 'reason', 'at', 'operation_key', 'generation']
@@ -113,8 +106,8 @@ trait CreditsRejectedRequests
             || $approved['operation_key'] !== $op->operation_key || $approved['generation'] !== $op->authority_generation)) {
             throw new \DomainException('Refund authorization identity changed.');
         }
-        if ($op->action === 'transfer' && !TransferRejections::proved($op,$l['domain']) && !RefundProof::transferTimeout($op, $l['domain']) && !OperationTerminalProof::safe($op, $l['domain'])) { throw new \DomainException('Transfer timeout proof required.'); }
-        if (!$approved && !RefundProof::transferTimeout($op, $l['domain']) && !RefundProof::retired($op, $l['domain']) && !PrivacyRetirement::safe($op, $l['domain']) && !OperationTerminalProof::safe($op, $l['domain'])) {
+        if (!AcquisitionAttempt::key($op->action) && !$approved && !RefundProof::retired($op, $l['domain'])
+            && !PrivacyRetirement::safe($op, $l['domain']) && !OperationTerminalProof::safe($op, $l['domain'], $now)) {
             throw new \DomainException('No retained refund disposition.');
         }
         if($op->funding_basis==='complimentary'){
@@ -147,7 +140,7 @@ trait CreditsRejectedRequests
         $credit->save();
         $refund = [...$payment, 'to' => 'account_credit', 'bridge_reason' => $chosen ? 'account_credit_chosen' : 'gateway_return_unavailable', 'credit_id' => (int) $credit->id,
             'at' => $this->clock->now()->format(DATE_ATOM), 'actor_id' => $approved['actor_id'] ?? null,
-            'reason' => $approved['reason'] ?? (RefundProof::transferTimeout($op, $l['domain']) ? 'transfer_code_timeout' : (RefundProof::retired($op, $l['domain']) || PrivacyRetirement::safe($op, $l['domain']) ? 'late_retired_payment' : (RegistrationRefusals::proved($op,$l['domain'])?RegistrationRefusals::CODE:'terminal_unsent')))];
+            'reason' => $approved['reason'] ?? ($closure === AcquisitionClosureKind::TransferTimeout ? 'transfer_code_timeout' : (RefundProof::retired($op, $l['domain']) || PrivacyRetirement::safe($op, $l['domain']) ? 'late_retired_payment' : (RegistrationRefusals::proved($op,$l['domain'])?RegistrationRefusals::CODE:'terminal_unsent')))];
         $op->update(['funding' => [...($op->funding ?? []), 'refund' => $refund]]);
         $review?->record($l);
         return ['amount' => $payment['amount'], 'currency' => 'USD'];

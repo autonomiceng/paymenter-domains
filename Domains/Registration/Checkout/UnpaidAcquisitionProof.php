@@ -2,7 +2,10 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registration\Checkout;
-use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionClosureKind, AcquisitionLifecycle, AcquisitionPhase, OperationAttempts};
 use Paymenter\Extensions\Servers\Domains\Services\{InvoiceBinding, InvoiceScope, RefundProof};
 /** Caller owns HoldingLocks. No transaction, status or absence of provider reads proves a send failed. */
 final class UnpaidAcquisitionProof
@@ -29,20 +32,17 @@ final class UnpaidAcquisitionProof
             throw new \DomainException('This order has a payment or payment attempt, so it cannot be retired. The name stays reserved.');
         }
         InvoiceBinding::requireIdentity($op,$d,$s,$invoice,$item,$l['product']);
-        if($op->started_at!==null||$op->request_fingerprint!==null||$op->lease_expires_at!==null
-            ||$op->provider_order_id!==null||$op->confirmed_expires_at!==null
-            ||array_diff(array_keys($op->cost??[]),['estimated','currency','unit'])
-            ||array_key_exists('dispatch_attempted_at',$op->policy??[])){
-            throw new \DomainException('A registrar request may have started. Review its outcome; the name stays reserved.');
-        }
-        if($terminal){
-            if(!self::terminal($op,$d)){throw new \DomainException('Unpaid terminal proof is unavailable.');}
-        }else{
-            // 'cancelled' is an old cleanup state that left the order open; nothing was sent, which the rest of this proof checks.
-            if(!in_array($op->state,['awaiting_payment','awaiting_code','queued','held','cancelled'],true)||($op->attempt??[])!==[]){
+        $now = app(Clock::class)->now();
+        $proof = OperationAttempts::purchaseProof($op, $now, lock: true);
+        if ($terminal) {
+            if (!self::terminal($op, $d, $proof)) { throw new \DomainException('Unpaid terminal proof is unavailable.'); }
+        } else {
+            // 'cancelled' is an old cleanup state that left the order open.
+            if (!in_array($op->state, ['awaiting_payment', 'awaiting_code', 'queued', 'held', 'cancelled'], true)
+                || $proof->phase !== AcquisitionPhase::Virgin) {
                 throw new \DomainException('A registrar request may have started. Review its outcome; the name stays reserved.');
             }
-            RefundProof::requireUnsent($op,$d);
+            RefundProof::requirePurchase($op, $d, $now, proof: $proof);
         }
         return $op;
     }
@@ -56,18 +56,16 @@ final class UnpaidAcquisitionProof
     /** A declined card is not money, so it never keeps a name. */
     private static function money(array $l,iterable $invoices): bool
     {return $l['transactions']->whereIn('invoice_id',$invoices)->contains(fn($t)=>$t->status!==\App\Enums\InvoiceTransactionStatus::Failed);}
-    public static function terminal(Operation $op,\Paymenter\Extensions\Servers\Domains\Models\Domain $d): bool
+    public static function terminal(Operation $op, Domain $d, ?AcquisitionLifecycle $proof = null): bool
     {
-        return in_array($op->action,['register','transfer'],true)&&$op->funding_basis==='paid_invoice'
-            &&$op->started_at===null&&$op->request_fingerprint===null&&$op->lease_expires_at===null
-            &&$op->provider_order_id===null&&$op->confirmed_expires_at===null&&!array_diff(array_keys($op->funding??[]),['late_credits','receipt_return_results'])
-            &&!array_diff(array_keys($op->cost??[]),['estimated','currency','unit'])&&!array_key_exists('dispatch_attempted_at',$op->policy??[])
-            &&$d->status==='cancelled'&&$d->provider_expires_at===null&&$d->provider_domain_id===null&&$d->provider_order_id===null
-            &&$op->safe_code===self::CODE&&$op->state==='rejected'&&$op->completed_at!==null
-            &&$op->attempt===self::attempt($op)&&$op->domain_id===$d->id&&$op->service_id===$d->service_id
-            &&$op->server_id===$d->server_id&&$op->registrar_key===$d->registrar_key
-            &&$op->account_fingerprint===$d->account_fingerprint&&$op->authority_generation>0
-            &&$op->authority_generation===$d->authority_generation;
+        return in_array($op->action, ['register', 'transfer'], true) && $op->funding_basis === 'paid_invoice'
+            && !array_diff(array_keys($op->receiptFunding()), ['late_credits', 'receipt_return_results'])
+            && $d->status === 'cancelled' && $d->provider_expires_at === null && $d->provider_domain_id === null && $d->provider_order_id === null
+            && $op->safe_code === self::CODE && $op->state === 'rejected' && $op->completed_at !== null
+            && $op->domain_id === $d->id && $op->service_id === $d->service_id && $op->server_id === $d->server_id
+            && $op->registrar_key === $d->registrar_key && $op->account_fingerprint === $d->account_fingerprint
+            && $op->authority_generation === $d->authority_generation
+            && ($proof ?? OperationAttempts::purchaseProof($op, app(Clock::class)->now(), DB::transactionLevel() > 0))->closure === AcquisitionClosureKind::Unpaid;
     }
     public static function attempt(Operation $op): array
     {

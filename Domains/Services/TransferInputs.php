@@ -5,6 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionClosureKind, AcquisitionPhase, OperationAttempts, OperationWriter, Transition};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 /** Dormant owner POST boundary. Installed CSRF/form keys/rate limits and trim exclusion belong to33/39. */
@@ -71,16 +72,18 @@ final class TransferInputs
         $old = self::$writing; self::$writing = true;
         try { return $call(); } finally { self::$writing = $old; }
     }
-    private static function open(Operation $op, array $l): void
+    private static function open(Operation $op, array $l, \DateTimeImmutable $now): void
     {
         if ($op->action !== 'transfer' || $op->term !== 1 || !in_array($op->state, self::OPEN, true)
-            || $op->completed_at !== null || $op->started_at !== null || $op->request_fingerprint !== null
+            || $op->completed_at !== null
             || $l['domain']->status !== 'transfer_pending' || !in_array($l['service']->status, ['pending', 'active'], true)
-            || $l['cancel']->contains('service_id', $l['service']->id) || array_intersect(['claim', 'seal', 'refund', 'refund_authorization'], array_keys($op->funding ?? []))
-            || $l['operations']->contains(static fn ($peer) => $peer->id !== $op->id && !OperationTerminalProof::safe($peer, $l['domain']))) {
+            || $l['cancel']->contains('service_id', $l['service']->id) || array_intersect(['refund', 'refund_authorization'], array_keys($op->receiptFunding()))
+            || $l['operations']->contains(static fn ($peer) => $peer->id !== $op->id && !OperationTerminalProof::safe($peer, $l['domain'], $now))) {
             throw new \DomainException('Transfer inputs unavailable.');
         }
-        RefundProof::requireUnsent($op, $l['domain']);
+        $proof = OperationAttempts::purchaseProof($op, $now, lock: true);
+        if ($proof->phase !== AcquisitionPhase::Virgin) { throw new \DomainException('Transfer inputs unavailable.'); }
+        RefundProof::requirePurchase($op, $l['domain'], $now, proof: $proof);
         if($op->funding_basis==='complimentary'){ComplimentaryInvoices::require($op,$l);}else{RefundPayment::requireLine($op, $l);}
     }
     private function payment(Operation $op, array $l): void
@@ -103,7 +106,7 @@ final class TransferInputs
     {
         if(DB::transactionLevel()!==1||$seed->funding_basis!=='complimentary'){throw new \DomainException('Complimentary receipt issuance required.');}
         $l=HoldingLocks::take($seed->domain);$op=$l['operations']->firstWhere('id',$seed->id);
-        self::open($op,$l);$this->payment($op,$l);
+        self::open($op,$l,$this->clock->now());$this->payment($op,$l);
         if(!self::validCode($op->payload['epp']??null)){$op->update(['state'=>'awaiting_code','safe_code'=>'transfer_code_required']);}
     }
     public function paymentAccepted(int $id): void
@@ -111,7 +114,7 @@ final class TransferInputs
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         FreshTransaction::run(function () use ($seed, $id): void {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
-            self::open($op, $l); $this->payment($op, $l);
+            self::open($op, $l, $this->clock->now()); $this->payment($op, $l);
             if (isset($op->policy['paid_at']) && !self::validCode($op->payload['epp'] ?? null) && $op->state !== 'held') {
                 $op->update(['state' => 'awaiting_code', 'safe_code' => 'transfer_code_required']);
             }
@@ -129,7 +132,7 @@ final class TransferInputs
             FreshTransaction::run(function () use ($request, $id, $seed, $code): void {
                 $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
                 if ((int) $l['user']->id !== (int) $request->user()->id) { throw new \DomainException; }
-                self::open($op, $l); $this->payment($op, $l); self::requireEditable($op, $this->clock->now());
+                self::open($op, $l, $this->clock->now()); $this->payment($op, $l); self::requireEditable($op, $this->clock->now());
                 if ($op->state === 'held' && !self::holdTakesCode($op)) { throw new \DomainException; }
                 self::write(fn () => $op->update(['payload' => [...($op->payload ?? []), 'epp' => $code],
                     'policy' => [...($op->policy ?? []), 'code_saved_at' => $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM)],
@@ -148,15 +151,20 @@ final class TransferInputs
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         $credit = FreshTransaction::run(function () use ($seed, $id): bool {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
-            if ($op->state === 'rejected') { return $op->safe_code === 'transfer_code_timeout' && $op->funding_basis !== 'complimentary'; }
-            self::open($op, $l); $this->payment($op, $l);
-            $deadline = self::deadline($op, $this->clock->now());
-            if (!$deadline || $this->clock->now() < $deadline || array_key_exists('epp', $op->payload ?? []) && $op->payload['epp'] !== null) { return false; }
-            $attempt = ['seal' => 'absent', 'send_state' => 'definitely_unsent', 'disposition' => 'rejected', 'rejection_basis' => 'definitely_unsent',
-                'transfer_timeout' => ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'deadline' => $deadline->format(DATE_ATOM)]];
-            ContactSetup::recoveryWrite(fn () => $op->update(['state' => 'rejected', 'safe_code' => 'transfer_code_timeout', 'attempt' => $attempt, 'completed_at' => $this->clock->now()]));
+            $now = $this->clock->now();
+            if ($op->state === 'rejected') {
+                return $op->funding_basis !== 'complimentary' && RefundProof::transferTimeout($op, $l['domain'], $now);
+            }
+            self::open($op, $l, $now); $this->payment($op, $l);
+            $deadline = self::deadline($op, $now);
+            if (!$deadline || $now < $deadline || ($op->payload['epp'] ?? null) !== null) { return false; }
+            if (OperationWriter::at($now)->recordTerminal((int) $op->id, AcquisitionClosureKind::TransferTimeout->value, [
+                'operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'deadline' => $deadline->format(DATE_ATOM),
+            ]) !== Transition::Applied) { throw new \DomainException('Transfer already has terminal proof.'); }
+            $op->reloadAcquisitionAttempt();
+            ContactSetup::recoveryWrite(fn () => $op->update(['state' => 'rejected', 'safe_code' => 'transfer_code_timeout', 'completed_at' => $now]));
             AcquisitionRetirement::retainClosure($op,$l['transactions']->where('invoice_id',$op->invoice_id),
-                $l['invoices']->firstWhere('id',$op->invoice_id)?->status,$this->clock->now(),cancelled:true);
+                $l['invoices']->firstWhere('id',$op->invoice_id)?->status,$now,cancelled:true);
             $l['domain']->update(['status' => 'transfer_rejected']);
             NativeDomainGuard::terminal($l, $op);
             return $op->funding_basis !== 'complimentary';

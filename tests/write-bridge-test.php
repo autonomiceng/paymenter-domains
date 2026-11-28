@@ -2,8 +2,12 @@
 // Synthetic admitted bridges; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/write-fixture.php';
+use App\Models\Credit;
+use Livewire\Livewire;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Paymenter\Extensions\Servers\Domains\Data\{Action, AdmittedOperation, Money, Query, RequestBudget, RequestContext, RequestOrigin};
-use Paymenter\Extensions\Servers\Domains\Services\{RegistrarFactories, RegistrarRegistry, WriteAcceptance, WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionPhase;
+use Paymenter\Extensions\Servers\Domains\Services\{PricingRule, RegistrarFactories, RegistrarRegistry, StaffOperationReview, WriteAcceptance, WriteFeatures};
 $off = new WriteFeatures;
 foreach ([Action::Register, Action::Transfer, Action::Renew] as $action) { commerceReject(fn () => $off->requireEnabled($action)); }
 commerceReject(fn () => $off->requireManagement());
@@ -14,7 +18,24 @@ $stale = $new(placeholderComFixtureName('disabled-stale-placeholder.com')); $cla
 $clock->instant = $clock->now()->modify('+361 seconds'); $stale = $engine->execute($stale->id);
 same(['held', 'write_disabled', 'absent', null], [$stale->state, $stale->safe_code, $stale->attempt['seal'], $stale->lease_expires_at],
     'Disabled writes leave the expired unsealed worker in an admission hold');
-same([], $transport->calls, 'The admission hold sends nothing'); $clock->instant = $clock->now()->modify('-361 seconds');
+same([], $transport->calls, 'The admission hold sends nothing');
+same(AcquisitionPhase::ProvedUnsent,$stale->acquisitionLifecycle($clock->now())?->phase,'The retired worker proves the purchase never left');
+require_once __DIR__.'/Support/staff-panel.php';
+staffPanel();
+$staff=staffUser(['admin.domains.view','admin.domains.manage','admin.invoices.update',StaffOperationReview::permission('refund')]);
+$credit=static fn (): int => PricingRule::minor((string) (Credit::where('user_id',$user->id)->where('currency_code','USD')->value('amount')??'0.00'));
+$expected=$credit()+PricingRule::minor($stale->amount);
+$reason=['reason'=>'Cancel the expired unsent registration'];
+$replay=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$stale->id])->mountAction('refund');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$stale->id])->assertActionVisible('refund')
+    ->callAction('refund',$reason)->assertHasNoActionErrors();
+$closed=$stale->fresh();
+same(['rejected','refund_approved','cancelled',$expected],[$closed->state,$closed->safe_code,$closed->domain->service->status,$credit()],
+    'The refund click credits the paid registration with an expired unsealed worker');
+$replay->setActionData($reason)->callMountedAction();
+same([$expected,[]],[$credit(),$transport->calls],'Replaying the refund leaves one exact credit and no registrar send');
+Illuminate\Support\Facades\Auth::setUser($user);
+$clock->instant = $clock->now()->modify('-361 seconds');
 $bridge = $build($enomBinding); $op = $new(placeholderComFixtureName('bridge-enom-placeholder.com'));
 $result = $engine->execute($op->id); same(1, count($transport->calls), 'Enom bridge called once');
 same('uncertain', $result->state, 'Bridge does not interpret outcome'); $call = $transport->calls[0];

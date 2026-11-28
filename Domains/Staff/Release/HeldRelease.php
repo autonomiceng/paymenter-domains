@@ -2,13 +2,13 @@
 // Enom444f31c staff DomainOperations paths; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Staff\Release;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\{Auth, DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Staff\Requests\RequestReads;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceRetries,ComplimentaryInvoices,ContactDetails,ContactProfileHold,ContactRecovery,ContactSetup,EnomTestRegistration,EnomTestRenewal,EnomTestTransfer,HoldingLocks,OperationClaims,RefundProof,RenewalFunding,RenewalStop,StaffOperationReview,StaffOperationWrites,TransferInputs};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission,AcquisitionAdmissionOutcome,AcquisitionAttempt,AcquisitionLane,AcquisitionLifecycle,AcquisitionResult,AcquisitionRetryProof,OperationWriter,StepKey};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission,AcquisitionAdmissionOutcome,AcquisitionAttempt,AcquisitionLane,AcquisitionLifecycle,AcquisitionResult,AcquisitionRetryProof,OperationAttempts,OperationWriter,StepKey};
 /** Releases a held request back to the queue. The offer and the locked writer run the same check over complete native facts. */
 final class HeldRelease
 {
@@ -65,20 +65,18 @@ final class HeldRelease
     /** Refuses unless the decision allows release and its unsent proof, the service, the money and the saved inputs still hold. */
     public static function require(Operation $op,array $l,\DateTimeImmutable $now): void
     {
-        $facts=self::facts($op,$l);$proof=ReleaseDecision::decide($facts);
-        if($proof instanceof ReleaseRefusal){throw new \DomainException($proof->message($facts));}
-        // The balance retry check already proved its retained claim unsent under its original shortfall reason.
-        if ($proof === ReleaseProof::Unsent) {
-            if (AcquisitionAttempt::key($op->action)) {
-                if (AcquisitionAttempt::purchaseRefusal($op, \Illuminate\Support\Facades\DB::transactionLevel() > 0)) {
-                    RefundProof::requireUnsent($op, $l['domain']);
-                } else {
-                    RefundProof::requireUnsentForAdmission($op, $l['domain']);
-                }
-            }
-            else { RefundProof::requireUnsent($op, $l['domain']); }
+        $purchase = $op->state === 'held' && AcquisitionAttempt::key($op->action)
+            ? OperationAttempts::purchaseProof($op, $now, DB::transactionLevel() > 0) : null;
+        $facts = self::facts($op, $l, $purchase);
+        $proof = ReleaseDecision::decide($facts);
+        if ($proof instanceof ReleaseRefusal) { throw new \DomainException($proof->message($facts)); }
+        if ($purchase) {
+            RefundProof::requirePurchase($op, $l['domain'], $now, admission: true, proof: $purchase);
+        } elseif ($proof === ReleaseProof::Unsent) {
+            RefundProof::requireUnsent($op, $l['domain']);
+        } elseif ($proof === ReleaseProof::Unattempted) {
+            StaffOperationWrites::requireUnattempted($op, $l);
         }
-        elseif($proof===ReleaseProof::Unattempted){StaffOperationWrites::requireUnattempted($op,$l);}
         if(($op->action==='renew'?RenewalStop::blocksRenewal($l):$l['cancel']->contains('service_id',$op->service_id))||!in_array($l['service']->status,['pending','active'],true)) { throw new \DomainException('Service lifecycle changed.'); }
         if($op->action==='renew'){RenewalFunding::requireCurrent($op,$l);}
         else { if($op->funding_basis==='complimentary'){ComplimentaryInvoices::require($op,$l);}else{RefundPayment::requireCurrent($op,$l);}ContactSetup::validate($op);
@@ -86,7 +84,7 @@ final class HeldRelease
                 throw new \DomainException('Verified transfer payment and saved code required.'); } }
     }
     /** Reads the decision's facts in the order the checks need them; a fact the decision cannot reach is left at its default. */
-    public static function facts(Operation $op,array $l): ReleaseFacts
+    public static function facts(Operation $op,array $l, ?AcquisitionLifecycle $purchase = null): ReleaseFacts
     {
         $code=$op->safe_code;$base=[(string)$op->state,(string)$op->action,$code];
         if($op->state!=='held'||!in_array($op->action,ReleaseDecision::ACTIONS,true)||$code==='contact_details_required'){return new ReleaseFacts(...$base);}
@@ -109,8 +107,12 @@ final class HeldRelease
         $context=[...$context,'balanceRetry'=>OperationClaims::balanceRefusalRetryable($op),'contactRetry'=>$contactHold&&ContactProfileHold::unsent($op,retry:true)];
         // The retained contact step cannot be reopened or send different details; cancellation still uses its unsent proof.
         if($contactHold&&($blocked=ContactProfileHold::releaseBlocked($op))!==null){return new ReleaseFacts(...$context,contactBlocked:$blocked);}
-        $refused = $acquisition && AcquisitionAttempt::purchaseRefusal($op, \Illuminate\Support\Facades\DB::transactionLevel() > 0) !== null;
+        if ($acquisition && $purchase === null && !$op->acquisitionStepAbsent()) {
+            $purchase = OperationAttempts::purchaseProof($op, app(Clock::class)->now(), DB::transactionLevel() > 0);
+        }
+        $refused = $purchase?->canCloseUnsent() && $purchase->reason !== 'test_capacity'
+            && $purchase->facts?->sealed();
         return new ReleaseFacts(...$context,testCallRetry:OperationClaims::testCallRefusalRetryable($op),
-            accountGuardRetry:OperationClaims::accountGuardRetryable($op), purchaseRefused: $refused);
+            accountGuardRetry:OperationClaims::accountGuardRetryable($op), sealedUnsent: $refused);
     }
 }

@@ -4,9 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Operations\Authority;
 
 use Illuminate\Contracts\Encryption\DecryptException;
-use Paymenter\Extensions\Servers\Domains\Data\SendState;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\ContactProfileHold;
 
 /** Acquisition evidence as seen by checkout, staff, profile and refund readers. */
 final readonly class AcquisitionAttempt
@@ -29,53 +27,6 @@ final readonly class AcquisitionAttempt
         $facts = $key ? OperationAttempts::latest($id, $key, $lock) : null;
         if (!$facts) { return null; }
         return self::fromRows($facts, $action, OperationAttempts::evidenceMany([$id], self::KINDS, $lock)[$id] ?? []);
-    }
-
-    /** A seal or a retired continuation of a proved-unsent staff release needs the durable purchase proof. */
-    public static function dispositionCandidate(Operation $op, bool $lock = false): bool
-    {
-        $attempt = $op->acquisitionAttemptFacts();
-        if ($attempt?->sealed()) { return true; }
-        if (!$attempt?->released) { return false; }
-        $window = AcquisitionResult::window($op, $lock);
-        return $window?->expiryReason === 'acquisition_definitely_unsent'
-            && AcquisitionResult::ownsAttempt($op, $window, $attempt, $lock);
-    }
-
-    /** The latest purchase and its complete lineage prove no purchase left the registrar client. */
-    public static function purchaseRefusal(Operation $op, bool $lock = false): ?AttemptFacts
-    {
-        $key = self::key($op->action);
-        if (!$key || !$op->exists || $op->acquisitionStepAbsent()) { return null; }
-        try {
-            if (!self::dispositionCandidate($op, $lock)) { return null; }
-            $id = (int) $op->id;
-            $history = OperationAttempts::purchaseHistory($id, $key, $lock);
-            if (!$history) { return null; }
-            $latest = end($history);
-            $rows = OperationAttempts::evidenceMany([$id], self::KINDS, $lock)[$id] ?? [];
-            $now = now()->toImmutable();
-            if ($latest->token != $op->acquisitionAttemptFacts()?->token
-                || !AcquisitionLifecycle::unsentHistory($history, $rows, $now)
-                || self::conflicts($op)
-                || array_intersect_key($op->receiptFunding(), ['claim' => true, 'seal' => true])
-                || array_intersect_key($op->cost ?? [], ['actual' => true, 'execution' => true])
-                || $op->provider_order_id !== null || $op->confirmed_expires_at !== null
-                || array_key_exists('dispatch_attempted_at', $op->operationPolicy())) { return null; }
-            $attempt = self::fromRows($latest, $op->action, $rows);
-            $claim = $attempt->rows['claim']['evidence'] ?? [];
-            $admission = $attempt->rows['admission']['evidence'] ?? [];
-            $funding = $attempt->origin['funding'] ?? null;
-            // At cutoff, a paid transfer can use its retained capacity refusal for closure after Release used its retry.
-            $cutoffRefusal = $op->action === 'transfer' && $op->registrar_key === 'enom' && $op->funding_basis === 'paid_invoice'
-                && in_array($op->safe_code, ['transfer_setup_review_required', 'refund_approved'], true)
-                && $attempt->lifecycle($now)->reason === 'test_capacity';
-            if (($claim['identity'] ?? null) !== $latest->token->claimKey || !is_string($attempt->origin['digest'] ?? null)
-                || !is_array($funding) || (!$attempt->hasOriginalClaim() && !$cutoffRefusal)
-                || ($latest->sealed() && ($attempt->origin['digest'] !== $latest->requestDigest || ($admission['funding'] ?? null) !== $funding))
-                || !ContactProfileHold::allowsPurchaseDisposition($op, $lock)) { return null; }
-            return $latest;
-        } catch (DecryptException|\JsonException|\DomainException|\ValueError|\DateException) { return null; }
     }
 
     /** One bad attempt must fail closed at its own reader without hiding the other rows. */
@@ -134,19 +85,6 @@ final readonly class AcquisitionAttempt
     { return AcquisitionLifecycle::reduce($this->facts, $this->rows, $now); }
 
     public function sealed(): bool { return $this->facts->sealed() && !$this->facts->released; }
-
-    /** The caller validated the exact refusal execution against the funding and holding. */
-    public function locallyRefused(array $execution): bool
-    {
-        if (!$this->facts->sealed()) { return false; }
-        if ($reply = $this->rows['reply'] ?? null) {
-            return $this->facts->sendState === SendState::DefinitelyUnsent
-                && $reply['source'] === 'local_refusal' && $reply['outcome'] === 'unsent';
-        }
-        $claim = $this->rows['claim'];
-        return $claim['source'] === 'retained' && $this->facts->sendState !== SendState::Sent
-            && ($claim['evidence']['legacy_attempt']['execution'] ?? null) === $execution;
-    }
 
     public function digest(): ?string { return $this->hasOriginalClaim() ? $this->origin['digest'] : null; }
 

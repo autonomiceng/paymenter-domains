@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Enums\InvoiceTransactionStatus;
 use Illuminate\Support\Facades\{Cache,DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionResult, AcquisitionResultSchema, OperationWriter, Transition};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionLifecycle, AcquisitionResult, AcquisitionResultSchema, OperationWriter, Transition};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 /** Acquisition funds deadline and the existing provider-safe renewal boundary. No provider I/O. */
@@ -119,18 +119,11 @@ final class FundsWaits
                     return true;
                 }
                 $now = $clock?->now() ?? $now;
-                $state = \Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionLifecycle::settle($current, $l['domain'], $now);
+                $state = AcquisitionLifecycle::settle($current, $l['domain'], $now);
                 if ($state->retired || $state->fenced || !self::due($current, $now, true)) { return null; }
-                // The recorded shortfall authorizes this closure reason even when Orders projects processing.
-                // The usual ownership, unsent attempt and contact checks still run on the locked evidence.
-                $proof = clone $current;
-                $proof->state = 'held';
-                $proof->safe_code = 'registrar_balance_insufficient';
-                RefundProof::requireUnsent($proof,$l['domain']);
+                $proof = OperationTerminalProof::requirePurchaseClosure($current, $l['domain'], $l['operations'], $now);
                 if($current->funding_basis==='complimentary'){ComplimentaryInvoices::require($current,$l);}else{RefundPayment::requireCurrent($current,$l);}
-                if(isset($proof->attempt['claim_key'])&&!OperationTerminalProof::unsentClaim($proof,$l['domain'],$l['operations'])){throw new \DomainException('Funds hold outcome needs review.');}
-                OperationTerminalProof::recordUnsent($proof, $l['domain'], $now);
-                $current->reloadAcquisitionAttempt();
+                OperationTerminalProof::recordUnsent($current, $proof, $now);
                 $current->update(['state'=>'rejected','safe_code'=>'registrar_balance_insufficient','completed_at'=>$now]);
                 AcquisitionRetirement::retainClosure($current,$l['transactions']->where('invoice_id',$current->invoice_id),
                     $l['invoices']->firstWhere('id',$current->invoice_id)?->status,$now);

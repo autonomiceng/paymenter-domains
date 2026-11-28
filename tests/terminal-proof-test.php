@@ -4,6 +4,7 @@ declare(strict_types=1);
 $fixtureEnding = 'example.com';
 require __DIR__.'/Support/operation-fixture.php';
 require_once __DIR__.'/Support/reserved-fixtures.php';
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionClosureKind, OperationAttempts};
 use Paymenter\Extensions\Servers\Domains\Services\{DomainReservations, OperationTerminalProof, Refunds};
 // The synthetic catalogue explicitly supports the reserved compound ending example.com.
 $op = $new(reservedFixtureName('unsent.example.com')); [$claimed] = $claims->claim($op->id); $held = $claims->finish($claimed);
@@ -39,10 +40,11 @@ foreach (['register','transfer'] as $action) {
             'safe_code'=>'enom_test_call_cap','authority_generation'=>1,'operation_key'=>$key,'attempt'=>$attempt,
             'funding'=>$claimed?['claim'=>[]]:[],'cost'=>[],'policy'=>[],
             'started_at'=>$claimed?$now:null,'request_fingerprint'=>$claimed?str_repeat('a',64):null]);
-        expect(\Paymenter\Extensions\Servers\Domains\Services\OperationClaims::testCallRefusalUnsent($proof),'Complete terminal proof qualifies');
+        expect(OperationAttempts::purchaseProof($proof,$now)->closure === AcquisitionClosureKind::Unsent,'Complete terminal proof qualifies');
         if ($action === 'register' && $claimed) {
             $domain = $result->domain;
             $proof->fill($domain->only(['server_id', 'service_id', 'account_fingerprint']));
+            $proof->domain_id = $domain->id;
             expect(OperationTerminalProof::safe($proof, $domain), 'Registration terminal proof accepts earlier cap history');
             $foreign = clone $proof;
             $foreign->attempt = [...$attempt, 'terminal' => ['operation_key' => $key, 'generation' => 2]];
@@ -51,7 +53,7 @@ foreach (['register','transfer'] as $action) {
         foreach ([['seal'],['send_state'],['seal','send_state']] as $missing) {
             $broken=clone $proof;$facts=$attempt;foreach($missing as $field){unset($facts[$field]);}$broken->attempt=$facts;
             set_error_handler(static function(int $severity,string $message,string $file,int $line):never{throw new ErrorException($message,0,$severity,$file,$line);});
-            try{same(false,\Paymenter\Extensions\Servers\Domains\Services\OperationClaims::testCallRefusalUnsent($broken),'Missing terminal fields quietly refuse');}
+            try{same(null,OperationAttempts::purchaseProof($broken,$now)->closure,'Missing terminal fields quietly refuse');}
             finally{restore_error_handler();}
         }
     }

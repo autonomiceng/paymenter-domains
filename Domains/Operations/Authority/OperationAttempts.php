@@ -7,6 +7,7 @@ use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\{Crypt, DB};
 use Paymenter\Extensions\Servers\Domains\Data\SendState;
 
+use Paymenter\Extensions\Servers\Domains\Models\Operation;
 /** Reads steps, attempts and evidence. Callers that act on a result hold the operation lock. */
 final class OperationAttempts
 {
@@ -38,22 +39,21 @@ final class OperationAttempts
             [AcquisitionPhase::LiveAuthority, AcquisitionPhase::ProvedUnsent], true);
     }
 
-    /** A reply proving a local refusal may authorize closing or retiring the exact sealed attempt. */
-    public static function locallyRefused(AttemptFacts $attempt, bool $lock = false): bool
+    /** One ordered history and evidence snapshot for payment, staff and admission decisions. */
+    public static function purchaseProof(Operation $op, \DateTimeImmutable $now, bool $lock = false): AcquisitionLifecycle
     {
-        if (!$attempt->sealed()) { return false; }
-        $state = AcquisitionLifecycle::read($attempt, now()->toImmutable(), $lock);
-        return $state->phase === AcquisitionPhase::ProvedUnsent && !$state->retireSeal;
-    }
-
-    /** Null means there is no purchase step. Every retained attempt must independently prove no send. */
-    public static function unsentPurchase(int $operationId, StepKey $key, bool $lock = false, ?\DateTimeImmutable $now = null): ?bool
-    {
-        $history = self::purchaseHistory($operationId, $key, $lock);
-        if ($history === null) { return null; }
-        if ($history === false) { return false; }
-        $rows = self::evidenceMany([$operationId], AcquisitionLifecycle::EVIDENCE, $lock)[$operationId] ?? [];
-        return AcquisitionLifecycle::unsentHistory($history, $rows, $now ?? now()->toImmutable());
+        $key = AcquisitionAttempt::key($op->action) ?? throw new \LogicException('Acquisition required.');
+        $id = (int) $op->id;
+        try {
+            $history = !$op->exists || !$id || $op->acquisitionStepAbsent() ? null : self::purchaseHistory($id, $key, $lock);
+            $rows = $history ? self::evidenceMany([$id], [...AcquisitionLifecycle::EVIDENCE, 'terminal'], $lock)[$id] ?? [] : [];
+            if ($history === null && $op->exists && $id && $op->state === 'rejected') {
+                $rows[0]['terminal'] = $op->purchaseTerminalEvidence();
+            }
+            return AcquisitionLifecycle::purchase($op, $history, $rows, $now);
+        } catch (DecryptException|\JsonException|\DomainException|\ValueError|\DateException|\TypeError) {
+            return AcquisitionLifecycle::purchase($op, false, [], $now);
+        }
     }
 
     /** Null means no step, false means an inconsistent current pointer. */

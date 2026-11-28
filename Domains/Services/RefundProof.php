@@ -7,144 +7,92 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\SendState;
 use Paymenter\Extensions\Servers\Domains\Money\Allocations\RenewalFundingLedger;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionRetryProof, AttemptFacts, OperationAttempts};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionClosureKind, AcquisitionLifecycle, AcquisitionRetryProof, AttemptFacts, OperationAttempts};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 /** Payment-return proof. Sent finality never grants definitely-unsent proof or retry authority. */
 final class RefundProof
 {
     /** Sent transfer settlement is separate from definitely-unsent proof and grants no retry authority. */
-    public static function requireReturnable(Operation $op,Domain $d): ?AttemptFacts
+    public static function requireReturnable(Operation $op,Domain $d, ?\DateTimeImmutable $now = null): ?AcquisitionClosureKind
     {
         if(TransferRejections::proved($op,$d)||RegistrationRefusals::proved($op,$d)){return null;}
         // An audited not-processed answer returns the payment. It is not local-refusal proof, so it grants no same-debt retry.
         if(EnomAnswers::unprocessed($op,$d)){self::requireOwned($op,$d);self::requireAnsweredAttempt($op);return null;}
-        return self::requireUnsent($op,$d);
+        if (AcquisitionAttempt::key($op->action)) { return self::requirePurchase($op, $d, $now ?? app(Clock::class)->now())->closure; }
+        self::requireUnsent($op,$d);
+        return null;
     }
 
-    /** Readmission uses purchase ledger facts and current funding rather than the return history projection. */
-    public static function requireUnsentForAdmission(Operation $op, Domain $domain): void
+    /** Return and Release share the purchase phase. Each still needs its own funding and contact checks. */
+    public static function requirePurchase(Operation $op, Domain $domain, \DateTimeImmutable $now,
+        bool $admission = false, ?AcquisitionLifecycle $proof = null): AcquisitionLifecycle
     {
-        $key = AcquisitionAttempt::key($op->action) ?? throw new \LogicException('Acquisition required.');
         $lock = DB::transactionLevel() > 0;
-        $unsent = OperationAttempts::unsentPurchase((int) $op->id, $key, $lock);
-        self::requireOwned($op, $domain, ledgerTransfer: $unsent !== null && $op->action === 'transfer' && $op->funding_basis === 'paid_invoice');
-        if (AcquisitionAttempt::conflicts($op) || !FinancialAdjustments::registrarUnattemptedFunding($op, allowClaim: true)
-            || !($unsent ?? AcquisitionRetryProof::virgin($op))) {
+        $proof ??= OperationAttempts::purchaseProof($op, $now, $lock);
+        self::requireOwned($op, $domain, ledgerTransfer: $proof->facts !== null && $op->funding_basis === 'paid_invoice');
+        if ($op->state === 'rejected' ? $admission || $proof->closure === null : !$proof->canCloseUnsent()) {
             throw new OperationRefused(OperationFailure::ProviderEvidence);
         }
-        if ($unsent === true && !ContactProfileHold::allowsPurchaseDisposition($op, $lock)) {
+        if ($proof->closure === AcquisitionClosureKind::Unpaid && !UnpaidAcquisitionProof::terminal($op, $domain, $proof)) {
             throw new OperationRefused(OperationFailure::ProviderEvidence);
         }
+        if (!ContactProfileHold::allowsPurchaseDisposition($op, $lock,
+                allowSaved: $op->action === 'transfer' && $op->funding_basis === 'paid_invoice',
+                requireRow: in_array($op->safe_code, ContactProfileHold::HOLDS, true))
+            || ($admission && !$proof->facts?->sealed() && !FinancialAdjustments::registrarUnattemptedFunding($op, allowClaim: true))) {
+            throw new OperationRefused(OperationFailure::ProviderEvidence);
+        }
+        return $proof;
     }
+
     /** $renewal: this renewal's attempt facts when the caller already read them in a batch. */
     public static function requireUnsent(Operation $op, Domain $d, ?RenewalFundingLedger $ledger = null,
         ?RenewalAttempt $renewal = null): ?AttemptFacts
     {
-        $lock = DB::transactionLevel() > 0;
-        if (AcquisitionAttempt::dispositionCandidate($op, $lock)) {
-            $refused = AcquisitionAttempt::purchaseRefusal($op, $lock);
-            if ($refused) {
-                self::requireOwned($op, $d, ledgerTransfer: $op->action === 'transfer' && $op->funding_basis === 'paid_invoice');
-                return $refused;
-            }
-            // Fresh TEST counter refusals keep the separate cap proof and no retained spend grant.
-            if (AcquisitionAttempt::key($op->action) !== null && $op->acquisitionAttemptFacts()?->released
-                && !OperationClaims::testCallRefusalUnsent($op) && !OperationClaims::testCallRefusalTerminal($op)) {
-                throw new OperationRefused(OperationFailure::ProviderEvidence);
-            }
-        }
-        $purchaseUnsent = self::paidTransferPurchaseUnsent($op);
-        $f = self::requireOwned($op, $d, ledgerTransfer: $purchaseUnsent !== null);
-        if ($purchaseUnsent !== null) {
-            if (!$purchaseUnsent || !ContactProfileHold::allowsPurchaseDisposition($op, $lock)) { throw new \DomainException('Unresolved attempt facts prevent refund.'); }
-            return null;
-        }
+        if (AcquisitionAttempt::key($op->action)) { return self::requirePurchase($op, $d, app(Clock::class)->now())->facts; }
+        $f = self::requireOwned($op, $d);
         if ($op->action === 'renew') { self::requireRenewalUnsent($op, $f, $ledger, $renewal ?? RenewalAttempt::of($op)); return null; }
         if (PrivacyRetirement::safe($op, $d)) { return null; }
         $a = $op->attempt ?? [];
-        $purchase = AcquisitionAttempt::key($op->action);
-        $sealed = ($a['seal'] ?? null) === 'sealed';
-        // HoldingLocks already read step presence under the holding lock in Domains-owned transactions.
-        if ($purchase && $op->exists && !(FreshTransaction::active() && $op->acquisitionStepAbsent())) {
-            $lock = DB::transactionLevel() > 0;
-            $prior = $op->acquisitionAttemptFacts();
-            if ($prior ? (AcquisitionAttempt::conflicts($op) || OperationAttempts::unresolvedRead($prior)
-                    || ($sealed ? !$prior->current || $prior->released : !OperationAttempts::releasedUnsent($prior, $lock)))
-                : OperationAttempts::step((int) $op->id, $purchase, $lock)?->current_attempt_id !== null) {
-                throw new \DomainException('Unresolved attempt facts prevent refund.');
-            }
-        }
-        if (OperationClaims::testCallRefusalUnsent($op) || OperationClaims::testCallRefusalTerminal($op)) { return null; }
-        if ($op->action === 'transfer' && array_key_exists('transfer_timeout', $a)) {
-            if (!self::transferTimeout($op, $d)) { throw new \DomainException('Transfer is not a definitely-unsent timeout.'); }
-            return null;
-        }
         if ($a === []) {
-            if ($op->started_at !== null || $op->request_fingerprint !== null || array_key_exists('claim', $f) || array_key_exists('seal', $f)) { throw new \DomainException('Unknown attempt identity.'); }
+            if ($op->started_at !== null || $op->request_fingerprint !== null || array_key_exists('claim', $f) || array_key_exists('seal', $f)) {
+                throw new \DomainException('Unknown attempt identity.');
+            }
             return null;
         }
-        $acquisition = $sealed && $op->registrar_key === 'namesilo' && $purchase !== null;
-        $history = $purchase ? AcquisitionRetryProof::LOCAL_REFUSAL_HISTORY : ['capacity_deferrals'];
-        $allowed = $sealed ? ['claim_key', 'seal', 'dispatch_attempted_at', 'send_state', 'authorized_cost', ...($acquisition?[$op->action==='transfer'?'transfer_admission':'registration_admission']:[]), 'execution', ...$history]
-            : ['claim_key', 'seal', 'send_state', 'disposition', 'rejection_basis', 'terminal', ...$history];
-        if(!$sealed&&in_array($op->action,['privacy_purchase','privacy_renew'],true)&&array_key_exists('management_claim',$a)){
-            $allowed[]='management_claim';$allowed[]='management_deferrals';if(!ManagementEvidence::deferrals($a)){throw new \DomainException('Unknown management deferral.');}
-            if(!is_string($a['management_claim'])||!preg_match('/^[a-f0-9]{32}$/D',$a['management_claim'])||!$op->started_at||$op->request_fingerprint!==null
-                ||!in_array($op->safe_code,['management_unconfirmed','refund_approved'],true)){throw new \DomainException('Unknown privacy claim.');}
-        }
-        if (!AcquisitionRetryProof::localDeferrals($a)) { throw new \DomainException('Unknown capacity deferral.'); }
-        if (AcquisitionRetryProof::testCallHistoryOnly($a)
-            || (array_key_exists('test_call_refusals', $a) && !AcquisitionRetryProof::testCallHistory($a['test_call_refusals']))
-            || array_diff(array_keys($a), $allowed)) {
-            throw new \DomainException('Unresolved attempt facts prevent refund.');
-        }
-        if ($sealed) {
-            $funded = isset($f['claim'], $f['seal']) && $f['claim'] === $f['seal'];
-            $claimKey = $a['claim_key'] ?? null;
-            if (!in_array($op->safe_code, ['acquisition_definitely_unsent', 'refund_approved'], true) || !$acquisition
-                || !in_array($a['send_state'] ?? null, ['possibly_sent', 'definitely_unsent'], true)
-                || ($a['execution'] ?? null) !== self::REFUSAL
-                || !is_string($claimKey) || !preg_match('/^[a-f0-9]{32}$/D', $claimKey)
-                || !$op->started_at || !$op->request_fingerprint || !isset($a['dispatch_attempted_at'], $a['authorized_cost'])
-                || !isset($a[$op->action==='transfer'?'transfer_admission':'registration_admission']) || !$funded) {
-                throw new \DomainException('Sealed attempt is not proven prewire refusal.');
+        $allowed = ['claim_key', 'seal', 'send_state', 'disposition', 'rejection_basis', 'terminal', 'capacity_deferrals'];
+        if (array_key_exists('management_claim', $a)) {
+            $allowed[] = 'management_claim';
+            $allowed[] = 'management_deferrals';
+            if (!ManagementEvidence::deferrals($a) || !is_string($a['management_claim']) || !preg_match('/^[a-f0-9]{32}$/D', $a['management_claim'])
+                || !$op->started_at || $op->request_fingerprint !== null || !in_array($op->safe_code, ['management_unconfirmed', 'refund_approved'], true)) {
+                throw new \DomainException('Unknown privacy claim.');
             }
-            $attempt = AcquisitionAttempt::of((int) $op->id, $op->action, lock: DB::transactionLevel() > 0);
-            if ($attempt && !$attempt->locallyRefused(self::REFUSAL)) {
-                throw new \DomainException('Sealed attempt is not proven prewire refusal.');
-            }
-        } elseif (($a['seal'] ?? null) !== 'absent' || ($a['send_state'] ?? null) !== 'definitely_unsent'
+        }
+        if (!AcquisitionRetryProof::localDeferrals($a) || array_diff(array_keys($a), $allowed)
+            || ($a['seal'] ?? null) !== 'absent' || ($a['send_state'] ?? null) !== 'definitely_unsent'
             || (array_key_exists('disposition', $a) && $a['disposition'] !== 'rejected')
             || (array_key_exists('rejection_basis', $a) && $a['rejection_basis'] !== 'definitely_unsent')
-            || (isset($a['claim_key']) && (!$op->started_at || !$op->request_fingerprint))) {
-            throw new \DomainException('Unsealed attempt is not proven unsent.');
+            || (isset($a['claim_key']) && (!$op->started_at || !$op->request_fingerprint))
+            || array_key_exists('seal', $f) || (array_key_exists('claim', $f) && (!isset($a['claim_key']) || !is_array($f['claim'])))) {
+            throw new \DomainException('Unresolved attempt facts prevent refund.');
         }
-        if (!$sealed && (array_key_exists('seal', $f) || (array_key_exists('claim', $f) && (!isset($a['claim_key']) || !is_array($f['claim']))))) {
-            throw new \DomainException('Unsealed financial seal or unknown claim prevents refund.');
-        }
-        if (!$sealed && array_key_exists('claim_key', $a) && (!is_string($a['claim_key']) || !preg_match('/^[a-f0-9]{32}$/D', $a['claim_key'])
-            || !in_array($op->safe_code, [...BalanceRetries::REVIEW_CODES,'namesilo_account_guard', 'pre_send_interrupted', 'seal_authority_invalid', 'nameservers_required', 'write_acceptance_required', 'write_rate_limited', 'refund_approved', 'usd_balance_required', 'enom_test_setup_required', ...ContactProfileHold::HOLDS, ...WriteHeld::UNSENT_REFUSALS], true))) {
+        if (array_key_exists('claim_key', $a) && (!is_string($a['claim_key']) || !preg_match('/^[a-f0-9]{32}$/D', $a['claim_key'])
+            || !in_array($op->safe_code, [...BalanceRetries::REVIEW_CODES, 'namesilo_account_guard', 'pre_send_interrupted',
+                'seal_authority_invalid', 'nameservers_required', 'write_acceptance_required', 'write_rate_limited', 'refund_approved',
+                'usd_balance_required', 'enom_test_setup_required', ...ContactProfileHold::HOLDS, ...WriteHeld::UNSENT_REFUSALS], true))) {
             throw new \DomainException('Unresolved local claim.');
         }
-        // A contact step hold is unsent only while the order's own contact row shows nothing went to NameSilo.
-        if (!$sealed && ($op->safe_code === ContactProfileHold::CODE || $op->safe_code === 'processing' && isset($a['claim_key'])) && !ContactProfileHold::unsent($op)) { throw new OperationRefused(OperationFailure::ProviderEvidence); }
         if (array_key_exists('terminal', $a) && (($a['terminal']['operation_key'] ?? null) !== $op->operation_key
             || ($a['terminal']['generation'] ?? null) !== $op->authority_generation)) { throw new \DomainException('Foreign terminal proof.'); }
         return null;
     }
-    /** Null delegates to the strict pre-ledger path. A present ledger cannot be overridden by a hold or refund audit. */
-    public static function paidTransferPurchaseUnsent(Operation $op): ?bool
-    {
-        if ($op->action !== 'transfer' || $op->funding_basis !== 'paid_invoice' || !$op->exists || !$op->id) { return null; }
-        $unsent = OperationAttempts::unsentPurchase((int) $op->id, AcquisitionAttempt::key('transfer'), DB::transactionLevel() > 0);
-        return $unsent === true ? !AcquisitionAttempt::conflicts($op) : $unsent;
-    }
 
     /** A fresh registry 404 before cutoff is the documented exception to hold-code independence (docs/design/transfers.md). */
-    public static function transferDispositionAvailable(Operation $op): bool
+    public static function transferDispositionAvailable(Operation $op, \DateTimeImmutable $now): bool
     {
-        return $op->safe_code !== 'transfer_not_registered' || ExecutionWindow::pastTransferCutoff($op, app(Clock::class)->now());
+        return $op->safe_code !== 'transfer_not_registered' || ExecutionWindow::pastTransferCutoff($op, $now);
     }
 
     /** Slice25 commits possibly_sent at seal; ONLY its exact typed local prewire result can override it. */
@@ -211,17 +159,10 @@ final class RefundProof
     }
     private static function requireAnsweredAttempt(Operation $op): void
     { if (!self::answeredAttempt($op)) { throw new \DomainException('Not processed needs a sealed attempt without positive proof.'); } }
-    public static function transferTimeout(Operation $op, Domain $d): bool
+    public static function transferTimeout(Operation $op, Domain $d, ?\DateTimeImmutable $now = null): bool
     {
-        $a = $op->attempt ?? []; $at = $op->completed_at;
-        $deadline = $at ? TransferInputs::deadline($op, $at->toDateTimeImmutable()) : null;
-        return $op->action === 'transfer' && $op->state === 'rejected' && $op->safe_code === 'transfer_code_timeout'
-            && $op->term === 1 && $at !== null && $deadline !== null && $at >= $deadline
-            && $op->started_at === null && $op->request_fingerprint === null
-            && !array_intersect(['claim', 'seal'], array_keys($op->funding ?? []))
-            && (!array_key_exists('epp', $op->payload ?? []) || $op->payload['epp'] === null)
-            && $a === ['seal' => 'absent', 'send_state' => 'definitely_unsent', 'disposition' => 'rejected', 'rejection_basis' => 'definitely_unsent',
-                'transfer_timeout' => ['operation_key' => $op->operation_key, 'generation' => $d->authority_generation, 'deadline' => $deadline->format(DATE_ATOM)]];
+        return $op->action === 'transfer' && $op->authority_generation === $d->authority_generation
+            && OperationAttempts::purchaseProof($op, $now ?? app(Clock::class)->now(), DB::transactionLevel() > 0)->closure === AcquisitionClosureKind::TransferTimeout;
     }
     public static function retired(Operation $op, Domain $d): bool
     {

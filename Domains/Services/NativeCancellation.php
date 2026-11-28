@@ -2,6 +2,8 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionPhase, OperationAttempts};
 use Paymenter\Extensions\Servers\Domains\Money\Native\HoldingNativeLocks;
 use App\Models\{Invoice,InvoiceItem,Service,ServiceCancellation};
 use Illuminate\Support\Collection;
@@ -143,15 +145,16 @@ final class NativeCancellation
                         && ($d->snapshot['holding']['request_digest'] ?? null) === $a->request_digest) { $allTerminal = true; }
                 }
             }
+            $now = app(Clock::class)->now();
             foreach($acquisitions as$op){
                 $d=$domains->firstWhere('id',$op->domain_id);$account=$d?Account::where('server_id',$d->server_id)->first():null;
                 $terminal=$d&&$account&&RenewalAuthority::resolved($op,$d,AccountBindings::binding($account));
                 $allTerminal=$allTerminal&&$terminal;
                 $paid=$invoices->firstWhere('id',$op->invoice_id)?->status==='paid'
                     ||$money->where('invoice_id',$op->invoice_id)->contains(fn($t)=>in_array($t->status->value,['succeeded','processing'],true));
-                $attempted=($op->attempt??[])!==[]||$op->started_at!==null||$op->request_fingerprint!==null
-                    ||$op->lease_expires_at!==null||$op->provider_order_id!==null||$op->confirmed_expires_at!==null;
-                if(!$terminal&&($paid||$attempted)){self::refuse(self::MESSAGE,(int)$seed->id,$kind);}
+                if (!$terminal && ($paid || OperationAttempts::purchaseProof($op, $now, DB::transactionLevel() > 0)->phase !== AcquisitionPhase::Virgin)) {
+                    self::refuse(self::MESSAGE, (int) $seed->id, $kind);
+                }
             }
             if($acquisitions->isEmpty()&&!$allTerminal
                 &&($service->status==='active'||$invoices->contains('status','paid')||$money->contains(fn($t)=>in_array($t->status->value,['succeeded','processing'],true)))){
