@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 require __DIR__.'/native-app.php';
 require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
+require_once __DIR__.'/Support/fixture-checkpoint.php';
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use App\Models\{Credit,Role};
 use Illuminate\Support\Facades\Crypt;
@@ -106,7 +107,8 @@ foreach(['success','unsent','timeout','cap','off'] as $mode){
         commerceReject(fn () => RefundProof::requireUnsent($bad, $result->domain));
         commerceReject(fn()=>$result->update(['attempt'=>array_replace($result->attempt,['execution'=>null]) ]));$result->refresh();
         RefundProof::requireUnsent($result, $result->domain);
-        // The old writer kept the seal's possibly-sent state and recorded the local refusal separately.
+        // Retained seals can support readback. A new payment return needs the original durable local refusal.
+        $restoreLedger = nativeRegistrarCheckpoint($clock);
         $legacy = [...$result->attempt, 'send_state' => 'possibly_sent'];
         restoreAcquisitionFixture([...$result->getRawOriginal(),
             'attempt' => Crypt::encryptString(json_encode($legacy, JSON_THROW_ON_ERROR)),
@@ -117,23 +119,31 @@ foreach(['success','unsent','timeout','cap','off'] as $mode){
         FreshTransaction::run(static function () use ($result, $clock): void {
             $locks = HoldingLocks::take($result->domain);
             $locked = $locks['operations']->firstWhere('id', $result->id);
-            RefundProof::requireUnsent($locked, $locks['domain']);
+            commerceReject(fn () => RefundProof::requireUnsent($locked, $locks['domain']));
             $adopted = RetainedAcquisition::adopt($locked, new OperationWriter($clock), $clock->now());
             expect($adopted !== null, 'The legacy local refusal adopts its original seal');
         });
+        commerceReject(fn () => RefundProof::requireUnsent($result->fresh(), $result->domain));
+        $restoreLedger();
         $result->refresh();
-        $restore = changeAcquisitionEvidence($result, 'claim', static function (array $evidence): array {
-            unset($evidence['legacy_attempt']['execution']);
+        $restore = changeAcquisitionEvidence($result, 'reply', static function (array $evidence): array {
+            unset($evidence['reason']);
             return $evidence;
         });
         try { commerceReject(fn () => RefundProof::requireUnsent($result->fresh(), $result->domain)); }
         finally { $restore(); }
         $staff=commerceUser();$role=Role::create(['name'=>'Acquisition refunds','permissions'=>['admin.domains.manage','admin.invoices.update']]);$staff->update(['role_id'=>$role->id]);
         $credit=static fn()=>PricingRule::minor((string)(Credit::where('user_id',$user->id)->where('currency_code','USD')->value('amount')??'0.00'));
-        $beforeCredit=$credit();$attempt=$result->attempt;$refunds=new Refunds($clock);
+        $beforeCredit=$credit();$refunds=new Refunds($clock);
+        $audit=static fn()=>OperationAttempts::evidenceMany([(int)$result->id],['claim','admission','reply','capacity']);
+        $beforeAudit=$audit();
+        $attempt=$result->acquisitionAttemptFacts();
         same(['amount'=>$result->amount,'currency'=>'USD'],$refunds->refundHeld($staff,(int)$result->id,'customer_cancelled'),'Deferred sealed definitely-unsent acquisition refunds');
         same($beforeCredit+PricingRule::minor($result->amount),$credit(),'Deferred acquisition credits the paid amount once');
-        same($attempt,$result->fresh()->attempt,'Refund preserves sealed deferral audit');
+        same($beforeAudit,$audit(),'Refund preserves the original claim, seal, refusal and capacity events');
+        $closed=$result->fresh()->acquisitionAttemptFacts();
+        same([$attempt->token->attemptId,true,true],[$closed->token->attemptId,$closed->sealed(),$closed->released],
+            'Refund releases the exact sealed attempt without deleting the seal');
         same(null,$refunds->refundHeld($staff,(int)$result->id,'customer_cancelled'),'Repeated refund does not credit again');
         same($beforeCredit+PricingRule::minor($result->amount),$credit(),'Repeated refund preserves exact credit');
     }elseif($mode==='timeout'){
