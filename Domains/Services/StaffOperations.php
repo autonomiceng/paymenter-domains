@@ -5,12 +5,13 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
 use App\Models\User;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
+use Paymenter\Extensions\Servers\Domains\Operations\Reconciliation\AcquisitionCheckResult;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalCompletion;
 final readonly class StaffOperations
 {
     public function __construct(private Clock $clock) {}
-    public function run(User $actor,int $domain,int $operation,string $action,string $ticket,string $reason): void
+    public function run(User $actor,int $domain,int $operation,string $action,string $ticket,string $reason): ?AcquisitionCheckResult
     {
         $r=new StaffOperationReview((int)$actor->id,$domain,$operation,$action,$ticket,$reason,$this->clock);
         switch($action){
@@ -41,11 +42,14 @@ final readonly class StaffOperations
                 $op=\Paymenter\Extensions\Servers\Domains\Models\Operation::findOrFail($operation);
                 if(!in_array($op->action,['register','transfer','renew'],true)){
                     app(DomainManagement::class)->reconcileReviewed($operation,fn()=>app(OwnerPorts::class)->forDomain($op->domain),$r);
-                }else{$r->read(function()use($operation,$op){
-                    if($op->action==='renew'){app(RenewalCompletion::class)->run($operation, staff: true);}
-                    else{app(OperationReconciliation::class)->run($operation);}
-                });}break;
+                } elseif ($op->action === 'renew') {
+                    $r->read(fn () => app(RenewalCompletion::class)->run($operation, staff: true));
+                } else {
+                    return $r->read(fn () => app(OperationReconciliation::class)->runCheck($operation));
+                }
+                break;
             default: throw new \DomainException('Unknown staff action.');
         }
+        return null;
     }
 }

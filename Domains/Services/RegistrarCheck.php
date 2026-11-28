@@ -58,34 +58,35 @@ final class RegistrarCheck
         return DB::transaction(function () use ($result): Operation {
             Domain::whereKey($result->domain_id)->lockForUpdate()->firstOrFail();
             $op = Operation::whereKey($result->id)->lockForUpdate()->firstOrFail();
-            return $this->save($op, $this->clock->now()->getTimestamp());
+            $this->save($op, $this->clock->now()->getTimestamp());
+            return $op;
         });
     }
 
-    public function publishAcquisition(Operation $op, AcquisitionReadPermit $permit): void
+    public function publishAcquisition(Operation $op, AcquisitionReadPermit $permit): ?array
     {
         if ((int) $op->id !== $permit->token->attempt->operationId || DB::transactionLevel() === 0) {
             throw new \LogicException('Acquisition status requires its live read.');
         }
-        $this->save($op, $permit->now->getTimestamp());
+        return $this->save($op, $permit->now->getTimestamp());
     }
 
     /** Capture can publish a scheduling decision without claiming that the registrar was checked. */
-    public function publishAcquisitionDeferral(Operation $op, \DateTimeImmutable $now): void
+    public function publishAcquisitionDeferral(Operation $op, \DateTimeImmutable $now, string $reason): ?array
     {
         if (DB::transactionLevel() === 0 || $this->context !== null) {
             throw new \LogicException('Acquisition deferrals belong to the capture decision.');
         }
-        $this->save($op, $now->getTimestamp());
+        return $this->save($op, $now->getTimestamp(), $reason);
     }
 
-    private function save(Operation $op, int $now): Operation
+    private function save(Operation $op, int $now, ?string $localReason = null): ?array
     {
-        if ($op->state === 'rejected' && $op->action === 'transfer' && $op->safe_code === TransferRejections::CODE) { return $op; }
-        if ($this->identity===null || !hash_equals($this->identity,RegistrarAnswers::identity($op))) { return $op; }
+        if ($op->state === 'rejected' && $op->action === 'transfer' && $op->safe_code === TransferRejections::CODE) { return null; }
+        if ($this->identity===null || !hash_equals($this->identity,RegistrarAnswers::identity($op))) { return null; }
         // A check, resume or answer saved after this check began is newer. This result must not replace it.
         $stored=$op->policy['status_check']??null;
-        if ($stored!==$this->seen && $this->newer($stored)) { return $op; }
+        if ($stored!==$this->seen && $this->newer($stored)) { return null; }
         if ($op->state==='succeeded') { $this->awaitingAnswer=null; }
         $outcome = $this->awaitingAnswer !== null ? 'awaiting_answer' : ($this->deferred !== null ? 'deferred' : (($this->context?->completedReads() ?? 0) > 0 ? 'checked' : 'unavailable'));
         // A completed read of a lost reply counts toward the same read limit as any other check, once.
@@ -111,11 +112,12 @@ final class RegistrarCheck
                 DB::table('domains_runtime_operations')->updateOrInsert(['operation_id' => $op->id], ['due_at' => $next, ...($continued ? ['attempts' => 0] : [])]);
             }
         }
-        self::saveResult($op, ['outcome' => $outcome, 'at' => $now, 'started' => $this->started, 'order' => $this->order,
-            'next_at' => $next, 'reason' => $this->adoptionRefused ? self::ADOPTION_REFUSED : $this->deferred, 'attempt_identity' => $this->identity,
+        $result = ['outcome' => $outcome, 'at' => $now, 'started' => $this->started, 'order' => $this->order,
+            'next_at' => $next, 'reason' => $this->adoptionRefused ? self::ADOPTION_REFUSED : ($this->deferred ?? $localReason), 'attempt_identity' => $this->identity,
             'read_attempted' => ($this->context?->exchanges() ?? 0) > 0 || self::attempted($op), 'facts' => $this->facts,
-            ...($this->awaitingAnswer !== null ? ['registrar' => $this->awaitingAnswer, 'answer_after' => $this->answerAfter] : [])]);
-        return $op;
+            ...($this->awaitingAnswer !== null ? ['registrar' => $this->awaitingAnswer, 'answer_after' => $this->answerAfter] : [])];
+        self::saveResult($op, $result);
+        return $result;
     }
     /** Called under the existing review locks; a resume resets scheduling, never the sealed attempt. */
     public static function resumed(Operation $op, int $now): void

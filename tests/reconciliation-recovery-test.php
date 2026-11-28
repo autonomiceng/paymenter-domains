@@ -169,10 +169,15 @@ DB::transaction(fn () => HistoryAcceptances::revokeLocked($binding, \Paymenter\E
 HistoryAcceptances::save(new HistoryAcceptance($binding, 'America/Los_Angeles', 60, 86400, 'enom_registration_v1'));
 $dense->fresh()->update(['policy' => [...$dense->fresh()->policy, 'reconciliation' => [...($dense->fresh()->policy['reconciliation'] ?? []), 'polls' => 5]]]);
 $day = new class($wire, $observation) implements \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Transport {
-    public array $forms = []; public bool $placed = false;
+    public array $forms = []; public array $details = []; public bool $placed = false;
+    public ?Closure $expire = null;
     public function __construct(private $domain, private $state) {}
     public function send($env, \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
         $history = [\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Orders, \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Order];
+        if ($command === $history[1]) {
+            $this->details[] = (int) $parameters['OrderID'];
+            if (count($this->details) === 4 && $this->expire) { ($this->expire)(); }
+        }
         if (!in_array($command, $history, true) || ($parameters['OrderID'] ?? null) === '7049') { if (in_array($command, $history, true)) { $this->forms[] = $command; } return $this->domain->send($env, $command, $parameters, $uid, $token, $timeoutMs); }
         $this->forms[] = $command; $at = fn (int $i) => (new DateTimeImmutable('2026-10-18 06:30:00', new DateTimeZone('America/Denver')))->modify('-'.(7 * $i).' minutes')->format('n/j/Y g:i:s A');
         if ($command === \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Orders) {
@@ -191,11 +196,26 @@ $observation->reference = '7049'; $before = $writer->calls;
 $clock->instant = $clock->now()->modify('+3 days'); config(['domains.enom_identity.environment' => 'test']);
 \Paymenter\Extensions\Servers\Domains\Registrars\Enom\TestOrderHistory::upgrade(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $binding->serverId)->sole());
 same(2592000, HistoryAcceptances::load($binding)->retentionSeconds, 'The saved TEST registration contract is raised to 30 days');
+$status = $dense->fresh()->policy['status_check'] ?? null;
+$day->expire = static function () use ($clock, $dense): void {
+    $clock->instant = $dense->fresh()->acquisitionAttemptFacts()->readUntil;
+};
+\Illuminate\Support\Facades\Cache::flush();
+$expired = $denseReconcile->run($dense->id);
+$day->expire = null;
+$validated = $expired->policy['history_scan']['state']['orders'] ?? [];
+same(array_slice($day->details, 0, 3), array_keys($validated), 'Expiry keeps only the three details verified within the read');
+same([$status, 0, 'uncertain'], [$expired->policy['status_check'] ?? null, $expired->policy['reconciliation']['polls'], $expired->state],
+    'The expired scan publishes no status, completed poll or disposition');
 $turns = [];
-foreach ([1, 2, 3] as $n) { $day->forms = []; \Illuminate\Support\Facades\Cache::flush(); $state = $denseReconcile->run($dense->id)->state; $turns[] = [$state, count($day->forms), $dense->fresh()->policy['reconciliation']['polls']]; }
-same([['uncertain', 19, 1], ['uncertain', 19, 2], ['uncertain', 17, 3]], $turns, 'The new contract resumes the exhausted reads once; every completed turn counts, the two progressing turns of 17 orders and the full no-match scan');
+foreach ([1, 2, 3] as $n) {
+    $day->forms = $day->details = []; \Illuminate\Support\Facades\Cache::flush(); $state = $denseReconcile->run($dense->id)->state;
+    $turns[] = [$state, count($day->forms), $dense->fresh()->policy['reconciliation']['polls']];
+    expect(array_intersect(array_keys($validated), $day->details) === [], 'The next scans reuse the three validated exclusions');
+}
+same([['uncertain', 19, 1], ['uncertain', 19, 2], ['uncertain', 14, 3]], $turns, 'The new contract resumes the exhausted reads once; every completed turn counts');
 $scan = $dense->fresh()->policy['history_scan']['state'];
-same([49, 49, true, 2, 0], [$scan['in_window'], $scan['resolved'], $scan['complete'], $scan['refusal_totals']['read_budget'], count(array_filter($scan['orders'], fn ($o) => str_starts_with($o, 'c:')))], 'The saved scan holds the counts and the sanitized refusal totals');
+same([49, 49, true, 3, 0], [$scan['in_window'], $scan['resolved'], $scan['complete'], $scan['refusal_totals']['read_budget'], count(array_filter($scan['orders'], fn ($o) => str_starts_with($o, 'c:')))], 'The saved scan holds the counts and the sanitized refusal totals');
 same(5, $dense->fresh()->policy['history_resumption']['prior_polls'], 'The resumption records the exhausted read count');
 same([null, $before], [$dense->fresh()->funding['refund'] ?? null, $writer->calls], 'No order found is not a refund and nothing is sent again');
 $day->placed = true; $day->forms = []; \Illuminate\Support\Facades\Cache::flush();

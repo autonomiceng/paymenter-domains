@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Operations\Reconciliation;
 
 use Paymenter\Extensions\Servers\Domains\Data\{Action, DomainSnapshot, Evidence, HistoryScan, NameserverEvidence, OrderEvidence, RequestContext, TransferStatus};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationWriter;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionLifecycle, OperationWriter};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, FreshTransaction, ReconciliationEvidence, WriteMoney};
 
 final readonly class AcquisitionObservation
@@ -54,6 +54,21 @@ final readonly class AcquisitionObservation
         if (!$seen) { return new self($scan); }
         $facts = new Evidence(domain: $seen['domain'] ?? null, candidates: $seen['orders'] ?? []);
         return new self($scan, $facts, charges: AcquisitionCharges::from($read->attempt, $facts, $seen['at']), observedAt: $seen['at']);
+    }
+
+    /** Keep verified exclusions for the same scanner and starting cursor under the purchase locks. */
+    public function retainScan(Operation $op, Domain $domain, Account $account, AcquisitionRead $read,
+        AcquisitionLifecycle $state, \DateTimeImmutable $now): void
+    {
+        if (!$this->scan || $read->attempt->binding->registrarKey !== 'enom' || !$state->ownsReadIdentity($read->token)) { return; }
+        try {
+            $binding = AccountBindings::binding($account);
+            $binding->requireMatch($read->attempt->binding);
+            $current = ReconciliationEvidence::attempt($op, $domain, $binding);
+        } catch (\DomainException|\InvalidArgumentException|\DateException) { return; }
+        if (!$current->historyAcceptance?->covers($current, $now) || HistoryScan::key($current) !== $this->scan->key
+            || $current->historyScan?->saved() !== $read->attempt->historyScan?->saved()) { return; }
+        $op->update(['policy' => [...$op->policy, 'history_scan' => $this->scan->saved()]]);
     }
 
     public function retainAfterInterruption(AcquisitionRead $read, OperationWriter $writer): void

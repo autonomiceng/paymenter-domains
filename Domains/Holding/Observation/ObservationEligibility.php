@@ -8,13 +8,20 @@ use Paymenter\Extensions\Servers\Domains\Services\{ObservationProjection,RefundP
 /** Skip only proven-unsent acquisitions. Unknown outcomes and known holdings remain readable. */
 final class ObservationEligibility
 {
-    public static function allows(Domain $d, ?Collection $operations=null): bool
+    public static function independent(Domain $d): bool
     {
         if ($d->status==='departed') { return false; }
         if (!in_array($d->status,['registration_pending','transfer_pending'],true)
             || $d->provider_domain_id!==null || $d->provider_order_id!==null || $d->provider_expires_at!==null) { return true; }
         $facts=$d->observation['facts']??null;
-        if (is_array($facts) && ObservationProjection::matches($d,$facts) && ($facts['owned']??null)===true) { return true; }
+        return is_array($facts) && !array_key_exists('purchase_attempt_id', $facts)
+            && ObservationProjection::matches($d,$facts) && ($facts['owned']??null)===true;
+    }
+
+    public static function allows(Domain $d, ?Collection $operations=null): bool
+    {
+        if ($d->status==='departed') { return false; }
+        if (self::independent($d)) { return true; }
         $operations??=$d->operations()->whereIn('action',['register','transfer'])->get();
         $acquisitions=$operations->filter(fn($op)=>in_array($op->action,['register','transfer'],true)
             && $op->authority_generation===$d->authority_generation && $op->account_fingerprint===$d->account_fingerprint);

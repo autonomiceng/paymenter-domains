@@ -255,9 +255,11 @@ final readonly class OperationWriter
         self::requireTransaction(); $now = $this->clock->now(); $facts = OperationAttempts::attempt($token, true);
         $until = new \DateTimeImmutable('@'.$until->getTimestamp());
         if (!$facts?->sealed() || !$facts->current || $until <= $now) { return Transition::Stale; }
-        if (OperationAttempts::purchaseStep($token)
-            && !AcquisitionLifecycle::read($facts, $now, lock: true, includeClosure: true)->permitsRead()) { return Transition::Stale; }
-        if ($facts->reading($now)) { return Transition::Busy; }
+        if (OperationAttempts::purchaseStep($token)) {
+            $state = AcquisitionLifecycle::read($facts, $now, lock: true, includeClosure: true);
+            if (!$state->permitsRead()) { return Transition::Stale; }
+            if ($state->readBusy($now)) { return Transition::Busy; }
+        } elseif ($facts->reading($now)) { return Transition::Busy; }
         $inherited = $facts->readUnresolved || $facts->readToken !== null; $read = bin2hex(random_bytes(16));
         DB::table(OperationSchema::ATTEMPTS)->where('id', $token->attemptId)->update(['read_token' => $read,
             'read_until' => OperationAttempts::at($until), 'read_unresolved' => $inherited]);
@@ -284,7 +286,19 @@ final readonly class OperationWriter
     /** Releases this read. A stale finisher cannot clear a successor; inherited uncertainty stays. */
     public function closeRead(ReadToken $read): bool
     {
-        self::requireTransaction(); $facts = OperationAttempts::attempt($read->attempt, true);
+        self::requireTransaction();
+        return !OperationAttempts::purchaseStep($read->attempt) && $this->closeReadToken($read);
+    }
+
+    public function closePurchaseRead(AcquisitionReadPermit $permit): bool
+    {
+        self::requireTransaction();
+        return $this->closeReadToken($permit->token);
+    }
+
+    private function closeReadToken(ReadToken $read): bool
+    {
+        $facts = OperationAttempts::attempt($read->attempt, true);
         if (!$facts || $facts->readToken === null || !hash_equals($facts->readToken, $read->token)) { return false; }
         DB::table(OperationSchema::ATTEMPTS)->where('id', $read->attempt->attemptId)->update(['read_token' => null, 'read_until' => null]);
         $this->bump($read->attempt->stepId);
@@ -328,7 +342,7 @@ final readonly class OperationWriter
         if (!$this->append($token->operationId, $token->attemptId, 'settlement', 'registrar_read', 'succeeded', $proof, 'settlement')) {
             return Transition::Stale;
         }
-        if (!$this->closeRead($read)) { throw new \DomainException('Acquisition read authority changed.'); }
+        if (!$this->closePurchaseRead($permit)) { throw new \DomainException('Acquisition read authority changed.'); }
         return Transition::Applied;
     }
 
@@ -365,7 +379,9 @@ final readonly class OperationWriter
     public function approveHeld(AttemptToken $token, array $approval): Transition
     {
         self::requireTransaction(); $facts = OperationAttempts::attempt($token, true);
-        if (!$facts?->sealed()) { return Transition::Stale; }
+        if (!$facts?->sealed() || (int) (OperationAttempts::step($token->operationId, StepKey::renew(), true)?->id ?? 0) !== $token->stepId) {
+            return Transition::Stale;
+        }
         $held = OperationAttempts::evidence($token->operationId, $token->attemptId, 'held')['evidence']['settlement'] ?? null;
         if ($held === null || $held !== ($approval['settlement'] ?? null)) { return Transition::Stale; }
         return $this->append($token->operationId, $token->attemptId, 'settlement', 'staff_review', 'succeeded', $approval, 'settlement')

@@ -136,4 +136,15 @@ final readonly class AcquisitionLifecycle
     {
         return $this->phase === AcquisitionPhase::PossibleHandoff && $this->facts?->current && !$this->facts->released;
     }
+
+    public function readBusy(\DateTimeImmutable $now): bool
+    { return $this->facts?->reading($now) ?? false; }
+
+    /** A fenced registration read can still own retained evidence until a successor opens. */
+    public function ownsReadIdentity(ReadToken $read): bool
+    {
+        $facts = $this->facts;
+        return $this->permitsRead() && $facts->token == $read->attempt && $facts->readToken !== null
+            && hash_equals($facts->readToken, $read->token) && $facts->readUntil == $read->until;
+    }
 }

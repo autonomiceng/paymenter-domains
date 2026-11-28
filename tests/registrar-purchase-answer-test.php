@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{Environment,ExecutionRecord,Histo
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client,Driver};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport,TransportResponse};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationWriter, ReadToken, StepKey, Transition};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionLifecycle, AcquisitionReadPermit, OperationAttempts, OperationWriter, ReadToken, StepKey, Transition};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,HistoryAcceptances,OperationReconciliation,ReconciliationEvidence,Refunds,RegistrarCheck,RenewalAuthority,Runtime,StaffSettingsReview as Review,StaffSettingsWrites};
 app()->instance(Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);
 $staff=commerceUser();$role=App\Models\Role::create(['name'=>'Purchase answers','permissions'=>['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.enom_answer','admin.domains.manage','admin.invoices.update']]);$staff->update(['role_id'=>$role->id]);
@@ -133,7 +133,11 @@ foreach(['accepted','not_processed','invalid_claim','expired_read','inherited_re
         if ($scenario === 'inherited_read') {
             $successor = $openRead();
             expect($successor->inheritedUnresolved, 'The next worker inherits the orphaned read');
-            expect($underLock(fn () => $writer->closeRead($successor)), 'The successor finishes without positive proof');
+            expect($underLock(function () use ($clock, $writer, $successor): bool {
+                $now = $clock->now();
+                $state = AcquisitionLifecycle::read(OperationAttempts::attempt($successor->attempt, true), $now, true);
+                return $writer->closePurchaseRead(AcquisitionReadPermit::issue($state, $successor, $now));
+            }), 'The successor finishes without positive proof');
         }
     }
     if ($scenario === 'late_observation') {

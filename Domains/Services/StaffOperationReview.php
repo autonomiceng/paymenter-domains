@@ -112,7 +112,7 @@ final class StaffOperationReview
             ||!is_string($t['stamp']??null)||!is_string($t['key']??null)){throw new StaffReviewRefused(self::CHANGED);}
         return $t;
     }
-    public function record(array $l,string $phase='completed',?\Throwable $failure=null): void
+    public function record(array $l,string $phase='completed',?\Throwable $failure=null,?array $check=null): void
     {
         if(!$this->before||DB::transactionLevel()!==1){throw new \LogicException('Missing locked review.');}
         $op=$l['operations']->firstWhere('id',$this->operationId)->fresh(); $d=$l['domain']->fresh(); $t=$this->verifiedTicket;
@@ -122,7 +122,11 @@ final class StaffOperationReview
         $history[]=['key'=>$t['key'],'action'=>$this->action,'phase'=>$phase,'actor_id'=>$this->actorId,'actor_name'=>$actor?(trim($actor->first_name.' '.$actor->last_name)?:'Staff #'.$actor->id):null,'reason'=>$this->reason,
             'at'=>$this->clock->now()->format(DATE_ATOM),'operation_key'=>$op->operation_key,'generation'=>$op->authority_generation,
             'before'=>$this->before,'after'=>self::state($op,$d),
-            ...($this->action==='recheck'&&$phase==='read_finished'&&in_array($op->action,['register','transfer','renew'],true)?['check'=>$op->policy['status_check']??['outcome'=>'unavailable']]:[]),
+            ...($this->action === 'recheck' && $phase === 'read_finished' ? match ($op->action) {
+                'register', 'transfer' => ['check' => $check ?? ['outcome' => 'unavailable']],
+                'renew' => ['check' => $op->policy['status_check'] ?? ['outcome' => 'unavailable']],
+                default => [],
+            } : []),
             // A change's check keeps its result, so History says what the registrar showed.
             ...($this->action==='recheck'&&$phase==='read_finished'&&isset($op->policy['management'])?['management_check'=>['outcome'=>match($op->state){'succeeded'=>'confirmed','rejected'=>'failed',default=>'unconfirmed'}]]:[]),...($failure?['safe_code'=>OperationFailure::code($failure)]:[])];
         $op->update(['policy'=>[...($op->policy??[]),'staff_actions'=>$history]]);
@@ -151,12 +155,16 @@ final class StaffOperationReview
     public function read(\Closure $read): mixed
     {
         $this->local(fn()=>null); // Durable request audit and key consumption before provider I/O; no locks over reads.
-        $failure=null;
-        try { return $read(); }
+        $failure = null; $outcome = null;
+        try { return $outcome = $read(); }
         catch(\Throwable $error){$failure=$error;throw $error;}
         finally {
-            DB::transaction(function()use($failure){ $d=Domain::whereKey($this->domainId)->lockForUpdate()->firstOrFail();
-                $l=['domain'=>$d,'operations'=>$d->operations()->orderBy('id')->lockForUpdate()->get()];$this->record($l,$failure?'read_failed':'read_finished',$failure); });
+            DB::transaction(function () use ($failure, $outcome): void {
+                $d = Domain::whereKey($this->domainId)->lockForUpdate()->firstOrFail();
+                $l = ['domain' => $d, 'operations' => $d->operations()->orderBy('id')->lockForUpdate()->get()];
+                $check = $outcome instanceof \Paymenter\Extensions\Servers\Domains\Operations\Reconciliation\AcquisitionCheckResult ? $outcome->check : null;
+                $this->record($l, $failure ? 'read_failed' : 'read_finished', $failure, $check);
+            });
         }
     }
     private static function state(Operation $op,Domain $d): array

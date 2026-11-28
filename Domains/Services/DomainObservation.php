@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, ReadLimiter};
 use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget, RequestContext, RequestOrigin, TransferStatus};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
+use Paymenter\Extensions\Servers\Domains\Money\Native\InvoiceFunding;
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionLifecycle, AcquisitionReadPermit, OperationWriter, ReadToken};
 use Paymenter\Extensions\Servers\Domains\Holding\Observation\{ObservationRecords, ObservationEligibility};
 /** Dormant read-only refresh. The financial reconciliation/completion services are never called. */
@@ -22,13 +23,14 @@ final class DomainObservation
             $l = HoldingLocks::take($seed, beforeCatalogue: $current);
             $at = $this->clock->now();
             $attempt = $read = null;
-            if ($l['domain']->status === 'transfer_pending') {
-                $op = $l['operations']->first(fn ($row) => $row->action === 'transfer'
+            if (in_array($l['domain']->status, ['registration_pending', 'transfer_pending'], true) && !ObservationEligibility::independent($l['domain'])) {
+                $action = $l['domain']->status === 'transfer_pending' ? 'transfer' : 'register';
+                $op = $l['operations']->first(fn ($row) => $row->action === $action
                     && $row->authority_generation === $l['domain']->authority_generation
                     && in_array($row->state, ['running', 'pending', 'uncertain', 'held'], true));
                 if (!$op) { return null; }
                 $state = AcquisitionLifecycle::settle($op, $l['domain'], $at);
-                if (!$state->permitsRead() || $state->facts->reading($at) || $current && TransferPolling::applies($op)) {
+                if (!$state->permitsRead() || $state->readBusy($at) || $current && TransferPolling::applies($op)) {
                     return null;
                 }
             }
@@ -37,11 +39,14 @@ final class DomainObservation
             if (ObservationRecords::identity($seed) !== ObservationRecords::identity($l['domain'])) { throw new ReadDeferred('Stale observation work.'); }
             $binding = AccountBindings::binding($l['account']);
             if (isset($state)) {
-                $attempt = ReconciliationEvidence::attempt($op, $l['domain'], $binding);
+                try {
+                    InvoiceFunding::requireInitialFacts($op, $l);
+                    $attempt = ReconciliationEvidence::attempt($op, $l['domain'], $binding);
+                } catch (\DomainException) { return null; }
                 $read = OperationWriter::at($at)->openRead($state->facts->token, $at->modify('+250 seconds'));
                 if (!$read instanceof ReadToken) { return null; }
             }
-            $recordProtected = ($this->records !== null || $this->observationReader !== null) && (!$this->recordGate || ($this->recordGate)($l));
+            $recordProtected = !$read && ($this->records !== null || $this->observationReader !== null) && (!$this->recordGate || ($this->recordGate)($l));
             $recordEnabled = $readRecords && $recordProtected;
             $knownGlue = $recordEnabled ? (ObservationProjection::sections($l['domain'])['known_glue'] ?? []) : [];
             $recordOverflow = count($knownGlue) > GlueDiscoveryLimit::HOSTS;
@@ -71,10 +76,13 @@ final class DomainObservation
             if ($snapshot) { $binding->requireMatch($snapshot->binding); if ($snapshot->name!==$seed->domain) { throw new \DomainException('Observation name changed.'); } }
             if ($this->clock->now()>=$ctx->deadline) { throw new \DomainException('Observation deadline reached.'); }
             if (!$snapshot&&$transfer===TransferStatus::Unknown) { throw new \DomainException('Observation unavailable.'); }
-        } catch (ReadDeferred|EnomTestCallLimit $e) { throw $e; }
+        } catch (ReadDeferred|EnomTestCallLimit $e) {
+            if (!$read) { throw $e; }
+            $snapshot = null; $transfer = TransferStatus::Unknown; $deferred = true;
+        }
         catch (\Throwable $e) {
             $failureCode=ReadFailure::code($e);
-            if (!in_array($seed->status,['active','grace','expired'],true)||(!$recordProtected&&$failureCode!=='domain_not_in_account')) { throw $e; }
+            if (!$read && (!in_array($seed->status,['active','grace','expired'],true)||(!$recordProtected&&$failureCode!=='domain_not_in_account'))) { throw $e; }
             $snapshot=null; $transfer=TransferStatus::Unknown; $failed=true;
         }
         // A failed primary read retains inventory; record failures retain successful domain facts.
@@ -105,10 +113,28 @@ final class DomainObservation
             if ($read) {
                 $op = $l['operations']->firstWhere('id', $read->attempt->operationId);
                 $now = $this->clock->now();
-                if (!$op || !AcquisitionReadPermit::issue(AcquisitionLifecycle::settle($op, $l['domain'], $now), $read, $now)) {
+                $permit = $op ? AcquisitionReadPermit::issue(AcquisitionLifecycle::settle($op, $l['domain'], $now), $read, $now) : null;
+                if (!$permit) { return null; }
+                $writer = OperationWriter::at($now);
+                if ($stamp !== $l['stamp']) {
+                    $writer->closePurchaseRead($permit);
                     return null;
                 }
-                OperationWriter::at($now)->closeRead($read);
+                try {
+                    $this->available($l);
+                    $this->bindings->requireReadableLocked($l['server'], $l['account']);
+                    $binding->requireMatch(AccountBindings::binding($l['account']));
+                    InvoiceFunding::requireInitialFacts($op, $l);
+                    if ($current && !hash_equals($credential, $this->bindings->holdingCredentialRevision($binding))) { throw new ReadDeferred('Observation credentials changed.'); }
+                } catch (\DomainException) {
+                    $writer->closePurchaseRead($permit);
+                    return null;
+                }
+                if (!$failed && !$deferred && ($snapshot || $transfer !== TransferStatus::Unknown)) {
+                    ObservationProjection::save($l['domain'], $snapshot, $transfer, $now, $read->attempt->attemptId);
+                }
+                if (!$writer->closePurchaseRead($permit)) { throw new ReadDeferred('Observation read changed.'); }
+                return $deferred ? 'read_deferred' : ($failureCode ?? ($transfer === TransferStatus::Pending ? 'healthy_pending' : 'unresolved'));
             }
             $this->available($l);
             $this->bindings->requireReadableLocked($l['server'],$l['account']);
@@ -144,8 +170,10 @@ final class DomainObservation
             return $baseCode;
         });
         if ($code === null) { throw new ReadDeferred('Observation authority changed.'); }
-        FreshTransaction::run(function()use($seed,$code):void { $d=HoldingLocks::take($seed)['domain'];
-            if(ObservationRecords::identity($d)===ObservationRecords::identity($seed)){DepartureChecks::capture($d,$this->clock->now()->getTimestamp(),$code==='domain_not_in_account');} });
+        if (!$read) {
+            FreshTransaction::run(function()use($seed,$code):void { $d=HoldingLocks::take($seed)['domain'];
+                if(ObservationRecords::identity($d)===ObservationRecords::identity($seed)){DepartureChecks::capture($d,$this->clock->now()->getTimestamp(),$code==='domain_not_in_account');} });
+        }
         return $completion ? $completion($code,$wireGuard) : $code;
     }
     /** Observation must yield before it can invalidate a live management/financial grant. */

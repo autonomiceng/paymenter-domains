@@ -64,13 +64,15 @@ final class ObservationProjection
             ||substr($facts['expiry'],0,10)!==$d->provider_expires_at->format('Y-m-d')){return false;}
         $p['drift']=false;$d->update(['observation'=>$p]);return true;
     }
-    public static function save(Domain $d, ?DomainSnapshot $facts, TransferStatus $transfer, \DateTimeImmutable $now): void
+    public static function save(Domain $d, ?DomainSnapshot $facts, TransferStatus $transfer, \DateTimeImmutable $now,
+        ?int $purchaseAttemptId = null): void
     {
         $p=$d->observation??[];
         if ($facts) {
             $p['facts']=['name'=>$facts->name,'generation'=>$d->authority_generation,'account_fingerprint'=>$d->account_fingerprint,'owned'=>$facts->owned,'expiry'=>$facts->expiry?->value,
                 'precision'=>$facts->expiry?->precision->value,'source'=>$facts->expiry?->source,'timezone'=>$facts->expiry?->timezone,
-                'auto_renew'=>$facts->providerAutoRenew,'privacy'=>$facts->privacy,'locked'=>$facts->locked,'active'=>$facts->active,'at'=>$now->format(DATE_ATOM)];
+                'auto_renew'=>$facts->providerAutoRenew,'privacy'=>$facts->privacy,'locked'=>$facts->locked,'active'=>$facts->active,'at'=>$now->format(DATE_ATOM),
+                ...($purchaseAttemptId !== null ? ['purchase_attempt_id' => $purchaseAttemptId] : [])];
             // Drift is diagnostic; confirmed expiry and the billing anchor never follow observations.
             $p['drift']=$facts->owned!==true||$facts->providerAutoRenew!==false
                 || ($facts->expiry!==null&&$d->provider_expires_at!==null&&substr($facts->expiry->value,0,10)!==$d->provider_expires_at->format('Y-m-d'));

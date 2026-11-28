@@ -16,7 +16,7 @@ use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{CataloguePreview,EnomT
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,EnomTestRegistration,DomainObservation,ObservationSchema,ObservationWork,OperationReconciliation,ReconciliationEvidence,RegistrarAnswers,RegistrarCheck,Refunds,RenewalReplacements,StaffOperationReview,StaffOperations,StaffSettingsReview,StaffSyncReview};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAttempt,RenewalCompletion};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts,OperationSchema,OperationWriter,ReadToken,StepKey,Transition};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionLifecycle,AcquisitionReadPermit,OperationAttempts,OperationSchema,OperationWriter,ReadToken,StepKey,Transition};
 use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainHistory;
 use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 \Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
@@ -56,9 +56,11 @@ expect($successor instanceof ReadToken, 'A successor can claim the read after th
 $proof = OperationAttempts::evidence((int) $captured->id, $successor->attempt->attemptId, 'observation');
 same([true, 'uncertain', $successor->token], [$proof['evidence']['owned'] ?? null, $captured->fresh()->state,
     OperationAttempts::attempt($successor->attempt)->readToken], 'The former reader retains ownership evidence without settling or releasing its successor');
-DB::transaction(static function () use ($captured, $writer, $successor): void {
+DB::transaction(static function () use ($captured, $writer, $successor, $clock): void {
     $captured->newQuery()->whereKey($captured->id)->lockForUpdate()->firstOrFail();
-    $writer->closeRead($successor);
+    $now = $clock->now();
+    $state = AcquisitionLifecycle::read(OperationAttempts::attempt($successor->attempt, true), $now, true);
+    expect($writer->closePurchaseRead(AcquisitionReadPermit::issue($state, $successor, $now)), 'A live successor can close its own read');
 });
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$captured->id])->callAction('recheck')->assertNotified('Registrar checked');
 same('succeeded',$captured->fresh()->state,'Staff settles captured order without another purchase');
@@ -85,6 +87,27 @@ Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$transportFailu
 $policy=$lastPoll->policy;$policy['reconciliation']['polls']=4;$lastPoll->update(['policy'=>$policy]);$observation->fault='wrong-charge';
 $reconcile->run($lastPoll->id);
 same(null,$lastPoll->fresh()->policy['status_check']['next_at'],'Exhausted reads promise no automatic retry');
+
+// An expired staff Recheck cannot report another reader's result in this staff action.
+[$expiredReview] = $prepare(placeholderComFixtureName('staff-expired-recheck-placeholder.com'), 'captured');
+$observation->fault = 'wrong-charge';
+$background = $reconcile->run($expiredReview->id)->policy['status_check'];
+same('checked', $background['outcome'], 'A background check saved an unresolved registrar result');
+$callsBeforeReview = count($observation->calls);
+$reviewExpired = false;
+DB::listen(static function ($query) use ($expiredReview, $clock, $observation, $callsBeforeReview, &$reviewExpired): void {
+    if ($reviewExpired || count($observation->calls) <= $callsBeforeReview || DB::transactionLevel() === 0
+        || !str_contains($query->sql, 'from "users"')) { return; }
+    $reviewExpired = true;
+    $clock->instant = $expiredReview->fresh()->acquisitionAttemptFacts()->readUntil;
+});
+Livewire::actingAs($staff)->test(ViewOperation::class, ['record' => $expiredReview->id])->callAction('recheck');
+expect($reviewExpired, 'The named staff check loses its lease after the registrar reply');
+$reviewed = $expiredReview->fresh()->policy;
+same($background, $reviewed['status_check'], 'An expired staff check leaves the published background status intact');
+$audit = end($reviewed['staff_actions']);
+same(['read_finished', 'unavailable', 'read_expired', []], [$audit['phase'], $audit['check']['outcome'],
+    $audit['check']['reason'] ?? null, $audit['check']['facts'] ?? []], 'The staff audit records this invocation without quoting earlier registrar facts');
 
 // Proven completion with retained execution/seal closes every operation-scoped action.
 expect(($check->fresh()->attempt['execution']??null)!==null,'Completed fixture retains a known send response');

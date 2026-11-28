@@ -5,6 +5,8 @@ $useFundedRegistration = true;
 require __DIR__.'/Support/management.php';
 require_once __DIR__.'/Support/observation-work.php';
 use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget, RequestContext, RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter, Transition};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationSchema,ObservationWork};
 ObservationSchema::install();$budget=new AccountReadBudget($clock);$observer=new DomainObservation($readBindings,$clock,$budget);
 [$d,$driver,$original]=$holding(fundedRegistrationFixtureName());
@@ -53,6 +55,21 @@ same([],ObservationWork::stoppedIds(collect($unsent)),'Batched sync status also 
 $work->tick(2);same($calls,count($observation->calls),'Retained unsent work and direct reads spend no provider reads');
 same(0,DB::table('domains_observation_work')->whereIn('domain_id',array_map(fn($d)=>$d->id,$unsent))->count(),'Old unsent queue diagnostics are removed, not permanently stopped');
 same($money,$nativeMoney(),'Exclusion changes no invoices, payments or jobs');
+// Discovery reaches an expired worker before purchase dispatch can retire its unspent seal.
+$expired = $new(placeholderComFixtureName('unused-seal-observation-placeholder.com'));
+[$claim, $unsubmitted, $account] = $claims->claim($expired->id);
+$ctx = new RequestContext($account, RequestOrigin::Background, $clock->now()->modify('+300 seconds'), new RequestBudget(10), $clock);
+$unused = $claims->seal($claim, $preflight->inspect($claim, $unsubmitted, $ctx), $clock->now());
+expect($unused !== null, 'Registration sealed but never spent its grant');
+$clock->instant = $clock->now()->modify('+361 seconds');
+$observation->name = $unsubmitted->domain;
+$savedHolding = $unsubmitted->fresh()->getRawOriginal();
+$calls = count($observation->calls);
+$work->tick(2);
+same([$calls, $savedHolding], [count($observation->calls), $unsubmitted->fresh()->getRawOriginal()],
+    'Observation work on an expired unused seal does no registrar I/O and saves no holding facts');
+expect($expired->fresh()->acquisitionAttemptFacts()->released, 'Observation settles the expired unused seal before declining the read');
+$clock->instant = $now;
 // Dispatch may beat discovery after apply: an old false failure must not revive at seal.
 $send=$unsent[4]->operations()->sole();
 DB::table('domains_observation_work')->insert(['server_id'=>$send->server_id,'account_fingerprint'=>$send->account_fingerprint,
@@ -65,7 +82,10 @@ DB::table('invoices')->where('id',$send->invoice_id)->update(['status'=>'paid'])
 App\Models\InvoiceTransaction::create(['invoice_id'=>$send->invoice_id,'amount'=>$send->amount,'fee'=>'0.00','status'=>'succeeded']);
 [$claimed,$sending,$binding]=$claims->claim($send->id);
 $ctx=new \Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background,$clock->now()->modify('+300 seconds'),new \Paymenter\Extensions\Servers\Domains\Data\RequestBudget(10),$clock);
-$sealed=$claims->seal($claimed,$preflight->inspect($claimed,$sending,$ctx),$clock->now());expect($sealed!==null,'Previously unsent order sealed');$claims->finish($sealed,null);
+$sealed=$claims->seal($claimed,$preflight->inspect($claimed,$sending,$ctx),$clock->now());expect($sealed!==null,'Previously unsent order sealed');
+same(Transition::Applied, $claims->locked((int) $sealed->id, fn () => OperationWriter::at($clock->now())->consumeGrant($sealed->acquisitionWorker)),
+    'A lost reply follows a spent purchase grant');
+$claims->finish($sealed,null);
 expect(!ObservationWork::stopped($sending->fresh()),'Dispatch before discovery must not revive an unsent sync failure');
 same($holdingWork,DB::table('domains_observation_work')->where('domain_id',$d->id)->get()->toJson(),'Dispatch preserves a real holding failure');
 expect(ObservationWork::stopped($d->fresh()),'Real holding still requires resume');
