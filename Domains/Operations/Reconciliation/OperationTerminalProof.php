@@ -25,6 +25,7 @@ final class OperationTerminalProof
             if ($op->funding_basis === 'complimentary' && isset($op->funding['late_credits'])) { $funding->requireInitial($op, $domain); }
             self::recordUnsent($op, $proof, $now);
             $op->update(['state' => 'rejected']);
+            if (!self::safe($op, $domain, $now)) { throw new \DomainException('Terminal identity mismatch.'); }
             $domain->update(['status' => $op->action === 'transfer' ? 'transfer_rejected' : 'registration_rejected']);
             return $op;
         });

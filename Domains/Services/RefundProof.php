@@ -31,16 +31,14 @@ final class RefundProof
         $lock = DB::transactionLevel() > 0;
         $proof ??= OperationAttempts::purchaseProof($op, $now, $lock);
         self::requireOwned($op, $domain, ledgerFunding: $proof->facts !== null && $op->funding_basis === 'paid_invoice');
-        if (($admission && $proof->reason === 'retained_refusal')
-            || ($op->state === 'rejected' ? $admission || $proof->closure === null : !$proof->canCloseUnsent())) {
+        if ($op->state === 'rejected' ? $admission || $proof->closure === null : !$proof->canCloseUnsent()) {
             throw new OperationRefused(OperationFailure::ProviderEvidence);
         }
         if ($proof->closure === AcquisitionClosureKind::Unpaid && !UnpaidAcquisitionProof::terminal($op, $domain, $proof)) {
             throw new OperationRefused(OperationFailure::ProviderEvidence);
         }
         if (!ContactProfileHold::allowsPurchaseDisposition($op, $lock,
-                allowSaved: $op->action === 'transfer' && $op->funding_basis === 'paid_invoice',
-                requireRow: $op->safe_code === ContactProfileHold::CODE || ($op->safe_code === 'processing' && $proof->facts !== null))
+                requirePayload: $admission || $op->action === 'transfer', requireRow: $op->safe_code === ContactProfileHold::CODE)
             || ($admission && !$proof->facts?->sealed() && !FinancialAdjustments::registrarUnattemptedFunding($op, allowClaim: true))) {
             throw new OperationRefused(OperationFailure::ProviderEvidence);
         }

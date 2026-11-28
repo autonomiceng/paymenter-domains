@@ -262,10 +262,7 @@ final class OperationAttempts
         if (DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $token->operationId, 'attempt_id' => $token->attemptId,
             'kind' => 'admission_window', 'outcome' => AcquisitionAdmission::TestCapacity->value])
             ->when($lock, fn ($q) => $q->lockForUpdate())->first(['id'])) { return null; }
-        $event = self::decodeEvidence($row->evidence);
-        $at = self::time($row->recorded_at);
-        return $at !== null && $at >= $attempt->claimedAt && $at <= $attempt->releasedAt
-            && ($event['phase'] ?? null) === ($attempt->sealed() ? 'purchase' : 'preflight') ? (int) $row->id : null;
+        return AcquisitionLifecycle::capacityRefused($attempt, self::decoded($row)) ? (int) $row->id : null;
     }
 
     /**

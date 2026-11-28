@@ -469,9 +469,12 @@ final class OperationClaims
                 if(!EnomTestCalls::purchaseUnconsumed($op->account_fingerprint,(int)$op->id)) { return null; }
             } elseif(!AcquisitionRetryProof::unsealed($op)||($attempt['send_state']??null)!=='definitely_unsent') { return $op; }
             $continuation = AcquisitionResult::continuation($op, true);
+            $balance = $continuation->lane === AcquisitionLane::BalancePurchase;
+            $withinCap = $balance || DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $op->id,
+                'kind' => 'test_capacity', 'outcome' => 'fresh'])->count() < 100;
             $now = $this->clock->now();
             if (!$sealed && AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $worker) !== AcquisitionAuthority::FUNDS_PROCEED) { return $op; }
-            return $this->refuseTestCapacity($op, $worker->token, $now, $continuation->lane === AcquisitionLane::BalancePurchase);
+            return $withinCap ? $this->refuseTestCapacity($op, $worker->token, $now, $balance) : $op;
         });
     }
 
@@ -479,11 +482,9 @@ final class OperationClaims
     {
         $attempt = $op->attempt;
         $sealed = $attempt['seal'] === 'sealed';
-        if (!$balance && DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $op->id,
-            'kind' => 'test_capacity', 'outcome' => 'fresh'])->count() >= 100) { return $op; }
         $proof = ['phase' => $sealed ? 'purchase' : 'preflight', 'refused_at' => $now->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM),
             'dispatch_attempted_at' => $sealed ? $attempt['dispatch_attempted_at'] : null, 'authorized_cost' => $sealed ? $attempt['authorized_cost'] : null];
-        if ($this->attempts->refuseTestCapacity($token, $proof, $balance) !== Transition::Applied) { return $op; }
+        if (OperationWriter::at($now)->refuseTestCapacity($token, $proof, $balance) !== Transition::Applied) { return $op; }
         $op->reloadAcquisitionAttempt();
         $reason = match (true) {
             ExecutionWindow::pastTransferCutoff($op, $now) => 'transfer_setup_review_required',

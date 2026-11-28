@@ -55,15 +55,16 @@ final class ContactProfileHold
     }
 
     /** A purchase disposition must account for the order's contact evidence when a row exists. */
-    public static function allowsPurchaseDisposition(Operation $op, bool $lock = false, bool $allowSaved = true, bool $requireRow = false): bool
+    public static function allowsPurchaseDisposition(Operation $op, bool $lock = false, bool $requirePayload = true, bool $requireRow = false): bool
     {
         if ($op->registrar_key !== 'namesilo') { return true; }
         try {
             $row = self::row($op, $lock);
             if (!$row) { return !$requireRow; }
-            if (!self::bound($row, $op, requirePayload: $allowSaved)) { return false; }
+            $verified = $row->state === 'verified';
+            if (!self::bound($row, $op, requirePayload: $requirePayload || $verified)) { return false; }
             $a = $row->attempt;
-            return ($allowSaved && self::saved($row))
+            return ($verified && self::saved($row) && isset($a['profile_id'], $a['observed_at']))
                 || ($row->state === 'ready' && ($a['seal'] ?? null) === 'absent'
                     && ($a['send_state'] ?? null) === 'definitely_unsent' && !isset($a['worker_key']) && !isset($a['dispatch_at']) && !isset($a['provider_id']))
                 || ($row->state === 'unsent' && ($a['execution'] ?? null) === 'definitely_unsent'

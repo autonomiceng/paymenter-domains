@@ -406,6 +406,7 @@ final readonly class OperationWriter
     public function recordTerminal(int $operationId, string $outcome, array $proof): Transition
     {
         self::requireTransaction();
+        if (AcquisitionClosureKind::tryFrom($outcome) !== null) { $proof += ['attempt_id' => null]; }
         return $this->append($operationId, null, 'terminal', 'local', $outcome, $proof, 'terminal') ? Transition::Applied : Transition::Stale;
     }
 
