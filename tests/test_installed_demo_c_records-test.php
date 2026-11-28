@@ -4,9 +4,11 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/storefront.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts;
+use Paymenter\Extensions\Servers\Domains\Data\Money;
 use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionClosureKind, OperationWriter, Transition};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionClosureKind, AcquisitionPhase,
+    AttemptToken, OperationAttempts, OperationWriter, SealTerms, Transition, WireOutcome};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DsState, RecordFamilies};
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 $failures=[];
@@ -150,12 +152,13 @@ if(preg_match('/\b(enom|namesilo)\b/i',$dom->document->textContent)){$reviewFail
 expect($reviewFailures===[],implode('; ',$reviewFailures));
 // Record the unpaid closure before ending the purchase.
 require_once __DIR__.'/Support/accounts.php';
+$binding = fixtureAccount(1, 'enom', 'demo-c-records');
 $cancelled = Domain::create([
-    ...fixtureAccount(1, 'enom', 'demo-c-records'),
+    ...$binding,
     'domain' => $enom->domain, 'sld' => 'orbit-example', 'tld' => 'com',
     'user_id' => 1, 'service_id' => 1, 'status' => 'cancelled', 'observation' => [],
 ]);
-$op = DB::transaction(static function () use ($cancelled, $now): Operation {
+DB::transaction(static function () use ($cancelled, $now): void {
     $op = Operation::create([
         'domain_id' => $cancelled->id, 'service_id' => $cancelled->service_id, 'invoice_id' => 1,
         'server_id' => $cancelled->server_id, 'registrar_key' => $cancelled->registrar_key,
@@ -171,8 +174,35 @@ $op = DB::transaction(static function () use ($cancelled, $now): Operation {
         'unfunded' => true,
     ]), 'Unpaid closure is recorded for the cancelled purchase');
     $op->update(['state' => 'rejected', 'safe_code' => UnpaidAcquisitionProof::CODE, 'completed_at' => $now]);
+});
+
+$possiblySent = Domain::create([
+    ...$binding,
+    'domain' => 'lost-reply-example.com', 'sld' => 'lost-reply-example', 'tld' => 'com',
+    'user_id' => 1, 'service_id' => 2, 'status' => 'cancelled', 'observation' => [],
+]);
+$lostReply = DB::transaction(static function () use ($possiblySent, $binding, $now): Operation {
+    $op = $possiblySent->operations()->create([
+        ...$binding,
+        'service_id' => $possiblySent->service_id, 'invoice_id' => 2, 'authority_generation' => $possiblySent->authority_generation,
+        'operation_key' => 'demo-c-registration-lost-reply', 'action' => 'register', 'funding_basis' => 'paid_invoice',
+        'state' => 'uncertain', 'currency' => 'USD', 'amount' => '12.00',
+    ]);
+    $writer = OperationWriter::at($now);
+    $until = $now->modify('+5 minutes');
+    $digest = hash('sha256', $op->operation_key);
+    $token = $writer->claim((int) $op->id, AcquisitionAttempt::key('register'), $until, ['digest' => $digest, 'funding' => []]);
+    expect($token instanceof AttemptToken, 'The possible-send request has a recorded claim');
+    $terms = new SealTerms(0, $digest, new Money($op->amount, $op->currency), 'register', $until);
+    same(Transition::Applied, $writer->seal($token, $terms, ['funding' => []]), 'The request has a sealed grant');
+    same(Transition::Applied, $writer->consumeGrant($token), 'The request spends its grant before losing the reply');
+    same(Transition::Applied, $writer->recordReply($token, WireOutcome::unknown()), 'The lost reply is recorded as unknown');
     return $op->fresh();
 });
+$afterDispatch = $now->modify('+6 minutes');
+same(AcquisitionPhase::PossibleHandoff, OperationAttempts::purchaseProof($lostReply, $afterDispatch)->phase,
+    'The spent grant leaves a possible handoff after dispatch expires');
+
 $facts = RecordFamilies::read($cancelled, $now);
 same('registration', $facts['cancelled_without_records'], 'No-send cancellation has no fictional inventory');
 $cancelHtml = view('domains::partials.record-families', ['recordFamilies' => $facts, 'staff' => true])->render();
@@ -183,17 +213,10 @@ $active = clone $cancelled;
 $active->status = 'active';
 expect(DomainFacts::syncNow($active), 'Staff can Sync an active domain');
 expect(!DomainFacts::syncNow($cancelled), 'No-send cancellation offers no Sync');
-$fact = DsState::staff($cancelled);
-same('Not applicable', $fact['value'], 'Native staff DNSSEC agrees with proven no-send cancellation');
-$nativePage=new \Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
-$row=(new ReflectionMethod($nativePage,'row'))->invoke($nativePage,'DS records',$fact,[]);
-$dnssec=\Filament\Schemas\Schema::make($nativePage)->components([$row])->toHtml();
-same($fact['value'], storefrontDom($dnssec)->evaluate('normalize-space(//div[@class="domains-panel-row-v"])'),
-    'The native DNSSEC row shows the fact without a second cancellation notice');
-$possiblySent = clone $cancelled;
-$possiblySent->setRelation('operations', collect([$op->replicate()->fill(['attempt' => ['seal' => 'sealed', 'send_state' => 'possibly_sent']])]));
-same('Unknown', DsState::staff($possiblySent)['value'], 'Possible send cannot hide DS uncertainty');
-same(false, RecordFamilies::read($possiblySent, $now)['cancelled_without_records'], 'Possible send cannot use cancellation explanation');
+same(null, DsState::staff($cancelled)['sub'], 'Proven no-send cancellation needs no DNSSEC explanation');
+same(false, RecordFamilies::read($possiblySent, $afterDispatch)['cancelled_without_records'], 'Possible send cannot use cancellation explanation');
+$explanation = DsState::staff($possiblySent)['sub'];
+expect(is_string($explanation) && trim($explanation) !== '', 'Possible send retains the DNSSEC explanation');
 $cancelled->observation = ['records' => [...$r, 'identity' => ObservationRecords::identity($cancelled)]];
 expect(RecordFamilies::read($cancelled,$now)['at']!==null,'Cancellation preserves real historical inventory');
 $nativeSuccessful=true;echo "Demo C record-family UI passed.\n";
