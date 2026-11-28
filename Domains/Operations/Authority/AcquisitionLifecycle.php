@@ -48,17 +48,8 @@ final readonly class AcquisitionLifecycle
             }
             $reason = $reply['evidence']['reason'] ?? null;
             if (!is_string($reason) || $reason === '') { return new self($facts, $phase); }
-            if ($reason === 'test_capacity') {
-                $capacity = $rows['test_capacity'] ?? [];
-                $recorded = $capacity['recorded_at'] ?? null;
-                $at = is_string($recorded) ? \DateTimeImmutable::createFromFormat(DATE_ATOM, $recorded) : false;
-                if (!$facts->released || ($capacity['source'] ?? null) !== 'local'
-                    || !in_array($capacity['outcome'] ?? null, ['fresh', 'balance'], true)
-                    || ($capacity['evidence']['phase'] ?? null) !== 'purchase'
-                    || !AcquisitionRetryProof::testCallHistory([$capacity['evidence']])
-                    || !$at || $at < $facts->claimedAt || $at > $facts->releasedAt) {
-                    return new self($facts, $phase);
-                }
+            if ($reason === 'test_capacity' && !self::capacityRefused($facts, $rows['test_capacity'] ?? [])) {
+                return new self($facts, $phase);
             }
             return new self($facts, AcquisitionPhase::ProvedUnsent, $reason);
         }
@@ -79,6 +70,18 @@ final readonly class AcquisitionLifecycle
             return new self($facts, AcquisitionPhase::ProvedUnsent, 'expired_unused_grant', retireSeal: true);
         }
         return new self($facts, AcquisitionPhase::PossibleHandoff);
+    }
+
+    private static function capacityRefused(AttemptFacts $facts, array $event): bool
+    {
+        $at = isset($event['recorded_at']) ? new \DateTimeImmutable($event['recorded_at']) : null;
+        $details = $event['evidence'] ?? [];
+        return $facts->released && ($event['source'] ?? null) === 'local'
+            && in_array($event['outcome'] ?? null, ['fresh', 'balance'], true)
+            && ($details['phase'] ?? null) === ($facts->sealed() ? 'purchase' : 'preflight')
+            && AcquisitionRetryProof::testCallHistory([$details])
+            && $at !== null && $facts->claimedAt !== null && $at >= $facts->claimedAt && $at <= $facts->releasedAt
+            && new \DateTimeImmutable($details['refused_at']) == $at;
     }
 
     public static function read(AttemptFacts $facts, \DateTimeImmutable $now, bool $lock = false, bool $includeClosure = false): self
@@ -127,6 +130,9 @@ final readonly class AcquisitionLifecycle
                 || !is_string($origin['digest'] ?? null) || !preg_match('/^[a-f0-9]{64}$/D', $origin['digest'])
                 || (!$retained && (($event['source'] ?? null) !== 'local' || ($event['outcome'] ?? null) !== 'claimed'))) { return $invalid; }
             if ($originId === $id) { $origins[$id] = $origin; }
+            if (!$facts->sealed() && isset($evidence['test_capacity']) && !self::capacityRefused($facts, $evidence['test_capacity'])) {
+                return $invalid;
+            }
             $latest = self::reduce($facts, $evidence, $now);
             if ($latest->phase === AcquisitionPhase::ProvedUnsent && $facts->sealed()) {
                 $admission = $evidence['admission'] ?? [];
@@ -203,6 +209,11 @@ final readonly class AcquisitionLifecycle
         if ($op->state !== 'rejected') {
             return array_intersect_key($attempt, ['terminal' => true, 'transfer_timeout' => true, 'disposition' => true, 'rejection_basis' => true])
                 ? $invalid : new self(null, AcquisitionPhase::ProvedUnsent);
+        }
+        if (array_key_exists('test_call_refusals', $attempt)
+            && (!$attempt['test_call_refusals'] || ($op->completed_at !== null && array_filter($attempt['test_call_refusals'],
+                static fn (array $event): bool => new \DateTimeImmutable($event['refused_at']) > $op->completed_at)))) {
+            return $invalid;
         }
         if (($attempt['disposition'] ?? null) !== 'rejected' || ($attempt['rejection_basis'] ?? null) !== 'definitely_unsent') { return $invalid; }
         $bound = ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation];
