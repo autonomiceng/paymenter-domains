@@ -160,7 +160,7 @@ final class AcquisitionRetryProof
     }
     public static function virgin(Operation $op, ?\DateTimeImmutable $now = null): bool
     {
-        return OperationAttempts::purchaseProof($op, $now ?? app(Clock::class)->now(),
+        return AcquisitionAttempt::key($op->action) && OperationAttempts::purchaseProof($op, $now ?? app(Clock::class)->now(),
             \Illuminate\Support\Facades\DB::transactionLevel() > 0)->phase === AcquisitionPhase::Virgin
             && !array_key_exists('refund', $op->receiptFunding());
     }
@@ -213,7 +213,7 @@ final class AcquisitionRetryProof
     {
         $lock = \Illuminate\Support\Facades\DB::transactionLevel() > 0;
         if (in_array($op->safe_code, self::TEST_CAPACITY_CODES, true)) { return self::currentTestRefusal($op, $lock) !== null; }
-        if ($op->state !== 'held' || $op->registrar_key !== 'enom' || !in_array($op->safe_code, self::TEST_CALL_HOLDS, true)
+        if (!AcquisitionAttempt::key($op->action) || $op->state !== 'held' || $op->registrar_key !== 'enom' || !in_array($op->safe_code, self::TEST_CALL_HOLDS, true)
             || $op->lease_expires_at !== null || $op->completed_at !== null
             || $op->provider_order_id !== null || $op->confirmed_expires_at !== null || !self::testCallRetryFunding($op) || !self::unsealed($op)) {
             return false;

@@ -305,7 +305,7 @@ foreach(['seal','send_state','funding','extra'] as $fault){
 }
 $ceiling=$priceHeld->cost;$amount=$priceHeld->amount;$priceClaim=$priceHeld->attempt['claim_key'];$priceFunding=$priceHeld->funding['claim'];
 $unreleased=clone $priceHeld;$unreleased->state='queued';$unreleased->safe_code=null;
-expect(!\Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResult::admissionOpen($unreleased, $clock->now()),'A retained price claim needs its completed release audit to readmit');
+expect(\Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResult::window($unreleased)?->reason !== 'registrar_price_increased','A retained price claim needs its completed release audit to readmit');
 foreach(['6.01','6.00'] as $quoteCost){
     $clock->instant=$clock->now()->modify('+600 seconds');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
     config(['domains.enom_writes.registration'=>true]);

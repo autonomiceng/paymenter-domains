@@ -132,13 +132,12 @@ final readonly class AcquisitionLifecycle
                 || !preg_match('/^[a-f0-9]{32}$/D', $facts->token->claimKey)
                 || ($claim['identity'] ?? null) !== $facts->token->claimKey || !is_int($originId)
                 || !is_string($origin['digest'] ?? null) || !preg_match('/^[a-f0-9]{64}$/D', $origin['digest'])
-                || (!$retained && (($event['source'] ?? null) !== 'local' || ($event['outcome'] ?? null) !== 'claimed'
-                    || !is_array($origin['funding'] ?? null)))) { return $invalid; }
+                || (!$retained && (($event['source'] ?? null) !== 'local' || ($event['outcome'] ?? null) !== 'claimed'))) { return $invalid; }
             if ($originId === $id) { $origins[$id] = $origin; }
             $latest = self::reduce($facts, $evidence, $now);
             if ($latest->phase === AcquisitionPhase::ProvedUnsent && $facts->sealed()) {
                 $admission = $evidence['admission'] ?? [];
-                if ($facts->requestDigest !== $origin['digest'] || $facts->mode !== $op->action
+                if ($facts->requestDigest !== $origin['digest'] || $facts->mode !== $op->action || !is_array($origin['funding'] ?? null)
                     || ($admission['source'] ?? null) !== 'local' || ($admission['outcome'] ?? null) !== 'sealed'
                     || ($admission['evidence']['funding'] ?? null) !== $origin['funding']) { return $invalid; }
             }
