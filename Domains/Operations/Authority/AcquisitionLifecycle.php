@@ -223,6 +223,10 @@ final readonly class AcquisitionLifecycle
             $unclaimed && ($attempt['terminal'] ?? null) === [...$bound, 'invoice_id' => $op->invoice_id, 'transactions' => [], 'unfunded' => true]
                 => AcquisitionClosureKind::Unpaid,
             ($attempt['terminal'] ?? null) === $bound => AcquisitionClosureKind::Unsent,
+            // The oldest closed registrations recorded the rejection directly on the operation.
+            $op->action === 'register' && $unclaimed
+                && !array_diff(array_keys($attempt), ['seal', 'send_state', 'disposition', 'rejection_basis'])
+                => AcquisitionClosureKind::Unsent,
             default => null,
         };
         return $closure ? new self(null, AcquisitionPhase::Terminal, closure: $closure) : $invalid;
