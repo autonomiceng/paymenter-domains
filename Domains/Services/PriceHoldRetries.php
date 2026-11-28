@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionLane,AcquisitionResult};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmissionOutcome, AcquisitionLane,AcquisitionResult};
 /** Retry a paid, unsent acquisition through Release. The normal preflight still enforces both frozen price limits. */
 final class PriceHoldRetries
 {
@@ -46,7 +46,7 @@ final class PriceHoldRetries
                 app(AccountBindings::class)->requireProcessingLocked($l['server'],$l['account']);
                 HeldRelease::require($op,$l,$now);
             }catch(\Throwable){return false;}
-            HeldRelease::release($op,$l,$now);
+            if (HeldRelease::release($op, $l, $clock) !== AcquisitionAdmissionOutcome::Applied) { return false; }
             $op->update(['policy'=>$policy]);
             return true;
         });

@@ -23,7 +23,7 @@ final readonly class StaffOperations
                     catch(ContactValidation $error){
                         throw new StaffReviewRefused($error->missingMessage());
                     }
-                }else{$r->local(fn($op,$l)=>HeldRelease::release($op,$l,$this->clock->now()));}break;
+                }else{$r->local(fn($op,$l)=>HeldRelease::release($op,$l,$this->clock)->requireApplied());}break;
             case 'disposition': $r->local(fn($op,$l)=>StaffOperationWrites::disposition($op,$l));break;
             case 'mark_failed': $r->local(fn($op,$l)=>StaffOperationWrites::markFailed($op,$l,$this->clock->now()));break;
             case 'replacement': $r->local(fn($op,$l)=>RenewalReplacements::authorize($op,$l,$r,$this->clock));break;

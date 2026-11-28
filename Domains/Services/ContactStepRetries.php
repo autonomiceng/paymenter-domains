@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission, AcquisitionLane, AcquisitionResult, AcquisitionRetryProof};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission, AcquisitionAdmissionOutcome, AcquisitionLane, AcquisitionResult, AcquisitionRetryProof};
 /** A paid order held at its contact step with nothing sent goes back to the queue by itself, through the same checks as
  * staff Release. Orders off resumes whenever Orders are on; other causes get a few spaced tries. Then the hold stays for
  * staff, with Cancel and refund. Nothing here cancels or refunds. */
@@ -56,10 +56,10 @@ final class ContactStepRetries
             $policy=self::released($op,(string)$op->safe_code,$now);
             if ($policy === null || $retry?->lane !== AcquisitionLane::ContactWait || !$retry->due($now)) { return false; }
             try{$op->setRelation('domain',$l['domain']);HeldRelease::require($op,$l,$now);}catch(\Throwable){return false;}
-            AcquisitionResult::admit($op, AcquisitionAdmission::ContactRetry, $retry->revision,
-                $op->acquisitionAttemptFacts()?->token, $now,
-                static fn () => $op->update(['state'=>'queued','safe_code'=>null,'lease_expires_at'=>null,'policy'=>$policy]));
-            return true;
+            return AcquisitionResult::admit($op, AcquisitionAdmission::ContactRetry, $retry->revision,
+                $op->acquisitionAttemptFacts()?->token, $clock,
+                static fn () => $op->update(['state'=>'queued','safe_code'=>null,'lease_expires_at'=>null,'policy'=>$policy]))
+                === AcquisitionAdmissionOutcome::Applied;
         });
     }
     /** The policy with the automatic retry recorded for staff. Null when History is full. */

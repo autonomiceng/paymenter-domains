@@ -64,7 +64,7 @@ final class BalanceRetries
         $op->update(['policy'=>$policy,'safe_code'=>$stopped&&$op->safe_code==='write_rate_limited'?'registrar_read_failed':$op->safe_code]);
         AcquisitionResult::schedule($op, $stopped ? null : AcquisitionLane::BalanceWait,
             $stopped ? null : $now->getTimestamp() + $retry->delay(),
-            $confirmedShortfall && !$stopped ? $now : null, preserveShortfall: !$stopped);
+            $confirmedShortfall && !$stopped ? $now : null);
         if($read&&!$stopped||$retry->cost===null&&$op->safe_code!=='registrar_balance_insufficient'&&!$stopped){return true;} // A stored check alone proves no shortfall.
         // One durable alert and one native inbox receipt for this hold, regardless of retry count.
         if(Schema::hasTable('domains_obligation_alerts')){ObligationAlerts::record($op->domain,'operation_review',$now->getTimestamp(),(int)$op->id);}

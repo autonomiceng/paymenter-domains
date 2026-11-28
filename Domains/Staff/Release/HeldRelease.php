@@ -3,17 +3,19 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Staff\Release;
 use Illuminate\Support\Facades\Auth;
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Staff\Requests\RequestReads;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceRetries,ComplimentaryInvoices,ContactDetails,ContactProfileHold,ContactRecovery,ContactSetup,EnomTestRegistration,EnomTestRenewal,EnomTestTransfer,HoldingLocks,OperationClaims,RefundProof,RenewalFunding,RenewalStop,StaffOperationReview,StaffOperationWrites,TransferInputs};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission,AcquisitionAttempt,AcquisitionLane,AcquisitionResult,AcquisitionRetryProof,OperationWriter,StepKey};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission,AcquisitionAdmissionOutcome,AcquisitionAttempt,AcquisitionLane,AcquisitionResult,AcquisitionRetryProof,OperationWriter,StepKey};
 /** Releases a held request back to the queue. The offer and the locked writer run the same check over complete native facts. */
 final class HeldRelease
 {
     /** Releases the current hold and records its acquisition bounds before the next worker can claim. */
-    public static function release(Operation $op,array $l,\DateTimeImmutable $now): void
+    public static function release(Operation $op, array $l, Clock|\DateTimeImmutable $clock): AcquisitionAdmissionOutcome
     {
+        $now = $clock instanceof Clock ? $clock->now() : $clock;
         self::require($op,$l,$now);
         $policy=$op->policy??[];
         $reason = $op->safe_code;
@@ -26,12 +28,12 @@ final class HeldRelease
                     => AcquisitionAdmission::ContactRetry,
                 default => AcquisitionAdmission::StaffRelease,
             };
-            AcquisitionResult::admit($op, $admission, AcquisitionResult::revision($op),
-                $op->acquisitionAttemptFacts()?->token, $now, $queue);
-            return;
+            return AcquisitionResult::admit($op, $admission, AcquisitionResult::revision($op),
+                $op->acquisitionAttemptFacts()?->token, $clock, $queue);
         }
         if($op->action==='renew'){unset($policy['renewal_execution']);OperationWriter::at($now)->releaseCurrent((int)$op->id,StepKey::renew());}
         $op->update(['state'=>'queued','safe_code'=>null,'policy'=>$policy]);
+        return AcquisitionAdmissionOutcome::Applied;
     }
     /** Read-only facts only; no locks, mutation, registrar exchange or spending grant. A request page reads them once. */
     public static function readFacts(Operation $op): array
@@ -49,6 +51,7 @@ final class HeldRelease
         try {
             $l=self::readFacts($op);$op=$l['operations']->firstWhere('id',$op->id)??throw new \DomainException('Missing request.');$op->setRelation('domain',$l['domain']);
             StaffOperationReview::requirePermission($l['staff'],'release',$op);StaffOperationReview::requireHistory($op,'release');
+            if (!AcquisitionResult::admissionOpen($op, $now)) { return false; }
             if($op->safe_code==='contact_details_required'){
                 ContactRecovery::requireReplacement($op,$l,ContactDetails::collect($l['user']),$now);
             }else{self::require($op,$l,$now);}

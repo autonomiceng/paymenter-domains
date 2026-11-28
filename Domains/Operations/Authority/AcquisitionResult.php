@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Operations\Authority;
 
 use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Operation, ProfileContactOperation};
 use Paymenter\Extensions\Servers\Domains\Services\{ContactProfileHold, ContactRecovery, ContactStepRetries, TransferInputs};
@@ -14,7 +15,11 @@ final class AcquisitionResult
     public static function continuation(Operation $operation, bool $lock = false): ?AcquisitionContinuation
     {
         if (!$operation->exists || $operation->id === null || AcquisitionAttempt::key($operation->action) === null) { return null; }
-        $row = self::row($operation, $lock);
+        return self::readContinuation(self::row($operation, $lock));
+    }
+
+    private static function readContinuation(object $row): AcquisitionContinuation
+    {
         return new AcquisitionContinuation(
             (int) $row->revision,
             $row->retry_lane === null ? null : AcquisitionLane::from($row->retry_lane),
@@ -29,16 +34,24 @@ final class AcquisitionResult
         return self::continuation($operation, $lock)?->window;
     }
 
+    /** The offer reads the same decision without retiring a worker. */
+    public static function admissionOpen(Operation $operation, \DateTimeImmutable $now): bool
+    {
+        $continuation = self::continuation($operation);
+        return $continuation === null
+            || AcquisitionAuthority::fundsCutoff($operation, $continuation, $now) === AcquisitionAuthority::FUNDS_PROCEED;
+    }
+
     /** Retry outcomes never change the existing admission or the attempt's sealed bounds. */
     public static function schedule(Operation $operation, ?AcquisitionLane $lane, ?int $dueAt,
-        ?\DateTimeImmutable $confirmedShortfall = null, bool $preserveShortfall = false): void
+        ?\DateTimeImmutable $confirmedShortfall = null): void
     {
         if (($lane === null) !== ($dueAt === null)
             || $confirmedShortfall !== null && !in_array($lane, [AcquisitionLane::BalanceWait, AcquisitionLane::FundsWait], true)) {
             throw new \LogicException('Invalid acquisition retry outcome.');
         }
         $row = self::row($operation, true);
-        $start = $preserveShortfall || $confirmedShortfall !== null ? $row->confirmed_shortfall_at : null;
+        $start = $row->confirmed_shortfall_at;
         if ($start === null && $confirmedShortfall !== null) {
             $start = OperationAttempts::at($confirmedShortfall->setTimezone(new \DateTimeZone('UTC')));
         }
@@ -59,7 +72,8 @@ final class AcquisitionResult
     /** The model closes the schedule in the same transaction as any terminal purchase update. */
     public static function close(Operation $operation): void
     {
-        self::query($operation)->whereNotNull('retry_lane')->increment('revision', 1, [
+        self::query($operation)->where(fn ($q) => $q->whereNotNull('retry_lane')->orWhereNotNull('confirmed_shortfall_at'))
+            ->increment('revision', 1, [
             'retry_lane' => null, 'retry_due_at' => null, 'confirmed_shortfall_at' => null,
         ]);
         $operation->clearAcquisitionResultSnapshot();
@@ -113,11 +127,11 @@ final class AcquisitionResult
      * The sole writer of send bounds. The caller holds the operation and its native authority locks.
      * The transition saves corrected details, releases the exact hold or claims the worker in this same transaction.
      * Its worker transitions return the newly written token. Other transitions queue the request (or keep corrected transfers held).
-     * Returns false if an expired window does not allow worker recovery.
+     * The cutoff, the transition and the new bounds share an instant sampled inside the writer.
      */
     public static function admit(Operation $operation, AcquisitionAdmission $admission, int $expectedRevision,
-        ?AttemptToken $expectedAttempt, \DateTimeImmutable $now, \Closure $transition, ?int $approvalId = null,
-        ?int $expectedContact = null): bool
+        ?AttemptToken $expectedAttempt, Clock|\DateTimeImmutable $clock, \Closure $transition, ?\Closure $approve = null,
+        ?int $expectedContact = null): AcquisitionAdmissionOutcome
     {
         $key = AcquisitionAttempt::key($operation->action) ?? throw new \LogicException('Acquisition required.');
         $id = (int) $operation->id;
@@ -129,10 +143,15 @@ final class AcquisitionResult
             || $current->safe_code !== $operation->safe_code || $current->completed_at !== null) {
             throw new \DomainException('Acquisition admission changed.');
         }
+        $continuation = self::readContinuation($row);
+        $now = ($clock instanceof Clock ? $clock->now() : $clock)->setTimezone(new \DateTimeZone('UTC'));
+        if (AcquisitionAuthority::fundsCutoff($operation, $continuation, $now, $latest) !== AcquisitionAuthority::FUNDS_PROCEED) {
+            return AcquisitionAdmissionOutcome::RetireForCredit;
+        }
         $hold = $operation->safe_code;
-        $oldLane = $row->retry_lane === null ? null : AcquisitionLane::from($row->retry_lane);
+        $oldLane = $continuation->lane;
         if ($oldLane?->ownsBalance() && $admission->startsWorker() && $admission !== AcquisitionAdmission::FirstClaim) {
-            return false;
+            return AcquisitionAdmissionOutcome::Unavailable;
         }
         if ($oldLane?->ownsBalance() && !in_array($admission, [AcquisitionAdmission::Balance, AcquisitionAdmission::FirstClaim], true)) {
             throw new \DomainException('The automatic balance retry owns this request.');
@@ -145,7 +164,7 @@ final class AcquisitionResult
                 throw new \DomainException('Acquisition has already claimed a worker.');
             }
         } elseif ($admission->startsWorker()) {
-            $window = self::readWindow($row);
+            $window = $continuation->window;
             $recoveringContact = $admission === AcquisitionAdmission::SavedContactRecovery;
             $contact = $recoveringContact && $expectedContact !== null
                 ? ContactProfileHold::forReadmission($operation, $now, true) : null;
@@ -159,7 +178,7 @@ final class AcquisitionResult
             $origin = AcquisitionAdmission::tryFrom($window->origin);
             $ordinaryOrigin = in_array($origin, [AcquisitionAdmission::FirstClaim, AcquisitionAdmission::WorkerRecovery], true);
             $contactOrigin = $recoveringContact && in_array($origin, [AcquisitionAdmission::ContactRetry, AcquisitionAdmission::SavedContactRecovery], true);
-            if (!$ordinaryOrigin && !$contactOrigin && !AcquisitionRetryProof::catalogueRetry($operation)) { return false; }
+            if (!$ordinaryOrigin && !$contactOrigin && !AcquisitionRetryProof::catalogueRetry($operation)) { return AcquisitionAdmissionOutcome::Unavailable; }
             $proof['contact_operation_id'] = $contact?->id;
         } elseif ($admission === AcquisitionAdmission::ContactCorrection) {
             if ($operation->state !== 'held' || $hold !== 'contact_details_required' || $row->first_claim_at !== null
@@ -181,27 +200,32 @@ final class AcquisitionResult
                     && (int) $row->retry_due_at <= $now->getTimestamp()
                     && AcquisitionRetryProof::balanceRefusalRetryable($operation),
                 AcquisitionAdmission::Price => $hold === 'registrar_price_increased',
-                AcquisitionAdmission::CostApproval => $hold === 'registrar_price_increased' && $approvalId !== null
-                    && DB::table('domains_complimentary_approvals')->where(['id' => $approvalId, 'operation_id' => $id,
-                        'amount' => $operation->policy['complimentary_cost_review']['amount']])->exists(),
+                AcquisitionAdmission::CostApproval => $hold === 'registrar_price_increased' && $approve !== null,
                 AcquisitionAdmission::ContactRetry => ContactStepRetries::candidate($operation)
                     && ContactProfileHold::releaseBlocked($operation) === null,
                 AcquisitionAdmission::StaffRelease => !in_array($hold, AcquisitionRetryProof::TEST_CAPACITY_CODES, true),
             };
             if (!$valid) { throw new \DomainException('Acquisition admission proof changed.'); }
             $proof['refusal_evidence_id'] = $refusal;
-            $proof['approval_id'] = $approvalId;
+            $proof['approval_id'] = null;
             if ($admission === AcquisitionAdmission::ContactRetry) {
                 $proof['contact_operation_id'] = ProfileContactOperation::where('operation_id', $id)->lockForUpdate()->value('id');
             }
         }
 
         $saveWindow = $admission === AcquisitionAdmission::FirstClaim || $row->first_claim_at !== null;
-        $now = $now->setTimezone(new \DateTimeZone('UTC'));
         $requiresCutoff = $operation->action === 'transfer' && $admission !== AcquisitionAdmission::ContactCorrection;
         $cutoff = $requiresCutoff ? TransferInputs::deadline($operation, $now) : null;
         if ($requiresCutoff && ($cutoff === null || $cutoff <= $now)) {
             throw new \DomainException('Transfer input deadline is unavailable.');
+        }
+        if ($admission === AcquisitionAdmission::CostApproval) {
+            $approvalId = $approve($now);
+            if (!DB::table('domains_complimentary_approvals')->where(['id' => $approvalId, 'operation_id' => $id,
+                'amount' => $operation->policy['complimentary_cost_review']['amount']])->exists()) {
+                throw new \DomainException('Acquisition cost approval changed.');
+            }
+            $proof['approval_id'] = $approvalId;
         }
         if (isset($refused) && $refused->current) {
             if (OperationWriter::at($now)->releaseUnsentAcquisition($refused->token, requireUnusedGrant: false) !== Transition::Applied) {
@@ -209,7 +233,7 @@ final class AcquisitionResult
             }
             $operation->reloadAcquisitionAttempt();
         }
-        $issued = $transition();
+        $issued = $transition($now);
         if ($admission->startsWorker()) {
             if ($operation->state !== 'running' || !$issued instanceof AttemptToken
                 || OperationAttempts::current($id, $key, true)?->token != $issued || $issued == $expectedAttempt) {
@@ -227,7 +251,6 @@ final class AcquisitionResult
         $changes = [
             'retry_lane' => $balance ? AcquisitionLane::BalancePurchase->value : AcquisitionLane::Purchase->value,
             'retry_due_at' => $now->getTimestamp(),
-            'confirmed_shortfall_at' => $balance ? $row->confirmed_shortfall_at : null,
         ];
         if ($operation->state === 'held') {
             $changes['retry_lane'] = $changes['retry_due_at'] = null;
@@ -251,7 +274,7 @@ final class AcquisitionResult
         }
         if ($admission === AcquisitionAdmission::FirstClaim) { $changes['first_claim_at'] = OperationAttempts::at($now); }
         self::update($operation, $expectedRevision, $changes);
-        return true;
+        return AcquisitionAdmissionOutcome::Applied;
     }
 
     private static function update(Operation $operation, int $revision, array $changes): void

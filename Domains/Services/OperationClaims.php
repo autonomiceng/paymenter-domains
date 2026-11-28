@@ -12,7 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AdmittedOperation
     Money, Query, RequestContext, SendFailure, SendState};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, ProfileContactOperation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission, AcquisitionAttempt, AcquisitionAuthority, AcquisitionDispatch, AcquisitionLane, AcquisitionResult,
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission, AcquisitionAdmissionOutcome, AcquisitionAttempt, AcquisitionAuthority, AcquisitionDispatch, AcquisitionLane, AcquisitionResult,
     AcquisitionRetryProof, AcquisitionWindow, AttemptToken, OperationAttempts, OperationSchema, OperationWriter, Transition, WireOutcome};
 
 /** All financial checks run twice: claim and final seal. No provider callback runs under these locks. */
@@ -39,9 +39,10 @@ final class OperationClaims
             $reason=AcquisitionRetryProof::balanceAdmissionReason($op,$facts);
             if($reason===null){try{$this->authority->requireProcessingLocked($server,$account);}catch(\Throwable){$reason='balance_retry_authority_changed';}}
             $now = $this->clock->now();
-            if (!$continuation->due($now) || AcquisitionAuthority::fundsCutoff($op, $continuation, $now) !== AcquisitionAuthority::FUNDS_PROCEED) {
-                return false;
-            }
+            if (!$continuation->due($now)) { return false; }
+            $transferExpired = ExecutionWindow::pastTransferCutoff($op, $now);
+            if (($reason !== null || $transferExpired)
+                && AcquisitionAuthority::fundsCutoff($op, $continuation, $now) !== AcquisitionAuthority::FUNDS_PROCEED) { return false; }
             if($reason!==null){
                 $review=in_array($reason,BalanceRetries::REVIEW_CODES,true);
                 if($review&&AcquisitionRetryProof::virgin($op)){
@@ -58,17 +59,17 @@ final class OperationClaims
                     $review ? $now->getTimestamp() + BalanceRetry::from($op)->delay() : null);
                 if(\Illuminate\Support\Facades\Schema::hasTable('domains_obligation_alerts')){ObligationAlerts::record($domain,'operation_review',$now->getTimestamp(),(int)$op->id);}return false;
             }
-            if (ExecutionWindow::pastTransferCutoff($op, $now)) {
+            if ($transferExpired) {
                 $op->update(['safe_code' => 'transfer_setup_review_required']);
                 AcquisitionResult::schedule($op, null, null);
                 return false;
             }
-            $retry=BalanceRetry::held($op,$now,null)->admitted($op,$now);
-            $policy = [...$op->policy, 'balance_retry' => $retry->record];
-            AcquisitionResult::admit($op, AcquisitionAdmission::Balance, $continuation->revision,
-                $op->acquisitionAttemptFacts()?->token, $now,
-                static fn () => $op->update(['state' => 'queued', 'safe_code' => null, 'policy' => $policy]));
-            return true;
+            return AcquisitionResult::admit($op, AcquisitionAdmission::Balance, $continuation->revision,
+                $op->acquisitionAttemptFacts()?->token, $this->clock, static function (\DateTimeImmutable $at) use ($op): bool {
+                    $retry = BalanceRetry::held($op, $at, null)->admitted($op, $at);
+                    $policy = [...$op->policy, 'balance_retry' => $retry->record];
+                    return $op->update(['state' => 'queued', 'safe_code' => null, 'policy' => $policy]);
+                }) === AcquisitionAdmissionOutcome::Applied;
         });
     }
 
@@ -141,10 +142,22 @@ final class OperationClaims
                     catch (\DomainException) { $contactReady = false; }
                 }
             }
-            // First-claim bounds and the funds cutoff use the clock after the locked authority reads.
             $now = $this->clock->now();
-            if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now) !== AcquisitionAuthority::FUNDS_PROCEED
-                || $continuation->lane !== null && !$continuation->due($now)) { return null; }
+            if ($continuation->lane !== null && !$continuation->due($now)) { return null; }
+            $transferExpired = ExecutionWindow::pastTransferCutoff($op, $now);
+            $entryExpired = $startedAt !== null
+                && ($startedAt > $now || $startedAt < $now->modify('-'.ExecuteOperation::EXECUTION_SECONDS.' seconds'));
+            if ($first && $failure === null && $contactReady && !$transferExpired && !$entryExpired) {
+                $digest = self::digest($op, $domain);
+                $outcome = AcquisitionResult::admit($op, AcquisitionAdmission::FirstClaim, $revision, null, $this->clock,
+                    function (\DateTimeImmutable $at) use ($op, $domain, $all, $digest, $paid): AttemptToken {
+                        ObservationWork::discardUnsent($domain, $at, $all);
+                        return $this->startWorker($op, null, $digest, $paid, $at);
+                    });
+                return $outcome === AcquisitionAdmissionOutcome::Applied ? [$op, $domain, $binding] : null;
+            }
+            // A hold or an existing-window claim does not pass through the admission writer.
+            if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now) !== AcquisitionAuthority::FUNDS_PROCEED) { return null; }
             // Discovery may not have visited this order before dispatch starts.
             ObservationWork::discardUnsent($domain,$now,$all);
             if (!$compatible) {
@@ -152,7 +165,7 @@ final class OperationClaims
                 AcquisitionResult::schedule($op, null, null);
                 return null;
             }
-            if (ExecutionWindow::pastTransferCutoff($op, $now)) {
+            if ($transferExpired) {
                 $op->update(['state' => 'held', 'safe_code' => 'transfer_setup_review_required']);
                 AcquisitionResult::schedule($op, null, null);
                 return null;
@@ -174,27 +187,22 @@ final class OperationClaims
                 return null;
             }
             // The worker still has its entry budget.
-            if ($startedAt !== null && ($startedAt > $now || $startedAt < $now->modify('-'.ExecuteOperation::EXECUTION_SECONDS.' seconds'))) {
+            if ($entryExpired) {
                 $op->update(['state' => 'held', 'safe_code' => 'claim_authority_invalid']);
                 AcquisitionResult::schedule($op, null, null);
                 return null;
             }
             $digest = self::digest($op, $domain);
-            if ($first) {
-                AcquisitionResult::admit($op, AcquisitionAdmission::FirstClaim, $revision, null, $now,
-                    fn () => $this->startWorker($op, null, $digest, $paid, $now));
-            } else {
-                if (!$window->fits($now)) {
-                    $this->expireWindow($op, $window, $now);
-                    return null;
-                }
-                if ($prior->hasOriginalClaim() && ($op->request_fingerprint !== $digest || ($op->funding['claim'] ?? null) !== $paid)) {
-                    $op->update(['state' => 'held', 'safe_code' => 'claim_authority_invalid']);
-                    AcquisitionResult::schedule($op, null, null);
-                    return null;
-                }
-                $this->startWorker($op, $prior, $digest, $paid, $now, ContactProfileHold::savedForRecovery($op, true) !== null, $window);
+            if (!$window->fits($now)) {
+                $this->expireWindow($op, $window, $now);
+                return null;
             }
+            if ($prior->hasOriginalClaim() && ($op->request_fingerprint !== $digest || ($op->funding['claim'] ?? null) !== $paid)) {
+                $op->update(['state' => 'held', 'safe_code' => 'claim_authority_invalid']);
+                AcquisitionResult::schedule($op, null, null);
+                return null;
+            }
+            $this->startWorker($op, $prior, $digest, $paid, $now, ContactProfileHold::savedForRecovery($op, true) !== null, $window);
             return [$op, $domain, $binding];
         });
     }
@@ -217,11 +225,21 @@ final class OperationClaims
             }
         } catch (\DomainException $failure) {}
         $now = $this->clock->now();
-        if (!OperationAttempts::replaceable($prior->facts, $now, lock: true)
-            || AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $prior->facts) !== AcquisitionAuthority::FUNDS_PROCEED) {
-            return null;
+        if (!OperationAttempts::replaceable($prior->facts, $now, lock: true)) { return null; }
+        $window = $continuation->window;
+        $transferExpired = ExecutionWindow::pastTransferCutoff($op, $now);
+        if ($window && !$window->fits($now) && $failure === null && !$transferExpired) {
+            $admission = $contact === null ? AcquisitionAdmission::WorkerRecovery : AcquisitionAdmission::SavedContactRecovery;
+            $outcome = AcquisitionResult::admit($op, $admission, $continuation->revision, $prior->facts->token, $this->clock,
+                fn (\DateTimeImmutable $at) => $this->startWorker($op, $prior, $digest, $paid, $at, $contact !== null),
+                expectedContact: $contact === null ? null : (int) $contact->id);
+            if ($outcome === AcquisitionAdmissionOutcome::Unavailable) {
+                $this->holdRecovered($op, $prior, $window->blockedReason($now), $now);
+            }
+            return $outcome === AcquisitionAdmissionOutcome::Applied ? [$op, $domain, $binding] : null;
         }
-        if (ExecutionWindow::pastTransferCutoff($op, $now)) {
+        if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $prior->facts) !== AcquisitionAuthority::FUNDS_PROCEED) { return null; }
+        if ($transferExpired) {
             $this->holdRecovered($op, $prior, 'transfer_setup_review_required', $now);
             return null;
         }
@@ -234,23 +252,11 @@ final class OperationClaims
             return null;
         }
 
-        $window = $continuation->window;
         if ($window === null) {
             $this->holdRecovered($op, $prior, 'claim_authority_invalid', $now);
             return null;
         }
-        $fits = $window->fits($now);
-        $start = fn () => $this->startWorker($op, $prior, $digest, $paid, $now, $contact !== null, $fits ? $window : null);
-        if ($fits) {
-            $start();
-        } else {
-            $admission = $contact === null ? AcquisitionAdmission::WorkerRecovery : AcquisitionAdmission::SavedContactRecovery;
-            if (!AcquisitionResult::admit($op, $admission, $continuation->revision, $prior->facts->token, $now, $start,
-                expectedContact: $contact === null ? null : (int) $contact->id)) {
-                $this->holdRecovered($op, $prior, $window->blockedReason($now), $now);
-                return null;
-            }
-        }
+        $this->startWorker($op, $prior, $digest, $paid, $now, $contact !== null, $window);
         return [$op, $domain, $binding];
     }
 
@@ -267,7 +273,7 @@ final class OperationClaims
         $op->update(['state' => 'held', 'safe_code' => $reason]);
         if ($reason === 'write_rate_limited' && BalanceRetries::active($op)) {
             AcquisitionResult::schedule($op, AcquisitionLane::BalanceWait,
-                $now->getTimestamp() + (BalanceRetry::from($op)?->delay() ?? 900), preserveShortfall: true);
+                $now->getTimestamp() + (BalanceRetry::from($op)?->delay() ?? 900));
             return;
         }
         if ($reason === 'write_rate_limited') {
@@ -417,17 +423,21 @@ final class OperationClaims
     {
         if(BalanceRetries::active($claimed)){return $this->finish($claimed,holdReason:'write_rate_limited');}
         return $this->locked((int)$claimed->id,function($op, $domain)use($claimed):Operation {
-            if(!AcquisitionAttempt::sameClaim($op,$claimed)||!$op->lease_expires_at||$op->lease_expires_at<=$this->clock->now()||!AcquisitionRetryProof::unsealed($op)){return $op;}
+            $worker = AcquisitionAttempt::lockedClaim($op, $claimed);
+            if (!$worker || !AcquisitionRetryProof::unsealed($op)) { return $op; }
             $deferrals = count($op->attempt['capacity_deferrals'] ?? []);
             $op->setRelation('domain', $domain);
             $savedContact = ContactProfileHold::savedForRecovery($op, true) !== null;
+            $continuation = AcquisitionResult::continuation($op, true);
+            $now = $this->clock->now();
+            if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $worker) !== AcquisitionAuthority::FUNDS_PROCEED
+                || !$op->lease_expires_at || $op->lease_expires_at <= $now) { return $op; }
             $release = $savedContact && $deferrals >= 6
                 ? $this->attempts->releasePreSeal($claimed->acquisitionWorker)
                 : $this->attempts->deferClaim($claimed->acquisitionWorker);
             if ($release !== Transition::Applied) { return $op; }
             $op->reloadAcquisitionAttempt();
-            $now = $this->clock->now();
-            $window = AcquisitionResult::window($op, true);
+            $window = $continuation->window;
             $fits = $window?->fits($now) === true;
             $op->update(['state' => $fits && $deferrals < 5 ? 'queued' : 'held',
                 'safe_code' => $window === null ? 'claim_authority_invalid' : ($fits ? 'write_rate_limited' : $window->blockedReason($now))]);

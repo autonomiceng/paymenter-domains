@@ -6,7 +6,11 @@ require __DIR__.'/Support/transfer-dispatch-fixture.php';
 require __DIR__.'/Support/staff-panel.php';
 require_once __DIR__.'/Support/fixture-checkpoint.php';
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{OperationActions,RequestFacts,Staff};
-use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries,OperationTerminalProof,Refunds,StaffOperationReview,StaffOperations};
+use Illuminate\Support\Facades\{Auth, Cache, Queue};
+use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
+use Paymenter\Extensions\Servers\Domains\Models\Account;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionLane, AcquisitionResult};
+use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, FundsWaits, OperationTerminalProof, PricingRule, Refunds, StaffOperationReview, StaffOperations, TransferInputs};
 staffPanel();app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);app()->instance(Refunds::class,new Refunds($clock));
 $permissions=[Staff::VIEW,'admin.domains.manage','admin.domains.fund','admin.invoices.update'];foreach(array_keys(StaffOperationReview::ACTIONS) as $action){$permissions[]=StaffOperationReview::permission($action);}
 $staff=staffUser($permissions);Illuminate\Support\Facades\Auth::setUser($staff);$staffOperations=new StaffOperations($clock);
@@ -98,6 +102,76 @@ $makeTransfer(1);$state->premium=null;$r=$engine->execute($op->id);same(['held',
 Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$op->id)->update(['safe_code'=>'write_acceptance_required']);$r=$op->fresh();
 Illuminate\Support\Facades\Auth::setUser($staff);$notice=RequestFacts::notice($r);same(['Not sent: reason not saved.','Release hold queues the test transfer to send to NameSilo. Release to check this order again.','release',null],[$notice['title'],$notice['body'],$notice['action'],$notice['link']??null],'An old hold with no automatic look claims no cause');
 $act($r,'release');$makeTransfer(1);$state->available=false;$r=$engine->execute($op->id);same(['held','name_unavailable'],[$r->state,$r->safe_code],'Release finds the real answer');$state->available=true;
+
+// A paid NameSilo transfer with a saved code can be reviewed during an open funds wait.
+$restoreWait = nativeFixtureCheckpoint();
+$setWaitTime = static function (DateTimeImmutable $instant) use ($clock, $ports): void {
+    $clock->instant = $instant;
+    Carbon\Carbon::setTestNow($instant);
+    Carbon\CarbonImmutable::setTestNow($instant);
+    Cache::flush();
+    activeCommerceFacts($instant, $instant->modify('+1 day'), $ports);
+};
+$creditTotal = static fn () => App\Models\Credit::where('user_id', $user->id)->where('currency_code', 'USD')->get()
+    ->sum(static fn ($credit) => PricingRule::minor((string) $credit->amount));
+$observed = [];
+foreach (['cutoff', 'day-two'] as $case) {
+    $restoreWait();
+    $setWaitTime($now);
+    Queue::fake([RunOperation::class]);
+    $op = $newTransfer(placeholderComFixtureName('namesilo-funds-'.$case.'-placeholder.com'), 1);
+    $makeTransfer(1);
+    $state->calls = [];
+    $state->funds = '1.00';
+    $held = $engine->execute($op->id);
+    same(['held', 'registrar_balance_insufficient', AcquisitionLane::FundsWait],
+        [$held->state, $held->safe_code, AcquisitionResult::continuation($held)->lane], 'Verified NameSilo shortage opens the manual funds wait');
+    $saved = AcquisitionResult::continuation($held);
+    same($clock->now()->getTimestamp(), $saved->shortfallAt?->getTimestamp(), 'Shortfall starts when first confirmed');
+    $cutoff = $saved->shortfallAt->modify('+3 days');
+    $reviewAt = $case === 'cutoff' ? $cutoff->modify('-1 second') : $saved->shortfallAt->modify('+2 days');
+    $setWaitTime($reviewAt);
+    Auth::setUser($staff);
+    expect(TransferInputs::beforeDeadline($held, $clock->now()), 'Saved transfer code still has time');
+    expect(OperationActions::relevant('release', $held->fresh()), 'Staff can review a NameSilo hold before cutoff');
+    $ticket = StaffOperationReview::ticket($staff->id, $held->domain_id, $held->id, 'release',
+        StaffOperationReview::stamp($held->fresh(), $held->domain->fresh()), $clock);
+    $before = $creditTotal();
+    if ($case === 'cutoff') {
+        $setWaitTime($cutoff);
+        $state->funds = '100.00';
+    }
+    Auth::setUser($staff);
+    $offered = OperationActions::relevant('release', $held->fresh());
+    $refused = false;
+    try { $staffOperations->run($staff, $held->domain_id, $held->id, 'release', $ticket, 'Reviewed current evidence'); }
+    catch (DomainException) { $refused = true; }
+    $after = $held->fresh();
+    $afterRelease = AcquisitionResult::continuation($after);
+    $priorAudit = $after->policy['staff_actions'] ?? [];
+    $queued = Queue::pushed(RunOperation::class, static fn (RunOperation $job) => $job->operationId === $held->id)->count();
+    $makeTransfer(1);
+    $afterDelivery = $engine->execute($held->id);
+    $afterDeliveryWait = AcquisitionResult::continuation($afterDelivery);
+    $setWaitTime($cutoff);
+    $account = Account::where('server_id', $held->server_id)->sole();
+    FundsWaits::sweep($account, $clock->now());
+    FundsWaits::sweep($account, $clock->now());
+    $observed[$case] = [
+        $offered, $refused, $after->state, $saved->window == $afterRelease->window,
+        $saved->shortfallAt == $afterRelease->shortfallAt,
+        $saved->shortfallAt == $afterDeliveryWait->shortfallAt,
+        count($priorAudit), $queued, count(array_filter($state->calls, static fn ($command) => $command === 'transferDomain')),
+        $held->fresh()->state, $creditTotal() - $before === PricingRule::minor($held->amount),
+    ];
+}
+$restoreWait();
+$setWaitTime($now);
+$state->funds = '100.00';
+same([
+    'cutoff' => [false, true, 'held', true, true, true, 0, 0, 0, 'rejected', true],
+    'day-two' => [true, false, 'queued', false, true, true, 1, 1, 0, 'rejected', true],
+], $observed, 'Reviewed NameSilo Release keeps the original funds cutoff: '.json_encode($observed));
 
 $op = $newTransfer(placeholderComFixtureName('expired-registry-refusal-placeholder.com'));
 $makeTransfer();

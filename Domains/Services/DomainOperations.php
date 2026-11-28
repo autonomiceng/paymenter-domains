@@ -124,7 +124,7 @@ final class DomainOperations
             }
             $context = new RequestContext($binding, RequestOrigin::Background, $deadline, new RequestBudget($op->action === 'transfer' ? 12 : ExecuteOperation::REQUEST_LIMIT), $this->clock, Runtime::limiter());
             $ready = $this->preflight->inspect($op, $domain, $context);
-            if ($balanceRetry && !$this->claims->confirmFunds($op, $ready)) { return $op->fresh(); }
+            if (!$this->claims->confirmFunds($op, $ready)) { return $op->fresh(); }
             if ($this->preflight instanceof TransferPreflight) {
                 $ready = $this->preflight->inspect($op, $domain, $context);
             }

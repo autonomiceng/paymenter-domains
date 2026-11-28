@@ -67,6 +67,7 @@ final class ContactRecovery
         ?Clock $clock = null, #[\SensitiveParameter] ?array $contact = null, bool $saveAccount = false, bool $automatic = false): Operation
     {
         self::reason($reason);
+        $clock ??= app(Clock::class);
         if ($review && ($review->action !== 'release' || $review->operationId !== $operationId || $review->actorId !== (int) $actor->id)) {
             throw new \LogicException('Contact review does not match recovery.');
         }
@@ -85,7 +86,7 @@ final class ContactRecovery
             $review?->check($locked);
             $op = $operations->firstWhere('id', $hint->id);
             $facts=$funding->initialFacts($domain)+['operations'=>$operations,'user'=>$owner];
-            $now = $clock?->now() ?? now()->toDateTimeImmutable();
+            $now = $clock->now();
             $contacts=self::requireReplacement($op,$facts,$contact===null?ContactDetails::collect($owner):OrderContact::roles($contact),$now);
             $payload=$op->payload??[];$policy=$op->policy??[];$history=$policy['contact_readmissions']??[];
             $payload['contacts'] = $contacts; $payload['setup_required'] = false; $payload['setup_fields'] = []; $payload['registry_supported'] = true;
@@ -95,10 +96,10 @@ final class ContactRecovery
             $policy['contact_readmissions'] = $history;
             // The first worker will validate the corrected details and start its acquisition clock.
             ContactSetup::recoveryWrite(static fn () => AcquisitionResult::admit($op, AcquisitionAdmission::ContactCorrection,
-                AcquisitionResult::revision($op), null, $now,
+                AcquisitionResult::revision($op), null, $clock,
                 static fn () => $op->update(['payload' => $payload, 'policy' => $policy,
                     'state' => $op->action === 'register' ? 'queued' : 'held',
-                    'safe_code' => $op->action === 'register' ? null : 'transfer_setup_review_required'])));
+                    'safe_code' => $op->action === 'register' ? null : 'transfer_setup_review_required'])))->requireApplied();
             $review?->record($locked);
             if ($contact !== null && $saveAccount) { OrderContact::saveAccount($owner, $contacts['registrant']); }
             return $op;
