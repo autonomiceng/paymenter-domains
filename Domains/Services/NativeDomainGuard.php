@@ -10,6 +10,7 @@ use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionClosureKind;
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 
 /** Dormant native adapters; boot once in 39, before checkout/binding. No financial/provider execution. */
@@ -215,14 +216,15 @@ final class NativeDomainGuard
     }
 
     /** Proven failed order and full-funding checks remain mandatory for owned terminal projections. */
-    public static function terminal(array $locked, Operation $op): void
+    public static function terminal(array $locked, Operation $op, ?\DateTimeImmutable $now = null): ?AcquisitionClosureKind
     {
         if (($locked['advisory'] ?? true) || $op->state !== 'rejected' || !in_array($op->action, ['register', 'transfer'], true)
             || !$locked['operations']->contains(static fn ($row) => $row === $op)) { throw new \DomainException('No retained refund disposition.'); }
-        RefundProof::requireReturnable($op, $locked['domain']);
+        $closure = RefundProof::requireReturnable($op, $locked['domain'], $now);
         if($op->funding_basis==='complimentary'){ComplimentaryInvoices::require($op,$locked);}else{RefundPayment::requireCurrent($op, $locked);}
         $service = $locked['service'];
         self::persist($service, ['status' => Service::STATUS_CANCELLED, 'expires_at' => null]);
+        return $closure;
     }
 
     /** A confirmed departure cancels its own service. The caller has written the frozen record under the same locks. */

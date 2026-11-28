@@ -8,6 +8,7 @@ use App\Models\{Credit, InvoiceTransaction};
 use Illuminate\Support\Facades\{Cache, DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionClosureKind};
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 use Paymenter\Extensions\Servers\Domains\Money\Returns\{CreditsRejectedRequests, ReceiptReturns, RefundCandidates, RefundPayment, RefundRepairs};
@@ -51,14 +52,20 @@ final readonly class Refunds
      * other callers first adopt the original-payment return. Gateway-owned shares remain reserved in the shared ledger. */
     private function creditLate(Operation $op, array $l, ?StaffOperationReview $review, bool $departure = false): ?array
     {
-        RefundProof::requireUnsent($op, $l['domain']); RefundPayment::requireLine($op, $l);
-        if (ReceiptReturns::adoptClosed($op, $l, $this->clock->now(), existingOnly: $departure)) { $review?->record($l); return null; }
+        $now = $this->clock->now();
+        if (AcquisitionAttempt::key($op->action)) {
+            if (RefundProof::requirePurchase($op, $l['domain'], $now)->closure !== AcquisitionClosureKind::Unpaid) {
+                throw new \DomainException('Closed order proof is unavailable.');
+            }
+        } else { RefundProof::requireUnsent($op, $l['domain']); }
+        RefundPayment::requireLine($op, $l);
+        if (ReceiptReturns::adoptClosed($op, $l, $now, existingOnly: $departure)) { $review?->record($l); return null; }
         $payments = RefundPayment::lateUncredited($op, $l); $minor = array_sum(array_column($payments, 'amount_minor'));
         if ($minor <= 0) { if($review){throw new \DomainException('No pending account credit. Reload this page.');} return null; }
         $credit = $l['credit'] ?? new Credit(['user_id' => $l['user']->id, 'currency_code' => 'USD', 'amount' => '0.00']);
         $credit->amount = PricingRule::decimal(PricingRule::minor((string) $credit->amount) + $minor); $credit->save();
         $late = ['payments' => $payments, 'amount' => PricingRule::decimal($minor), 'currency' => 'USD', 'to' => 'account_credit',
-            'credit_id' => (int) $credit->id, 'at' => $this->clock->now()->format(DATE_ATOM)];
+            'credit_id' => (int) $credit->id, 'at' => $now->format(DATE_ATOM)];
         $op->update(['funding' => [...($op->funding ?? []), 'late_credits' => [...($op->funding['late_credits'] ?? []), $late]]]);
         $review?->record($l);
         return ['amount' => $late['amount'], 'currency' => 'USD'];
@@ -246,7 +253,7 @@ final readonly class Refunds
         if (ReceiptReturns::outstanding($fresh)>0) { return null; }
         $decision = MoneyDecisions::run(self::request($seen, self::CLOSED, released: true), function (array $l) use ($seen): ?array {
             $op = $l['operations']->firstWhere('id', $seen->id);
-            if (!$op || !UnpaidAcquisitionProof::terminal($op, $l['domain'])) { throw new \DomainException('Closed order proof is unavailable.'); }
+            if (!$op) { throw new \DomainException('Closed order proof is unavailable.'); }
             // Paid already started this invoice's services. Credit on top would give the money back and keep them, so a person decides.
             // A scope without this invoice reruns on the full scope; it never reads as an invoice that is not cancelled.
             InvoiceScope::cover($l, (int) $op->invoice_id);

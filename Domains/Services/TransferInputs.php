@@ -166,7 +166,7 @@ final class TransferInputs
             AcquisitionRetirement::retainClosure($op,$l['transactions']->where('invoice_id',$op->invoice_id),
                 $l['invoices']->firstWhere('id',$op->invoice_id)?->status,$now,cancelled:true);
             $l['domain']->update(['status' => 'transfer_rejected']);
-            NativeDomainGuard::terminal($l, $op);
+            NativeDomainGuard::terminal($l, $op, $now);
             return $op->funding_basis !== 'complimentary';
         });
         return $credit ? $this->refunds->creditRejected($id) : null;

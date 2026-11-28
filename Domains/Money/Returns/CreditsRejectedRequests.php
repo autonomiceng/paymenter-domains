@@ -49,7 +49,7 @@ trait CreditsRejectedRequests
             // a cancelled service and a retryable refund, never a refund for a live service.
             if (in_array($op->action, ['register', 'transfer'], true)) {
                 $l['domain']->update(['status' => $op->action === 'transfer' ? 'transfer_rejected' : 'registration_rejected']);
-                NativeDomainGuard::terminal($l, $op);
+                NativeDomainGuard::terminal($l, $op, $now);
             }
             $review?->record($l);
             return true;
@@ -97,7 +97,8 @@ trait CreditsRejectedRequests
         if (!$op || $op->state !== 'rejected' || array_key_exists('refund', $op->funding ?? [])) { if($review){throw new \DomainException('No pending account credit. Reload this page.');} return null; }
         if(RenewalRetries::resolved($op,$l['domain'])){$review?->record($l);return null;} // Its paid debt belongs to the proved retry, not a refund.
         $now = $this->clock->now();
-        $closure = RefundProof::requireReturnable($op, $l['domain'], $now);
+        $purchase = AcquisitionAttempt::key($op->action);
+        if (!$purchase) { RefundProof::requireReturnable($op, $l['domain'], $now); }
         $approved = $op->funding['refund_authorization'] ?? null;
         if (array_key_exists('refund_authorization', $op->funding ?? []) && (!is_array($approved)
             || array_keys($approved) !== ['actor_id', 'reason', 'at', 'operation_key', 'generation']
@@ -106,22 +107,23 @@ trait CreditsRejectedRequests
             || $approved['operation_key'] !== $op->operation_key || $approved['generation'] !== $op->authority_generation)) {
             throw new \DomainException('Refund authorization identity changed.');
         }
-        if (!AcquisitionAttempt::key($op->action) && !$approved && !RefundProof::retired($op, $l['domain'])
+        if (!$purchase && !$approved && !RefundProof::retired($op, $l['domain'])
             && !PrivacyRetirement::safe($op, $l['domain']) && !OperationTerminalProof::safe($op, $l['domain'], $now)) {
             throw new \DomainException('No retained refund disposition.');
         }
         if($op->funding_basis==='complimentary'){
             ComplimentaryInvoices::require($op,$l);
-            if(in_array($op->action,['register','transfer'],true)){
+            if ($purchase){
                 $l['domain']->update(['status'=>$op->action==='transfer'?'transfer_rejected':'registration_rejected']);
-                NativeDomainGuard::terminal($l,$op);
+                NativeDomainGuard::terminal($l,$op,$now);
             }
             $review?->record($l);return null;
         }
         $payment = RefundPayment::requireCurrent($op, $l);
-        if (in_array($op->action, ['register', 'transfer'], true)) {
+        $closure = null;
+        if ($purchase) {
             $l['domain']->update(['status' => $op->action === 'transfer' ? 'transfer_rejected' : 'registration_rejected']);
-            NativeDomainGuard::terminal($l, $op);
+            $closure = NativeDomainGuard::terminal($l, $op, $now);
         }
         $money = InvoiceMoney::load($l, (int)$op->invoice_id);
         $left = min(PricingRule::minor($payment['amount']), InvoiceMoney::held($money));

@@ -123,10 +123,22 @@ commerceReject(fn()=>$run($foreign,'release',$key));$staff->role->update(['permi
 // Every UI entry point preserves sent/null/unknown financial evidence, reservation and customer credit.
 // One sent request walks through each state; every state reads the same retained evidence.
 [$sent]=$prepare(placeholderComFixtureName('staff-sent-placeholder.com'),'null');
-// Resume sync sits on the domain page; a sent registration with stopped scheduled work offers it.
-$d=$sent->domain->fresh();$work=['domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::phase($d)];
-DB::table('domains_observation_work')->updateOrInsert($work,['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
-$hiddenWithout(Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$sent->domain_id]),'resume_observation',$sent);
+// Unresolved purchases own their reads; Resume sync belongs to a completed holding.
+$d=$sent->domain->fresh();
+$domainPage=\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class;
+$pauseSync=static function($domain): void {
+    $work=['domain_id'=>$domain->id,'generation'=>$domain->authority_generation,
+        'phase'=>\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::phase($domain)];
+    DB::table('domains_observation_work')->updateOrInsert($work,['server_id'=>$domain->server_id,
+        'account_fingerprint'=>$domain->account_fingerprint,'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
+};
+$pauseSync($d);
+Livewire::actingAs($staff)->test($domainPage,['record'=>$d->id])->assertActionHidden('resume_observation');
+[$active]=$prepare(placeholderComFixtureName('staff-resume-sync-placeholder.com'));
+if ($active->state !== 'succeeded') { $active=$reconcile->run($active->id); }
+same('succeeded',$active->state,'Resume sync fixture is a completed purchase');
+$pauseSync($active->domain->fresh());
+$hiddenWithout(Livewire::actingAs($staff)->test($domainPage,['record'=>$active->domain_id]),'resume_observation',$active);
 foreach(['uncertain','pending','held','rejected'] as $stateName){
     $sent->update(['state'=>$stateName,'safe_code'=>$stateName==='held'?'transfer_needs_action':'transfer_provider_rejected']);
     $before=[$sent->fresh()->attempt,$sent->fresh()->funding,$sent->domain->fresh()->reservation_name,$credit()];

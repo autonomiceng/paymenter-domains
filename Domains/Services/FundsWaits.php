@@ -128,7 +128,7 @@ final class FundsWaits
                 AcquisitionRetirement::retainClosure($current,$l['transactions']->where('invoice_id',$current->invoice_id),
                     $l['invoices']->firstWhere('id',$current->invoice_id)?->status,$now);
                 $l['domain']->update(['status'=>$current->action==='transfer'?'transfer_rejected':'registration_rejected']);
-                if($current->funding_basis==='complimentary'){NativeDomainGuard::terminal($l,$current);}
+                if($current->funding_basis==='complimentary'){NativeDomainGuard::terminal($l,$current,$now);}
                 return true;
             });
             if($decision->outcome===MoneyOutcome::Deferred){return;}
