@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\{Auth,DB,Mail};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions;
 use Paymenter\Extensions\Servers\Domains\Mail\DomainNotice;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionClosureKind,OperationWriter,Transition};
 use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks,InvoiceMoney,MoneyDecisions,NativePresenter,OwnedDomains,PricingRule,Refunds,ReminderSchedules,Reminders,StaffOperationReview,StaffReviewRefused};
 use Paymenter\Extensions\Servers\Domains\Holding\Retention\HistoryRetention;
 use Paymenter\Extensions\Servers\Domains\Money\Returns\{ReceiptReturns, ReceiptReversals, RefundPayment};
@@ -350,9 +351,16 @@ $case('staff credit resume contention',function()use($make,$reserve,$refunds,$eq
     $equal(['refunded',$sends+1],[$op->fresh()->funding['receipt_return_results'][$a['key']]['state']??null,MoneyReceiptGateway::$sends],'The queued resume sends once on its next run');
     DB::table('domains_money_work')->where('subject_id',$op->id)->delete();
 });
-foreach(['register','transfer'] as $action){$case('zero held '.$action,function()use($make,$action,$observe,$refunds,$equal,$balance):void{
-    $op=$make('zero-'.$action,$action);$op->update(['state'=>'rejected','attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent','disposition'=>'rejected',
-        'rejection_basis'=>'definitely_unsent','terminal'=>['operation_key'=>$op->operation_key,'generation'=>$op->authority_generation]]]);
+foreach(['register','transfer'] as $action){$case('zero held '.$action,function()use($make,$action,$observe,$refunds,$equal,$balance,$clock):void{
+    $op=$make('zero-'.$action,$action);
+    DB::transaction(static function () use ($op, $clock): void {
+        $locked = Operation::whereKey($op->id)->lockForUpdate()->sole();
+        same(Transition::Applied, OperationWriter::at($clock->now())->recordTerminal((int) $locked->id,
+            AcquisitionClosureKind::Unsent->value, [
+                'operation_key' => $locked->operation_key, 'generation' => $locked->authority_generation, 'attempt_id' => null,
+            ]), 'Rejection records a typed unsent terminal');
+        $locked->update(['state' => 'rejected']);
+    });
     $observe($op,'lost',PricingRule::minor($op->amount));$before=$balance();$refunds->creditRejected($op->id);
     $equal($action==='transfer'?'transfer_rejected':'registration_rejected',$op->domain->fresh()->status,'Zero-held rejection closes its domain');
     $equal('cancelled',Service::findOrFail($op->service_id)->status,'Zero-held rejection cancels its native service');

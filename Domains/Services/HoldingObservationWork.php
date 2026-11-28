@@ -9,6 +9,8 @@ use Paymenter\Extensions\Servers\Domains\Holding\Observation\{ObservationRecords
 /** Shared bounded holding portion. Only its owner selects and advances account turns. */
 final class HoldingObservationWork
 {
+    public const READ_STATUSES = ObservationEligibility::STATUSES;
+
     /** Called under the holding locks when registration or transfer becomes active. Never replaces existing work. */
     public static function queueInitial(Domain $d, \DateTimeImmutable $now): void
     {

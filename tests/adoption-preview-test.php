@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\{StaffContext, Target};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain, Operation, Price};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResultSchema;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionClosureKind, AcquisitionResultSchema, OperationWriter, Transition};
 // Preview cases share one adoption fixture; each case restores rows, schema, listeners, container, config,
 // clocks and fake ports before the next.
 extract($fixture=adoptionFixture());
@@ -126,8 +126,16 @@ foreach (['failed', 'cancelled', 'succeeded'] as $state) {
 }
 $unsent = Operation::create(['domain_id' => $pending->id, 'service_id' => $service->id, 'server_id' => $binding->serverId,
     'registrar_key' => 'enom', 'account_fingerprint' => $binding->fingerprint, 'authority_generation' => 1, 'action' => 'register',
-    'operation_key' => 'synthetic-proved-unsent', 'term' => 1, 'currency' => 'USD', 'amount' => '10.00', 'state' => 'rejected',
-    'attempt' => ['seal' => 'absent', 'send_state' => 'definitely_unsent', 'disposition' => 'rejected', 'rejection_basis' => 'definitely_unsent'], 'policy' => [], 'payload' => []]);
+    'operation_key' => 'synthetic-proved-unsent', 'term' => 1, 'currency' => 'USD', 'amount' => '10.00', 'state' => 'held',
+    'policy' => [], 'payload' => []]);
+DB::transaction(static function () use ($unsent, $clock): void {
+    $locked = Operation::whereKey($unsent->id)->lockForUpdate()->sole();
+    same(Transition::Applied, OperationWriter::at($clock->now())->recordTerminal((int) $locked->id,
+        AcquisitionClosureKind::Unsent->value, [
+            'operation_key' => $locked->operation_key, 'generation' => $locked->authority_generation, 'attempt_id' => null,
+        ]), 'Predecessor purchase has a typed unsent terminal');
+    $locked->update(['state' => 'rejected']);
+});
 same('ready', $reader->preview($target, $context)->code, 'Existing bound definitive-unsent proof may be reviewed without authority');
 $before = count($wire->calls);
 DB::transaction(function () use ($reader, $target, $context): void { try { $reader->preview($target, $context); expect(false, 'Outer transaction forbidden'); } catch (LogicException) {} });

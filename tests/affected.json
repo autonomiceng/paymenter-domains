@@ -45,7 +45,7 @@
       "tests/renewal-answer-fresh-expiry-test.php",
       "tests/registrar-renewal-answer-test.php"
     ],
-    "Domains/Services/RegistrarCheck.php": ["tests/renewal-order-unproven-test.php", "tests/renewal-worker-contention-test.php", "tests/renewal-check-claim-test.php", "tests/renewal-proof-unresolved-test.php", "tests/staff-operation-reads-test.php", "tests/enom-live-handoff-test.php"],
+    "Domains/Services/RegistrarCheck.php": ["tests/renewal-order-unproven-test.php", "tests/renewal-worker-contention-test.php", "tests/renewal-check-claim-test.php", "tests/renewal-proof-unresolved-test.php"],
     "Domains/Services/InvoiceMoney.php": ["tests/cli-complimentary-external-refund-test.php"],
     "Domains/Services/RegistrarAnswers.php": [
       "tests/renewal-order-unproven-test.php",
@@ -115,8 +115,6 @@
     ],
     "tests/Support/runtime-enom-*.php": ["tests/test_installed_package_enom_exchange.py"],
     "Domains/Operations/Authority/*.php": ["tests/operation-writer-test.php", "tests/schema-test.php", "tests/test_operation_schema_mariadb.py"],
-    "Domains/Operations/Authority/AcquisitionLifecycle.php": ["tests/enom-live-handoff-test.php", "tests/registrar-purchase-answer-test.php", "tests/registrar-transfer-answer-test.php", "tests/pending-transfer-observation-test.php", "tests/observation-acquisition-work-test.php"],
-    "Domains/Operations/Reconciliation/AcquisitionCheckResult.php": ["tests/staff-operation-reads-test.php"],
     "Domains/Installation/SchemaVerifier.php": ["tests/test_schema_foreign_keys_mariadb.py", "tests/test_operation_schema_mariadb.py"],
     "tests/Support/mariadb-operation-schema.php": ["tests/test_operation_schema_mariadb.py"],
     "tests/Support/mariadb-schema-foreign-keys.php": ["tests/test_schema_foreign_keys_mariadb.py"],
