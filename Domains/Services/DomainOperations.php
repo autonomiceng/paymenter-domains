@@ -140,16 +140,15 @@ final class DomainOperations
             if ($context->budget->remaining() < 1) { throw new \DomainException('No dispatch request budget remains.'); }
             // Each physical call has its own 25-second cap. Sealing must not spend that call's time.
             $now = $this->clock->now();
+            $requestUntil = $now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds');
             $window = AcquisitionResult::window($op) ?? throw new \DomainException('Missing acquisition window.');
+            $cutoff = $op->action === 'transfer' ? TransferInputs::deadline($op, $now) : null;
+            if ($op->action === 'transfer' && ($cutoff === null || min($cutoff, $window->inputCutoff ?? $cutoff) < $requestUntil)) {
+                return $this->interrupted($op, $binding, $result, 'transfer_setup_review_required');
+            }
             if (!$window->fits($now)) { throw new WriteHeld($window->blockedReason($now)); }
-            $dispatchDeadline = min($deadline, $ready->validUntil, $window->effectiveEnd());
-            if (min($deadline, $ready->validUntil) < $now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')) {
-                throw new WriteHeld('pre_send_interrupted');
-            }
-            if ($op->action === 'transfer') {
-                $cutoff = TransferInputs::deadline($op, $this->clock->now());
-                if (!$cutoff || $cutoff <= $this->clock->now()) { throw new WriteHeld('transfer_setup_review_required'); }
-            }
+            $dispatchDeadline = min($deadline, $ready->validUntil, $window->effectiveEnd(), $cutoff ?? $deadline);
+            if ($dispatchDeadline < $requestUntil) { return $this->interrupted($op, $binding, $result, 'pre_send_interrupted'); }
             $context = new RequestContext($binding, RequestOrigin::Background, $dispatchDeadline, $context->budget, $this->clock, Runtime::limiter());
             return $context->withReservedWire(function()use(&$op,$ready,$context,$binding,&$result,$entry):Operation {
             if($this->writer instanceof RegistrationBridge){$this->writer->reservePurchase($op,$ready);}
@@ -170,8 +169,7 @@ final class DomainOperations
         } catch (LiveReservationLimit) {
             return $this->interrupted($op,$binding,$result,'write_rate_limited');
         } catch (EnomTestCallLimit) {
-            if (ExecutionWindow::pastTransferCutoff($op, $this->clock->now())) { return $this->interrupted($op, $binding, $result); }
-            return $this->claims->holdTestCallCap($op);
+            return $this->claims->holdTestCallCap($op) ?? $this->interrupted($op, $binding, $result);
         } catch (ReadDeferred) {
             if ($op->acquisitionAttemptFacts()?->sealed()) { return $this->interrupted($op, $binding, $result); }
             return $this->claims->defer($op);

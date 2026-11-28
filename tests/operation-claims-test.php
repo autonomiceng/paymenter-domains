@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\{Cache, Crypt, DB};
 use Paymenter\Extensions\Servers\Domains\Data\{Disposition, Money};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationSchema, StepKey};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission, AcquisitionResult, OperationAttempts, OperationSchema, StepKey};
 use Paymenter\Extensions\Servers\Domains\Services\{FundsWaits, HoldingLocks, MoneyWorkSchema, PricingRule, RefundProof, Refunds, WriteAcceptance, WriteHeld};
 // Claim, seal, funds cutoff and send outcome cases share the one prepared claim fixture and clock. Each makes
 // its own paid native checkout; the reset restores rows, payments, attempts, listeners, cache and fakes after it.
@@ -61,6 +61,24 @@ $cases['possibly-sent-capacity-retry'] = static function () use ($new, $claims, 
     same([false, 'uncertain', 'prior_attempt', 'possibly_sent'],
         [$retry !== null, $current->state, $current->safe_code, $current->attempt['send_state']],
         'A legacy capacity deferral preserves possible send evidence and gives no worker another claim');
+};
+$cases['capacity-deferral-limit'] = static function () use ($new, $claims, $clock): void {
+    $op = $new('deferral-limit.example.com');
+    [$worker] = $claims->claim($op->id);
+    $op = $claims->finish($worker, holdReason: 'staff_review_required');
+    for ($i = 0; $i < 7; $i++) {
+        if ($op->state === 'held') {
+            $claims->locked($op->id, static function (Operation $held) use ($clock): void {
+                AcquisitionResult::admit($held, AcquisitionAdmission::StaffRelease, AcquisitionResult::revision($held),
+                    $held->acquisitionAttemptFacts()->token, $clock,
+                    static fn () => $held->update(['state' => 'queued', 'safe_code' => null]))->requireApplied();
+            });
+        }
+        [$worker] = $claims->claim($op->id);
+        $op = $claims->defer($worker);
+    }
+    same(['held', null, 6, true], [$op->state, $op->lease_expires_at, count($op->attempt['capacity_deferrals']),
+        OperationAttempts::releasedUnsent($op->acquisitionAttemptFacts())], 'Capacity refusal retires the worker without exceeding six deferrals');
 };
 $cases['stale-claim-evidence'] = static function () use ($new, $engine, $preflight, $writer): void {
     $op = $new('stale-claim.example.com');

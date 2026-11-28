@@ -67,7 +67,15 @@ final class TransferPolling
     public static function readUntil(Operation $op): ?int
     {
         $key = AcquisitionAttempt::key($op->action);
-        return $key ? OperationAttempts::sealed((int) $op->id, $key)?->readUntil?->getTimestamp() : null;
+        $facts = $key ? OperationAttempts::sealed((int) $op->id, $key) : null;
+        if ($facts?->readUntil === null) { return null; }
+        try {
+            $attempt = AcquisitionAttempt::of((int) $op->id, $op->action);
+            return $attempt?->sealed() && $attempt->facts->token == $facts->token
+                ? $attempt->facts->readUntil?->getTimestamp() : null;
+        } catch (\DomainException|\Illuminate\Contracts\Encryption\DecryptException|\JsonException) {
+            return null;
+        }
     }
 
     /** Unix seconds for both the dispatcher and staff. Local reservations are never a registrar observation. */

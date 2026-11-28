@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\{Auth, DB};
 use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationAttempts;
 use Paymenter\Extensions\Servers\Domains\Services\{ReconciliationEvidence, Runtime, RuntimeWork, StaffOperationReview, StaffOperations, TransferInputs};
 
 $nativeSuccessful = false;
@@ -29,18 +30,29 @@ Operation::updated(static function (Operation $row) use (&$atSeal, &$atClaim): v
         $atSeal = null;
     }
 });
-$priceTransfers = [];
-foreach (['before claim', 'before seal', 'after capacity deferral'] as $phase) {
+$newPaidTransfer = static function (string $label) use ($user, $transferProduct): Operation {
     $cart = commerceCart($user);
-    $domainName = placeholderComFixtureName('live-expired-'.str_replace(' ', '-', $phase).'-placeholder.com');
+    $domainName = placeholderComFixtureName('live-'.str_replace(' ', '-', $label).'-placeholder.com');
     commerceAdd($cart, $transferProduct, $domainName);
     commerceCheckout($user, $cart)->assertHasNoErrors();
-    $expired = Domain::where('domain', $domainName)->sole()->operations()->sole();
-    App\Helpers\ExtensionHelper::addPayment($expired->invoice_id, null, $expired->amount);
+    $order = Domain::where('domain', $domainName)->sole()->operations()->sole();
+    App\Helpers\ExtensionHelper::addPayment($order->invoice_id, null, $order->amount);
     $request = Illuminate\Http\Request::create('/code', 'POST', ['transfer_code' => 'SyntheticOnly']);
     $request->setUserResolver(fn () => $user);
-    app(TransferInputs::class)->submitCode($request, $expired->id);
-    $priceTransfers[$phase] = $expired->fresh();
+    app(TransferInputs::class)->submitCode($request, $order->id);
+    return $order->fresh();
+};
+$priceTransfers = [];
+foreach (['before claim', 'before seal', 'after capacity deferral'] as $phase) {
+    $priceTransfers[$phase] = $newPaidTransfer('expired '.$phase);
+}
+$cutoffOrders = [];
+foreach (['full budget', 'short budget', 'wire refusal'] as $case) {
+    $setTime($clock->now()->modify('+61 seconds'));
+    $reset();
+    Auth::setUser($staff);
+    installedOfferEvidence($binding, $clock, true);
+    $cutoffOrders[$case] = $newPaidTransfer('cutoff '.$case);
 }
 $priceResults = [];
 Auth::setUser($staff);
@@ -126,4 +138,38 @@ foreach ($priceTransfers as $phase => $order) {
 }
 same(array_fill_keys(['before claim', 'before seal', 'after capacity deferral'], [['held', 'registrar_price_increased', 0, true], ['sent', 1, true]]),
     $priceResults, 'An expired price Release preserves funding for the next audited Release '.json_encode($priceResults, JSON_THROW_ON_ERROR));
+
+$cutoffResults = [];
+foreach ($cutoffOrders as $case => $order) {
+    $cutoff = TransferInputs::deadline($order, $clock->now());
+    $setTime($cutoff->modify($case === 'short budget' ? '-24 seconds' : '-25 seconds'));
+    Auth::setUser($staff);
+    installedOfferEvidence($binding, $clock, true);
+    DB::table('domains_runtime_turns')->where('server_id', $server->id)->update(['finished_at' => $clock->now()->getTimestamp()]);
+    $transferState->name = $order->domain->domain;
+    $reset();
+    if ($case === 'wire refusal') {
+        config(['domains.provider_send_guard' => static function ($registrar, $environment, $command) use ($setTime, $cutoff): void {
+            if ($command === 'TP_CreateOrder') {
+                $setTime($cutoff);
+                throw new \RuntimeException('Synthetic refusal before cURL');
+            }
+        }]);
+    }
+    try {
+        (new RunOperation($order->id))->handle(app(RuntimeWork::class));
+    } finally {
+        config(['domains.provider_send_guard' => null]);
+    }
+    $order->refresh();
+    $facts = $order->acquisitionAttemptFacts();
+    $proof = $facts ? OperationAttempts::testCapacityRefusal($facts) : null;
+    $cutoffResults[$case] = [$order->state, $case === 'full budget' ? null : $order->safe_code,
+        $purchases(), $facts?->sealed(), $proof !== null];
+}
+same([
+    'full budget' => ['uncertain', null, 1, true, false],
+    'short budget' => ['held', 'transfer_setup_review_required', 0, false, false],
+    'wire refusal' => ['held', 'transfer_setup_review_required', 0, true, true],
+], $cutoffResults, 'Transfer cutoff keeps a full request budget and retains a physical refusal: '.json_encode($cutoffResults, JSON_THROW_ON_ERROR));
 $nativeSuccessful = true;

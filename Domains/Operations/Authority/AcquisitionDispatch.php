@@ -48,25 +48,28 @@ final readonly class AcquisitionDispatch
             $now = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'));
             if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $attempt) !== AcquisitionAuthority::FUNDS_PROCEED
                 || $this->authority->expire($op, $now)) { return null; }
+            $reason = null;
             try {
                 if ($failure) { throw $failure; }
+                $requestUntil = $now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds');
                 $cutoff = $op->action === 'transfer' ? TransferInputs::deadline($op, $now) : null;
-                if ($op->action === 'transfer' && ($cutoff === null || $cutoff <= $now)) {
-                    throw new WriteHeld('transfer_setup_review_required');
+                $window = $continuation->window ?? throw new \DomainException('Missing acquisition window.');
+                if ($op->action === 'transfer' && ($cutoff === null || min($cutoff, $window->inputCutoff ?? $cutoff) < $requestUntil)) {
+                    $reason = 'transfer_setup_review_required';
+                    throw new \DomainException('Transfer input deadline is unavailable.');
                 }
                 $ready->requireCurrent($binding, AcquisitionAuthority::query($op, $domain), AcquisitionAuthority::payloadDigest($op), $now);
-                $window = $continuation->window ?? throw new \DomainException('Missing acquisition window.');
                 if (!$window->fits($now)) { throw new WriteHeld($window->blockedReason($now)); }
-                $lastSend = min($window->end,
+                $lastSend = min($window->effectiveEnd(),
                     $entry->setTimezone(new \DateTimeZone('UTC'))->modify('+'.(ExecuteOperation::EXECUTION_SECONDS - ExecuteOperation::FINISH_SECONDS).' seconds'));
+                $dispatchUntil = min($lastSend, $ready->validUntil, $wire?->deadline ?? $lastSend, $cutoff ?? $lastSend);
                 if ($ready->observedAt < $window->start || $op->request_fingerprint !== AcquisitionAuthority::digest($op, $domain)
                     || !$op->lease_expires_at || $op->lease_expires_at < $now->modify('+'.(ExecuteOperation::REQUEST_SECONDS + ExecuteOperation::CLEANUP_SECONDS).' seconds')
-                    || $lastSend < $now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')
-                    || $ready->validUntil < $now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')) {
+                    || $dispatchUntil < $requestUntil) {
                     throw new \DomainException('Insufficient dispatch lease or changed request.');
                 }
             } catch (ReadDeferred $error) {throw $error;} catch (\Throwable $error) {
-                $reason=$error instanceof WriteHeld?$error->reason:
+                $reason ??= $error instanceof WriteHeld ? $error->reason :
                     ($error instanceof RuntimeIneligible && $error->reason === RuntimeReason::ProcessingOff
                         ? 'processing' : 'seal_authority_invalid');
                 if (AcquisitionAuthority::retirePreSeal($op, $attempt, $reason, $now)) {
@@ -74,8 +77,7 @@ final readonly class AcquisitionDispatch
                 }
                 return null;
             }
-            $until = min($lastSend, $op->lease_expires_at, $ready->validUntil, $wire?->deadline ?? $lastSend, $cutoff ?? $lastSend, $window->effectiveEnd());
-            $this->persistSeal($op, $claimed, $ready, $until, $paid, $window);
+            $this->persistSeal($op, $claimed, $ready, min($dispatchUntil, $op->lease_expires_at), $paid, $window);
             // A status notification starts its own delivery backoff once the purchase is sealed.
             DB::table('domains_runtime_operations')->where('operation_id', $op->id)->update(['due_at' => 0, 'attempts' => 0]);
             return $op;

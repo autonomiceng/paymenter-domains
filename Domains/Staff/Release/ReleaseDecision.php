@@ -25,10 +25,13 @@ final class ReleaseDecision
         if($f->state!=='held'||!in_array($f->action,self::ACTIONS,true)||$f->code==='contact_details_required'||$f->balancePending||$f->pausedRelease){return ReleaseRefusal::OriginalRecovery;}
         if(in_array($f->code,BalanceRetries::REVIEW_CODES,true)&&$f->balanceReview!==null){return ReleaseRefusal::PurchaseProof;}
         if(in_array($f->code,ContactProfileHold::HOLDS,true)&&$f->contactBlocked!==null){return ReleaseRefusal::ContactStep;}
+        $enom=$f->registrar==='enom'&&in_array($f->environment,['test','live'],true);
         if ($f->purchaseRefused && !in_array($f->code, ['transfer_not_registered', 'transfer_setup_review_required'], true)) {
+            if ($f->registrar === 'enom' && in_array($f->code, self::DEPLOYMENT, true) && (!$enom || !$f->deployment)) {
+                return ReleaseRefusal::OriginalRecovery;
+            }
             return ReleaseProof::Unsent;
         }
-        $enom=$f->registrar==='enom'&&in_array($f->environment,['test','live'],true);
         if(!$f->balanceRetry&&!$f->contactRetry&&!in_array($f->code,self::ORDINARY,true)&&!self::renewalAdmission($f->action,$f->code)){
             $deployed=in_array($f->action,['register','transfer'],true)&&$enom&&$f->deployment;
             $renewalCap=$f->action==='renew'&&$enom&&$f->code===self::RENEWAL_CAP&&$f->renewalCap;

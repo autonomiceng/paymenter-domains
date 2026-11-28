@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{OperationActions,Request
 use Paymenter\Extensions\Servers\Domains\Data\RenewalCode;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionLane, AcquisitionResult};
-use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
+use Paymenter\Extensions\Servers\Domains\Staff\Release\{HeldRelease, ReleaseDecision, ReleaseFacts, ReleaseProof, ReleaseRefusal};
 
 // staff-release-decision-test.php decides every code from releaseFixtureFacts(); here the real request supplies the same facts,
 // then one code per path runs the notice, the page action and the writer.
@@ -77,6 +77,14 @@ foreach($paths as $kind=>$samples){
     commerceReject(fn()=>$run($row->fresh(),'release'));
 }
 same(count($codes)*6,$facts,'Every code was read natively for each kind and setting');
+foreach (['register', 'transfer'] as $action) {
+    foreach ([false, true] as $enabled) {
+        $refusedPurchase = new ReleaseFacts('held', $action, 'pre_send_interrupted', 'enom', 'test',
+            deployment: $enabled, purchaseRefused: true);
+        same($enabled ? ReleaseProof::Unsent : ReleaseRefusal::OriginalRecovery, ReleaseDecision::decide($refusedPurchase),
+            'Enom needs the matching acquisition deployment even with proved no-send evidence');
+    }
+}
 same(0,$state->writes,'Local recovery never sends');
 echo 'Staff release witnesses passed: '.json_encode($offered)."\n";
 $nativeSuccessful=true;

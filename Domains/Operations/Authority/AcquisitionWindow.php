@@ -27,13 +27,12 @@ final readonly class AcquisitionWindow
     public function fits(\DateTimeImmutable $now): bool
     {
         return $this->start <= $now
-            && $now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds') <= $this->end
-            && ($this->inputCutoff === null || $now < $this->inputCutoff);
+            && $now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds') <= $this->effectiveEnd();
     }
 
     public function blockedReason(\DateTimeImmutable $now): string
     {
-        return $this->inputCutoff !== null && $now >= $this->inputCutoff
+        return $this->inputCutoff !== null && $now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds') > $this->inputCutoff
             ? 'transfer_setup_review_required' : $this->expiryReason;
     }
 

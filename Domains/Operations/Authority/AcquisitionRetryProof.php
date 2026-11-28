@@ -224,6 +224,13 @@ final class AcquisitionRetryProof
             return false;
         }
         $prior = $op->acquisitionAttemptFacts();
+        if ($op->safe_code === 'write_rate_limited' && $prior !== null) {
+            $window = AcquisitionResult::window($op, $lock);
+            if ($window?->origin === AcquisitionAdmission::TestCapacity->value && $window->expiryReason === $op->safe_code) {
+                // The released attempt may still be the cap refusal that opened this window.
+                return self::releasedForReadmission($op, $prior, $lock) && AcquisitionResult::ownsAttempt($op, $window, $prior, $lock);
+            }
+        }
         if (in_array($op->safe_code, WriteHeld::FINAL_REFUSALS, true)) {
             // Staff can review fresh availability after a capacity release whose retry never reached purchase.
             if ($prior === null || $op->action !== 'register' || $op->safe_code !== 'name_unavailable'

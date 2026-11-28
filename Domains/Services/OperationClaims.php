@@ -432,7 +432,7 @@ final class OperationClaims
             $now = $this->clock->now();
             if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $worker) !== AcquisitionAuthority::FUNDS_PROCEED
                 || !$op->lease_expires_at || $op->lease_expires_at <= $now) { return $op; }
-            $release = $savedContact && $deferrals >= 6
+            $release = $deferrals >= 6
                 ? $this->attempts->releasePreSeal($claimed->acquisitionWorker)
                 : $this->attempts->deferClaim($claimed->acquisitionWorker);
             if ($release !== Transition::Applied) { return $op; }
@@ -452,17 +452,17 @@ final class OperationClaims
             return $op;
         });
     }
-    /** A TEST counter refusal proves this worker did not cross the provider boundary. */
-    public function holdTestCallCap(Operation $claimed): Operation
+    /** Record the counter refusal, or leave completion to the caller when the sealed purchase lacks physical no-send proof. */
+    public function holdTestCallCap(Operation $claimed): ?Operation
     {
-        return $this->locked((int)$claimed->id,function($op)use($claimed):Operation {
+        return $this->locked((int)$claimed->id,function($op)use($claimed):?Operation {
             $worker = AcquisitionAttempt::lockedClaim($op, $claimed);
             if ($worker === null || AcquisitionAttempt::key($op->action) === null) { return $op; }
             $attempt=$op->attempt??[];$sealed=($attempt['seal']??null)==='sealed';
             try { AcquisitionDispatch::requireNoSendEvidence($op); } catch (\DomainException) { return $op; }
             if($sealed) {
                 if(($attempt['send_state']??null)!=='possibly_sent'||!isset($attempt['dispatch_attempted_at'],$attempt['authorized_cost'],$attempt[$op->action==='transfer'?'transfer_admission':'registration_admission'])) { return $op; }
-                if(!EnomTestCalls::purchaseUnconsumed($op->account_fingerprint,(int)$op->id)) { return $op; }
+                if(!EnomTestCalls::purchaseUnconsumed($op->account_fingerprint,(int)$op->id)) { return null; }
             } elseif(!AcquisitionRetryProof::unsealed($op)||($attempt['send_state']??null)!=='definitely_unsent') { return $op; }
             $continuation = AcquisitionResult::continuation($op, true);
             $now = $this->clock->now();
@@ -481,9 +481,14 @@ final class OperationClaims
             'dispatch_attempted_at' => $sealed ? $attempt['dispatch_attempted_at'] : null, 'authorized_cost' => $sealed ? $attempt['authorized_cost'] : null];
         if ($this->attempts->refuseTestCapacity($token, $proof, $balance) !== Transition::Applied) { return $op; }
         $op->reloadAcquisitionAttempt();
-        $reason = $op->action === 'transfer' ? 'enom_test_transfer_call_cap' : 'enom_test_call_cap';
-        $op->update(['state' => 'held', 'safe_code' => $balance ? 'write_rate_limited' : $reason]);
-        if ($balance) { BalanceRetries::held($op, $now); }
+        $reason = match (true) {
+            ExecutionWindow::pastTransferCutoff($op, $now) => 'transfer_setup_review_required',
+            $balance => 'write_rate_limited',
+            $op->action === 'transfer' => 'enom_test_transfer_call_cap',
+            default => 'enom_test_call_cap',
+        };
+        $op->update(['state' => 'held', 'safe_code' => $reason]);
+        if ($reason === 'write_rate_limited') { BalanceRetries::held($op, $now); }
         else { AcquisitionResult::schedule($op, null, null); }
         return $op;
     }
