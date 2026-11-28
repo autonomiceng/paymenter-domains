@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\{Builder, Model};
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementAttempt;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AttemptFacts, AttemptToken, OperationAttempts, OperationSchema};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionResultSchema, AttemptFacts, AttemptToken, OperationAttempts, OperationSchema};
 
 class Operation extends Model
 {
@@ -241,6 +241,17 @@ class Operation extends Model
             return ($row['state'] ?? null) === 'running' && $facts->current && $facts->claimUntil !== null
                 ? $this->asDateTime($facts->claimUntil)->toImmutable() : null;
         })->withoutObjectCaching();
+    }
+
+    protected function performInsert(Builder $query)
+    {
+        if (AcquisitionAttempt::key((string) $this->action) === null) { return parent::performInsert($query); }
+
+        return $this->getConnection()->transaction(function () use ($query): bool {
+            if (!parent::performInsert($query)) { return false; }
+            AcquisitionResultSchema::insert((int) $this->id);
+            return true;
+        });
     }
 
     protected function performUpdate(Builder $query)

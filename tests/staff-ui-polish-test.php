@@ -11,6 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\Li
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ListOperations;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{PaidUncertainty,RequestFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResultSchema;
 use Paymenter\Extensions\Servers\Domains\Services\{NativePaidHooks,OwnedDomains};
 staffPanel();[$held,$active,$uncertain]=staffData();
 $viewer=staffUser([Staff::VIEW]);Auth::setUser($viewer);
@@ -76,7 +77,7 @@ same('Paused. The invoice-paid listener is missing. Scheduled checks still pick 
 // An empty table says what fills it; a search that hid the rows says so instead.
 Livewire::actingAs($viewer)->test(ListDomains::class)->set('tableSearch','no-such-name')->assertSee('No domains match')->assertDontSee('No domains yet')->assertDontSee('after a customer orders');
 Livewire::actingAs($viewer)->test(ListOperations::class)->set('tableSearch','no-such-name')->assertSee('No requests match')->assertDontSee('Requests show here');
-DB::beginTransaction();DB::table('domains_operations')->delete();DB::table('domains_domains')->delete();
+DB::beginTransaction();DB::table(AcquisitionResultSchema::TABLE)->delete();DB::table('domains_operations')->delete();DB::table('domains_domains')->delete();
 Livewire::actingAs($viewer)->test(ListDomains::class)->assertSee('No domains yet')->assertSee('They show here after a customer orders one.');
 Livewire::actingAs($viewer)->test(ListOperations::class)->assertSee('No registrar requests');
 DB::rollBack();

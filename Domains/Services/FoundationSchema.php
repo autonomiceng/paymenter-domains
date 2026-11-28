@@ -8,7 +8,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Money\Allocations\RenewalAllocationSchema;
 use Illuminate\Database\Schema\Blueprint;
 use Paymenter\Extensions\Servers\Domains\Installation\{Installer, TableSchema};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionResultSchema, OperationSchema};
 
 /** Holdings and registrar accounts. */
 final class FoundationSchema extends TableSchema
@@ -71,9 +71,10 @@ final class FoundationSchema extends TableSchema
      */
     public static function install(): void
     {
-        self::requireWhole([...self::tables(), ...OperationSchema::tables(), ...RenewalAllocationSchema::tables()], Installer::recovering());
+        self::requireWhole([...self::tables(), ...OperationSchema::tables(), ...AcquisitionResultSchema::tables(), ...RenewalAllocationSchema::tables()], Installer::recovering());
         parent::install();
         OperationSchema::install();
+        AcquisitionResultSchema::install();
         RenewalAllocationSchema::install();
     }
 }

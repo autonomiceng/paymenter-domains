@@ -7,9 +7,62 @@ use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\{Artisan,DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Domains;
-use Paymenter\Extensions\Servers\Domains\Installation\{SchemaVerifier,Verification};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema;
+use Paymenter\Extensions\Servers\Domains\Jobs\{ExecuteOperation, RunOperation};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Installation\{Registry,SchemaVerifier,Verification};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionResultSchema,OperationSchema};
 use Paymenter\Extensions\Servers\Domains\Services\{AdoptionSchema,Installation,DomainAuditSchema};
+
+function proveAcquisitionQueueDrain(Closure $upgrade): void
+{
+    $name = 'acquisition-upgrade-fixture';
+    $connection = DB::getDefaultConnection();
+    $database = config('database.connections.'.$connection);
+    $defaultQueue = config('queue.default');
+    $database['prefix'] = DB::connection()->getTablePrefix().'wake_';
+    config([
+        'database.connections.'.$name => $database,
+        'queue.connections.'.$name => ['driver' => 'database', 'connection' => $name, 'table' => 'operation_jobs'],
+    ]);
+    $queue = DB::connection($name);
+    $schema = $queue->getSchemaBuilder();
+    $schema->create('operation_jobs', static function (Blueprint $table): void {
+        $table->id();
+        $table->text('payload');
+        $table->unsignedInteger('available_at');
+        $table->unsignedInteger('reserved_at')->nullable();
+    });
+    $jobs = $queue->table('operation_jobs');
+    $refuse = static function (string $case) use ($upgrade): void {
+        try { $upgrade(); throw new LogicException('Upgrade accepted '.$case); }
+        catch (DomainException) {}
+        expect(!Schema::hasTable(AcquisitionResultSchema::TABLE)
+            && !DB::table('migrations')->where('migration', Registry::ACQUISITION_RESULTS)->exists(),
+            'Queue refusal leaves the result table and migration record absent for '.$case);
+    };
+    try {
+        config(['queue.default' => 'redis']);
+        $refuse('a Redis queue');
+        config(['queue.default' => $name]);
+        foreach ([
+            ['ready job', RunOperation::class, time(), null],
+            ['delayed job', ExecuteOperation::class, time() + 3600, null],
+            ['reserved job', RunOperation::class, time(), time()],
+        ] as [$case, $command, $available, $reserved]) {
+            $id = $jobs->insertGetId(['payload' => json_encode(['displayName' => $command, 'data' => ['commandName' => $command]], JSON_THROW_ON_ERROR),
+                'available_at' => $available, 'reserved_at' => $reserved]);
+            $refuse($case);
+            $row = (clone $jobs)->where('id', $id);
+            expect($row->exists(), 'The installer preserves the '.$case);
+            $row->delete();
+        }
+        $upgrade();
+    } finally {
+        $schema->drop('operation_jobs');
+        DB::purge($name);
+        config(['queue.default' => $defaultQueue]);
+    }
+}
 
 same(getenv('DB_SOCKET'), DB::connection()->getConfig('unix_socket'), 'Resolved socket belongs to this disposable fixture');
 same(getenv('DB_DATABASE'), DB::connection()->getDatabaseName(), 'Resolved database belongs to this disposable fixture');
@@ -38,12 +91,14 @@ if ($requestedPrefix !== '') {
 $native = Schema::getTableListing($database, false); sort($native);
 expect(!array_filter($native, static fn ($name) => str_contains($name, 'domains_')), 'Fresh database has no Domains tables');
 $entry = new Domains([]);
+same(realpath(getenv('DOMAINS_SCHEMA_PACKAGE').'/Domains.php'), (new ReflectionClass($entry))->getFileName(),
+    'The MariaDB lifecycle loads the verified extension package');
 $entry->installed();
 $tables = Schema::getTableListing($database, false); sort($tables);
 $owned = array_values(array_diff($tables, $native));
 $prefix = DB::connection()->getTablePrefix();
 $registered = array_map(static fn (string $table): string => $prefix.$table, Installation::expectedTables()); sort($registered);
-same(45, count($registered), 'The registry lists the complete Domains schema');
+same(46, count($registered), 'The registry lists the complete Domains schema');
 same($registered, $owned, 'Fresh native install created exactly the registered Domains schema: '
     .json_encode(['missing' => array_values(array_diff($registered, $owned)), 'extra' => array_values(array_diff($owned, $registered))]));
 foreach ($owned as $table) {
@@ -68,6 +123,54 @@ same($tables, $after, 'No leftover reference tables after fresh/reinstall/upgrad
 foreach (array_keys($references) as $reference) {
     expect(!in_array($reference, $after, true), 'Every observed reference was removed');
 }
+// Reproduce the baseline inventory and history before the targeted upgrade. The guard
+// refuses a retained acquisition, then installs only after its disposable work is retired.
+Schema::drop(AcquisitionResultSchema::TABLE);
+DB::table('migrations')->where('migration', Registry::ACQUISITION_RESULTS)->delete();
+$queueDefault = config('queue.default');
+config(['queue.default' => 'database']);
+$fixture = DB::table('domains_operations')->insertGetId([
+    'server_id' => 1, 'registrar_key' => 'enom', 'domain_id' => 1, 'service_id' => 1,
+    'operation_key' => 'old-demo-acquisition', 'action' => 'register', 'state' => 'queued', 'currency' => 'USD',
+]);
+try { $entry->upgraded('0.0.1'); throw new LogicException('Upgrade accepted a retained acquisition'); }
+catch (DomainException $error) { expect(str_contains($error->getMessage(), 'retire the demo acquisition fixtures'), 'Retained acquisition stops upgrade'); }
+expect(!Verification::current() && !Schema::hasTable(AcquisitionResultSchema::TABLE), 'Refusal leaves the baseline shape and no current receipt');
+expect(DB::table('domains_operations')->where('id', $fixture)->exists(), 'The installer leaves the reset to the operator');
+DB::table('domains_runtime_operations')->insert(['operation_id' => $fixture]);
+DB::table('domains_operations')->where('id', $fixture)->delete();
+try { $entry->upgraded('0.0.1'); throw new LogicException('Upgrade accepted stranded work'); }
+catch (DomainException $error) { expect(str_contains($error->getMessage(), 'retire the demo acquisition fixtures'), 'Stranded work stops upgrade'); }
+DB::table('domains_runtime_operations')->where('operation_id', $fixture)->delete();
+proveAcquisitionQueueDrain(static fn () => $entry->upgraded('0.0.1'));
+config(['queue.default' => $queueDefault]);
+expect(Schema::hasTable('domains_profile_operations'), 'The upgrade keeps the installed NameSilo contact ledger');
+expect(Verification::current(), 'The retained installer verified the upgrade before returning');
+same(1, DB::table('migrations')->where('migration', Registry::ACQUISITION_RESULTS)->count(), 'The targeted upgrade was recorded once');
+same($before, $snapshot(), 'The baseline upgrade retains unrelated rows and reaches the fresh shape');
+
+$server = \App\Models\Server::create(['name' => 'Result creation fixture', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]);
+$account = Account::withVerifiedBindingWrite(static fn () => Account::create([
+    'server_id' => $server->id, 'registrar_key' => 'enom', 'environment' => 'test', 'stable_identity' => 'result-fixture',
+]));
+$binding = $account->only(['server_id', 'registrar_key', 'account_fingerprint']);
+$domain = Domain::create($binding + [
+    'service_id' => 1, 'user_id' => 1, 'domain' => 'result-fixture.example',
+    'sld' => 'result-fixture', 'tld' => 'example', 'status' => 'registration_pending',
+]);
+$beforeCreation = $snapshot();
+DB::beginTransaction();
+try {
+    $acquisition = Operation::create($binding + [
+        'domain_id' => $domain->id, 'service_id' => $domain->service_id, 'authority_generation' => $domain->authority_generation,
+        'operation_key' => 'result-creation', 'action' => 'register', 'state' => 'awaiting_payment', 'currency' => 'USD',
+    ]);
+    same(1, DB::table(AcquisitionResultSchema::TABLE)->where('operation_id', $acquisition->id)->count(),
+        'A never-claimed acquisition immediately owns one result');
+} finally {
+    DB::rollBack();
+}
+same($beforeCreation, $snapshot(), 'Operation and result creation roll back together');
 // Exercise finally cleanup on a real metadata mismatch as well as successful verification.
 Schema::table('domains_adoptions', static fn ($t) => $t->string('unexpected')->nullable());
 try { AdoptionSchema::verify(); throw new LogicException('Schema drift accepted'); }
@@ -119,5 +222,5 @@ expect(str_starts_with($version, '11.4.5-MariaDB'), 'Pinned real MariaDB version
 echo json_encode(['complete' => true, 'server_version' => $version, 'prefix' => $prefix,
     'retained_tables' => count($owned), 'verified_tables' => count($verified), 'reference_creates' => count($references),
     'implicit_timestamp_defaults_off' => true, 'on_update_drift_refused' => true,
-    'fresh' => true, 'reinstall' => true, 'upgrade' => true, 'cleanup_success_and_failure' => true])."\n";
+    'fresh' => true, 'reinstall' => true, 'upgrade' => true, 'acquisition_upgrade' => true, 'cleanup_success_and_failure' => true])."\n";
 $nativeSuccessful = true;

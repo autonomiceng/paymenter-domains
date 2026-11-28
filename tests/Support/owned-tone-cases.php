@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Customer label/tone unit matrix.
 declare(strict_types=1);
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResultSchema;
 (function () use ($newTransfer, $owners, $clock): void {
     $op = $newTransfer(placeholderComFixtureName('tone-matrix-placeholder.com'), 0, false, false);
     $base = $op->domain;
@@ -44,6 +45,7 @@ declare(strict_types=1);
         same(['Action required', 'warn', 'Finish setup'], [$dto->status, $dto->tone, $dto->statusReason], 'D3 setup overrides processing tone: '.$reason);
     }
     // Adoption expiry is a warning at the boundary, without asserting the registrar's outcome.
+    \Illuminate\Support\Facades\DB::table(AcquisitionResultSchema::TABLE)->where('operation_id', $op->id)->delete();
     \Illuminate\Support\Facades\DB::table('domains_operations')->where('id', $op->id)->delete();
     \Paymenter\Extensions\Servers\Domains\Services\AdoptionSchema::install();
     \Paymenter\Extensions\Servers\Domains\Services\HistoryLinkSchema::install();

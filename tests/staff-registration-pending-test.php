@@ -9,6 +9,7 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResultSchema;
 // Saving global settings reloads Paymenter settings from the table.
 App\Models\Setting::updateOrCreate(['key'=>'company_name','settingable_type'=>null,'settingable_id'=>null],['value'=>'Example Hosting','type'=>'string','encrypted'=>false]);config(['settings.company_name'=>'Example Hosting']);
 
@@ -70,6 +71,7 @@ $pending->update(['observation'=>[]]);ObservationRecords::hold($pending->fresh()
 Livewire::actingAs($metadataViewer)->test(ViewDomain::class,['record'=>$pending->id])
     ->assertSee('Registrar records can sync after registration is confirmed.')->assertSee('Check request #'.$request->id);
 DB::table('domains_observation_work')->where('id',$pendingWork)->delete();
+DB::table(AcquisitionResultSchema::TABLE)->where('operation_id', $request->id)->delete();
 DB::table('domains_operations')->where('id',$request->id)->delete(); DB::table('domains_domains')->where('id',$pending->id)->delete(); Auth::setUser($viewer);
 
 echo "Pending registration staff evidence passed.\n"; $nativeSuccessful=true;

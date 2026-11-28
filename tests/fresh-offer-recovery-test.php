@@ -14,6 +14,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{Runtime};
 final class InitializationInterrupted extends RuntimeException {}
 $entry = new Domains; $commit = false; $competing = false;
 $interrupts = ['create index "domains_domains_user_id_index"', 'create table "domains_operations"',
+    'create table "domains_acquisition_results"',
     'create table "domains_observation_queues"', 'create table "domains_reminder_deliveries"',
     'create table "domains_audit"', 'create table "domains_dns_templates"',
     'create table "domains_public_dns_pool"', 'create table "domains_public_rdap_pool"',
@@ -103,7 +104,7 @@ same('active', CatalogueActivation::routeState()['state'], 'Retry resumes the pr
 same(2, CatalogueActivation::generation(), 'Interrupted retries grant one activation generation');
 $entry->installed(); same(2, CatalogueActivation::generation(), 'Completed retry is idempotent');
 $tables=Registry::tables();
-same(45,count($tables),'Fresh Domains-owned table inventory');
+same(46,count($tables),'Fresh Domains-owned table inventory');
 expect(Verification::current(), 'Completed install keeps a current verification record');
 $columns=array_sum(array_map(fn($table)=>count(Schema::getColumnListing($table)),$tables));
 echo count($tables)." owned tables, ".$columns." columns\n";
