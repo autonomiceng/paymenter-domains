@@ -269,6 +269,7 @@ final class OperationReconciliation
             }
             $publish?->__invoke($op, $domain, $all, $funding, $server, $account, $permit, $writer);
             $writer->closeRead($permit->token);
+            $op->reloadAcquisitionAttempt();
             $check->publishAcquisition($op, $permit);
             return $op;
         });

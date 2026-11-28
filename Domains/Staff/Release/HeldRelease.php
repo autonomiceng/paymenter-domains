@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Staff\Requests\RequestReads;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceRetries,ComplimentaryInvoices,ContactDetails,ContactProfileHold,ContactRecovery,ContactSetup,EnomTestRegistration,EnomTestRenewal,EnomTestTransfer,HoldingLocks,OperationClaims,RefundProof,RenewalFunding,RenewalStop,StaffOperationReview,StaffOperationWrites,TransferInputs};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission,AcquisitionAdmissionOutcome,AcquisitionAttempt,AcquisitionLane,AcquisitionResult,AcquisitionRetryProof,OperationWriter,StepKey};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission,AcquisitionAdmissionOutcome,AcquisitionAttempt,AcquisitionLane,AcquisitionLifecycle,AcquisitionResult,AcquisitionRetryProof,OperationWriter,StepKey};
 /** Releases a held request back to the queue. The offer and the locked writer run the same check over complete native facts. */
 final class HeldRelease
 {
