@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Contracts\TransferPoller;
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence, Evidence, RequestBudget, RequestContext, RequestOrigin, TransferStatus};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter, ReadToken, RetainedAcquisition};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionRetryProof, OperationWriter, ReadToken};
 use Paymenter\Extensions\Servers\Domains\Registrars\{Enom, NameSilo};
 use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementCorrections;
 use Paymenter\Extensions\Servers\Domains\Transfer\Execution\TransferObservation;
@@ -47,7 +47,8 @@ final class OperationReconciliation
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account, $followup);
                 $attempt = AcquisitionRead::originalEvidence($op, $domain, $binding);
-                if (!$attempt || !RetainedAcquisition::adoptable($op, $this->clock->now())) {
+                $sealed = AcquisitionAttempt::of((int) $op->id, $op->action, true);
+                if (!$attempt || !$sealed?->sealed()) {
                     $this->unresolved($op, RegistrarCheck::ADOPTION_REFUSED);
                     $check->adoptionRefused = true;
                     return null;
@@ -67,14 +68,10 @@ final class OperationReconciliation
                 }
                 $requestedNameservers = AcquisitionRead::requestedNameservers($op);
                 $deadline = $now + self::READ_SECONDS;
-                if ($watch && !$manual) { $deadline = min($deadline, TransferPolling::cutoff($op)); }
-                $until = new \DateTimeImmutable('@'.$deadline);
-                $sealed = RetainedAcquisition::adopt($op, $this->attempts, $this->clock->now());
-                if (!$sealed?->sealed()) {
-                    $this->unresolved($op, RegistrarCheck::ADOPTION_REFUSED);
-                    $check->adoptionRefused = true;
-                    return null;
+                if ($watch && !$manual) {
+                    $deadline = min($deadline, TransferPolling::cutoff($op) ?? throw new \DomainException('Missing sealed transfer cutoff.'));
                 }
+                $until = new \DateTimeImmutable('@'.$deadline);
                 if ($deadline <= $now || $sealed->facts->reading($this->clock->now())) { return null; }
                 if ($watch) { TransferPolling::reserve($op, $now); $op->refresh(); }
                 $stamp = AcquisitionRead::stamp($op, $domain);
@@ -322,6 +319,7 @@ final class OperationReconciliation
     private function eligible(Operation $op): bool
     {
         if (!in_array($op->action, ['register', 'transfer'], true)) { return false; }
+        if (AcquisitionRetryProof::expiredClaim($op, $this->clock->now())) { return false; }
         if ($op->state === 'running') { return !$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now(); }
         return ($op->state === 'held' && $op->safe_code === 'transfer_needs_action') || $op->state === 'uncertain' || ($op->state === 'pending'
             && ($op->attempt['registration']['financial_completion'] ?? null) === 'awaiting_unique_charge');

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-panel.php';
+require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 use App\Models\Invoice;
 use Illuminate\Support\Facades\{Auth, DB, Schema};
 use Livewire\Livewire;
@@ -251,17 +252,20 @@ foreach ([
     'renewal charge overrun'=>[true,'renew','succeeded','actual_charge_changed',$retry,120,0,[]],
 ] as $name=>[$want,$action,$state,$code,$policy,$days,$age,$attempt]) {
     $d=$row('active',null,null,null,$days); $apart($d);
-    $op=$request($d,$action,$state,['safe_code'=>$code,'policy'=>$policy,'attempt'=>$attempt,'started_at'=>now()->subDays($age)]);
+    $start=now()->subDays($age);
+    $op=$request($d,$action,$state,['safe_code'=>$code,'policy'=>$policy,'attempt'=>$attempt,'started_at'=>$start]);
+    if ($action==='transfer' && $attempt===$sentOk) { sealTransferForPolling($op, $start->getTimestamp()); }
     $inspect($d);
     $check('Alert: '.$name,$want,$open($d,$action==='renew'&&$state==='held'?'held_obligation':'operation_review',$op->id));
 }
 // A dropped alert keeps its row, and the same alert comes back when the wait runs out.
 $quiet=$row('transfer_pending',null,null); $apart($quiet);
 $quietRequest=$request($quiet,'transfer','uncertain',['safe_code'=>'reconciliation_required','policy'=>$read('pending'),'attempt'=>$sentOk,'started_at'=>now()->subDay()]);
+sealTransferForPolling($quietRequest,now()->subDay()->getTimestamp());
 $quietKey=ObligationAlerts::record($quiet,'operation_review',time()-60,(int)$quietRequest->id); $inspect($quiet);
 $check('Wait closes an older alert',false,$open($quiet,'operation_review',$quietRequest->id));
 $check('Closed alert keeps its record',1,DB::table('domains_obligation_alerts')->where('alert_key',$quietKey)->count());
-$quietRequest->forceFill(['started_at'=>now()->subDays(8)])->saveQuietly(); $inspect($quiet);
+sealTransferForPolling($quietRequest,now()->subDays(8)->getTimestamp()); $inspect($quiet);
 $check('Same alert returns when the wait runs out',[true,1],[$open($quiet,'operation_review',$quietRequest->id),DB::table('domains_obligation_alerts')->where('alert_key',$quietKey)->count()]);
 if ($wrong) { fwrite(STDERR,implode("\n",$wrong)."\n"); }
 same([],$wrong,'Every row has one status and one next step');
@@ -399,7 +403,8 @@ $accounts->update(['processing_enabled'=>true]);
 
 // A registrar-confirmed pending transfer has a scheduled read, not a staff task.
 $d=$row('transfer_pending','transfer','uncertain','reconciliation_required');$op=$d->latestAcquisition;
-$op->update(['started_at'=>now(),'attempt'=>['seal'=>'sealed'],'policy'=>['reconciliation'=>['transfer_status'=>'pending','reason'=>'transfer_pending','staff_alert'=>false]]]);
+$op->update(['policy'=>['reconciliation'=>['transfer_status'=>'pending','reason'=>'transfer_pending','staff_alert'=>false]]]);
+sealTransferForPolling($op,time());
 $d=$d->fresh();$status=DomainFacts::status($d);
 expect(!$status['act']&&!str_contains((string)$status['step'],'Check request'), 'Pending transfer never asks staff to check what the worker is watching');
 same('pending_transfer',$status['key'],'A transfer monitored by the registrar keeps its pending state');
@@ -415,7 +420,8 @@ same(null,DomainFacts::notice($d),'The domain page head names no request to chec
 expect(!DomainQueries::alerting(Domain::whereKey($d->id))->exists(),'The open alerts count leaves the automatic wait out');
 // An accepted transfer before its first status read is the same automatic wait in the sweep, the list and the count.
 $d=$row('transfer_pending','transfer','uncertain','reconciliation_required');$op=$d->latestAcquisition;
-$op->update(['started_at'=>now(),'attempt'=>['seal'=>'sealed','execution'=>['disposition'=>'accepted']],'policy'=>['reconciliation'=>['reason'=>'transfer_read_deferred','polls'=>0,'read_at'=>time()]]]);
+$op->update(['attempt'=>['seal'=>'sealed','execution'=>['disposition'=>'accepted']],'policy'=>['reconciliation'=>['reason'=>'transfer_read_deferred','polls'=>0,'read_at'=>time()]]]);
+sealTransferForPolling($op,time());
 $d=$d->fresh();$op=$op->fresh();
 same(ObligationAlerts::CLEAR,ObligationAlerts::review($op,$d->operations()->get(),$d,time()),'The sweep reads the first-poll wait as clear');
 $status=DomainFacts::status($d);

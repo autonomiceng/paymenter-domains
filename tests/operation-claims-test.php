@@ -6,11 +6,11 @@ require_once __DIR__.'/Support/fixture-cases.php';
 require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 use App\Models\Credit;
 use Illuminate\Support\Facades\{Cache, Crypt, DB};
-use Paymenter\Extensions\Servers\Domains\Data\Disposition;
+use Paymenter\Extensions\Servers\Domains\Data\{Disposition, Money};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationSchema, StepKey};
-use Paymenter\Extensions\Servers\Domains\Services\{FundsWaits, HoldingLocks, MoneyWorkSchema, PricingRule, RefundProof, Refunds, WriteAcceptance};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission, AcquisitionResult, OperationAttempts, OperationSchema, StepKey};
+use Paymenter\Extensions\Servers\Domains\Services\{FundsWaits, HoldingLocks, MoneyWorkSchema, PricingRule, RefundProof, Refunds, WriteAcceptance, WriteHeld};
 // Claim, seal, funds cutoff and send outcome cases share the one prepared claim fixture and clock. Each makes
 // its own paid native checkout; the reset restores rows, payments, attempts, listeners, cache and fakes after it.
 $cases['claims'] = static function () use ($new, $engine, $writer, $assertNoSend): void {
@@ -61,6 +61,24 @@ $cases['possibly-sent-capacity-retry'] = static function () use ($new, $claims, 
     same([false, 'uncertain', 'prior_attempt', 'possibly_sent'],
         [$retry !== null, $current->state, $current->safe_code, $current->attempt['send_state']],
         'A legacy capacity deferral preserves possible send evidence and gives no worker another claim');
+};
+$cases['capacity-deferral-limit'] = static function () use ($new, $claims, $clock): void {
+    $op = $new('deferral-limit.example.com');
+    [$worker] = $claims->claim($op->id);
+    $op = $claims->finish($worker, holdReason: 'staff_review_required');
+    for ($i = 0; $i < 7; $i++) {
+        if ($op->state === 'held') {
+            $claims->locked($op->id, static function (Operation $held) use ($clock): void {
+                AcquisitionResult::admit($held, AcquisitionAdmission::StaffRelease, AcquisitionResult::revision($held),
+                    $held->acquisitionAttemptFacts()->token, $clock,
+                    static fn () => $held->update(['state' => 'queued', 'safe_code' => null]))->requireApplied();
+            });
+        }
+        [$worker] = $claims->claim($op->id);
+        $op = $claims->defer($worker);
+    }
+    same(['held', null, 6, true], [$op->state, $op->lease_expires_at, count($op->attempt['capacity_deferrals']),
+        OperationAttempts::releasedUnsent($op->acquisitionAttemptFacts())], 'Capacity refusal retires the worker without exceeding six deferrals');
 };
 $cases['stale-claim-evidence'] = static function () use ($new, $engine, $preflight, $writer): void {
     $op = $new('stale-claim.example.com');
@@ -128,14 +146,12 @@ $cases['inherited-refund-snapshot'] = static function () use ($new, $engine): vo
     } finally { $connection->setQueryGrammar($original); }
 };
 $cases['funds-cutoff'] = static function () use ($new, $engine, $preflight, $clock, $user, $assertNoSend): void {
-    // The real worker must release its own unsealed claim when the funds cutoff passes during preflight.
-    $op=$new('funds-seal-cutoff.example.com');
-    $op->update(['policy'=>[...$op->policy,'funds_wait_at'=>$clock->now()->modify('-3 days +1 second')->format(DATE_ATOM)]]);
-    $preflight->during=static fn()=>$clock->instant=$clock->now()->modify('+2 seconds');
-    $result=$assertNoSend($op);$preflight->during=null;
-    same('registrar_balance_insufficient',$result->safe_code,'Elapsed funds wait keeps a sweepable unsent hold');
-    same(null,$result->lease_expires_at,'No running lease remains after refusal to seal');
-    $clock->instant=$clock->now()->modify('+'.(ExecuteOperation::LEASE_SECONDS+1).' seconds');
+    $op = $new('funds-seal-cutoff.example.com');
+    $preflight->during = static fn () => throw new WriteHeld('registrar_balance_insufficient', new Money('99.00', 'USD'));
+    $result = $assertNoSend($op); $preflight->during = null;
+    same('registrar_balance_insufficient', $result->safe_code, 'A confirmed shortfall records a sweepable unsent hold');
+    same(null, $result->lease_expires_at, 'No running lease remains after the shortfall');
+    $clock->instant = $clock->now()->modify('+3 days +1 second');
     $engine->execute($op->id);same('held',$op->fresh()->state,'Later worker cannot turn this no-send into stale_claim');
     $credit=fn()=>PricingRule::minor((string)(Credit::where('user_id',$user->id)->where('currency_code','USD')->value('amount')??'0.00'));$before=$credit();
     app()->instance(Refunds::class,new Refunds($clock));

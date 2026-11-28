@@ -7,6 +7,7 @@ use App\Models\{Product, Server, Service, User};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission, AcquisitionResult};
 
 /** Local contact-only recovery. Never sends, refunds, releases a name or reinterprets a provider result. */
 final class ContactRecovery
@@ -37,7 +38,10 @@ final class ContactRecovery
             }
             catch (ContactValidation) { $code = 'contact_details_required'; }
             catch (\DomainException) { $code = 'registry_details_unsupported'; }
-            if ($op->state !== 'held' || $op->safe_code !== $code) { ContactSetup::recoveryWrite(static fn () => $op->update(['state' => 'held', 'safe_code' => $code])); }
+            if ($op->state !== 'held' || $op->safe_code !== $code) {
+                ContactSetup::recoveryWrite(static fn () => $op->update(['state' => 'held', 'safe_code' => $code]));
+                AcquisitionResult::schedule($op, null, null);
+            }
             return $op;
         });
     }
@@ -63,6 +67,7 @@ final class ContactRecovery
         ?Clock $clock = null, #[\SensitiveParameter] ?array $contact = null, bool $saveAccount = false, bool $automatic = false): Operation
     {
         self::reason($reason);
+        $clock ??= app(Clock::class);
         if ($review && ($review->action !== 'release' || $review->operationId !== $operationId || $review->actorId !== (int) $actor->id)) {
             throw new \LogicException('Contact review does not match recovery.');
         }
@@ -81,17 +86,25 @@ final class ContactRecovery
             $review?->check($locked);
             $op = $operations->firstWhere('id', $hint->id);
             $facts=$funding->initialFacts($domain)+['operations'=>$operations,'user'=>$owner];
-            $contacts=self::requireReplacement($op,$facts,$contact===null?ContactDetails::collect($owner):OrderContact::roles($contact),$clock?->now()??now()->toDateTimeImmutable());
-            $payload=$op->payload??[];$policy=$op->policy??[];$history=$policy['contact_readmissions']??[];
+            $now = $clock->now();
+            $contacts=self::requireReplacement($op,$facts,$contact===null?ContactDetails::collect($owner):OrderContact::roles($contact),$now);
+            $payload=$op->payload??[];
             $payload['contacts'] = $contacts; $payload['setup_required'] = false; $payload['setup_fields'] = []; $payload['registry_supported'] = true;
-            $history[] = ['actor_id' => $automatic ? null : (int) $actor->id, ...($automatic ? ['source'=>'account_automatic'] : []), 'owner_id' => (int) $ownerId, 'reason' => $reason,
-                'at' => now()->toIso8601String(), 'previous_code' => $op->safe_code,
-                ...($contact===null?[]:['source'=>'order_form','saved_account'=>$saveAccount])];
-            $policy['contact_readmissions'] = $history;
-            // Contact readmission never reopens code entry or queues a transfer.
-            ContactSetup::recoveryWrite(static fn () => $op->update(['payload' => $payload, 'policy' => $policy,
-                'state' => $op->action === 'register' ? 'queued' : 'held',
-                'safe_code' => $op->action === 'register' ? null : 'transfer_setup_review_required']));
+            // The first worker will validate the corrected details and start its acquisition clock.
+            $correction = static function (\DateTimeImmutable $at) use ($op, $payload, $actor, $ownerId, $reason, $automatic, $contact, $saveAccount): bool {
+                $policy = $op->policy ?? [];
+                $policy['contact_readmissions'][] = [
+                    'actor_id' => $automatic ? null : (int) $actor->id,
+                    ...($automatic ? ['source' => 'account_automatic'] : []),
+                    'owner_id' => (int) $ownerId, 'reason' => $reason, 'at' => $at->format(DATE_ATOM), 'previous_code' => $op->safe_code,
+                    ...($contact === null ? [] : ['source' => 'order_form', 'saved_account' => $saveAccount]),
+                ];
+                return $op->update(['payload' => $payload, 'policy' => $policy,
+                    'state' => $op->action === 'register' ? 'queued' : 'held',
+                    'safe_code' => $op->action === 'register' ? null : 'transfer_setup_review_required']);
+            };
+            ContactSetup::recoveryWrite(static fn () => AcquisitionResult::admit($op, AcquisitionAdmission::ContactCorrection,
+                AcquisitionResult::revision($op), null, $clock, $correction))->requireApplied();
             $review?->record($locked);
             if ($contact !== null && $saveAccount) { OrderContact::saveAccount($owner, $contacts['registrant']); }
             return $op;

@@ -8,13 +8,17 @@ use App\Models\{Server, User};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, Environment, Query};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, Environment, Money, Query};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, FreshTransaction, InvoiceFunding, TransferInputs};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, ComplimentaryCosts, FreshTransaction, FundsWaits, InvoiceFunding, TransferInputs, WriteHeld, WriteMoney};
 
 /** Ordered native and holding locks, followed by the current acquisition authority checks. */
 final readonly class AcquisitionAuthority
 {
+    public const FUNDS_PROCEED = 'proceed';
+    public const FUNDS_WAIT = 'wait';
+    public const FUNDS_RETIRED_FOR_CREDIT = 'retired_for_credit';
+
     public function __construct(private AccountBindings $bindings, private Clock $clock, private ?Capabilities $offers = null) {}
     public function requireProcessing(AccountBinding $binding): void { $this->bindings->requireProcessing($binding); }
 
@@ -59,6 +63,27 @@ final readonly class AcquisitionAuthority
             && ($op->attempt['charge'] ?? null) === null && ($op->attempt['order_candidates'] ?? []) === [];
     }
 
+    /** A fresh quote cannot expand the order's frozen spending authority. */
+    public static function requirePurchasePrice(Operation $op, Money $cost): void
+    {
+        $saved = $op->cost ?? [];
+        try {
+            if ($op->currency !== 'USD' || ($saved['currency'] ?? null) !== 'USD' || ($saved['unit'] ?? null) !== 'term_total'
+                || !is_string($saved['estimated'] ?? null)) { throw new \InvalidArgumentException; }
+            $ceiling = new Money($saved['estimated'], 'USD');
+            $total = new Money((string) $op->amount, 'USD');
+        } catch (\InvalidArgumentException) {
+            throw new WriteHeld('registrar_price_missing');
+        }
+        if (isset($op->policy['account_complimentary'])) {
+            ComplimentaryCosts::require($op, $cost, $ceiling->amount);
+            return;
+        }
+        if (WriteMoney::compare($cost->amount, $ceiling->amount) > 0 || WriteMoney::compare($cost->amount, $total->amount) > 0) {
+            throw new WriteHeld('registrar_price_increased');
+        }
+    }
+
     /** Internal ordered authority scope shared by read-only reconciliation. */
     public function locked(int $id, \Closure $callback, ?int $staffId = null): mixed
     {
@@ -91,10 +116,41 @@ final readonly class AcquisitionAuthority
         });
     }
 
-    public function expire(Operation $op): bool
+    /** Use the locked result and the exact worker, when the caller may retire it.
+     * @return self::FUNDS_PROCEED|self::FUNDS_WAIT|self::FUNDS_RETIRED_FOR_CREDIT
+     */
+    public static function fundsCutoff(Operation $op, AcquisitionContinuation $continuation, \DateTimeImmutable $now,
+        ?AttemptFacts $worker = null): string
     {
-        if ($op->lease_expires_at && $op->lease_expires_at > $this->clock->now()) { return false; }
-        $op->update(['state' => 'uncertain', 'safe_code' => 'stale_claim', 'lease_expires_at' => null]);
+        if (!FundsWaits::deadlinePassed($continuation->shortfallAt, $now)) { return self::FUNDS_PROCEED; }
+        if ($worker === null || $worker->token->operationId !== (int) $op->id
+            || !in_array($op->state, ['running', 'uncertain'], true) || $op->completed_at !== null
+            || AcquisitionAttempt::conflicts($op) || !AcquisitionRetryProof::unsealed($op)
+            || !OperationAttempts::unsealedUnsent($worker, true)
+            || (!$worker->current && !OperationAttempts::releasedUnsent($worker, true))) {
+            return self::FUNDS_WAIT;
+        }
+        return self::retirePreSeal($op, $worker, 'registrar_balance_insufficient', $now)
+            ? self::FUNDS_RETIRED_FOR_CREDIT : self::FUNDS_WAIT;
+    }
+
+    /** Archive the unsealed attempt before a hold. The original clock remains available for the credit sweep. */
+    public static function retirePreSeal(Operation $op, AttemptFacts $attempt, string $reason, \DateTimeImmutable $now): bool
+    {
+        if ($attempt->current && OperationWriter::at($now)->releasePreSeal($attempt->token) !== Transition::Applied) {
+            return false;
+        }
+        $op->reloadAcquisitionAttempt();
+        return $op->update(['state' => 'held', 'safe_code' => $reason, 'lease_expires_at' => null]);
+    }
+
+    public function expire(Operation $op, ?\DateTimeImmutable $now = null): bool
+    {
+        $now ??= $this->clock->now();
+        if ($op->lease_expires_at && $op->lease_expires_at > $now) { return false; }
+        if (!AcquisitionRetryProof::expiredClaim($op, $now)) {
+            $op->update(['state' => 'uncertain', 'safe_code' => 'stale_claim', 'lease_expires_at' => null]);
+        }
         return true;
     }
     public static function payloadDigest(Operation $op): string { return hash('sha256', json_encode($op->payload, JSON_THROW_ON_ERROR)); }

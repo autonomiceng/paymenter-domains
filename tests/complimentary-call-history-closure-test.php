@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Real engine, local Enom counter and native closure.
 declare(strict_types=1);
+require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 require __DIR__.'/Support/operation-fixture.php';require __DIR__.'/Support/staff-panel.php';staffPanel();app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 use Illuminate\Support\Facades\{Cache,Crypt,DB};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
@@ -18,7 +19,8 @@ foreach(['register','transfer']as$action){
     $preflight->during=static fn()=>EnomTestSendLimit::admit(Environment::Test,'account-enom','Check');
     $held=$engine->execute($op->id);$preflight->during=null;
     same('held',$held->state,'Real Enom counter refusal holds the claimed '.$action);expect(isset($held->attempt['test_call_refusals'][0]),'Engine retains real call refusal history');
-    $held->update(['safe_code'=>'registrar_balance_insufficient','policy'=>[...$held->policy,'funds_wait_at'=>$now->format(DATE_ATOM)]]);
+    fixtureAcquisitionFundsWait($held, $now);
+    $held->refresh();
     $history=$held->attempt['test_call_refusals'];$virgin=$held->getRawOriginal();$account=Account::where('server_id',$op->server_id)->sole();$money=$nativeMoney();
     foreach(['malformed','foreign','sent']as$case){
         $attempt=$held->attempt;

@@ -99,7 +99,7 @@ final class PaidUncertainty
     {
         $now = app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp();
         $start = $op->started_at?->getTimestamp();
-        $deadline = $op->action === 'transfer' && $start !== null
+        $deadline = $op->action === 'transfer'
             ? \Paymenter\Extensions\Servers\Domains\Services\TransferPolling::deadline($op)
             : ($op->lease_expires_at?->getTimestamp() ?? ($start === null ? null : $start + \Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation::LEASE_SECONDS));
         return $deadline !== null && $now >= $deadline ? State::Delayed : State::Checking;

@@ -3,9 +3,10 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registration\Checkout;
 use Paymenter\Extensions\Servers\Domains\Contracts\SealPreflight;
-use Paymenter\Extensions\Servers\Domains\Data\{BalanceRetry, Capabilities, DispatchReadiness, Money, RequestContext};
+use Paymenter\Extensions\Servers\Domains\Data\{Capabilities, DispatchReadiness, RequestContext};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, BalanceReads, BalanceRetries, ComplimentaryCosts, ContactSetup, EnomTestRegistration, OperationClaims, RegistrationProfiles, RegistryInputs, WriteAcceptance, WriteFeatures, WriteHeld, WriteMoney};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionAuthority;
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, BalanceReads, BalanceRetries, ContactSetup, EnomTestRegistration, OperationClaims, RegistrationProfiles, RegistryInputs, WriteAcceptance, WriteFeatures, WriteHeld, WriteMoney};
 /** Fresh bound reads outside locks; the local acceptance is checked again under seal locks. */
 final readonly class RegistrationPreflight implements SealPreflight
 {
@@ -17,6 +18,14 @@ final readonly class RegistrationPreflight implements SealPreflight
                 || ($this->profiles && $transport->usesProfiles($this->profiles) && $accepted->usesProfiles($this->profiles)));
     }
     public function inspect(Operation $op, Domain $domain, RequestContext $context): DispatchReadiness
+    {
+        $ready = $this->inspectFunds($op, $domain, $context);
+        AcquisitionAuthority::requirePurchasePrice($op, $ready->cost);
+        return $ready;
+    }
+
+    /** Return verified reads before evaluating the order's local price authority. */
+    public function inspectFunds(Operation $op, Domain $domain, RequestContext $context): DispatchReadiness
     {
         OperationClaims::outside(); $query = OperationClaims::query($op, $domain);
         $this->features->requireEnabled($query->action); ContactSetup::requireReady($op);
@@ -34,7 +43,7 @@ final readonly class RegistrationPreflight implements SealPreflight
             catch (\InvalidArgumentException) { throw new WriteHeld('nameservers_required'); }
         }
         $retryBalance=null;
-        if(BalanceRetry::from($op)?->window){
+        if(BalanceRetries::active($op)){
             $probe=$context->binding->registrarKey==='enom'&&EnomTestRegistration::enabled($context->binding)
                 ?$this->bindings->registrationPreflightReader($context->binding):$this->bindings->reader($context->binding->serverId);
             $context->binding->requireMatch($probe->binding());$retryBalance=BalanceRetries::probe($op,$probe,$context);
@@ -53,18 +62,6 @@ final readonly class RegistrationPreflight implements SealPreflight
         WriteMoney::requireRead($context->binding, $availability, $quote, $balance);
         WriteMoney::requireAvailable($availability->evidence());
         $q = $quote->evidence()->quote; WriteMoney::requireFunds($q, $balance->evidence()->balance, $query, $observed, $context->now());
-        // Neither a higher live quote nor a later sync can enlarge this order's frozen spending authority.
-        $saved = $op->cost ?? [];
-        try {
-            if ($op->currency !== 'USD' || ($saved['currency'] ?? null) !== 'USD' || ($saved['unit'] ?? null) !== 'term_total'
-                || !is_string($saved['estimated'] ?? null)) { throw new \InvalidArgumentException; }
-            $ceiling = new Money($saved['estimated'], 'USD'); $total = new Money((string) $op->amount, 'USD');
-        } catch (\InvalidArgumentException) { throw new WriteHeld('registrar_price_missing'); }
-        ComplimentaryCosts::require($op,$q->cost,$ceiling->amount);
-        if (!isset($op->policy['account_complimentary']) && (WriteMoney::compare($q->cost->amount, $ceiling->amount) > 0 || WriteMoney::compare($q->cost->amount, $total->amount) > 0)) {
-            // We cannot absorb a higher cost by changing a paid customer's frozen order.
-            throw new WriteHeld('registrar_price_increased');
-        }
         return new DispatchReadiness($context->binding, $query,
             new Capabilities($context->binding, ['register' => $capability]),
             $q->cost, true, false, $observed, min($q->validUntil, $observed->modify('+120 seconds')), OperationClaims::payloadDigest($op));

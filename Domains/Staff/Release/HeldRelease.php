@@ -3,21 +3,37 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Staff\Release;
 use Illuminate\Support\Facades\Auth;
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Staff\Requests\RequestReads;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceRetries,ComplimentaryInvoices,ContactDetails,ContactProfileHold,ContactRecovery,ContactSetup,EnomTestRegistration,EnomTestRenewal,EnomTestTransfer,HoldingLocks,OperationClaims,RefundProof,RenewalFunding,RenewalStop,StaffOperationReview,StaffOperationWrites,TransferInputs};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter,StepKey};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission,AcquisitionAdmissionOutcome,AcquisitionAttempt,AcquisitionLane,AcquisitionResult,AcquisitionRetryProof,OperationWriter,StepKey};
 /** Releases a held request back to the queue. The offer and the locked writer run the same check over complete native facts. */
 final class HeldRelease
 {
-    /** Puts the request back in the queue; the normal engine must freshly admit it, so this grants no dispatch. */
-    public static function release(Operation $op,array $l,\DateTimeImmutable $now): void
+    /** Releases the current hold and records its acquisition bounds before the next worker can claim. */
+    public static function release(Operation $op, array $l, Clock $clock): AcquisitionAdmissionOutcome
     {
+        $now = $clock->now();
         self::require($op,$l,$now);
         $policy=$op->policy??[];
+        $reason = $op->safe_code;
+        $queue = static fn () => $op->update(['state'=>'queued','safe_code'=>null,'policy'=>$policy]);
+        if (AcquisitionAttempt::key($op->action)) {
+            $admission = match (true) {
+                in_array($reason, AcquisitionRetryProof::TEST_CAPACITY_CODES, true) => AcquisitionAdmission::TestCapacity,
+                $reason === 'registrar_price_increased' => AcquisitionAdmission::Price,
+                in_array($reason, ContactProfileHold::HOLDS, true) && ContactProfileHold::unsent($op, retry: true)
+                    => AcquisitionAdmission::ContactRetry,
+                default => AcquisitionAdmission::StaffRelease,
+            };
+            return AcquisitionResult::admit($op, $admission, AcquisitionResult::revision($op),
+                $op->acquisitionAttemptFacts()?->token, $clock, $queue);
+        }
         if($op->action==='renew'){unset($policy['renewal_execution']);OperationWriter::at($now)->releaseCurrent((int)$op->id,StepKey::renew());}
         $op->update(['state'=>'queued','safe_code'=>null,'policy'=>$policy]);
+        return AcquisitionAdmissionOutcome::Applied;
     }
     /** Read-only facts only; no locks, mutation, registrar exchange or spending grant. A request page reads them once. */
     public static function readFacts(Operation $op): array
@@ -27,7 +43,7 @@ final class HeldRelease
     /** The offer: the signed-in staff member may release this request now. The writer repeats every check under its locks. */
     public static function offered(Operation $op,\DateTimeImmutable $now): bool
     {
-        if($op->state!=='held'||!in_array($op->action,ReleaseDecision::ACTIONS,true)||BalanceRetries::pending($op)){return false;}
+        if($op->state!=='held'||!in_array($op->action,ReleaseDecision::ACTIONS,true)||BalanceRetries::owns($op)){return false;}
         return RequestReads::offered($op,static fn():bool=>self::offer($op,$now));
     }
     private static function offer(Operation $op,\DateTimeImmutable $now): bool
@@ -35,6 +51,7 @@ final class HeldRelease
         try {
             $l=self::readFacts($op);$op=$l['operations']->firstWhere('id',$op->id)??throw new \DomainException('Missing request.');$op->setRelation('domain',$l['domain']);
             StaffOperationReview::requirePermission($l['staff'],'release',$op);StaffOperationReview::requireHistory($op,'release');
+            if (!AcquisitionResult::admissionOpen($op, $now)) { return false; }
             if($op->safe_code==='contact_details_required'){
                 ContactRecovery::requireReplacement($op,$l,ContactDetails::collect($l['user']),$now);
             }else{self::require($op,$l,$now);}
@@ -47,7 +64,16 @@ final class HeldRelease
         $facts=self::facts($op,$l);$proof=ReleaseDecision::decide($facts);
         if($proof instanceof ReleaseRefusal){throw new \DomainException($proof->message($facts));}
         // The balance retry check already proved its retained claim unsent under its original shortfall reason.
-        if($proof===ReleaseProof::Unsent){RefundProof::requireUnsent($op,$l['domain']);}
+        if ($proof === ReleaseProof::Unsent) {
+            if (AcquisitionAttempt::key($op->action)) {
+                if (AcquisitionAttempt::purchaseRefusal($op, \Illuminate\Support\Facades\DB::transactionLevel() > 0)) {
+                    RefundProof::requireUnsent($op, $l['domain']);
+                } else {
+                    RefundProof::requireUnsentForAdmission($op, $l['domain']);
+                }
+            }
+            else { RefundProof::requireUnsent($op, $l['domain']); }
+        }
         elseif($proof===ReleaseProof::Unattempted){StaffOperationWrites::requireUnattempted($op,$l);}
         if(($op->action==='renew'?RenewalStop::blocksRenewal($l):$l['cancel']->contains('service_id',$op->service_id))||!in_array($l['service']->status,['pending','active'],true)) { throw new \DomainException('Service lifecycle changed.'); }
         if($op->action==='renew'){RenewalFunding::requireCurrent($op,$l);}
@@ -60,7 +86,13 @@ final class HeldRelease
     {
         $code=$op->safe_code;$base=[(string)$op->state,(string)$op->action,$code];
         if($op->state!=='held'||!in_array($op->action,ReleaseDecision::ACTIONS,true)||$code==='contact_details_required'){return new ReleaseFacts(...$base);}
-        if(BalanceRetries::pending($op)){return new ReleaseFacts(...$base,balancePending:true);}
+        if(BalanceRetries::owns($op)){return new ReleaseFacts(...$base,balancePending:true);}
+        if ($code === 'processing') {
+            $saved = AcquisitionResult::continuation($op);
+            if ($saved?->lane === AcquisitionLane::Purchase && $saved->window?->origin === AcquisitionAdmission::StaffRelease->value) {
+                return new ReleaseFacts(...$base,pausedRelease:true);
+            }
+        }
         $op->setRelation('domain',$l['domain']);$account=$l['account'];
         $acquisition=in_array($op->action,['register','transfer'],true);
         $context=[...$base,'registrar'=>$op->registrar_key,'environment'=>$account?->environment,
@@ -73,6 +105,8 @@ final class HeldRelease
         $context=[...$context,'balanceRetry'=>OperationClaims::balanceRefusalRetryable($op),'contactRetry'=>$contactHold&&ContactProfileHold::unsent($op,retry:true)];
         // The retained contact step cannot be reopened or send different details; cancellation still uses its unsent proof.
         if($contactHold&&($blocked=ContactProfileHold::releaseBlocked($op))!==null){return new ReleaseFacts(...$context,contactBlocked:$blocked);}
-        return new ReleaseFacts(...$context,testCallRetry:OperationClaims::testCallRefusalRetryable($op),accountGuardRetry:OperationClaims::accountGuardRetryable($op));
+        $refused = $acquisition && AcquisitionAttempt::purchaseRefusal($op, \Illuminate\Support\Facades\DB::transactionLevel() > 0) !== null;
+        return new ReleaseFacts(...$context,testCallRetry:OperationClaims::testCallRefusalRetryable($op),
+            accountGuardRetry:OperationClaims::accountGuardRetryable($op), purchaseRefused: $refused);
     }
 }

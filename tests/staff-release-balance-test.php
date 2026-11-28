@@ -49,7 +49,8 @@ $open=fn($op)=>Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
 foreach(['usd_balance_required','enom_test_transfer_usd_balance_required'] as $code){
     $op=$held(placeholderComFixtureName('truth-'.str_replace('_','-',$code).'-placeholder.com'));
-    $op->update(['state'=>'held','safe_code'=>$code]);
+    $op->update(['state'=>'queued','safe_code'=>null]);
+    $op = $claims->holdUnclaimed($op->id,$code);
     $open($op)->assertSee('Not sent. Orders are off for this account.')->assertDontSee('check the registrar balance first')
         ->assertDontSee('Check balance')->assertDontSee('Open account')->assertActionHidden('release');
     $summary=\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($op->domain->fresh());
@@ -97,7 +98,20 @@ $available=false;$result=$lowEngine->execute($low->id);
 same(['held','name_unavailable','absent'],[$result->state,$result->safe_code,$result->attempt['seal']],'Changed availability keeps its own unsent hold');
 same($before,$writer->calls,'Changed availability sends nothing');
 $noAudit=clone $result;$noAudit->policy=array_diff_key($result->policy,['balance_retry'=>true,'staff_actions'=>true]);
-expect(!OperationClaims::balanceRefusalRetryable($noAudit),'An unrelated unsent claim needs its original recovery path');
+expect(OperationClaims::balanceRefusalRetryable($noAudit),'The stored balance admission survives loss of the old audit fields');
+$restoreBalance=nativeFixtureCheckpoint();$balanceQuery=$query;
+try {
+    config(['domains.enom_writes.registration'=>true]);
+    $unrelated=$new(placeholderComFixtureName('unrelated-unsent-claim-placeholder.com'));
+    config(['domains.enom_writes.registration'=>false]);
+    $query=OperationClaims::query($unrelated,$unrelated->domain);
+    $unrelated=$lowEngine->execute($unrelated->id);
+    same(['held','name_unavailable','absent'],[$unrelated->state,$unrelated->safe_code,$unrelated->attempt['seal']],'A first claim can encounter the same refusal');
+    expect(!OperationClaims::balanceRefusalRetryable($unrelated),'An unrelated unsent claim needs its original recovery path');
+} finally {
+    $query=$balanceQuery;
+    $restoreBalance();
+}
 $wrongReason=clone $result;$wrongReason->safe_code='claim_authority_invalid';
 expect(!OperationClaims::balanceRefusalRetryable($wrongReason),'Balance history cannot bypass an authority refusal');
 $available=true;$funds='100.00';$clock->instant=$clock->now()->modify('+600 seconds');
@@ -118,9 +132,13 @@ $clock->instant=$clock->now()->modify('+1800 seconds');
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
 config(['domains.enom_writes.registration'=>false]);
 $result=$lowEngine->execute($low->id);
-same($originalClaim,$result->attempt['claim_key'],'Balance recovery preserves the original unsent claim');
-same(['availability','quote'],end($readers)->calls,'Funded retry runs fresh availability and price after its first balance read');
-same($before+1,$writer->calls,'Funded readmission sends once');
+same(['held','name_unavailable',$before],[$result->state,$result->safe_code,$writer->calls],'An expired Staff Release restores its saved hold without sending');
+$open($result)->assertActionVisible('release')->callAction('release')->assertHasNoActionErrors();
+same('queued',$result->fresh()->state,'The second reviewed Release admits the request');
+$result=$lowEngine->execute($low->id);
+same($originalClaim,$result->attempt['claim_key'],'Reviewed recovery preserves the original unsent claim');
+same(['availability','quote','balance'],end($readers)->calls,'Reviewed recovery repeats the fresh preflight');
+same($before+1,$writer->calls,'A fresh reviewed Release sends once');
 $lowEngine->execute($low->id);same($before+1,$writer->calls,'Repeated execution never sends twice');
 expect(!OperationClaims::balanceRefusalRetryable($result),'Sealed or uncertain outcome cannot enter balance recovery');
 // A send recovered a day later must still reconcile its own order, charge and billing anchor.
@@ -165,7 +183,7 @@ foreach(['payment','missing_claim','authority','legacy_authority','configuration
     if($fault==='legacy_authority'){
         $restorePaid();
         [$claimed]=$claims->claim((int)$order->id);
-        $claims->finish($claimed)->update(['safe_code'=>'usd_balance_required']);
+        $claims->finish($claimed, holdReason: 'usd_balance_required');
     }else{
         $restoreBalanceHold();
     }
@@ -187,7 +205,7 @@ foreach(['payment','missing_claim','authority','legacy_authority','configuration
     $reads=count(FakeRegistrar::$readClaims);$reviewWork->operation((int)$changed->id);$changed=$changed->fresh();
     $code=match($fault){'payment','missing_claim'=>'balance_retry_funding_changed','authority','legacy_authority','configuration'=>'balance_retry_authority_changed','setup'=>'balance_retry_setup_changed'};
     same($code,$changed->safe_code,'Changed '.$fault.' has an actionable hold');
-    $retryDue=(int)DB::table('domains_runtime_operations')->where('operation_id',$changed->id)->value('due_at');
+    $retryDue=\Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResult::continuation($changed)->dueAt;
     expect($retryDue>$clock->now()->getTimestamp()&&$retryDue<=$clock->now()->getTimestamp()+21600,'Refused proof has a bounded later local check');
     $reviewWork->operation((int)$changed->id);
     same($reads,count(FakeRegistrar::$readClaims),'Diagnosing or checking refused proof performs no provider reads');
@@ -223,11 +241,12 @@ foreach(['payment','missing_claim','authority','legacy_authority','configuration
 }
 // A pre-claim row has no old financial claim to replace: repair of current funding needs no staff release.
 config(['domains.enom_writes.registration'=>true]);$unclaimed=$new(placeholderComFixtureName('retry-preclaim-payment-placeholder.com'));
-config(['domains.enom_writes.registration'=>false]);$unclaimed->update(['state'=>'held','safe_code'=>'usd_balance_required']);
+config(['domains.enom_writes.registration'=>false]);$unclaimed=$claims->holdUnclaimed($unclaimed->id,'usd_balance_required');
 App\Models\Invoice::whereKey($unclaimed->invoice_id)->update(['status'=>'pending']);
 expect(!\Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::candidate($unclaimed->fresh()),'Unpaid pre-claim row never promises an automatic send');
+$clock->instant=$clock->now()->modify('+900 seconds');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
 $claims->readmitBalance((int)$unclaimed->id);
-expect((int)DB::table('domains_runtime_operations')->where('operation_id',$unclaimed->id)->value('due_at')>$clock->now()->getTimestamp(),'Unpaid pre-claim retry defers instead of remaining overdue');
+expect(\Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResult::continuation($unclaimed)->dueAt>$clock->now()->getTimestamp(),'Unpaid pre-claim retry defers instead of remaining overdue');
 Illuminate\Support\Facades\Auth::setUser($staff);$notice=RequestFacts::notice($unclaimed->fresh());
 same('invoice',$notice['link'],'Pre-claim payment issue opens the invoice');expect(!str_contains(json_encode($notice),'automatically'),'Unpaid pre-claim notice names the payment issue');
 App\Models\Invoice::whereKey($unclaimed->invoice_id)->update(['status'=>'paid']);
@@ -242,7 +261,7 @@ $result=$lowEngine->execute($failed->id);$claim=$result->attempt['claim_key'];$p
 same(['held','registrar_read_failed','absent'],[$result->state,$result->safe_code,$result->attempt['seal']],'A failed read is proven unsent');
 $failedPage=$open($result);
 $failedPage->assertSee("Not sent: couldn't read from the registrar. It will retry automatically.")->assertActionHidden('release');
-Illuminate\Support\Facades\Auth::setUser($staff);$nextTry=(int)DB::table('domains_runtime_operations')->where('operation_id',$result->id)->value('due_at');
+Illuminate\Support\Facades\Auth::setUser($staff);$nextTry=\Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResult::continuation($result)->dueAt;
 // The notice supplies the scheduled instant separately from its text; the rendered page keeps it as a time.
 same($nextTry,RequestFacts::notice($result)['next_try'],'A timed retry retains its queued instant');
 $retryPage=$failedPage->html();$retryDom=new DOMDocument;@$retryDom->loadHTML('<?xml encoding="utf-8"?>'.$retryPage);
@@ -385,7 +404,7 @@ $lowEngine->execute($capped->id);same($before,$writer->calls,'Automatic tries, s
 // The independent checkout below needs current catalogue freshness after the capped retry window.
 DB::table('domains_prices')->where('server_id',$binding->serverId)->update(['observed_at'=>$clock->now()->format('Y-m-d H:i:s'),'fresh_until'=>$clock->now()->modify('+1 day')->format('Y-m-d H:i:s')]);
 config(['domains.enom_writes.registration'=>true]);$legacy=$new(placeholderComFixtureName('retry-preclaim-refund-placeholder.com'));
-config(['domains.enom_writes.registration'=>false]);$legacy->update(['state'=>'held','safe_code'=>'usd_balance_required']);
+config(['domains.enom_writes.registration'=>false]);$legacy=$claims->holdUnclaimed($legacy->id,'usd_balance_required');
 same(false,$claims->readmitBalance((int)$legacy->id),'Stored pre-claim check gets the normal backoff');
 $clock->instant=$clock->now()->modify('+900 seconds');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
 // This is the real pre-claim deployment gate, not a synthetic terminal row.

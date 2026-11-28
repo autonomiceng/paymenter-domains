@@ -6,6 +6,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementAuthority;
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt,AcquisitionResult};
 /** Explicit local writers. Never clears attempt evidence, sends a request or releases paid uncertainty. */
 final class StaffOperationWrites
 {
@@ -27,6 +28,7 @@ final class StaffOperationWrites
         if(!self::holdable($op)) {
             throw new \DomainException('Only an unattempted queued request can be held.'); }
         self::requireUnattempted($op,$l); $op->update(['state'=>'held','safe_code'=>'staff_review_required']);
+        if (AcquisitionAttempt::key($op->action) !== null) { AcquisitionResult::schedule($op, null, null); }
     }
     public static function disposition(Operation $op,array $l): void
     {

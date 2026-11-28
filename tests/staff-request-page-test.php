@@ -4,6 +4,7 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-panel.php';
+require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 use Illuminate\Support\Facades\{Auth, DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\{ListOperations, ViewOperation};
@@ -362,9 +363,9 @@ foreach ([RegistrarFacts::requestsUrl((int)$heldOp->server_id,[],paidUncertainty
 }
 foreach ($saved as $row) { DB::table('domains_operations')->where('id',$row->id)->update(['state'=>$row->state,'safe_code'=>$row->safe_code]); }
 // A sealed transfer with stale reads returns to staff review before its seven-day deadline.
-$readNow=time();$storedTransfer=array_intersect_key($longOp->fresh()->getRawOriginal(),array_flip(['state','safe_code','started_at','policy']));
-DB::table('domains_operations')->where('id',$longOp->id)->update(['state'=>'uncertain','safe_code'=>null,'started_at'=>gmdate('Y-m-d H:i:s',$readNow-2*86400)]);
-$transfer=$longOp->fresh();$policy=$transfer->policy;
+$readNow=time();$storedTransfer=$longOp->fresh()->getRawOriginal();
+DB::table('domains_operations')->where('id',$longOp->id)->update(['state'=>'uncertain','safe_code'=>null]);
+$transfer=sealTransferForPolling($longOp,$readNow-2*86400);$policy=$transfer->policy;
 $policy['reconciliation']=['transfer_status'=>'pending','reason'=>'transfer_pending','staff_alert'=>false,'read_at'=>$readNow-25*3600];
 $transfer->update(['policy'=>$policy]);
 same(false,RequestFacts::automaticTransfer($transfer),'A stale transfer read cannot promise automatic progress');
@@ -373,12 +374,11 @@ $filter('status',['under_review'])->assertCanSeeTableRecords([$transfer]);
 $policy['reconciliation']['read_at']=$readNow;$transfer->update(['policy'=>$policy]);
 same(true,RequestFacts::automaticTransfer($transfer),'A fresh pending read still progresses automatically');
 $filter('status',['under_review'])->assertCanNotSeeTableRecords([$transfer]);
-unset($policy['reconciliation']['read_at']);$transfer->policy=$policy;
+unset($policy['reconciliation']['read_at']);$transfer->update(['policy'=>$policy]);
 same(false,RequestFacts::automaticTransfer($transfer),'Without a read the old transfer start is stale');
-$transfer->started_at=gmdate('Y-m-d H:i:s',$readNow-3600);
+sealTransferForPolling($transfer,$readNow-3600);
 same(true,RequestFacts::automaticTransfer($transfer),'A newly started transfer can await its first read');
-DB::table('domains_operations')->where('id',$transfer->id)->update(['started_at'=>gmdate('Y-m-d H:i:s',$readNow-8*86400)]);
-$transfer=$transfer->fresh();
+sealTransferForPolling($transfer,$readNow-8*86400);
 $policy['reconciliation']=['transfer_status'=>'pending','reason'=>'transfer_deadline_passed','staff_alert'=>true,
     'read_at'=>$readNow-3600,'next_at'=>$readNow+3600,'final_check'=>'done'];
 $policy = Paymenter\Extensions\Servers\Domains\Services\TransferFollowup::record($transfer, $policy, $readNow-3600, 'pending');
@@ -394,12 +394,13 @@ $policy['status_check']=['outcome'=>'scheduled','at'=>$readNow,'next_at'=>$readN
 $transfer->update(['policy'=>$policy]);
 same($readNow+3600,RequestFacts::transferChecks($transfer)['next_at'],'A manual check deferred by the registrar limit uses the recorded retry time');
 // Reserve the missed final check shortly before cutoff, when the next retry is already outside the window.
-$transfer->update(['started_at'=>gmdate('Y-m-d H:i:s',$readNow-14*86400+1800)]);
+$nearCutoff=$readNow-14*86400+1800;
 $lastReadAt = $readNow-8*86400;
 $failedRead = ['reason'=>'transfer_status_unavailable', 'staff_alert'=>true, 'read_failed'=>true];
 foreach ([false, true] as $checking) {
+    sealTransferForPolling($transfer,$nearCutoff,$checking ? $readNow+120 : null);
     $policy['reconciliation'] = $failedRead + ($checking ? [
-        'final_check'=>'running', 'reading_until'=>$readNow+120, 'next_at'=>$readNow+3600,
+        'final_check'=>'running', 'next_at'=>$readNow+3600,
     ] : []);
     $policy = Paymenter\Extensions\Servers\Domains\Services\TransferFollowup::record($transfer, $policy, $lastReadAt, 'unavailable');
     $transfer->update(['policy'=>$policy]);
@@ -426,8 +427,9 @@ foreach ([false, true] as $checking) {
     gc_collect_cycles();
 }
 // A queued or running manual read keeps the previous registrar instruction until a new result replaces it.
-foreach ([[], ['reading_until'=>$readNow+120]] as $reservation) {
-    $policy['reconciliation'] = $reservation + ['reason'=>'resumed','transfer_status'=>'needs_action',
+foreach ([null, $readNow+120] as $reservation) {
+    sealTransferForPolling($transfer,$nearCutoff,$reservation);
+    $policy['reconciliation'] = ['reason'=>'resumed','transfer_status'=>'needs_action',
         'transfer_privacy_blocked'=>true,'manual_check'=>true,'final_check'=>'done'];
     $policy = Paymenter\Extensions\Servers\Domains\Services\TransferFollowup::record($transfer, $policy, $lastReadAt, 'needs_action');
     $transfer->update(['policy'=>$policy]);
@@ -440,21 +442,20 @@ foreach ([[], ['reading_until'=>$readNow+120]] as $reservation) {
     unset($page);
     gc_collect_cycles();
 }
-$transfer->update(['started_at'=>gmdate('Y-m-d H:i:s',$readNow-15*86400)]);
 $policy['reconciliation'] = ['reason'=>'transfer_pending', 'transfer_status'=>'pending', 'staff_alert'=>false];
 $transfer->update(['policy'=>$policy]);
-$transfer->forceFill(['started_at'=>gmdate('Y-m-d H:i:s',$readNow-8*86400)]);
+sealTransferForPolling($transfer,$readNow-8*86400);
 same(true,RequestFacts::transferChecks($transfer)['due'],'A missed day-seven read is due even if the saved deadline is in the past');
 $customerNotice = Paymenter\Extensions\Servers\Domains\Presentation\TransferNotice::for($transfer, $readNow);
 same(false,$customerNotice['contact']??true,'A missed day-seven read still due automatically does not send the customer to support');
-$transfer->refresh();
+sealTransferForPolling($transfer,$readNow-15*86400);
 $recovery = staffUser([Staff::VIEW, StaffOperationReview::permission('resume_reads')]);
 Livewire::actingAs($recovery)->test(ViewOperation::class, ['record'=>$transfer->id])->assertSuccessful()
     ->assertActionVisible('resume_reads')->assertSee('Check now');
 Livewire::actingAs($viewer)->test(ViewOperation::class, ['record'=>$transfer->id])->assertSuccessful()
     ->assertActionHidden('resume_reads')->assertDontSee('Check now');
 Auth::setUser($manager);
-DB::table('domains_operations')->where('id',$longOp->id)->update($storedTransfer);
+restoreAcquisitionFixture($storedTransfer);
 // Unreadable saved data: one notice with its fix, never an "unavailable" value.
 DB::table('domains_operations')->where('id',$longOp->id)->update(['policy'=>'not-encrypted']);
 Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$longOp->id])->assertSee("Can't read saved data. Ask your site admin to check the encryption key.")->assertDontSee('unavailable');

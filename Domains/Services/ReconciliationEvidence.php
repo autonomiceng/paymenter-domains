@@ -3,8 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AttemptEvidence, DispatchSeal, DateEvidence, Disposition, Evidence, ExecutionRecord, ExpiryPrecision, Money, PersistedExecution, SendState};
-use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionWindow;
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 final class ReconciliationEvidence
 {
@@ -14,11 +14,22 @@ final class ReconciliationEvidence
         $a = $op->attempt ?? []; $query = OperationClaims::query($op, $domain);
         // A renewal's attempt facts come from its reader. The proof saves the window start as recorded, in its stored zone.
         $renewal = $op->action === 'renew' ? $renewal ?? RenewalAttempt::of($op) : null;
-        if ($renewal ? $renewal->claimedAt() === null || $renewal->requestDigest() === null || $renewal->claimKey() === null || $renewal->windowStart() === null
-            : !$op->started_at || !$op->request_fingerprint || !isset($a['claim_key'], $a['dispatch_attempted_at']) || ($a['seal'] ?? null) !== 'sealed') { throw new \DomainException('No sealed original attempt.'); }
-        $start = ExecutionWindow::start($op)??throw new \DomainException('Missing execution window.');
-        $end = $renewal?->windowEnd() ?? $start->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds');
-        $dispatch = $renewal?->windowStart() ?? new \DateTimeImmutable($a['dispatch_attempted_at']);
+        if ($renewal) {
+            if ($renewal->claimedAt() === null || $renewal->requestDigest() === null || $renewal->claimKey() === null
+                || $renewal->windowStart() === null) { throw new \DomainException('No sealed renewal attempt.'); }
+            $start = $renewal->claimedAt();
+            $dispatch = $renewal->windowStart();
+            $end = $renewal->windowEnd() ?? throw new \DomainException('Missing renewal window.');
+        } else {
+            $sealed = $op->acquisitionAttemptFacts();
+            if (!$sealed?->current || $sealed->sealedAt === null || !$op->request_fingerprint) {
+                throw new \DomainException('No sealed acquisition attempt.');
+            }
+            $window = $op->acquisitionSealWindow() ?? throw new \DomainException('Missing sealed acquisition window.');
+            $start = AcquisitionWindow::time($window['start']);
+            $end = AcquisitionWindow::time($window['end']);
+            $dispatch = $sealed->sealedAt;
+        }
         if ($dispatch < $start || $dispatch > $end) { throw new \DomainException('Invalid original window.'); }
         $record = $renewal?->replyRecord() ?? (!array_key_exists('execution', $a) ? ExecutionRecord::Absent : ($a['execution'] === null ? ExecutionRecord::RecordedNull : ExecutionRecord::Recorded));
         $reply = $renewal ? $renewal->reply() : $a['execution'] ?? null;

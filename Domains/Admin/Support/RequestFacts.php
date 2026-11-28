@@ -8,6 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, TransferPolling};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{RequestStatus,State};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionLane, AcquisitionResult};
 use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, ComplimentaryCosts, ContactProfileHold, ContactStepRetries, EnomTestManagement, EnomTestRegistration, ManagementEvidence, OperationClaims, RegistrarCheck, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, WriteHeld};
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementProgress;
@@ -367,6 +368,10 @@ final class RequestFacts
         }
         if ($op->state!=='queued' && !($op->state==='held' && in_array($op->safe_code,['processing','usd_balance_required','enom_test_transfer_usd_balance_required'],true))) { return null; }
         $account=$read();$on=self::ordersOn($op,$account,$accounts);
+        if ($account && !$on && $op->safe_code === 'processing'
+            && AcquisitionResult::window($op) !== null && OperationClaims::ordersOffHold($op)) {
+            return 'Not sent. '.self::ORDERS_OFF;
+        }
         // Orders off held this and they are on now, so that is no longer the reason.
         $ordersBack=$op->state==='held'&&$op->safe_code==='processing'&&$on;
         $owes=OperationActions::customerOwes($op,$release['invoices']??null);
@@ -395,8 +400,9 @@ final class RequestFacts
     /** When a timed retry runs next, in the viewer's time zone like every other time here. Nothing once it is due: the next tick takes it. */
     private static function nextTry(Operation $op): ?int
     {
-        if (!BalanceRetries::pending($op)) { return null; }
-        $due=(int)\Illuminate\Support\Facades\DB::table('domains_runtime_operations')->where('operation_id',$op->id)->value('due_at');
+        $continuation = AcquisitionResult::continuation($op);
+        if ($continuation?->lane !== AcquisitionLane::BalanceWait) { return null; }
+        $due = $continuation->dueAt;
         return $due>app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()?$due:null;
     }
     /** Only a financially confirmed, nameserver-only registration fallback needs no staff task. */

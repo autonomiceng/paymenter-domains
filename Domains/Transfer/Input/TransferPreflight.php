@@ -3,9 +3,10 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Transfer\Input;
 use Paymenter\Extensions\Servers\Domains\Contracts\SealPreflight;
-use Paymenter\Extensions\Servers\Domains\Data\{BalanceRetry, Action, Capabilities, DispatchReadiness, Money, RequestContext, SaleSelection};
+use Paymenter\Extensions\Servers\Domains\Data\{Action, Capabilities, DispatchReadiness, RequestContext, SaleSelection};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, BalanceReads, BalanceRetries, ComplimentaryCosts, ContactSetup, EnomTestTransfer, OperationClaims, RegistrationProfiles, TransferInputs, TransferPrecheck, WriteAcceptance, WriteFeatures, WriteHeld, WriteMoney};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionAuthority;
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, BalanceReads, BalanceRetries, ContactSetup, EnomTestTransfer, OperationClaims, RegistrationProfiles, TransferInputs, TransferPrecheck, WriteAcceptance, WriteFeatures, WriteHeld, WriteMoney};
 /** Both observations are unlocked. The second immediately precedes the seal and local consumption. */
 final readonly class TransferPreflight implements SealPreflight
 {
@@ -21,10 +22,18 @@ final readonly class TransferPreflight implements SealPreflight
     { return new SaleSelection($d->tld, (int) $op->server_id, $op->registrar_key, $op->account_fingerprint, 0, $op->action, $op->term, 'USD', 0, 0); }
     public function inspect(Operation $op, Domain $domain, RequestContext $context): DispatchReadiness
     {
+        $ready = $this->inspectFunds($op, $domain, $context);
+        AcquisitionAuthority::requirePurchasePrice($op, $ready->cost);
+        return $ready;
+    }
+
+    /** Return verified reads before evaluating the order's local price authority. */
+    public function inspectFunds(Operation $op, Domain $domain, RequestContext $context): DispatchReadiness
+    {
         OperationClaims::outside(); $query = OperationClaims::query($op, $domain); $this->features->requireEnabled(Action::Transfer);
         if ($query->action !== Action::Transfer || $query->years !== 1 || !TransferInputs::validCode($op->payload['epp'] ?? null)) { throw new \DomainException('Transfer inputs incomplete.'); }
         $retryBalance=null;
-        if(BalanceRetry::from($op)?->window){
+        if(BalanceRetries::active($op)){
             $probe=$context->binding->registrarKey==='enom'&&EnomTestTransfer::enabled($context->binding)
                 ?$this->bindings->registrationPreflightReader($context->binding):$this->bindings->reader($context->binding->serverId);
             $context->binding->requireMatch($probe->binding());$retryBalance=BalanceRetries::probe($op,$probe,$context);
@@ -46,18 +55,6 @@ final readonly class TransferPreflight implements SealPreflight
         $quote = $reader->quote($query, $context); $balance = $retryBalance??BalanceReads::read($reader, $context, 'preflight');
         WriteMoney::requireRead($context->binding, $quote, $balance);
         $q = $quote->evidence()->quote; WriteMoney::requireFunds($q, $balance->evidence()->balance, $query, $observed, $context->now());
-        // Neither a higher live quote nor a later sync can enlarge this order's frozen spending authority.
-        $saved = $op->cost ?? [];
-        try {
-            if ($op->currency !== 'USD' || ($saved['currency'] ?? null) !== 'USD' || ($saved['unit'] ?? null) !== 'term_total'
-                || !is_string($saved['estimated'] ?? null)) { throw new \InvalidArgumentException; }
-            $ceiling = new Money($saved['estimated'], 'USD'); $total = new Money((string) $op->amount, 'USD');
-        } catch (\InvalidArgumentException) { throw new WriteHeld('registrar_price_missing'); }
-        ComplimentaryCosts::require($op,$q->cost,$ceiling->amount);
-        if (!isset($op->policy['account_complimentary']) && (WriteMoney::compare($q->cost->amount, $ceiling->amount) > 0 || WriteMoney::compare($q->cost->amount, $total->amount) > 0)) {
-            // We cannot absorb a higher cost by changing a paid customer's frozen order.
-            throw new WriteHeld('registrar_price_increased');
-        }
         return new DispatchReadiness($context->binding, $query, new Capabilities($context->binding, ['transfer' => $capability]),
             $q->cost, true, false, $observed, min($q->validUntil, $observed->modify('+120 seconds')), OperationClaims::payloadDigest($op),
             [...$transfer, 'premium' => false, 'privacy' => $privacy, 'name' => $query->name, 'years' => 1, 'cost' => ['amount' => $q->cost->amount, 'currency' => 'USD']]);

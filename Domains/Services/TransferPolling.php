@@ -3,13 +3,13 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionAttempt;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt,AcquisitionWindow,OperationAttempts};
 /** Read scheduling only. The sealed transfer's seven-day window never authorizes another purchase or a refund. */
 final class TransferPolling
 {
     public static function applies(Operation $op): bool
     {
-        return $op->action==='transfer' && ($op->attempt['seal']??null)==='sealed' && $op->started_at!==null
+        return $op->action==='transfer' && ($op->attempt['seal']??null)==='sealed'
             && (in_array($op->state,['pending','uncertain','running'],true)||$op->state==='held'&&$op->safe_code==='transfer_needs_action');
     }
     public static function ownsObservation(Domain $domain): bool
@@ -32,20 +32,24 @@ final class TransferPolling
             &&($r['polls']??0)===0&&!isset($r['transfer_status'])&&in_array($r['reason']??null,['original_attempt_unresolved','transfer_read_deferred'],true)
             &&in_array($op->attempt['execution']['disposition']??null,['accepted','pending'],true);
     }
-    /** Unsent readmission can advance the execution window, but the sealed claim keeps that window immutable. */
-    public static function start(Operation $op): int
+    public static function start(Operation $op): ?int { return self::bound($op, 'start'); }
+    public static function deadline(Operation $op): ?int { return self::bound($op, 'poll_until'); }
+    public static function cutoff(Operation $op): ?int { return self::bound($op, 'followup_until'); }
+
+    private static function bound(Operation $op, string $key): ?int
     {
         try {
-            if(($op->attempt['seal']??null)==='sealed'){return (ExecutionWindow::start($op)??$op->started_at)?->getTimestamp()??0;}
-        } catch (\Throwable) { /* Invalid window authority cannot grant a later watch or hide a stale read. */ }
-        return $op->started_at?->getTimestamp()??0;
+            $bound = $op->acquisitionSealWindow()[$key] ?? null;
+            return is_string($bound) ? AcquisitionWindow::time($bound)->getTimestamp() : null;
+        } catch (\DomainException|\Illuminate\Contracts\Encryption\DecryptException|\JsonException) {
+            return null;
+        }
     }
-    public static function deadline(Operation $op): int { return self::start($op)+7*86400; }
-    public static function cutoff(Operation $op): int { return self::deadline($op) + 7 * TransferFollowup::DAY; }
+
     public static function light(Operation $op,int $now): bool
     {
         $r=$op->policy['reconciliation']??[];
-        return self::applies($op)&&!self::expired($op,$now)&&!($r['manual_check']??false)
+        return self::applies($op)&&self::deadline($op)!==null&&!self::expired($op,$now)&&!($r['manual_check']??false)
             &&(self::expected($op)||in_array($r['reason']??null,['original_attempt_unresolved','transfer_read_deferred'],true)&&($r['polls']??0)===0);
     }
     public static function due(Operation $op,int $now): bool
@@ -62,8 +66,16 @@ final class TransferPolling
 
     public static function readUntil(Operation $op): ?int
     {
-        $attempt = AcquisitionAttempt::of((int) $op->id, $op->action);
-        return $attempt ? $attempt->facts->readUntil?->getTimestamp() : ($op->policy['reconciliation']['reading_until'] ?? null);
+        $key = AcquisitionAttempt::key($op->action);
+        $facts = $key ? OperationAttempts::sealed((int) $op->id, $key) : null;
+        if ($facts?->readUntil === null) { return null; }
+        try {
+            $attempt = AcquisitionAttempt::of((int) $op->id, $op->action);
+            return $attempt?->sealed() && $attempt->facts->token == $facts->token
+                ? $attempt->facts->readUntil?->getTimestamp() : null;
+        } catch (\DomainException|\Illuminate\Contracts\Encryption\DecryptException|\JsonException) {
+            return null;
+        }
     }
 
     /** Unix seconds for both the dispatcher and staff. Local reservations are never a registrar observation. */
@@ -79,6 +91,10 @@ final class TransferPolling
         }
         $deadline = self::deadline($op);
         $cutoff = self::cutoff($op);
+        if ($deadline === null || $cutoff === null || $cutoff <= $deadline) {
+            $view['stop_reason'] = 'transfer_authority_changed';
+            return $view;
+        }
         $next = (int) ($r['next_at'] ?? 0);
         if ($r['manual_check'] ?? false) {
             $view['next_read_at'] = $next ?: $now;
@@ -120,21 +136,20 @@ final class TransferPolling
             && self::followupScheduled($op, $now);
     }
 
-    public static function expired(Operation $op,int $now): bool { return self::applies($op)&&$now>=self::deadline($op); }
+    public static function expired(Operation $op,int $now): bool
+    {
+        return self::applies($op) && ($deadline = self::deadline($op)) !== null && $now >= $deadline;
+    }
     public static function delay(int $checks): int { return min(43200,7200*(2**min(3,max(0,$checks-1)))); }
     /** Called under the operation locks before I/O, including failed/deferred attempts and worker restarts. */
     public static function reserve(Operation $op,int $now): void
     {
+        $deadline = self::deadline($op) ?? throw new \DomainException('Missing sealed transfer poll deadline.');
         $p=$op->policy;$r=$p['reconciliation']??[];$checks=(int)($r['checks']??0)+1;
         $manual=$r['manual_check']??false;$overdue=self::expired($op,$now);
         $final=$overdue&&!$manual&&($r['final_check']??null)!=='done';
-        $p['reconciliation']=[...$r,'checks'=>$checks,'next_at'=>$final||$manual?$now+self::delay($checks):min(self::deadline($op),$now+self::delay($checks))];
-        if ($overdue) {
-            if (!AcquisitionAttempt::of((int) $op->id, $op->action)) {
-                $p['reconciliation']['reading_until'] = $now + OperationReconciliation::READ_SECONDS;
-            }
-            if (!$final && !$manual) { $p['reconciliation']['next_at'] = $now + TransferFollowup::DAY; }
-        }
+        $p['reconciliation']=[...$r,'checks'=>$checks,'next_at'=>$final||$manual?$now+self::delay($checks):min($deadline,$now+self::delay($checks))];
+        if ($overdue && !$final && !$manual) { $p['reconciliation']['next_at'] = $now + TransferFollowup::DAY; }
         if($final){$p['reconciliation']['final_check']='running';}
         $op->update(['policy'=>$p]);
     }

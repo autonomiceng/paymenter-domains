@@ -18,28 +18,27 @@ trait WritesOperationEvidence
     }
 
     /**
-     * One row per authority identity; false when that identity already has evidence. The plain read can miss a row
+     * One row per authority identity; null when that identity already has evidence. The plain read can miss a row
      * committed after the caller's snapshot, so the unique authority key decides.
      */
     private function append(int $operationId, ?int $attemptId, string $kind, string $source, string $outcome, array $evidence,
-        string $identity, ?\DateTimeImmutable $observedAt = null): bool
+        string $identity, ?\DateTimeImmutable $observedAt = null): ?int
     {
         $key = hash('sha256', implode('|', [$operationId, $attemptId ?? '-', $identity]));
-        if (DB::table(OperationSchema::EVIDENCE)->where('authority_key', $key)->exists()) { return false; }
+        if (DB::table(OperationSchema::EVIDENCE)->where('authority_key', $key)->exists()) { return null; }
         // json_decode counts one level more than json_encode, so this is the deepest evidence the reader accepts.
         $encoded = json_encode($evidence, JSON_THROW_ON_ERROR, OperationAttempts::EVIDENCE_DEPTH - 1);
         $now = $this->clock->now();
         try {
-            DB::table(OperationSchema::EVIDENCE)->insert(['operation_id' => $operationId, 'attempt_id' => $attemptId, 'source' => $source,
+            return (int) DB::table(OperationSchema::EVIDENCE)->insertGetId(['operation_id' => $operationId, 'attempt_id' => $attemptId, 'source' => $source,
                 'kind' => $kind, 'outcome' => $outcome, 'observed_at' => $observedAt ? OperationAttempts::at($observedAt) : null,
                 'recorded_at' => OperationAttempts::at($now), 'authority_key' => $key,
                 'evidence' => Crypt::encryptString($encoded)]);
         } catch (UniqueConstraintViolationException $e) {
             // The driver message names the violated key; the statement text always names the column.
             if (!str_contains((string) ($e->errorInfo[2] ?? ''), 'authority_key')) { throw $e; }
-            return false;
+            return null;
         }
-        return true;
     }
 
     private static function requireTransaction(): void

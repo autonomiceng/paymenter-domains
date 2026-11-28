@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\Money;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter, StepKey};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission, AcquisitionAttempt, AcquisitionResult, OperationWriter, StepKey};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 /** A price increase never expands an issued account grant without an audited staff approval. */
 final class ComplimentaryCosts
@@ -31,12 +31,8 @@ final class ComplimentaryCosts
     /** Exact unsent acquisition claim retained by a completed cost approval, including NameSilo. */
     public static function readmitted(Operation $op):bool
     {
-        $a=$op->attempt??[];$f=FinancialAdjustments::registrarFunding($op);
-        if(!isset($op->policy['account_complimentary'])||$op->state!=='queued'||$op->safe_code!==null||!ExecutionWindow::priceReleased($op)
-            ||($a['seal']??null)!=='absent'||($a['send_state']??null)!=='definitely_unsent'||!isset($a['claim_key'],$f['claim'])
-            ||array_diff(array_keys($a),['claim_key','seal','send_state','capacity_deferrals','test_call_refusals'])||array_diff(array_keys($f),['claim'])
-            ||isset($op->cost['actual'])||$op->provider_order_id!==null||$op->confirmed_expires_at!==null||$op->completed_at!==null||$op->lease_expires_at!==null){return false;}
-        return DB::table('domains_complimentary_approvals')->where('operation_id',$op->id)->exists();
+        return $op->state === 'queued' && $op->safe_code === null
+            && AcquisitionResult::window($op)?->origin === AcquisitionAdmission::CostApproval->value;
     }
     /** The red notice on the domain page. need() is its first two sentences, the request reason everywhere else. */
     public static function message(Operation $op,bool $canApprove=false):?string
@@ -47,7 +43,10 @@ final class ComplimentaryCosts
     /** Release hold only retries a held cost: without an approval the same registrar cost holds it again. */
     public static function awaitingApproval(Operation $op):bool
     {
-        try { return isset($op->policy['account_complimentary'])&&self::unapproved($op); }
+        try {
+            return isset($op->policy['account_complimentary']) && self::unapproved($op)
+                && AcquisitionResult::admissionOpen($op, app(Clock::class)->now());
+        }
         catch (\Throwable) { return false; }
     }
     /** What is wrong and the one next step, for a held complimentary request whose registrar cost is above the usual. */
@@ -55,7 +54,7 @@ final class ComplimentaryCosts
     {
         $review=$op->policy['complimentary_cost_review']??null;
         $next=$canApprove?'Use Approve registrar cost to continue.':'Ask staff with domain cost, management and funding permissions to approve this cost.';
-        return self::unapproved($op)?'Needs approval: registrar cost $'.$review['amount'].' is above the usual $'.$review['usual'].'. '.$next:null;
+        return self::awaitingApproval($op)?'Needs approval: registrar cost $'.$review['amount'].' is above the usual $'.$review['usual'].'. '.$next:null;
     }
     /** A held cost review whose amount is still above the effective cap: an earlier approval of at least this amount already
      * lets release send. An unreadable comparison still needs approval. */
@@ -75,16 +74,29 @@ final class ComplimentaryCosts
             $l=HoldingLocks::take($seed,(int)$actor->id);$op=$l['operations']->firstWhere('id',$id);
             $staff=$l['staff'];$review=$op?->policy['complimentary_cost_review']??null;
             if(!$staff?->hasPermission('admin.domains.fund')||!$staff->hasPermission('admin.domains.manage')||!$staff->hasPermission('admin.domains.costs')||$reason===''||strlen($reason)>500
-                ||!$review||$review['amount']!==$amount||!self::message($op)||!isset($op->policy['account_complimentary'])
+                ||!$review||$review['amount']!==$amount||!self::unapproved($op)||!isset($op->policy['account_complimentary'])
                 ||!self::unsealed($op)||isset($op->cost['actual'])){throw new \DomainException('Current unsent registrar cost approval required.');}
             ComplimentaryAccounts::require($op->policy['account_complimentary'],(int)$l['domain']->user_id);
-            DB::table('domains_complimentary_approvals')->insert(['operation_id'=>$id,'actor_id'=>$staff->id,'amount'=>$amount,'reason'=>$reason,'created_at'=>ComplimentaryAccounts::stamp($clock->now()),'time_zone'=>ComplimentaryAccounts::ZONE]);
-            $policy=$op->policy;
-            $policy['staff_actions']=[...($policy['staff_actions']??[]),['action'=>'release','phase'=>'completed','operation_key'=>$op->operation_key,
-                'generation'=>$op->authority_generation,'actor_id'=>$staff->id,'reason'=>$reason,'at'=>$clock->now()->format(DATE_ATOM),
-                'before'=>['state'=>'held','reason'=>'registrar_price_increased'],'after'=>['state'=>'queued','reason'=>null]]];
-            (new OperationWriter($clock))->releaseCurrent($id,StepKey::renew());
-            $op->update(['state'=>'queued','safe_code'=>null,'lease_expires_at'=>null,'policy'=>$policy]);
+            $approve = static fn (\DateTimeImmutable $at): int => (int) DB::table('domains_complimentary_approvals')->insertGetId([
+                'operation_id'=>$id, 'actor_id'=>$staff->id, 'amount'=>$amount, 'reason'=>$reason,
+                'created_at'=>ComplimentaryAccounts::stamp($at), 'time_zone'=>ComplimentaryAccounts::ZONE,
+            ]);
+            $queue = static function (\DateTimeImmutable $at) use ($op, $staff, $reason): bool {
+                $policy = $op->policy;
+                $policy['staff_actions']=[...($policy['staff_actions']??[]),['action'=>'release','phase'=>'completed','operation_key'=>$op->operation_key,
+                    'generation'=>$op->authority_generation,'actor_id'=>$staff->id,'reason'=>$reason,'at'=>$at->format(DATE_ATOM),
+                    'before'=>['state'=>'held','reason'=>'registrar_price_increased'],'after'=>['state'=>'queued','reason'=>null]]];
+                return $op->update(['state'=>'queued','safe_code'=>null,'lease_expires_at'=>null,'policy'=>$policy]);
+            };
+            if (AcquisitionAttempt::key($op->action)) {
+                AcquisitionResult::admit($op, AcquisitionAdmission::CostApproval, AcquisitionResult::revision($op),
+                    $op->acquisitionAttemptFacts()?->token, $clock, $queue, approve: $approve)->requireApplied();
+            } else {
+                $now = $clock->now();
+                $approve($now);
+                OperationWriter::at($now)->releaseCurrent($id, StepKey::renew());
+                $queue($now);
+            }
         });
     }
 }

@@ -6,11 +6,12 @@ use App\Events\Invoice\Creating;
 use App\Listeners\InvoiceNumberListener;
 use App\Models\{Invoice, InvoiceItem, InvoiceTransaction, User};
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\{Auth, DB};
+use Illuminate\Support\Facades\{Auth, Crypt, DB};
 use Illuminate\Support\Once;
 use Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts;
 use Paymenter\Extensions\Servers\Domains\Data\{CanonicalName, PriceSnapshot};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionResultSchema, OperationAttempts, OperationSchema};
 use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionOffers, HoldingObservationWork, InvoiceDescription, InvoiceFunding, OperationClaims, PriceCatalogue, RegistrarAnswers};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
@@ -101,7 +102,6 @@ function reusableRenewalHolding(
             $attempt['registration_admission']['name'] = $name;
             $attempt['reconciliation']['query']['name'] = $name;
             $attempt['reconciliation']['operation_key'] = $key;
-            // This new holding deliberately gets an independent historical acquisition, not the seed's live attempt.
             $op = (new Operation)->setRawAttributes(array_diff_key($original->getRawOriginal(), ['id' => true]))->fill([
                 'domain_id' => $holding->id, 'service_id' => $serviceId, 'invoice_id' => $invoiceId,
                 'invoice_item_id' => $itemId, 'operation_key' => $key, 'attempt' => $attempt, 'started_at' => $original->started_at,
@@ -119,11 +119,51 @@ function reusableRenewalHolding(
                 'items' => collect([InvoiceItem::findOrFail($itemId)]),
                 'transactions' => collect([InvoiceTransaction::findOrFail($paymentId)]),
             ]);
-            $op->funding = ['claim' => $funding, 'seal' => $funding];
-            $opId = $copy($op);
+            $retained = Operation::findOrFail($copy($op, ['attempt' => null, 'funding' => null,
+                'started_at' => null, 'request_fingerprint' => null]));
+            copyRenewalHoldingLedger($original, $retained, $attempt, $funding, $op->request_fingerprint);
+            same($attempt, $retained->attempt, 'Copied holding has its own sealed acquisition evidence');
             HoldingObservationWork::queueInitial($holding, $clock->now());
-            return Operation::findOrFail($opId);
+            return $retained;
         });
         return [$reused, $binding];
     };
+}
+
+/** Copy the completed fixture's single attempt, rewriting holding-bound evidence for the new native rows. */
+function copyRenewalHoldingLedger(Operation $original, Operation $retained, array $attempt, array $funding, string $digest): void
+{
+    $source = $original->acquisitionAttemptFacts()->token;
+    $copy = static function (string $table, object $row, array $fields): int {
+        $attributes = array_replace((array) $row, $fields);
+        unset($attributes['id']);
+        return DB::table($table)->insertGetId($attributes);
+    };
+    $step = DB::table(OperationSchema::STEPS)->where('id', $source->stepId)->sole();
+    $stepId = $copy(OperationSchema::STEPS, $step, ['operation_id' => $retained->id, 'current_attempt_id' => null]);
+    $originalAttempt = DB::table(OperationSchema::ATTEMPTS)->where('step_id', $source->stepId)->sole();
+    $attemptId = $copy(OperationSchema::ATTEMPTS, $originalAttempt,
+        ['step_id' => $stepId, 'claim_key' => $attempt['claim_key'], 'request_digest' => $digest]);
+    DB::table(OperationSchema::STEPS)->where('id', $stepId)->update(['current_attempt_id' => $attemptId]);
+
+    $authorities = [];
+    $rows = DB::table(OperationSchema::EVIDENCE)->where('attempt_id', $source->attemptId)->orderBy('id')->get();
+    foreach ($rows as $row) {
+        $facts = OperationAttempts::decodeEvidence($row->evidence);
+        $facts = match ($row->kind) {
+            'claim' => ['identity' => $attempt['claim_key'], 'digest' => $digest, 'funding' => $funding],
+            'admission' => [...$facts, 'funding' => $funding, 'registration_admission' => $attempt['registration_admission'],
+                'window' => [...$facts['window'], 'authority_id' => $authorities[$facts['window']['authority_id']]]],
+            'reply' => [...$facts, 'evidence' => $attempt['evidence']],
+            'decision' => [...$facts, 'registration' => $attempt['registration']],
+            'settlement' => [...$facts, 'reconciliation' => $attempt['reconciliation']],
+            default => $facts,
+        };
+        $authorities[$row->id] = $copy(OperationSchema::EVIDENCE, $row, ['operation_id' => $retained->id,
+            'attempt_id' => $attemptId, 'authority_key' => hash('sha256', $retained->id.':'.$row->authority_key),
+            'evidence' => Crypt::encryptString(json_encode($facts, JSON_THROW_ON_ERROR))]);
+    }
+    $result = (array) DB::table(AcquisitionResultSchema::TABLE)->where('operation_id', $original->id)->sole();
+    DB::table(AcquisitionResultSchema::TABLE)->insert([...$result, 'operation_id' => $retained->id,
+        'window_authority_id' => $authorities[$result['window_authority_id']]]);
 }

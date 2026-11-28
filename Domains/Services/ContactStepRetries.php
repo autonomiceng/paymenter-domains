@@ -3,9 +3,9 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Staff\Release\HeldRelease;
-use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission, AcquisitionAdmissionOutcome, AcquisitionLane, AcquisitionResult, AcquisitionRetryProof};
 /** A paid order held at its contact step with nothing sent goes back to the queue by itself, through the same checks as
  * staff Release. Orders off resumes whenever Orders are on; other causes get a few spaced tries. Then the hold stays for
  * staff, with Cancel and refund. Nothing here cancels or refunds. */
@@ -24,23 +24,15 @@ final class ContactStepRetries
         if(!is_array($history)){return PHP_INT_MAX;}
         return count(array_filter($history,static fn($e)=>is_array($e)&&($e['automatic']??false)===true&&($e['before']['reason']??null)!=='processing'));
     }
-    private static function lastTry(Operation $op): ?\DateTimeImmutable
-    {
-        $last=null;
-        foreach($op->policy['staff_actions']??[] as $e){
-            if(is_array($e)&&($e['automatic']??false)===true&&($e['before']['reason']??null)!=='processing'&&is_string($e['at']??null)){
-                try{$last=new \DateTimeImmutable($e['at']);}catch(\Throwable){}
-            }
-        }
-        return $last;
-    }
     public static function exhausted(Operation $op): bool { return self::tries($op)>=count(self::WAITS); }
-    /** Orders off waits only for Orders; other causes wait for their next spaced try. Checked before and under the locks. */
-    private static function due(Operation $op,\DateTimeImmutable $now): bool
+    /** The current contact hold schedules its next check once. Orders gates that check without changing it. */
+    public static function schedule(Operation $op,\DateTimeImmutable $now): bool
     {
-        if($op->safe_code==='processing'){return true;}
-        $tries=self::tries($op);$since=self::lastTry($op)??$op->started_at;
-        return $tries<count(self::WAITS)&&$since!==null&&$since->getTimestamp()+self::WAITS[$tries]<=$now->getTimestamp();
+        if (!self::candidate($op) || $op->safe_code === 'processing') { return false; }
+        $wait = self::WAITS[self::tries($op)] ?? null;
+        AcquisitionResult::schedule($op, $wait === null ? null : AcquisitionLane::ContactWait,
+            $wait === null ? null : $now->getTimestamp() + $wait);
+        return true;
     }
     /** Orders off is the only thing this order waits for: nothing was sent, the contact step can run again, and Orders are
      * off for its account. Pages say Orders paused for it, and the tick holds it as Orders off. $ordersOn: a page's own read. */
@@ -49,35 +41,28 @@ final class ContactStepRetries
         return self::candidate($op)&&ContactProfileHold::releaseBlocked($op)===null
             &&!($ordersOn??(bool)\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->value('processing_enabled'));
     }
-    /** An older hold saved another cause while Orders were off. It becomes the Orders off hold, which goes back to the
-     * queue when Orders are on, without spending a try. */
-    private static function holdForOrders(int $id): void
-    {
-        FreshTransaction::run(static function()use($id):void {
-            $seed=Operation::find($id);if(!$seed){return;}
-            $l=HoldingLocks::take($seed->domain);$op=$l['operations']->firstWhere('id',$id);
-            if(!$op||$op->safe_code==='processing'||!self::waitsForOrders($op,(bool)$l['account']?->processing_enabled)){return;}
-            $op->update(['safe_code'=>'processing']);
-        });
-    }
     public static function readmit(int $id,Clock $clock): bool
     {
         OperationClaims::outside();$seed=Operation::find($id);
         if(!$seed||!self::candidate($seed)){return false;}
-        if(self::waitsForOrders($seed)){if($seed->safe_code!=='processing'){self::holdForOrders($id);}return false;}
-        if(!self::due($seed,$clock->now())
-            ||!\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$seed->server_id)->value('processing_enabled')){return false;}
+        if (!\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$seed->server_id)->value('processing_enabled')) { return false; }
+        if (AcquisitionRetryProof::ordersOffHold($seed)) { return app(OperationClaims::class)->readmitOrdersOff($id); }
+        $retry = AcquisitionResult::continuation($seed);
+        if ($retry?->lane !== AcquisitionLane::ContactWait || !$retry->due($clock->now())) { return false; }
         return FreshTransaction::run(static function()use($seed,$clock):bool {
             $l=HoldingLocks::take($seed->domain);$op=$l['operations']->firstWhere('id',$seed->id);$now=$clock->now();
             if(!$op||!self::candidate($op)||!$l['account']?->processing_enabled){return false;}
+            $retry = AcquisitionResult::continuation($op, true);
             $policy=self::released($op,(string)$op->safe_code,$now);
-            if($policy===null||!self::due($op,$now)){return false;}
+            if ($policy === null || $retry?->lane !== AcquisitionLane::ContactWait || !$retry->due($now)) { return false; }
             try{$op->setRelation('domain',$l['domain']);HeldRelease::require($op,$l,$now);}catch(\Throwable){return false;}
-            $op->update(['state'=>'queued','safe_code'=>null,'lease_expires_at'=>null,'policy'=>$policy]);
-            return true;
+            return AcquisitionResult::admit($op, AcquisitionAdmission::ContactRetry, $retry->revision,
+                $op->acquisitionAttemptFacts()?->token, $clock,
+                static fn () => $op->update(['state'=>'queued','safe_code'=>null,'lease_expires_at'=>null,'policy'=>$policy]))
+                === AcquisitionAdmissionOutcome::Applied;
         });
     }
-    /** The policy with the automatic release from $from recorded at $now, which opens the order's send window. Null when History is full. */
+    /** The policy with the automatic retry recorded for staff. Null when History is full. */
     public static function released(Operation $op,string $from,\DateTimeImmutable $now): ?array
     {
         $history=$op->policy['staff_actions']??[];

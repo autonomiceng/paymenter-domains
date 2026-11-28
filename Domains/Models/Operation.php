@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\{Builder, Model};
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Management\Changes\ManagementAttempt;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionResultSchema, AttemptFacts, AttemptToken, OperationAttempts, OperationSchema};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionResult, AcquisitionResultSchema, AttemptFacts, AttemptToken, OperationAttempts, OperationSchema};
 
 class Operation extends Model
 {
@@ -23,6 +23,8 @@ class Operation extends Model
     private ?array $acquisitionRow = null;
     private AcquisitionAttempt|\Throwable|null $acquisitionAttempt = null;
     private bool $acquisitionLoaded = false;
+    /** Null when unbatched, false when the batch found no result. */
+    private object|false|null $acquisitionResultSnapshot = null;
     private ?array $terminalProof = null;
     private ?string $terminalCiphertext = null;
     private bool $noAcquisitionStep = false;
@@ -106,6 +108,12 @@ class Operation extends Model
         return $this->decodeEvidence($this->attributes['funding'] ?? null) ?? [];
     }
 
+    /** Operation policy without projected registrar attempt history. */
+    public function operationPolicy(): array
+    {
+        return $this->decodeEvidence($this->attributes['policy'] ?? null) ?? [];
+    }
+
     public function getOriginal($key = null, $default = null)
     {
         if ($this->validatingUpdate && in_array($key, ['attempt', 'funding', 'policy'], true)) {
@@ -131,6 +139,12 @@ class Operation extends Model
         ]);
     }
 
+    /** Step absence loaded by withAcquisitionStep while the holding's writers are serialized. */
+    public function acquisitionStepAbsent(): bool
+    {
+        return $this->noAcquisitionStep;
+    }
+
     private function acquisitionEvidence(string $field, array $row): array
     {
         $attempt = $this->acquisition($row);
@@ -154,6 +168,12 @@ class Operation extends Model
     public function acquisitionAttemptFacts(): ?AttemptFacts
     { return $this->acquisitionRow($this->attributes)['facts'] ?? null; }
 
+    public function acquisitionSealWindow(): ?array
+    { return $this->acquisition($this->attributes)?->sealedWindow(); }
+
+    public function contactRecheckSince(): ?\DateTimeImmutable
+    { return $this->acquisition($this->attributes)?->contactRecheckSince(); }
+
     private function acquisition(array $row): ?AcquisitionAttempt
     {
         if (!($facts = $this->acquisitionRow($row))) { return null; }
@@ -166,14 +186,24 @@ class Operation extends Model
         return $this->acquisitionAttempt;
     }
 
-    /** Batch the attempt rows for staff readers. Date-only readers need no encrypted evidence. */
-    public static function loadAcquisitionAttempts(iterable $operations, bool $withEvidence = true, bool $lock = false): void
+    public function acquisitionResultSnapshot(): object|false|null
+    { return $this->acquisitionResultSnapshot; }
+
+    public function clearAcquisitionResultSnapshot(): void
+    { $this->acquisitionResultSnapshot = null; }
+
+    /** Batch acquisition facts for list readers. Date-only readers need no encrypted evidence. */
+    public static function loadAcquisitionAttempts(iterable $operations, bool $withEvidence = true, bool $lock = false, bool $withResult = true): void
     {
-        $pending = $terminal = [];
+        $pending = $terminal = $results = [];
         foreach ($operations as $op) {
             if ($withEvidence && $op->terminalProof === null && $op->terminalCiphertext === null && $op->state === 'rejected' && $op->getRawOriginal('id') !== null
                 && AcquisitionAttempt::key((string) $op->getRawOriginal('action')) !== null) {
                 $terminal[(int) $op->id][] = $op;
+            }
+            if (!$lock && $withEvidence && $withResult && $op->acquisitionResultSnapshot === null && $op->getRawOriginal('id') !== null
+                && AcquisitionAttempt::key((string) $op->getRawOriginal('action')) !== null) {
+                $results[(int) $op->id][] = $op;
             }
             if ($op->noAcquisitionStep) { continue; }
             if (!$op->acquisitionLoaded && $op->getRawOriginal('id') !== null
@@ -190,6 +220,12 @@ class Operation extends Model
                 $op->acquisitionLoaded = $withEvidence;
             }
         }
+        if ($results !== []) {
+            $rows = DB::table(AcquisitionResultSchema::TABLE)->whereIn('operation_id', array_keys($results))->get()->keyBy('operation_id');
+            foreach ($results as $id => $models) {
+                foreach ($models as $op) { $op->acquisitionResultSnapshot = $rows->get($id, false); }
+            }
+        }
         $proofs = OperationAttempts::evidenceMany(array_keys($terminal), ['terminal'], $lock);
         foreach ($terminal as $id => $models) {
             foreach ($models as $op) { $op->terminalProof = $proofs[$id][0]['terminal'] ?? []; }
@@ -202,6 +238,7 @@ class Operation extends Model
         $this->acquisitionRow = null;
         $this->acquisitionAttempt = null;
         $this->acquisitionLoaded = false;
+        $this->clearAcquisitionResultSnapshot();
         $this->terminalProof = null;
         $this->terminalCiphertext = null;
         $this->noAcquisitionStep = false;
@@ -270,6 +307,21 @@ class Operation extends Model
     }
 
     private function updateAcquisition(Builder $query): bool
+    {
+        if (!$this->isDirty('state') || !in_array($this->state, ['succeeded', 'rejected', 'disposed'], true)) {
+            return $this->saveAcquisition($query);
+        }
+
+        $connection = $this->getConnection();
+        $write = function () use ($query): bool {
+            if (!$this->saveAcquisition($query)) { return false; }
+            AcquisitionResult::close($this);
+            return true;
+        };
+        return $connection->transactionLevel() ? $write() : $connection->transaction($write);
+    }
+
+    private function saveAcquisition(Builder $query): bool
     {
         $dirty = $this->getDirty();
         $identity = array_intersect_key($dirty, array_flip(['started_at', 'request_fingerprint', 'lease_expires_at']));

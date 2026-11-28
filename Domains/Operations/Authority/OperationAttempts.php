@@ -16,21 +16,104 @@ final class OperationAttempts
     /** What evidenceMany() gives for a row that no longer decrypts. */
     public const UNREADABLE = ['unreadable' => true];
 
+    public static function definitelyUnsent(AttemptFacts $attempt): bool
+    {
+        return $attempt->sendState === SendState::DefinitelyUnsent
+            && ($attempt->sealed() || $attempt->grantConsumedAt === null)
+            && !self::unresolvedRead($attempt);
+    }
+
+    public static function unresolvedRead(AttemptFacts $attempt): bool
+    { return $attempt->readToken !== null || $attempt->readUntil !== null || $attempt->readUnresolved; }
+
+    public static function releasedUnsent(AttemptFacts $attempt, bool $lock = false): bool
+    {
+        return self::orderedRelease($attempt)
+            && ($attempt->sealed() ? self::locallyRefused($attempt, $lock) : self::unsealedUnsent($attempt, $lock));
+    }
+
+    private static function orderedRelease(AttemptFacts $attempt): bool
+    {
+        return $attempt->released && !$attempt->current && $attempt->claimedAt !== null
+            && $attempt->releasedAt !== null && $attempt->releasedAt >= $attempt->claimedAt;
+    }
+
+    public static function unsealedUnsent(AttemptFacts $attempt, bool $lock): bool
+    {
+        return !$attempt->sealed() && self::definitelyUnsent($attempt)
+            && !self::hasAcquisitionSettlementEvidence($attempt->token, $lock, unsealed: true);
+    }
+
+    /** Only the transport's durable local refusal proves the physical grant was unused. */
+    public static function locallyRefused(AttemptFacts $attempt, bool $lock = false): bool
+    {
+        if (!$attempt->sealed() || $attempt->claimedAt === null || $attempt->sealedAt < $attempt->claimedAt
+            || !self::definitelyUnsent($attempt)) { return false; }
+        $token = $attempt->token;
+        $reply = self::evidence($token->operationId, $token->attemptId, 'reply', $lock);
+        return ($reply['source'] ?? null) === 'local_refusal' && ($reply['outcome'] ?? null) === 'unsent'
+            && !self::hasAcquisitionSettlementEvidence($token, $lock);
+    }
+
+    /** Null means there is no purchase step. Every retained attempt must independently prove no send. */
+    public static function unsentPurchase(int $operationId, StepKey $key, bool $lock = false): ?bool
+    {
+        $step = self::step($operationId, $key, $lock);
+        if (!$step) { return null; }
+        $rows = DB::table(OperationSchema::ATTEMPTS)->where('step_id', $step->id)->orderBy('ordinal')
+            ->when($lock, fn ($q) => $q->lockForUpdate())->get();
+        if ($step->current_attempt_id !== null && (int) $step->current_attempt_id !== (int) ($rows->last()->id ?? 0)) {
+            return false;
+        }
+        foreach ($rows as $row) {
+            $attempt = self::facts($operationId, $step, $row);
+            $unsent = $attempt->current
+                ? !$attempt->released && self::locallyRefused($attempt, $lock)
+                : self::releasedUnsent($attempt, $lock);
+            if (!$unsent) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static function recordedLease(AttemptFacts $attempt): bool
+    {
+        return $attempt->claimedAt !== null && $attempt->claimUntil !== null && $attempt->claimedAt <= $attempt->claimUntil;
+    }
+
+    public static function replaceable(AttemptFacts $attempt, \DateTimeImmutable $now, bool $lock = false): bool
+    {
+        return self::releasedUnsent($attempt, $lock) || ($attempt->current && !$attempt->released && !$attempt->sealed()
+            && self::recordedLease($attempt) && $attempt->claimUntil <= $now && self::unsealedUnsent($attempt, $lock));
+    }
+
     public static function step(int $operationId, StepKey $key, bool $lock = false): ?object
     {
         return DB::table(OperationSchema::STEPS)->where(['operation_id' => $operationId, 'step_type' => $key->type, 'sequence' => $key->sequence])
             ->when($lock, fn ($q) => $q->lockForUpdate())->first();
     }
 
-    /** The step's current attempt, or its latest one when no attempt is current. */
+    /** An inconsistent current pointer must not turn a claimed operation into an unattempted one. */
+    public static function hasAttempts(int $operationId, StepKey $key, bool $lock = false): bool
+    {
+        $step = self::step($operationId, $key, $lock);
+        return $step !== null && ($step->current_attempt_id !== null
+            || DB::table(OperationSchema::ATTEMPTS)->where('step_id', $step->id)
+                ->when($lock, fn ($q) => $q->lockForUpdate())->first(['id']) !== null);
+    }
+
+    /** The latest attempt, provided any current pointer names that attempt. */
     public static function latest(int $operationId, StepKey $key, bool $lock = false): ?AttemptFacts
     {
         $step = self::step($operationId, $key, $lock);
         if (!$step) { return null; }
         $row = DB::table(OperationSchema::ATTEMPTS)->where('step_id', $step->id)
-            ->when($step->current_attempt_id !== null, fn ($q) => $q->where('id', $step->current_attempt_id), fn ($q) => $q->orderByDesc('ordinal'))
-            ->when($lock, fn ($q) => $q->lockForUpdate())->first();
-        return $row ? self::facts($operationId, $step, $row) : null;
+            ->orderByDesc('ordinal')->when($lock, fn ($q) => $q->lockForUpdate())->first();
+        if (!$row || ($step->current_attempt_id !== null && (int) $step->current_attempt_id !== (int) $row->id)) {
+            return null;
+        }
+        return self::facts($operationId, $step, $row);
     }
 
     /** The current attempt, only while the step points at it. */
@@ -162,19 +245,37 @@ final class OperationAttempts
     }
 
     /** A negative answer must see any retained proof, even if its payload is unreadable. */
-    public static function hasAcquisitionSettlementEvidence(AttemptToken $token, bool $lock = false): bool
+    public static function hasAcquisitionSettlementEvidence(AttemptToken $token, bool $lock = false, bool $unsealed = false): bool
     {
         return DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $token->operationId, 'attempt_id' => $token->attemptId])
-            ->whereIn('kind', ['observation', 'acquisition_charge', 'held', 'settlement', 'answer'])
+            ->whereIn('kind', ['observation', 'acquisition_charge', 'held', 'settlement', 'answer', ...($unsealed ? ['admission', 'reply', 'decision'] : [])])
             ->when($lock, fn ($q) => $q->lockForUpdate())->first(['id']) !== null;
     }
 
     /** Decrypted evidence of one kind for an attempt, or for the operation when no attempt is given. */
-    public static function evidence(int $operationId, ?int $attemptId, string $kind): ?array
+    public static function evidence(int $operationId, ?int $attemptId, string $kind, bool $lock = false): ?array
     {
         $row = DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $operationId, 'attempt_id' => $attemptId, 'kind' => $kind])
-            ->orderBy('id')->first();
+            ->when($lock, fn ($q) => $q->lockForUpdate())->orderBy('id')->first();
         return $row ? self::decoded($row) : null;
+    }
+
+    /** The exact counter refusal and, after seal, the durable proof that this attempt did not reach handoff. */
+    public static function testCapacityRefusal(AttemptFacts $attempt, bool $lock = false): ?int
+    {
+        if (!self::releasedUnsent($attempt, $lock)) { return null; }
+        $token = $attempt->token;
+        $row = DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $token->operationId, 'attempt_id' => $token->attemptId,
+            'kind' => 'test_capacity', 'source' => 'local', 'outcome' => 'fresh'])
+            ->when($lock, fn ($q) => $q->lockForUpdate())->first();
+        if (!$row) { return null; }
+        if (DB::table(OperationSchema::EVIDENCE)->where(['operation_id' => $token->operationId, 'attempt_id' => $token->attemptId,
+            'kind' => 'admission_window', 'outcome' => AcquisitionAdmission::TestCapacity->value])
+            ->when($lock, fn ($q) => $q->lockForUpdate())->first(['id'])) { return null; }
+        $event = self::decodeEvidence($row->evidence);
+        $at = self::time($row->recorded_at);
+        return $at !== null && $at >= $attempt->claimedAt && $at <= $attempt->releasedAt
+            && ($event['phase'] ?? null) === ($attempt->sealed() ? 'purchase' : 'preflight') ? (int) $row->id : null;
     }
 
     /**
@@ -239,9 +340,10 @@ final class OperationAttempts
     {
         return new AttemptFacts(new AttemptToken($operationId, (int) $step->id, (int) $row->id, (int) $row->ordinal, $row->claim_key),
             $step->current_attempt_id !== null && (int) $step->current_attempt_id === (int) $row->id, $row->released_at !== null,
-            self::time($row->claim_until), self::time($row->sealed_at), $row->operation_revision === null ? null : (int) $row->operation_revision,
+            self::recordedTime($row->claim_until), self::time($row->sealed_at), $row->operation_revision === null ? null : (int) $row->operation_revision,
             $row->request_digest, SendState::from($row->send_state), self::time($row->grant_consumed_at), $row->authorized_amount,
-            $row->authorized_currency, $row->mode, $row->read_token, self::time($row->read_until), (bool) $row->read_unresolved, self::time($row->claimed_at));
+            $row->authorized_currency, $row->mode, $row->read_token, self::time($row->read_until), (bool) $row->read_unresolved,
+            self::recordedTime($row->claimed_at), self::recordedTime($row->released_at), self::recordedTime($row->dispatch_until));
     }
 
     /**
@@ -250,6 +352,13 @@ final class OperationAttempts
      */
     public static function at(\DateTimeInterface $time): string
     { return \DateTimeImmutable::createFromInterface($time)->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s'); }
+
+    private static function recordedTime(?string $value): ?\DateTimeImmutable
+    {
+        if ($value === null) { return null; }
+        $time = \DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', $value, new \DateTimeZone('UTC'));
+        return $time && self::at($time) === $value ? $time : null;
+    }
 
     private static function time(?string $value): ?\DateTimeImmutable
     { return $value === null ? null : new \DateTimeImmutable($value, new \DateTimeZone('UTC')); }

@@ -13,11 +13,65 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, BalanceRetri
 /** Evidence needed for local readmission or return, without any authority to spend. */
 final class AcquisitionRetryProof
 {
-    /** Orders off stopped this before any attempt, so nothing needs a person once they are on. Held only for Orders off, it goes back to the normal first claim, which proves everything again. */
+    public const INTERRUPTED_HOLDS = ['processing', 'write_disabled', 'namesilo_account_guard', 'write_acceptance_required'];
+    public const LOCAL_REFUSAL_HISTORY = ['capacity_deferrals', 'test_call_refusals'];
+
+    /** An expired worker without a purchase seal belongs to admission. A retired seal still has its own proof. */
+    public static function expiredClaim(Operation $op, \DateTimeImmutable $now): bool
+    {
+        return $op->completed_at === null && ($op->state === 'running' || ($op->state === 'uncertain' && $op->safe_code === 'stale_claim'))
+            && self::recoverableClaim($op, $now);
+    }
+
+    /** These feature and account holds can be checked again after the worker was fenced. */
+    public static function interruptedHold(Operation $op): bool
+    {
+        return $op->state === 'held' && in_array($op->safe_code, self::INTERRUPTED_HOLDS, true)
+            && $op->completed_at === null && $op->lease_expires_at === null
+            && ($prior = self::unsealedClaim($op)) !== null && OperationAttempts::releasedUnsent($prior);
+    }
+
+    public static function localRecovery(Operation $op, \DateTimeImmutable $now): bool
+    {
+        return self::expiredClaim($op, $now) || self::interruptedHold($op) || self::catalogueRetry($op);
+    }
+
+    public static function recoverableClaim(Operation $op, \DateTimeImmutable $now): bool
+    {
+        $prior = self::unsealedClaim($op);
+        return $prior !== null && OperationAttempts::replaceable($prior, $now);
+    }
+
+    private static function unsealedClaim(Operation $op): ?AttemptFacts
+    {
+        $prior = $op->acquisitionAttemptFacts();
+        return $prior && !$prior->sealed() && !AcquisitionAttempt::conflicts($op) && self::unsealed($op) ? $prior : null;
+    }
+
+    /** The latest purchase attempt must prove its own release before another worker can claim. */
+    public static function releasedForReadmission(Operation $op, ?AttemptFacts $prior = null, bool $lock = false): bool
+    {
+        $key = AcquisitionAttempt::key($op->action);
+        if (!$key || AcquisitionAttempt::conflicts($op)) { return false; }
+        $id = (int) $op->id;
+        $prior ??= OperationAttempts::latest($id, $key, $lock);
+        return $prior ? OperationAttempts::releasedUnsent($prior, $lock)
+            : !OperationAttempts::hasAttempts($id, $key, $lock);
+    }
+
+    /** Orders paused before a first claim or suspended a continuing purchase admission. */
     public static function ordersOffHold(Operation $op): bool
     {
-        return $op->state==='held'&&$op->safe_code==='processing'&&in_array($op->action,['register','transfer'],true)&&!array_key_exists('balance_retry',$op->policy??[])
-            &&self::virgin($op)&&($op->action==='register'||TransferInputs::validCode($op->payload['epp']??null));
+        if ($op->state !== 'held' || $op->safe_code !== 'processing' || AcquisitionAttempt::key($op->action) === null
+            || ($op->action === 'transfer' && !TransferInputs::validCode($op->payload['epp'] ?? null))) { return false; }
+        $lock = \Illuminate\Support\Facades\DB::transactionLevel() > 0;
+        $continuation = AcquisitionResult::continuation($op, $lock);
+        if ($continuation?->lane !== null
+            && !in_array($continuation->lane, [AcquisitionLane::Purchase, AcquisitionLane::BalancePurchase], true)) { return false; }
+        if (self::virgin($op)) { return true; }
+        $prior = $op->acquisitionAttemptFacts();
+        return $prior !== null && $continuation?->window !== null
+            && AcquisitionResult::continues($op, $continuation->window, $prior, $lock);
     }
     /** Will the tick take this back? The writer passes its locked read, a page reads without locks; the check is the same. */
     public static function ordersOffReturns(Operation $op,?\Closure $facts=null): bool
@@ -29,53 +83,92 @@ final class AcquisitionRetryProof
     /** Bounded local timestamps. They prove nothing was sent and nothing about the registrar. */
     public static function localDeferrals(array $attempt): bool
     {
-        $d=$attempt['capacity_deferrals']??[];
-        return is_array($d)&&array_is_list($d)&&count($d)<=6&&!array_filter($d,static fn($at)=>!is_string($at)||\DateTimeImmutable::createFromFormat(DATE_ATOM,$at)===false);
+        if (!array_key_exists('capacity_deferrals', $attempt)) { return true; }
+        $dates = $attempt['capacity_deferrals'];
+        return is_array($dates) && array_is_list($dates) && count($dates) <= 6
+            && !array_filter($dates, static fn ($at) => !is_string($at)
+                || !($date = \DateTimeImmutable::createFromFormat(DATE_ATOM, $at)) || $date->format(DATE_ATOM) !== $at);
     }
+
+    public static function settledRefusalHistory(array $attempt): bool
+    {
+        return self::localDeferrals($attempt) && (!array_key_exists('test_call_refusals', $attempt)
+            || self::testCallHistory($attempt['test_call_refusals']));
+    }
+
+    /** A fresh cap refusal can leave history alone, without a claim to prove the purchase was unsent. */
+    public static function testCallHistoryOnly(array $attempt): bool
+    {
+        return !isset($attempt['claim_key']) && array_key_exists('test_call_refusals', $attempt);
+    }
+    public static function deferred(AttemptFacts $attempt, bool $lock = false): bool
+    {
+        $token = $attempt->token;
+        $event = OperationAttempts::evidence($token->operationId, $token->attemptId, 'capacity', $lock);
+        return !$attempt->sealed() && ($event['source'] ?? null) === 'local' && ($event['outcome'] ?? null) === 'deferred';
+    }
+
     public static function capacityRetry(Operation $op): bool
     {
-        $a=$op->attempt??[];$history=$a['test_call_refusals']??[];
-        return self::unsealed($op)&&($a['send_state']??null)==='definitely_unsent'
-            &&isset($a['claim_key'],$a['capacity_deferrals'])&&is_array($a['capacity_deferrals'])
-            &&count($a['capacity_deferrals'])<=5&&(!array_key_exists('test_call_refusals',$a)||self::testCallHistory($history))
-            &&!array_diff(array_keys($a),['claim_key','seal','send_state','capacity_deferrals','test_call_refusals']);
+        $prior = $op->acquisitionAttemptFacts();
+        return $prior !== null && self::releasedForReadmission($op, $prior) && self::deferred($prior);
     }
+
     /** A paid preflight shortfall retains negative proof through validated staff or system readmission. */
     public static function balanceRefusalRetryable(Operation $op): bool
     {
         if (!in_array($op->action,['register','transfer'],true) || !in_array($op->state,['held','queued'],true)
-            || $op->completed_at!==null || !self::testCallRetryFunding($op)
+            || $op->completed_at!==null || !self::testCallRetryFunding($op) || !self::releasedForReadmission($op)
             || isset($op->attempt['claim_key'])&&!is_array($op->funding['claim']??null)) { return false; }
-        try{$released=ExecutionWindow::balanceReleased($op)||in_array($op->safe_code,BalanceRetries::REVIEW_CODES,true)&&BalanceRetry::from($op)!==null;
-            if(!isset($op->attempt['claim_key'])&&(!self::virgin($op)||!in_array($op->safe_code,['usd_balance_required','enom_test_transfer_usd_balance_required'],true)&&BalanceRetry::from($op)===null)){return false;}
-        }catch(\Throwable){return false;}
-        $held=$op->state==='held'&&in_array($op->safe_code,ExecutionWindow::BALANCE_HOLDS,true)
-            &&(in_array($op->safe_code,BalanceRetries::INITIAL_CODES,true)||$released||BalanceRetries::legacyHold($op));
-        $queued=$op->state==='queued'&&in_array($op->safe_code,[null,'write_rate_limited'],true)&&$released;
-        if (!$held&&!$queued) { return false; }
+        try {
+            $window = AcquisitionResult::window($op);
+            $retry = BalanceRetry::from($op);
+            // The old admission is negative-send proof for staff even after automatic ownership ends.
+            $released = BalanceRetries::owns($op) || $window?->origin === AcquisitionAdmission::Balance->value
+                || ($retry !== null && $window?->origin === AcquisitionAdmission::StaffRelease->value && $window->reason === $op->safe_code);
+            if (!isset($op->attempt['claim_key']) && (!self::virgin($op)
+                || !in_array($op->safe_code, ['usd_balance_required', 'enom_test_transfer_usd_balance_required'], true) && $retry === null)) {
+                return false;
+            }
+        } catch (\Throwable) { return false; }
+        $rateHold = $op->safe_code === 'write_rate_limited' && ($released || ($window !== null
+            && !in_array($window->origin, [AcquisitionAdmission::TestCapacity->value, AcquisitionAdmission::StaffRelease->value], true)
+            && self::capacityRetry($op))) && $retry !== null;
+        $review = in_array($op->safe_code, BalanceRetries::REVIEW_CODES, true) && $retry !== null;
+        $held = $op->state === 'held' && in_array($op->safe_code, ExecutionWindow::BALANCE_HOLDS, true)
+            && (in_array($op->safe_code, BalanceRetries::INITIAL_CODES, true) || $released || $rateHold || $review || BalanceRetries::legacyHold($op));
+        $queued = $op->state === 'queued' && in_array($op->safe_code, [null, 'write_rate_limited'], true) && $released;
+        if (!$held && !$queued) { return false; }
         $proof=clone $op;$proof->state='held';$proof->safe_code='registrar_balance_insufficient';
-        try { RefundProof::requireUnsent($proof,$op->domain); return true; }
+        try { RefundProof::requireUnsentForAdmission($proof, $op->domain); return true; }
         catch (\Throwable) { return false; }
     }
-    /** A staff release of an unsent contact step hold: the audited release is the latest window and the order's own
-     * contact row still waits, so the same claim runs the contact step and the purchase once. */
-    public static function contactRetry(Operation $op): bool
+    /** A held NameSilo purchase can open a new window once its old worker is fenced. */
+    public static function catalogueRetry(Operation $op): bool
     {
-        if($op->state!=='queued'||$op->safe_code!==null||!self::unsealed($op)){return false;}
-        try{ExecutionWindow::start($op,$reason);}catch(\Throwable){return false;}
-        return in_array($reason,ContactProfileHold::HOLDS,true)&&ContactProfileHold::unsent($op,retry:true);
+        if ($op->registrar_key !== 'namesilo' || $op->state !== 'held' || $op->safe_code !== 'write_acceptance_required'
+            || $op->completed_at !== null || $op->lease_expires_at !== null) { return false; }
+        $prior = $op->acquisitionAttemptFacts();
+        return $prior !== null && $prior->grantConsumedAt === null && self::releasedForReadmission($op) && self::unsealed($op);
     }
+
     public static function accountGuardRetryable(Operation $op): bool
     {
-        return $op->state==='held'&&$op->safe_code==='namesilo_account_guard'&&$op->registrar_key==='namesilo'
-            &&in_array($op->action,['register','transfer'],true)&&$op->lease_expires_at===null&&$op->completed_at===null&&self::capacityRetry($op);
+        if ($op->state !== 'held' || $op->safe_code !== 'namesilo_account_guard' || $op->registrar_key !== 'namesilo'
+            || AcquisitionAttempt::key($op->action) === null || $op->lease_expires_at !== null || $op->completed_at !== null) {
+            return false;
+        }
+        if (self::capacityRetry($op)) { return true; }
+        // A worker can exhaust the account guard's Release window before it reaches purchase.
+        $lock = \Illuminate\Support\Facades\DB::transactionLevel() > 0;
+        $prior = $op->acquisitionAttemptFacts();
+        return $prior !== null && !$prior->sealed() && self::releasedForReadmission($op, $prior, $lock)
+            && AcquisitionResult::window($op, $lock)?->reason === $op->safe_code;
     }
-    public static function virgin(Operation $op): bool { return ($op->attempt ?? []) === [] && !array_key_exists('refund', $op->funding ?? []) && self::unsealed($op); }
-    public static function testCallRetry(Operation $op): bool
+    public static function virgin(Operation $op): bool
     {
-        if(!self::testCallRefusalUnsent($op)||!in_array($op->state,['queued','held'],true)) { return false; }
-        $attempt=$op->attempt??[];
-        return !isset($attempt['capacity_deferrals'])||count($attempt['capacity_deferrals'])<=5;
+        return ($op->attempt ?? []) === [] && $op->acquisitionAttemptFacts() === null && !AcquisitionAttempt::conflicts($op)
+            && !array_key_exists('refund', $op->funding ?? []) && self::unsealed($op);
     }
     public static function testCallHistory(mixed $history): bool
     {
@@ -102,20 +195,51 @@ final class AcquisitionRetryProof
             && !array_key_exists('execution', $op->cost ?? []) && !array_key_exists('actual', $op->cost ?? [])
             && !array_key_exists('dispatch_attempted_at', $op->policy ?? []);
     }
+    public const TEST_CAPACITY_CODES = ['enom_test_call_cap', 'enom_test_transfer_call_cap'];
+
     /** Enom preflight holds that keep their unsent claim for a later release. */
-    public const TEST_CALL_HOLDS=['enom_test_call_cap','enom_test_transfer_call_cap','pre_send_interrupted','seal_authority_invalid','claim_authority_invalid',
+    public const TEST_CALL_HOLDS=[...self::TEST_CAPACITY_CODES,'pre_send_interrupted','seal_authority_invalid','claim_authority_invalid',
         'nameservers_required','write_acceptance_required','write_rate_limited','registry_details_unsupported','processing','write_disabled',
         'usd_balance_required','enom_test_transfer_usd_balance_required','enom_test_setup_required','enom_test_transfer_setup_required',...WriteHeld::UNSENT_REFUSALS];
-    /** Staff may release only this retained, proven-unsent TEST preflight hold. */
+
+    public static function currentTestRefusal(Operation $op, bool $lock = false): ?int
+    {
+        $key = AcquisitionAttempt::key($op->action);
+        if (!$key || $op->registrar_key !== 'enom' || $op->state !== 'held' || $op->lease_expires_at !== null
+            || $op->completed_at !== null || $op->provider_order_id !== null || $op->confirmed_expires_at !== null
+            || $op->safe_code !== ($op->action === 'transfer' ? 'enom_test_transfer_call_cap' : 'enom_test_call_cap')
+            || AcquisitionAttempt::conflicts($op) || !self::testCallRetryFunding($op)) { return null; }
+        $latest = OperationAttempts::latest((int) $op->id, $key, $lock);
+        return $latest === null ? null : OperationAttempts::testCapacityRefusal($latest, $lock);
+    }
+
+    /** Staff may release the present cap refusal or a present, definitely-unsent preflight hold. */
     public static function testCallRefusalRetryable(Operation $op): bool
     {
-        return $op->state==='held'&&in_array($op->safe_code,self::TEST_CALL_HOLDS,true)
-            &&in_array($op->action,['register','transfer'],true)&&$op->registrar_key==='enom'
-            &&$op->lease_expires_at===null&&$op->completed_at===null
-            &&$op->provider_order_id===null&&$op->confirmed_expires_at===null
-            &&self::testCallRefusalUnsent($op)
-            &&self::testCallRetry($op)
-            &&self::testCallRetryFunding($op);
+        $lock = \Illuminate\Support\Facades\DB::transactionLevel() > 0;
+        if (in_array($op->safe_code, self::TEST_CAPACITY_CODES, true)) { return self::currentTestRefusal($op, $lock) !== null; }
+        if ($op->state !== 'held' || $op->registrar_key !== 'enom' || !in_array($op->safe_code, self::TEST_CALL_HOLDS, true)
+            || $op->lease_expires_at !== null || $op->completed_at !== null
+            || $op->provider_order_id !== null || $op->confirmed_expires_at !== null || !self::testCallRetryFunding($op) || !self::unsealed($op)) {
+            return false;
+        }
+        $prior = $op->acquisitionAttemptFacts();
+        if ($op->safe_code === 'write_rate_limited' && $prior !== null) {
+            $window = AcquisitionResult::window($op, $lock);
+            if ($window?->origin === AcquisitionAdmission::TestCapacity->value && $window->expiryReason === $op->safe_code) {
+                // The released attempt may still be the cap refusal that opened this window.
+                return self::releasedForReadmission($op, $prior, $lock) && AcquisitionResult::ownsAttempt($op, $window, $prior, $lock);
+            }
+        }
+        if (in_array($op->safe_code, WriteHeld::FINAL_REFUSALS, true)) {
+            // Staff can review fresh availability after a capacity release whose retry never reached purchase.
+            if ($prior === null || $op->action !== 'register' || $op->safe_code !== 'name_unavailable'
+                || AcquisitionResult::window($op, $lock)?->origin !== AcquisitionAdmission::TestCapacity->value) {
+                return false;
+            }
+        }
+        return ($prior === null ? $op->safe_code === 'registrar_price_increased' && self::virgin($op) : !$prior->sealed())
+            && self::releasedForReadmission($op, $prior, $lock);
     }
 
     /** A retained claim is allowed only because the TEST proof below establishes it was unsealed. */
@@ -139,13 +263,16 @@ final class AcquisitionRetryProof
     {
         $a=$op->attempt??[];$f=FinancialAdjustments::registrarFunding($op);$history=array_key_exists('test_call_refusals',$a)?$a['test_call_refusals']:[];
         $priceHold=$op->state==='held'&&$op->safe_code==='registrar_price_increased';
-        $priceRelease=$op->state==='queued'&&ExecutionWindow::priceReleased($op);
+        $priceRelease=$op->state==='queued'&&AcquisitionResult::window($op)?->reason==='registrar_price_increased';
         $holdCodes=[...BalanceRetries::REVIEW_CODES,...self::TEST_CALL_HOLDS];
-        if(!in_array($op->action,['register','transfer'],true)||$op->registrar_key!=='enom'||!self::testCallHistory($history)||(!$history&&!$priceHold&&!$priceRelease)||!self::unsealed($op)
+        if(!in_array($op->action,['register','transfer'],true)||$op->registrar_key!=='enom'||!self::settledRefusalHistory($a)||(!$history&&!$priceHold&&!$priceRelease)||!self::unsealed($op)
             ||$op->lease_expires_at!==null||$op->provider_order_id!==null||$op->confirmed_expires_at!==null||$op->completed_at!==null
             ||array_key_exists('actual',$op->cost??[])||array_key_exists('execution',$op->cost??[])||array_key_exists('dispatch_attempted_at',$op->policy??[])
             ||array_diff(array_keys($f),['claim','seal','refund_authorization','refund','dispute_holds','financial_adjustments'])||array_key_exists('seal',$f)) { return false; }
-        $held=$op->state==='held'&&in_array($op->safe_code,$holdCodes,true);
+        $held = $op->state === 'held' && (in_array($op->safe_code, $holdCodes, true)
+            || ($op->action === 'transfer' && $op->safe_code === 'transfer_setup_review_required'
+                && ($attempt = $op->acquisitionAttemptFacts()) !== null
+                && OperationAttempts::testCapacityRefusal($attempt, \Illuminate\Support\Facades\DB::transactionLevel() > 0) !== null));
         $queued=$op->state==='queued'&&in_array($op->safe_code,[null,'write_rate_limited'],true);
         $approved=$op->state==='rejected'&&$op->safe_code==='refund_approved';
         $terminal=$op->state==='rejected'&&(in_array($op->safe_code,$holdCodes,true)||$approved)
@@ -158,33 +285,30 @@ final class AcquisitionRetryProof
                 ||$auth['actor_id']<1||!is_string($auth['reason']??null)||!preg_match('/^[a-z][a-z0-9_]{4,63}$/D',$auth['reason'])
                 ||!is_string($auth['at']??null)||$auth['operation_key']!==$op->operation_key||$auth['generation']!==$op->authority_generation) { return false; }
         }
-        $unclaimedKeys=['test_call_refusals','capacity_deferrals'];
+        $unclaimedKeys=self::LOCAL_REFUSAL_HISTORY;
         if($terminal){$unclaimedKeys=[...$unclaimedKeys,'seal','send_state','disposition','rejection_basis','terminal'];}
         if(!isset($a['claim_key'])) {
             $deferrals=$a['capacity_deferrals']??[];
             return !array_diff(array_keys($a),$unclaimedKeys)&&$op->started_at===null&&$op->request_fingerprint===null
                 &&($terminal?(($a['seal']??null)==='absent'&&($a['send_state']??null)==='definitely_unsent'):(!array_key_exists('seal',$a)&&!array_key_exists('send_state',$a)))&&!array_key_exists('claim',$f)&&!array_key_exists('seal',$f)
-                &&(!array_key_exists('capacity_deferrals',$a)||(is_array($deferrals)&&array_is_list($deferrals)&&count($deferrals)<=5
-                    &&!array_filter($deferrals,static fn($at)=>!is_string($at)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/D',$at))));
+                &&count($deferrals)<=5;
         }
-        $allowed=['test_call_refusals','claim_key','seal','send_state','capacity_deferrals'];
+        $allowed=['claim_key','seal','send_state',...self::LOCAL_REFUSAL_HISTORY];
         if($terminal){$allowed[]='disposition';$allowed[]='rejection_basis';$allowed[]='terminal';}
-        $deferrals=$a['capacity_deferrals']??[];
         return isset($a['claim_key'],$a['seal'],$a['send_state'])&&is_string($a['claim_key'])&&preg_match('/^[a-f0-9]{32}$/D',$a['claim_key'])
             &&$a['seal']==='absent'&&$a['send_state']==='definitely_unsent'&&$op->started_at!==null
             &&is_string($op->request_fingerprint)&&preg_match('/^[a-f0-9]{64}$/D',$op->request_fingerprint)
-            &&is_array($f['claim']??null)&&!array_diff(array_keys($a),$allowed)
-            &&(!array_key_exists('capacity_deferrals',$a)||(is_array($deferrals)&&array_is_list($deferrals)&&count($deferrals)<=6
-                &&!array_filter($deferrals,static fn($at)=>!is_string($at)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/D',$at))));
+            &&is_array($f['claim']??null)&&!array_diff(array_keys($a),$allowed);
     }
 
     /** Same local proof for the advisory offer and locked readmission; never grants spending. */
     public static function balanceAdmissionReason(Operation $op,?array $facts=null): ?string
     {
+        if (AcquisitionAttempt::key($op->action) === null) { return 'balance_retry_authority_changed'; }
         try {
             BalanceRetry::from($op);
             $proof=clone $op;$proof->state='held';$proof->safe_code='registrar_balance_insufficient';
-            RefundProof::requireUnsent($proof,$op->domain);
+            RefundProof::requireUnsentForAdmission($proof, $op->domain);
         }catch(\PDOException $e){throw $e;}catch(\Throwable){return 'pre_send_interrupted';}
         try {
             if(!app(AccountBindings::class)->configurationAvailable((int)$op->server_id)){return 'balance_retry_authority_changed';}

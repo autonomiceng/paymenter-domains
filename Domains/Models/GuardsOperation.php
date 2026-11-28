@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Models;
 
+use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionAttempt;
 
 trait GuardsOperation
@@ -47,7 +48,7 @@ trait GuardsOperation
             if (isset($old['renewal']) && $operation->isDirty(['base_expires_at', 'expected_expires_at'])) {
                 throw new \DomainException('Issued renewal expiry obligations are frozen.');
             }
-            foreach (['funds_wait_at', 'funds_wait_until', 'native_acquisition_cancelled_at', 'native_acquisition_closure', 'held_order_refund', 'unpaid_retirement', 'account_complimentary', 'checkout', 'price', 'seller_revision', 'calendar', 'renewal', 'complimentary', 'management', 'privacy'] as $key) {
+            foreach (['funds_wait_until', 'native_acquisition_cancelled_at', 'native_acquisition_closure', 'held_order_refund', 'unpaid_retirement', 'account_complimentary', 'checkout', 'price', 'seller_revision', 'calendar', 'renewal', 'complimentary', 'management', 'privacy'] as $key) {
                 if (array_key_exists($key, $old) && ($new[$key] ?? null) !== $old[$key]) { throw new \DomainException('Checkout evidence is frozen.'); }
             }
             $old = $operation->getOriginal('cost') ?? []; $new = $operation->cost ?? [];

@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 require __DIR__.'/Support/operation-fixture.php';
 require __DIR__.'/Support/money-receipt.php';
 use App\Helpers\ExtensionHelper;
@@ -152,7 +153,8 @@ foreach (['release', 'funds deadline', 'price'] as $case) {
     $audit = $held->fresh()->funding['late_credits'];
     same($before + 100, $credit(), 'A stray payment is fully returned before retry: '.$case);
     if ($case === 'funds deadline') {
-        $held->refresh()->update(['safe_code' => 'registrar_balance_insufficient', 'policy' => [...$held->policy, 'funds_wait_at' => $now->format(DATE_ATOM)]]);
+        fixtureAcquisitionFundsWait($held, $now);
+        $held->refresh();
         FundsWaits::sweep(Account::where('server_id', $held->server_id)->sole(), $now->modify('+3 days'));
         if ($held->fresh()->state !== 'rejected') {
             $retryFailures[$case] = $held->fresh()->state;
