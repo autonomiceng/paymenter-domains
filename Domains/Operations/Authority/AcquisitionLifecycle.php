@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{ExecutionWindow, OperationCla
 /** One attempt's send evidence, with its independent read and dispatch clocks. */
 final readonly class AcquisitionLifecycle
 {
-    public const EVIDENCE = ['claim', 'admission', 'reply', 'decision', 'observation', 'acquisition_charge', 'held', 'settlement', 'answer'];
+    public const EVIDENCE = ['claim', 'admission', 'reply', 'decision', 'observation', 'acquisition_charge', 'held', 'settlement', 'answer', 'test_capacity'];
     private const PUBLICATION = ['observation' => true, 'acquisition_charge' => true, 'held' => true, 'settlement' => true, 'answer' => true];
 
     private function __construct(public ?AttemptFacts $facts, public AcquisitionPhase $phase, public ?string $reason = null,
@@ -46,7 +46,19 @@ final readonly class AcquisitionLifecycle
                 || OperationAttempts::unresolvedRead($facts)) {
                 return new self($facts, $phase);
             }
-            return new self($facts, AcquisitionPhase::ProvedUnsent, $reply['evidence']['reason'] ?? null);
+            $reason = $reply['evidence']['reason'] ?? null;
+            if ($reason === 'test_capacity') {
+                $capacity = $rows['test_capacity'] ?? [];
+                $recorded = $capacity['recorded_at'] ?? null;
+                $at = is_string($recorded) ? \DateTimeImmutable::createFromFormat(DATE_ATOM, $recorded) : false;
+                if (!$facts->released || ($capacity['source'] ?? null) !== 'local'
+                    || !in_array($capacity['outcome'] ?? null, ['fresh', 'balance'], true)
+                    || ($capacity['evidence']['phase'] ?? null) !== 'purchase'
+                    || !$at || $at < $facts->claimedAt || $at > $facts->releasedAt) {
+                    return new self($facts, $phase);
+                }
+            }
+            return new self($facts, AcquisitionPhase::ProvedUnsent, $reason);
         }
         if (!$facts->current || $facts->released) { return new self($facts, $phase); }
         if ($contact && ($reply['source'] ?? null) === 'reply' && ($reply['outcome'] ?? null) === 'created'

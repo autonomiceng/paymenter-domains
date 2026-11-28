@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions;
 use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationAttempts;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionPhase, OperationAttempts};
 use Paymenter\Extensions\Servers\Domains\Services\{PricingRule, ReconciliationEvidence, Refunds, Runtime, RuntimeWork, StaffOperationReview, StaffOperations, TransferInputs};
 
 $nativeSuccessful = false;
@@ -191,4 +191,57 @@ same(['rejected', 'refund_approved', 'cancelled', $expectedCredit],
     'Reviewed cancellation closes the transfer and credits its exact payment');
 same(null, app(Refunds::class)->creditRejected($closed->id), 'Repeating credit recovery has nothing to return');
 same([$expectedCredit, 0], [$credit(), $purchases()], 'Credit recovery leaves the balance intact and sends no purchase');
+// A prewire capacity refusal remains returnable even after Release uses its retry admission.
+$setTime($clock->now()->modify('+61 seconds'));
+$reset();
+installedOfferEvidence($binding, $clock, true);
+$released = $newPaidTransfer('cutoff released wire refusal');
+$cutoff = TransferInputs::deadline($released, $clock->now());
+$setTime($cutoff->modify('-120 seconds'));
+Auth::setUser($staff);
+installedOfferEvidence($binding, $clock, true);
+DB::table('domains_runtime_turns')->where('server_id', $server->id)->update(['finished_at' => $clock->now()->getTimestamp()]);
+$transferState->name = $released->domain->domain;
+$reset();
+config(['domains.provider_send_guard' => static function ($registrar, $environment, $command): void {
+    if ($command === 'TP_CreateOrder') { throw new \RuntimeException('Synthetic refusal before cURL'); }
+}]);
+try {
+    (new RunOperation($released->id))->handle(app(RuntimeWork::class));
+} finally {
+    config(['domains.provider_send_guard' => null]);
+}
+$released->refresh();
+same(['held', 'enom_test_transfer_call_cap', 0], [$released->state, $released->safe_code, $purchases()],
+    'The sealed capacity refusal arrives before the cutoff without a purchase');
+$beforeRelease = $released->acquisitionAttemptFacts();
+expect($beforeRelease?->sealed() && OperationAttempts::testCapacityRefusal($beforeRelease) !== null, 'This exact sealed refusal has one retry admission');
+$ticket = StaffOperationReview::ticket($staff->id, $released->domain_id, $released->id, 'release',
+    StaffOperationReview::stamp($released, $released->domain), $clock);
+(new StaffOperations($clock))->run($staff, $released->domain_id, $released->id, 'release', $ticket, 'Release the verified prewire refusal');
+$released->refresh();
+same('queued', $released->state, 'Release queues the transfer before cutoff');
+same(null, OperationAttempts::testCapacityRefusal($released->acquisitionAttemptFacts()), 'Release consumes the capacity retry admission');
+
+$setTime($cutoff);
+$reset();
+(new RunOperation($released->id))->handle(app(RuntimeWork::class));
+$released->refresh();
+same(['held', 'transfer_setup_review_required', $beforeRelease->token->attemptId, 0],
+    [$released->state, $released->safe_code, $released->acquisitionAttemptFacts()?->token->attemptId, $purchases()],
+    'Cutoff holds the same released attempt with no replacement and no send');
+same(AcquisitionPhase::ProvedUnsent, $released->acquisitionLifecycle($clock->now())?->phase,
+    'Consumed admission leaves the original sealed refusal proved unsent');
+expect(!OperationActions::relevant('release', $released), 'Cutoff cannot grant another retry');
+expect(OperationActions::relevant('refund', $released), 'The released prewire refusal still offers cancellation and credit');
+$expectedCredit = $credit() + PricingRule::minor($released->amount);
+$ticket = StaffOperationReview::ticket($staff->id, $released->domain_id, $released->id, 'refund',
+    StaffOperationReview::stamp($released, $released->domain), $clock);
+(new StaffOperations($clock))->run($staff, $released->domain_id, $released->id, 'refund', $ticket, 'Cancel the released unsent transfer');
+$closed = $released->fresh();
+same(['rejected', 'refund_approved', 'cancelled', $expectedCredit],
+    [$closed->state, $closed->safe_code, $closed->domain->service->status, $credit()],
+    'The released refusal returns the original payment');
+same(null, app(Refunds::class)->creditRejected($closed->id), 'Recovery cannot return the released attempt twice');
+same([$expectedCredit, 0], [$credit(), $purchases()], 'Credit leaves the released balance intact and sends nothing');
 $nativeSuccessful = true;

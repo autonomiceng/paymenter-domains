@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Services\ContactProfileHold;
 /** Acquisition evidence as seen by checkout, staff, profile and refund readers. */
 final readonly class AcquisitionAttempt
 {
-    private const KINDS = [...AcquisitionLifecycle::EVIDENCE, 'test_capacity', 'capacity'];
+    private const KINDS = [...AcquisitionLifecycle::EVIDENCE, 'capacity'];
     private const PROJECTED = ['claim' => true, 'admission' => true, 'reply' => true, 'decision' => true,
         'test_capacity' => true, 'capacity' => true, 'answer' => true, 'settlement' => true];
     private const HISTORY_KINDS = ['claim' => true, 'capacity' => true, 'test_capacity' => true];
@@ -54,8 +54,9 @@ final readonly class AcquisitionAttempt
             if (!$history) { return null; }
             $latest = end($history);
             $rows = OperationAttempts::evidenceMany([$id], self::KINDS, $lock)[$id] ?? [];
+            $now = now()->toImmutable();
             if ($latest->token != $op->acquisitionAttemptFacts()?->token
-                || !AcquisitionLifecycle::unsentHistory($history, $rows, now()->toImmutable())
+                || !AcquisitionLifecycle::unsentHistory($history, $rows, $now)
                 || self::conflicts($op)
                 || array_intersect_key($op->receiptFunding(), ['claim' => true, 'seal' => true])
                 || array_intersect_key($op->cost ?? [], ['actual' => true, 'execution' => true])
@@ -65,8 +66,12 @@ final readonly class AcquisitionAttempt
             $claim = $attempt->rows['claim']['evidence'] ?? [];
             $admission = $attempt->rows['admission']['evidence'] ?? [];
             $funding = $attempt->origin['funding'] ?? null;
+            // At cutoff, a paid transfer can use its retained capacity refusal for closure after Release used its retry.
+            $cutoffRefusal = $op->action === 'transfer' && $op->registrar_key === 'enom' && $op->funding_basis === 'paid_invoice'
+                && in_array($op->safe_code, ['transfer_setup_review_required', 'refund_approved'], true)
+                && $attempt->lifecycle($now)->reason === 'test_capacity';
             if (($claim['identity'] ?? null) !== $latest->token->claimKey || !is_string($attempt->origin['digest'] ?? null)
-                || !is_array($funding) || !$attempt->hasOriginalClaim()
+                || !is_array($funding) || (!$attempt->hasOriginalClaim() && !$cutoffRefusal)
                 || ($latest->sealed() && ($attempt->origin['digest'] !== $latest->requestDigest || ($admission['funding'] ?? null) !== $funding))
                 || !ContactProfileHold::allowsPurchaseDisposition($op, $lock)) { return null; }
             return $latest;
