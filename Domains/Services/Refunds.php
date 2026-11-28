@@ -67,7 +67,7 @@ final readonly class Refunds
      * A proof that refuses leaves the hold and the staff refund button in place. */
     public function closeRefused(Account $account): void
     {
-        OperationClaims::outside(); FundsWaits::sweep($account, $this->clock->now());
+        OperationClaims::outside(); FundsWaits::sweep($account, $this->clock);
         foreach (Operation::where('server_id', $account->server_id)->where('action', 'register')->where('state', 'held')->whereIn('safe_code', WriteHeld::FINAL_REFUSALS)->orderBy('id')->limit(25)->pluck('id') as $id) {
             try { OperationTerminalProof::encode(app(OperationClaims::class), (int) $id); $this->creditRejected((int) $id); }
             catch (\DomainException $e) { logger()->warning('Domains refused order stays with staff.', ['operation_id' => (int) $id, 'exception_class' => $e::class]); }

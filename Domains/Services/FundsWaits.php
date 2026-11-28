@@ -64,8 +64,11 @@ final class FundsWaits
             !==Transition::Applied){throw new \DomainException('Renewal already has terminal proof.');}
         if(!$complimentary){$l['invoices']->firstWhere('id',$op->invoice_id)->update(['status'=>'cancelled']);}
     }
-    public static function sweep(Account $a,\DateTimeImmutable $now): void
+    /** A live sweep samples its purchase decision under lock. An explicit timestamp is an as-of sweep. */
+    public static function sweep(Account $a, Clock|\DateTimeImmutable $now): void
     {
+        $clock = $now instanceof Clock ? $now : null;
+        $now = $clock?->now() ?? $now;
         $alerts=Schema::hasTable('domains_obligation_alerts');
         if($alerts){DB::table('domains_obligation_alerts')->where('code','renewal_funds')->whereNull('resolved_at')
             ->whereIn('operation_id',Operation::select('id')->where('server_id',$a->server_id)->where('action','renew')->whereIn('state',['running','pending','uncertain','succeeded','rejected','disposed']))
@@ -74,7 +77,7 @@ final class FundsWaits
         // before its operation. Losing the cursor only restarts the pass.
         foreach(MoneyDecisions::queued((int)$a->server_id,25,[self::KIND]) as $work){
             $op=Operation::find($work->subject_id);
-            try{if($op){self::close($op,$now,$alerts);}}catch(MoneyWorkUnqueued $e){throw $e;}catch(\Throwable){continue;} // Kept queued without its review.
+            try{if($op){self::close($op,$now,$alerts,$clock);}}catch(MoneyWorkUnqueued $e){throw $e;}catch(\Throwable){continue;} // Kept queued without its review.
             MoneyDecisions::done($work);
         }
         $key='domains.funds-wait-cursor.'.$a->server_id;$reached=(int)Cache::get($key,0);
@@ -97,17 +100,17 @@ final class FundsWaits
                     });
                 }
             }
-            try{self::close($op,$now,$alerts);}catch(MoneyWorkUnqueued $e){Cache::forever($key,$reached);throw $e;}
+            try{self::close($op,$now,$alerts,$clock);}catch(MoneyWorkUnqueued $e){Cache::forever($key,$reached);throw $e;}
             $reached=(int)$op->id;
         }
     }
     /** One elapsed wait through the money runner. Contention twice leaves it queued with no review; a real failure keeps
      * today's funds_wait_review. A review that cannot be written throws, so the caller keeps the operation for later. */
-    private static function close(Operation $op,\DateTimeImmutable $now,bool $alerts): void
+    private static function close(Operation $op,\DateTimeImmutable $now,bool $alerts,?Clock $clock): void
     {
         try{
             if(!self::due($op,$now)){return;}
-            $decision=MoneyDecisions::run(new MoneyRequest($op->domain()->firstOrFail(),self::KIND,(int)$op->id),function(array $l)use($op,$now):?bool {
+            $decision=MoneyDecisions::run(new MoneyRequest($op->domain()->firstOrFail(),self::KIND,(int)$op->id),function(array $l)use($op,$now,$clock):?bool {
                 $current=$l['operations']->firstWhere('id',$op->id);
                 if (!$current) { return null; }
                 if($current->action==='renew'){
@@ -115,7 +118,7 @@ final class FundsWaits
                     self::closeRenewal($current,$l,$now);
                     return true;
                 }
-                $now = app(Clock::class)->now();
+                $now = $clock?->now() ?? $now;
                 $state = \Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionLifecycle::settle($current, $l['domain'], $now);
                 if ($state->retired || $state->fenced || !self::due($current, $now, true)) { return null; }
                 // The recorded shortfall authorizes this closure reason even when Orders projects processing.
