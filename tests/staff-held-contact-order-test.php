@@ -15,11 +15,12 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{OperationActions,RequestFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,WriteReservation};
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Money};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Capabilities,Disposition,DriverResult,Evidence,Money,ResultReason,SendState};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation,ProfileContactOperation};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
-use Paymenter\Extensions\Servers\Domains\Services\{ContactProfileHold,ContactStepRetries,ReadDeferred,DomainOperations,FundsWaits,OperationClaims,ProfileContactOperations,ProfileContactSchema,Refunds,RegistrationProfiles,StaffOperationReview,StaffOperations,StaffOperationWrites,WriteAcceptance,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,ContactProfileHold,ContactStepRetries,ReadDeferred,DomainOperations,FundsWaits,OperationClaims,ProfileContactOperations,ProfileContactSchema,Refunds,RegistrationProfiles,StaffOperationReview,StaffOperations,StaffOperationWrites,WriteAcceptance,WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\RegistrationPreflight;
+use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 ProfileContactSchema::install();staffPanel();
 app()->instance(Clock::class,$clock);app()->instance(Refunds::class,new Refunds($clock));
 $all=[Staff::VIEW,'admin.domains.manage','admin.domains.fund','admin.invoices.update'];
@@ -50,18 +51,18 @@ $wire=static function($origin,$command,$parameters,$timeout)use($exchange,$sent,
     if($command==='contactList'&&$parameters!==[]&&$sent->readFails){throw new RuntimeException('Synthetic readback loss');}
     return $exchange($origin,$command,$parameters,$timeout);
 };
-$compose=static function()use($binding,$claims,$clock,$grants,$wire,$freshBindings,&$engine):DomainOperations {
+$compose=static function(?AccountBindings $readers=null)use($binding,$claims,$clock,$grants,$wire,$freshBindings,&$engine):DomainOperations {
     $features=new WriteFeatures(registration:true);
     $profiles=new RegistrationProfiles($binding,$claims,$clock,static fn()=>throw new LogicException('The older direct sender must not run'),
         operations:new ProfileContactOperations($binding,$claims,$clock,$grants,$wire));
     $acceptance=new WriteAcceptance($binding,true,true,25,$profiles,catalogue:$GLOBALS['caps']??null);
     $protocol=new NameSilo\Registration($binding,$profiles,$wire);
     $bridge=new NameSilo\Writer($binding,$features,$acceptance,static function()use(&$engine){return $engine;},$protocol);
-    $engine=new DomainOperations($claims,new RegistrationPreflight($freshBindings,$features,$acceptance,$profiles),$bridge,$clock);
+    $engine=new DomainOperations($claims,new RegistrationPreflight($readers??$freshBindings,$features,$acceptance,$profiles),$bridge,$clock);
     Cache::forget('domains-write-slot:'.$binding->fingerprint);return $engine;
 };
-$execute=static function(Operation $op)use($compose,$registration):Operation {
-    $registration->query=OperationClaims::query($op,$op->domain);return $compose()->execute($op->id);
+$execute=static function(Operation $op,?AccountBindings $readers=null)use($compose,$registration):Operation {
+    $registration->query=OperationClaims::query($op,$op->domain);return $compose($readers)->execute($op->id);
 };
 // One paid order held at its contact step, like request #290: purchase never sealed, contact row still waiting.
 $heldOrder=static function(string $name)use($nsNew,$grants,$execute,$sent,$clock,$staff):Operation {
@@ -312,16 +313,20 @@ $due=static function(Operation $op)use($clock):void {
     $clock->instant=$clock->now()->setTimestamp($at);
 };
 $due($shortfall);
-$registration->balance='0.00';
+$reader=new FakeRegistrar($binding,new Capabilities($binding,[]),new DriverResult($binding,Disposition::Accepted,
+    SendState::Sent,ResultReason::Acknowledged,new Evidence(balance:new Money('0.00','USD'))));
+$shortfallRegistry=clone $registry;
+$shortfallRegistry->registerBoundReader($binding,static fn()=>$reader);
+$shortfallBindings=new AccountBindings($shortfallRegistry);
 $before=[$sent->contactAdd,$sent->registerDomain,MoneyReceiptGateway::$sends];
-$shortfall=$execute($shortfall);
+$shortfall=$execute($shortfall,$shortfallBindings);
 $actual=[$shortfall->state,$shortfall->safe_code,ProfileContactOperation::where('operation_id',$shortfall->id)->exists()];
 same(['held','registrar_balance_insufficient',false],$actual,'The retry probe observes a shortfall before preparing contact: '.json_encode($actual));
 $due($shortfall);
 expect($claims->readmitBalance($shortfall->id),'The due shortfall retry is admitted before Orders turns off');
 $account=Account::where('server_id',$binding->serverId)->sole();
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
-$shortfall=$execute($shortfall);
+$shortfall=$execute($shortfall,$shortfallBindings);
 same(['held','processing',true,false],[$shortfall->state,$shortfall->safe_code,$shortfall->acquisitionAttemptFacts()!==null,
     ProfileContactOperation::where('operation_id',$shortfall->id)->exists()],'Paused retry retains its purchase ledger before any contact preparation');
 $clock->instant=$clock->now()->modify('+3 days');
@@ -335,6 +340,7 @@ same([$before[0],$before[1],$before[2]+1],[$sent->contactAdd,$sent->registerDoma
 FundsWaits::sweep($account,$clock);
 app(Refunds::class)->creditRejected($shortfall->id);
 same($before[2]+1,MoneyReceiptGateway::$sends,'Replaying the sweep and the refund never returns a second payment');
+same(['balance'],$reader->calls,'Only the balance probe runs before the paused retry');
 $restoreShortfall();
 
 // Once the contact step may have reached NameSilo, both actions are refused.
