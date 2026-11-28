@@ -282,7 +282,8 @@ class RegistrarAnswers
     }
     public static function answer(Operation $op,Domain $d): ?array
     {
-        $a=$op->policy['enom_answer']??null;
+        if (AcquisitionAttempt::key($op->action) && !self::hasSealedPurchase($op)) { return null; }
+        $a = $op->action === 'renew' ? ($op->policy['enom_answer'] ?? null) : $op->acquisitionAnswer();
         return is_array($a)&&self::readable($op)&&in_array($op->registrar_key,['enom','namesilo'],true)&&in_array($op->action,['register','renew','transfer'],true)
             &&$op->domain_id===$d->id&&$op->service_id===$d->service_id&&$op->server_id===$d->server_id&&$op->registrar_key===$d->registrar_key&&($a['identity']??null)===self::identity($op)
             &&($a['operation_key']??null)===$op->operation_key&&($a['fingerprint']??null)===$d->account_fingerprint

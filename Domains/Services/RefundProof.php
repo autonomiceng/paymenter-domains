@@ -148,7 +148,7 @@ final class RefundProof
             $id = (int) $op->id;
             $lock = DB::transactionLevel() > 0;
             $attempt = OperationAttempts::sealed($id, $step, $lock);
-            if (!$attempt) { return true; }
+            if (!$attempt) { return false; }
             $evidence = OperationAttempts::evidenceMany([$id], ['observation'], $lock);
             return !isset($evidence[$id][$attempt->token->attemptId]['observation']);
         }

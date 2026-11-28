@@ -92,6 +92,7 @@ class Operation extends Model
         $kind = $proof['outcome'] ?? null;
         if (!in_array($kind, ['definitely_unsent', 'unpaid_closed', 'transfer_code_timeout'], true)) { return []; }
         $terminal = $proof['evidence'];
+        if (!array_key_exists('attempt_id', $terminal)) { return []; }
         unset($terminal['attempt_id']);
         return ['seal'=>'absent', 'send_state'=>'definitely_unsent', 'disposition'=>'rejected',
             'rejection_basis'=>'definitely_unsent', ($kind === 'transfer_code_timeout' ? 'transfer_timeout' : 'terminal')=>$terminal];
@@ -178,6 +179,9 @@ class Operation extends Model
 
     public function acquisitionAttemptFacts(): ?AttemptFacts
     { return $this->acquisitionRow($this->attributes)['facts'] ?? null; }
+
+    public function acquisitionAnswer(): ?array
+    { return $this->acquisition($this->attributes)?->answer(); }
 
     public function acquisitionLifecycle(\DateTimeImmutable $now): ?AcquisitionLifecycle
     { return $this->acquisition($this->attributes)?->lifecycle($now); }
