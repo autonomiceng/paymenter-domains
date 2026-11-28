@@ -146,7 +146,7 @@ class Operation extends Model
                 ->whereIn('step_type', ['register', 'transfer'])->where('sequence', 1)
                 ->whereColumn('step_type', 'domains_operations.action')->limit(1),
             'acquisition_terminal_evidence' => (clone $terminal)->select('evidence'),
-            'acquisition_terminal_outcome' => (clone $terminal)->select('outcome')->where('source', 'local'),
+            'acquisition_terminal_outcome' => (clone $terminal)->selectRaw("CASE WHEN source = 'local' THEN outcome END"),
         ]);
     }
 

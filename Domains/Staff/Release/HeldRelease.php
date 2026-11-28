@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Staff\Requests\RequestReads;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceRetries,ComplimentaryInvoices,ContactDetails,ContactProfileHold,ContactRecovery,ContactSetup,EnomTestRegistration,EnomTestRenewal,EnomTestTransfer,HoldingLocks,OperationClaims,RefundProof,RenewalFunding,RenewalStop,StaffOperationReview,StaffOperationWrites,TransferInputs};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission,AcquisitionAdmissionOutcome,AcquisitionAttempt,AcquisitionLane,AcquisitionLifecycle,AcquisitionResult,AcquisitionRetryProof,OperationAttempts,OperationWriter,StepKey};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission,AcquisitionAdmissionOutcome,AcquisitionAttempt,AcquisitionLane,AcquisitionLifecycle,AcquisitionPhase,AcquisitionResult,AcquisitionRetryProof,OperationAttempts,OperationWriter,StepKey};
 /** Releases a held request back to the queue. The offer and the locked writer run the same check over complete native facts. */
 final class HeldRelease
 {
@@ -20,7 +20,6 @@ final class HeldRelease
             $state = AcquisitionLifecycle::settle($op, $l['domain'], $now);
             if ($state->retired || $state->fenced) { return AcquisitionAdmissionOutcome::Unavailable; }
         }
-        self::require($op,$l,$now);
         $policy=$op->policy??[];
         $reason = $op->safe_code;
         $queue = static fn () => $op->update(['state'=>'queued','safe_code'=>null,'policy'=>$policy]);
@@ -33,8 +32,10 @@ final class HeldRelease
                 default => AcquisitionAdmission::StaffRelease,
             };
             return AcquisitionResult::admit($op, $admission, AcquisitionResult::revision($op),
-                $op->acquisitionAttemptFacts()?->token, $clock, $queue);
+                $op->acquisitionAttemptFacts()?->token, $clock, $queue,
+                validateRelease: static fn (\DateTimeImmutable $at, AcquisitionLifecycle $proof) => self::require($op, $l, $at, $proof));
         }
+        self::require($op, $l, $now);
         if($op->action==='renew'){unset($policy['renewal_execution']);OperationWriter::at($now)->releaseCurrent((int)$op->id,StepKey::renew());}
         $op->update(['state'=>'queued','safe_code'=>null,'policy'=>$policy]);
         return AcquisitionAdmissionOutcome::Applied;
@@ -63,14 +64,17 @@ final class HeldRelease
         }catch(\Throwable){return false;}
     }
     /** Refuses unless the decision allows release and its unsent proof, the service, the money and the saved inputs still hold. */
-    public static function require(Operation $op,array $l,\DateTimeImmutable $now): void
+    public static function require(Operation $op,array $l,\DateTimeImmutable $now, ?AcquisitionLifecycle $purchase = null): void
     {
-        $purchase = $op->state === 'held' && AcquisitionAttempt::key($op->action)
+        $purchase ??= $op->state === 'held' && AcquisitionAttempt::key($op->action)
             ? OperationAttempts::purchaseProof($op, $now, DB::transactionLevel() > 0) : null;
         $facts = self::facts($op, $l, $purchase);
         $proof = ReleaseDecision::decide($facts);
         if ($proof instanceof ReleaseRefusal) { throw new \DomainException($proof->message($facts)); }
         if ($purchase) {
+            if ($proof === ReleaseProof::Unattempted && $purchase->phase !== AcquisitionPhase::Virgin) {
+                throw new \DomainException('An original attempt cannot be readmitted.');
+            }
             RefundProof::requirePurchase($op, $l['domain'], $now, admission: true, proof: $purchase);
         } elseif ($proof === ReleaseProof::Unsent) {
             RefundProof::requireUnsent($op, $l['domain']);

@@ -30,7 +30,7 @@ final class RefundProof
     {
         $lock = DB::transactionLevel() > 0;
         $proof ??= OperationAttempts::purchaseProof($op, $now, $lock);
-        self::requireOwned($op, $domain, ledgerTransfer: $proof->facts !== null && $op->funding_basis === 'paid_invoice');
+        self::requireOwned($op, $domain, ledgerFunding: $proof->facts !== null && $op->funding_basis === 'paid_invoice');
         if ($op->state === 'rejected' ? $admission || $proof->closure === null : !$proof->canCloseUnsent()) {
             throw new OperationRefused(OperationFailure::ProviderEvidence);
         }
@@ -39,7 +39,7 @@ final class RefundProof
         }
         if (!ContactProfileHold::allowsPurchaseDisposition($op, $lock,
                 allowSaved: $op->action === 'transfer' && $op->funding_basis === 'paid_invoice',
-                requireRow: in_array($op->safe_code, ContactProfileHold::HOLDS, true))
+                requireRow: $op->safe_code === ContactProfileHold::CODE || ($op->safe_code === 'processing' && $proof->facts !== null))
             || ($admission && !$proof->facts?->sealed() && !FinancialAdjustments::registrarUnattemptedFunding($op, allowClaim: true))) {
             throw new OperationRefused(OperationFailure::ProviderEvidence);
         }
@@ -98,10 +98,10 @@ final class RefundProof
     /** Slice25 commits possibly_sent at seal; ONLY its exact typed local prewire result can override it. */
     private const REFUSAL = ['disposition' => 'rejected', 'send_state' => 'definitely_unsent', 'reason' => 'unsent', 'discrepancies' => []];
     /** Identity and money shape every payment return needs: the request still belongs to this holding and its funding is known. */
-    private static function requireOwned(Operation $op, Domain $d, bool $ledgerTransfer = false): array
+    private static function requireOwned(Operation $op, Domain $d, bool $ledgerFunding = false): array
     {
-        $f = $ledgerTransfer ? $op->receiptFunding() : FinancialAdjustments::registrarFunding($op);
-        $policy = $ledgerTransfer ? $op->operationPolicy() : ($op->policy ?? []);
+        $f = $ledgerFunding ? $op->receiptFunding() : FinancialAdjustments::registrarFunding($op);
+        $policy = $ledgerFunding ? $op->operationPolicy() : ($op->policy ?? []);
         $c = $op->cost ?? []; $closed = $op->safe_code === UnpaidAcquisitionProof::CODE;
         $lateCredits = $op->funding_basis !== 'complimentary' && ($op->action === 'renew' || $closed);
         if (!in_array($op->action, ['register', 'renew', 'transfer', 'privacy_purchase', 'privacy_renew'], true) || $op->domain_id !== $d->id || $op->service_id !== $d->service_id
@@ -109,7 +109,7 @@ final class RefundProof
             || $op->authority_generation < 1 || $op->authority_generation !== $d->authority_generation
             || $op->provider_order_id !== null || $op->confirmed_expires_at !== null || $op->lease_expires_at !== null
             || array_diff(array_keys($c), ['estimated', 'currency', 'unit'])
-            || array_diff(array_keys($f), [...($ledgerTransfer ? [] : ['claim', 'seal']), 'refund_authorization', 'refund', 'dispute_holds', 'receipt_return_results', 'financial_adjustments', ...($op->action === 'renew' ? ['auto_pay', 'auto_pay_result'] : []), ...($lateCredits ? ['late_credits'] : [])])
+            || array_diff(array_keys($f), [...($ledgerFunding ? [] : ['claim', 'seal']), 'refund_authorization', 'refund', 'dispute_holds', 'receipt_return_results', 'financial_adjustments', ...($op->action === 'renew' ? ['auto_pay', 'auto_pay_result'] : []), ...($lateCredits ? ['late_credits'] : [])])
             || array_key_exists('dispatch_attempted_at', $policy)) { throw new \DomainException('Refund lacks definitely-unsent proof.'); }
         if (in_array($op->action, ['register', 'transfer'], true) && ($d->provider_domain_id !== null || $d->provider_order_id !== null || $d->provider_expires_at !== null
             || !in_array($d->status, [...($op->action === 'transfer' ? ['transfer_pending', 'transfer_rejected'] : ['registration_pending', 'registration_rejected']), ...($closed ? ['cancelled'] : [])], true))) { throw new OperationRefused(OperationFailure::ProviderEvidence); }

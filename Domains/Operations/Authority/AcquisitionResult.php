@@ -129,7 +129,7 @@ final class AcquisitionResult
      */
     public static function admit(Operation $operation, AcquisitionAdmission $admission, int $expectedRevision,
         ?AttemptToken $expectedAttempt, Clock $clock, \Closure $transition, ?\Closure $approve = null,
-        ?int $expectedContact = null): AcquisitionAdmissionOutcome
+        ?int $expectedContact = null, ?\Closure $validateRelease = null): AcquisitionAdmissionOutcome
     {
         $key = AcquisitionAttempt::key($operation->action) ?? throw new \LogicException('Acquisition required.');
         $id = (int) $operation->id;
@@ -147,6 +147,8 @@ final class AcquisitionResult
             $state = AcquisitionLifecycle::settle($operation, $operation->domain, $now);
             if ($state->retired) { return AcquisitionAdmissionOutcome::Unavailable; }
         }
+        $purchase = $validateRelease === null ? null : OperationAttempts::purchaseProof($operation, $now, lock: true);
+        if ($validateRelease !== null) { $validateRelease($now, $purchase); }
         if (AcquisitionAuthority::fundsCutoff($operation, $continuation, $now, $latest) !== AcquisitionAuthority::FUNDS_PROCEED) {
             return AcquisitionAdmissionOutcome::RetireForCredit;
         }
@@ -188,7 +190,7 @@ final class AcquisitionResult
                 throw new \DomainException('The acquisition hold no longer permits contact correction.');
             }
         } else {
-            $purchase = OperationAttempts::purchaseProof($operation, $now, lock: true);
+            $purchase ??= OperationAttempts::purchaseProof($operation, $now, lock: true);
             $closeCurrent = $admission === AcquisitionAdmission::StaffRelease
                 && $purchase->canCloseUnsent() && $purchase->facts?->current && $purchase->facts->sealed();
             if ($operation->state !== 'held' || $operation->lease_expires_at !== null

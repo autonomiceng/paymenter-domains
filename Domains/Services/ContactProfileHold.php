@@ -61,7 +61,7 @@ final class ContactProfileHold
         try {
             $row = self::row($op, $lock);
             if (!$row) { return !$requireRow; }
-            if (!self::bound($row, $op)) { return false; }
+            if (!self::bound($row, $op, requirePayload: $allowSaved)) { return false; }
             $a = $row->attempt;
             return ($allowSaved && self::saved($row))
                 || ($row->state === 'ready' && ($a['seal'] ?? null) === 'absent'
@@ -76,13 +76,14 @@ final class ContactProfileHold
         return ProfileContactOperation::where('operation_id', $op->id)->when($lock, fn ($q) => $q->lockForUpdate())->first();
     }
 
-    private static function bound(ProfileContactOperation $row, Operation $op): bool
+    private static function bound(ProfileContactOperation $row, Operation $op, bool $requirePayload = true): bool
     {
         $domain = $op->domain;
         $parent = $row->attempt['parent_claim'] ?? null;
         return is_string($parent) && preg_match('/^[a-f0-9]{32}$/D', $parent) && $domain && $row->user_id === (int) $domain->user_id && $row->server_id === $op->server_id
             && $row->account_fingerprint === $op->account_fingerprint && $row->authority_generation === $op->authority_generation
-            && $domain->authority_generation === $op->authority_generation && $row->payload_digest === OperationClaims::payloadDigest($op)
+            && $domain->authority_generation === $op->authority_generation
+            && (!$requirePayload || $row->payload_digest === OperationClaims::payloadDigest($op))
             && $parent === ($op->attempt['claim_key'] ?? null);
     }
 

@@ -87,15 +87,6 @@ final class OperationAttempts
             ->when($lock, fn ($q) => $q->lockForUpdate())->first();
     }
 
-    /** An inconsistent current pointer must not turn a claimed operation into an unattempted one. */
-    public static function hasAttempts(int $operationId, StepKey $key, bool $lock = false): bool
-    {
-        $step = self::step($operationId, $key, $lock);
-        return $step !== null && ($step->current_attempt_id !== null
-            || DB::table(OperationSchema::ATTEMPTS)->where('step_id', $step->id)
-                ->when($lock, fn ($q) => $q->lockForUpdate())->first(['id']) !== null);
-    }
-
     /** The latest attempt, provided any current pointer names that attempt. */
     public static function latest(int $operationId, StepKey $key, bool $lock = false): ?AttemptFacts
     {
