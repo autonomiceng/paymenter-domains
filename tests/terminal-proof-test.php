@@ -45,34 +45,34 @@ commerceReject(fn () => OperationTerminalProof::encode($claims, $legacy->id));
 same(null, OperationAttempts::evidence((int) $legacy->id, null, 'terminal'), 'An inline claim cannot acquire a new typed terminal');
 same('held', $legacy->fresh()->state, 'A drained-only legacy shape is left intact');
 
-// Missing terminal send evidence must refuse quietly in both claim shapes.
-foreach (['register','transfer'] as $action) {
-    foreach ([false,true] as $claimed) {
-        $key='synthetic-terminal-'.$action;
-        $attempt=['test_call_refusals'=>[['phase'=>'preflight','refused_at'=>$now->format(DATE_ATOM),'dispatch_attempted_at'=>null,'authorized_cost'=>null]],
-            'seal'=>'absent','send_state'=>'definitely_unsent','disposition'=>'rejected','rejection_basis'=>'definitely_unsent',
-            'terminal'=>['operation_key'=>$key,'generation'=>1]];
-        if($claimed){$attempt['claim_key']=str_repeat('a',32);}
-        $proof=new \Paymenter\Extensions\Servers\Domains\Models\Operation(['action'=>$action,'registrar_key'=>'enom','state'=>'rejected',
-            'safe_code'=>'enom_test_call_cap','authority_generation'=>1,'operation_key'=>$key,'attempt'=>$attempt,
-            'funding'=>$claimed?['claim'=>[]]:[],'cost'=>[],'policy'=>[],
-            'started_at'=>$claimed?$now:null,'request_fingerprint'=>$claimed?str_repeat('a',64):null]);
-        expect(OperationAttempts::purchaseProof($proof,$now)->closure === AcquisitionClosureKind::Unsent,'Complete terminal proof qualifies');
-        if ($action === 'register' && $claimed) {
-            $domain = $result->domain;
-            $proof->fill($domain->only(['server_id', 'service_id', 'account_fingerprint']));
-            $proof->domain_id = $domain->id;
-            expect(OperationTerminalProof::safe($proof, $domain), 'Registration terminal proof accepts earlier cap history');
-            $foreign = clone $proof;
-            $foreign->attempt = [...$attempt, 'terminal' => ['operation_key' => $key, 'generation' => 2]];
-            expect(!OperationTerminalProof::safe($foreign, $domain), 'Earlier cap history cannot validate a foreign terminal decision');
-        }
-        foreach ([['seal'],['send_state'],['seal','send_state']] as $missing) {
-            $broken=clone $proof;$facts=$attempt;foreach($missing as $field){unset($facts[$field]);}$broken->attempt=$facts;
-            set_error_handler(static function(int $severity,string $message,string $file,int $line):never{throw new ErrorException($message,0,$severity,$file,$line);});
-            try{same(null,OperationAttempts::purchaseProof($broken,$now)->closure,'Missing terminal fields quietly refuse');}
-            finally{restore_error_handler();}
-        }
-    }
+// All inline formats are rejected, even when the old reader could bind a completed closure.
+$legacyProofs = [];
+foreach ([
+    'absent marker' => ['seal' => 'absent', 'send_state' => 'definitely_unsent'],
+    'rejected marker' => ['seal' => 'absent', 'send_state' => 'definitely_unsent', 'disposition' => 'rejected', 'rejection_basis' => 'definitely_unsent'],
+    'bound inline terminal' => ['seal' => 'absent', 'send_state' => 'definitely_unsent', 'disposition' => 'rejected',
+        'rejection_basis' => 'definitely_unsent', 'terminal' => ['operation_key' => 'legacy-terminal', 'generation' => 1]],
+] as $shape => $attempt) {
+    $legacy = new \Paymenter\Extensions\Servers\Domains\Models\Operation([
+        'action' => 'register', 'registrar_key' => 'enom', 'state' => $shape === 'absent marker' ? 'held' : 'rejected',
+        'authority_generation' => 1, 'operation_key' => 'legacy-terminal', 'attempt' => $attempt,
+        'funding' => [], 'cost' => [], 'policy' => [],
+    ]);
+    $legacyProofs[$shape] = OperationAttempts::purchaseProof($legacy, $now)->phase->name;
 }
+
+// Remove only the attempt ID from an installed writer's proof. A bound kind alone cannot close another attempt.
+$terminalQuery = Illuminate\Support\Facades\DB::table(\Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationSchema::EVIDENCE)
+    ->where('operation_id', $result->id)->whereNull('attempt_id')->where('kind', 'terminal');
+$savedTerminal = $terminalQuery->value('evidence');
+$oldTerminal = OperationAttempts::decodeEvidence($savedTerminal);
+unset($oldTerminal['attempt_id']);
+$terminalQuery->update(['evidence' => Illuminate\Support\Facades\Crypt::encryptString(json_encode($oldTerminal, JSON_THROW_ON_ERROR))]);
+try {
+    $legacyProofs['omitted attempt ID'] = OperationAttempts::purchaseProof($result->fresh(), $now)->phase->name;
+} finally { $terminalQuery->update(['evidence' => $savedTerminal]); }
+same([
+    'absent marker' => 'Invalid', 'rejected marker' => 'Invalid',
+    'bound inline terminal' => 'Invalid', 'omitted attempt ID' => 'Invalid',
+], $legacyProofs, 'Every pre-cutover purchase shape is refused: '.json_encode($legacyProofs, JSON_THROW_ON_ERROR));
 echo "Terminal proof retains paid reservations until exact unsent credit commits\n"; $nativeSuccessful = true;

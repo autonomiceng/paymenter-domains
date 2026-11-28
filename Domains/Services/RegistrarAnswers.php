@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence,DateEvidence,ExpiryPrecision,RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionLifecycle, OperationAttempts, OperationWriter, RetainedAcquisition, Transition};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionLifecycle, OperationAttempts, OperationWriter, Transition};
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAttempt, RenewalCompletion, RenewalDecision, RenewalProof};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
 /** An account-specific support answer is evidence, never permission to resend a purchase. */
@@ -37,7 +37,8 @@ class RegistrarAnswers
     }
     public static function eligible(Operation $op,\DateTimeImmutable $now): bool
     {
-        if($op->action==='transfer'){return self::readable($op)&&TransferRejections::eligible($op);}
+        if (in_array($op->action, ['register', 'transfer'], true) && !self::hasSealedPurchase($op)) { return false; }
+        if($op->action==='transfer'){return TransferRejections::eligible($op);}
         // A renewal's seal, acceptance and read proof come from its attempt reader.
         try{$renewal=$op->action==='renew'?RenewalAttempt::of($op):null;if(!$renewal){$op->attempt;}}catch(\Illuminate\Contracts\Encryption\DecryptException){return false;}
         try{$at=$renewal?$renewal->sentAt()??throw new \DomainException('Never sealed.'):new \DateTimeImmutable($op->attempt['dispatch_attempted_at']??'invalid');}catch(\Throwable){return false;}
@@ -55,11 +56,19 @@ class RegistrarAnswers
     {
         if(!self::eligible($op,$now)){return false;}
         try{
-            if ($op->action !== 'renew' && !RetainedAcquisition::adoptable($op, $now)) { return false; }
             $d=$op->domain()->firstOrFail();return self::readFirst($op,ReconciliationEvidence::attempt($op,$d,AccountBindings::binding(Account::where('server_id',$op->server_id)->sole())),$now);
         }
         catch(\Throwable){return false;}
     }
+    public static function hasSealedPurchase(Operation $op): bool
+    {
+        try {
+            $facts = $op->acquisitionAttemptFacts();
+            return $facts && $facts->current && $facts->sealed() && !$facts->released
+                && !AcquisitionAttempt::conflicts($op) && ($op->attempt['seal'] ?? null) === 'sealed';
+        } catch (\Illuminate\Contracts\Encryption\DecryptException|\JsonException|\DomainException) { return false; }
+    }
+
     /** A sent Enom renewal that kept Enom's order number, with no proof or charge, whose checks stopped at the limit. Staff
      * then record either answer. A staff restart resets the count, so the answer waits for checks to stop again. */
     public static function stoppedOrder(Operation $op): bool
@@ -77,9 +86,7 @@ class RegistrarAnswers
     {
         if ($op->action !== 'register') { return false; }
         $facts = $op->acquisitionAttemptFacts();
-        return $facts?->sealed()
-            ? OperationAttempts::hasAcquisitionSettlementEvidence($facts->token)
-            : RegistrarCheck::legacyObservation($op) !== null;
+        return $facts?->sealed() && OperationAttempts::hasAcquisitionSettlementEvidence($facts->token);
     }
 
     /** A check of this renewal attempt saw a matching charge or a later expiry, or the domain already shows one. Not processed is then refused. */
@@ -248,8 +255,7 @@ class RegistrarAnswers
             }
             if ($op->action !== 'renew') {
                 $writer = OperationWriter::at($now);
-                $retained = RetainedAcquisition::adopt($op, $writer, $now);
-                if (!$retained || $writer->recordAcquisitionAnswer($retained->facts->token, $answer) !== Transition::Applied) {
+                if (!$state?->permitsRead() || $writer->recordAcquisitionAnswer($state->facts->token, $answer) !== Transition::Applied) {
                     if ($state?->fenced) { return null; }
                     throw new \DomainException('This request changed. Reload the page and select it again.');
                 }

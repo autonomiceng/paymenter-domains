@@ -6,6 +6,8 @@ require_once __DIR__.'/adoption-holding.php';
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
+use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionClosureKind, OperationWriter, Transition};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport, Environment as EnomEnvironment};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
@@ -16,11 +18,18 @@ function adoptedRenewalFixture(Environment $environment = Environment::Live, boo
 {
     config(['app.url' => 'https://domains-tests.invalid']);
     $f = adoptionHoldingFixture($environment, $retainedHistory ? static function ($f, $d): void {
-        \Paymenter\Extensions\Servers\Domains\Models\Operation::create(['domain_id' => $d->id, 'service_id' => $f['service']->id,
+        $op = Operation::create(['domain_id' => $d->id, 'service_id' => $f['service']->id,
             'server_id' => $d->server_id, 'registrar_key' => $d->registrar_key, 'account_fingerprint' => $d->account_fingerprint,
             'authority_generation' => $d->authority_generation, 'action' => 'register', 'operation_key' => 'retained-definitely-unsent',
-            'term' => 1, 'currency' => 'USD', 'amount' => '10.00', 'state' => 'rejected', 'policy' => [], 'payload' => [],
-            'attempt' => ['seal' => 'absent', 'send_state' => 'definitely_unsent', 'disposition' => 'rejected', 'rejection_basis' => 'definitely_unsent']]);
+            'term' => 1, 'currency' => 'USD', 'amount' => '10.00', 'state' => 'held', 'policy' => [], 'payload' => []]);
+        DB::transaction(static function () use ($op, $f): void {
+            $op = Operation::whereKey($op->id)->lockForUpdate()->sole();
+            same(Transition::Applied, OperationWriter::at($f['clock']->now())->recordTerminal((int) $op->id,
+                AcquisitionClosureKind::Unsent->value, [
+                    'operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'attempt_id' => null,
+                ]), 'The earlier purchase records a typed refusal before adoption');
+            $op->update(['state' => 'rejected']);
+        });
     } : null); extract($f);
     attachHolding($f); $bindings->setProcessing($binding->serverId, true, syntheticActivation()); $domain->refresh(); $service->update(['status' => 'active']);
     \App\Models\Setting::updateOrCreate(['key'=>'credits_auto_use','settingable_type'=>null], ['value'=>false,'type'=>'boolean']);

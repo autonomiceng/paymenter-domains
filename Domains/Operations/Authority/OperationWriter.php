@@ -40,28 +40,6 @@ final readonly class OperationWriter
         return new AttemptToken($operationId, $stepId, $id, $ordinal, $claim);
     }
 
-    /** Preserve a historical seal. Its dispatch window is closed and no send permission can be issued. */
-    public function adoptAcquisition(int $id, int $revision, RetainedAcquisition $record): void
-    {
-        self::requireTransaction();
-        if (OperationAttempts::latest($id, $record->step, true)) { throw new \DomainException('Acquisition attempt already exists.'); }
-        $stepId = $this->stepId($id, $record->step);
-        $sealed = OperationAttempts::at($record->sealedAt);
-        $cost = $record->envelope['authorized_cost'] ?? [];
-        $attemptId = (int) DB::table(OperationSchema::ATTEMPTS)->insertGetId([
-            'step_id' => $stepId, 'ordinal' => 1, 'claim_key' => $record->claimKey,
-            'claimed_at' => OperationAttempts::at($record->startedAt), 'claim_until' => $sealed,
-            'sealed_at' => $sealed, 'dispatch_until' => $sealed, 'operation_revision' => $revision,
-            'request_digest' => $record->digest, 'send_state' => $record->sendState->value,
-            'authorized_amount' => $cost['amount'] ?? null, 'authorized_currency' => $cost['currency'] ?? null, 'mode' => $record->step->type,
-        ]);
-        $this->append($id, $attemptId, 'claim', 'retained', 'sealed', [
-            'identity' => $record->claimKey, 'digest' => $record->digest,
-            'legacy_attempt' => $record->envelope, 'legacy_funding' => $record->funding,
-        ], 'claim');
-        $this->point($stepId, $attemptId);
-    }
-
     /** Records the exact admission evaluated by AcquisitionResult in this transaction. */
     public function recordAcquisitionAdmission(int $operationId, AcquisitionAdmission $admission, int $revision,
         ?AttemptToken $attempt, array $proof): int

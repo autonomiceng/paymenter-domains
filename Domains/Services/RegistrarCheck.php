@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence,Evidence,RequestContext};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionReadPermit,RetainedAcquisition};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionReadPermit;
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\{RenewalAttempt, RenewalCompletion};
 /** One bounded read result, shared by background work, staff feedback and customer notices. */
 final class RegistrarCheck
@@ -134,7 +134,6 @@ final class RegistrarCheck
 
     private static function saveResult(Operation $op, array $result, array $changes = []): void
     {
-        if ($observation = self::legacyObservation($op)) { $result['legacy_observation'] = $observation; }
         $op->update(['policy' => [...($op->policy ?? []), ...$changes, 'status_check' => $result]]);
     }
     /** A lost reply that no accepted order history covers. Only the registrar's answer can settle it. */
@@ -154,17 +153,6 @@ final class RegistrarCheck
     {
         $check=$op->policy['status_check']??[];
         return ($check['read_attempted']??false)===true&&is_string($check['attempt_identity']??null)&&hash_equals(RegistrarAnswers::identity($op),$check['attempt_identity']);
-    }
-
-    /** Preserve positive evidence and its date until the legacy acquisition can adopt it. */
-    public static function legacyObservation(Operation $op): ?array
-    {
-        if (!in_array($op->action, ['register', 'transfer'], true)
-            || $op->getRawOriginal('request_fingerprint') === null || !self::attempted($op)) { return null; }
-        $check = $op->policy['status_check'];
-        $observation = $check['legacy_observation'] ?? $check;
-        if (($observation['facts']['owned'] ?? false) !== true || !is_int($observation['at'] ?? null)) { return null; }
-        return ['at' => $observation['at'], 'facts' => $observation['facts']];
     }
 
     /** Plain words used everywhere this result appears. No provider payload enters the policy or UI. */
@@ -241,14 +229,10 @@ final class RegistrarCheck
             if (!$same) { $check = null; }
         }
         $unresolved = in_array($op->state, ['running', 'pending', 'uncertain', 'held'], true);
-        // A saved answer step may predate validation of the legacy acquisition attempt.
-        if ($unresolved && ($check['outcome'] ?? null) === 'awaiting_answer' && in_array($op->action, ['register', 'transfer'], true)) {
-            try { $adoptable = RetainedAcquisition::adoptable($op, app(Clock::class)->now()); }
-            catch (DecryptException|\InvalidArgumentException|\DateException) { $adoptable = false; }
-            if (!$adoptable) {
-                unset($check['registrar'], $check['answer_after']);
-                return [...$check, 'outcome'=>'unavailable', 'reason'=>self::ADOPTION_REFUSED, 'next_at'=>null];
-            }
+        if ($unresolved && ($check['outcome'] ?? null) === 'awaiting_answer'
+            && in_array($op->action, ['register', 'transfer'], true) && !RegistrarAnswers::hasSealedPurchase($op)) {
+            unset($check['registrar'], $check['answer_after']);
+            return [...$check, 'outcome'=>'unavailable', 'reason'=>self::ADOPTION_REFUSED, 'next_at'=>null];
         }
         if (($check['reason'] ?? null) === self::ADOPTION_REFUSED) { return $unresolved ? $check : null; }
         // An Enom lost reply is read before staff ask Enom for a case.

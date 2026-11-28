@@ -11,7 +11,7 @@ use App\Models\{Credit,Role};
 use Illuminate\Support\Facades\Crypt;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationWriter, RetainedAcquisition};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationAttempts;
 use Paymenter\Extensions\Servers\Domains\Services\{FreshTransaction,HoldingLocks,Installation,LiveReservations,OperationClaims,PricingRule,RefundProof,Refunds};
 expect(method_exists(\Paymenter\Extensions\Servers\Domains\Contracts\RegistrationProtocol::class,'useReservation'),'Genuine acquisition protocol must bind a pre-seal reservation');
 (new Installation)->install();
@@ -107,7 +107,7 @@ foreach(['success','unsent','timeout','cap','off'] as $mode){
         commerceReject(fn () => RefundProof::requireUnsent($bad, $result->domain));
         commerceReject(fn()=>$result->update(['attempt'=>array_replace($result->attempt,['execution'=>null]) ]));$result->refresh();
         RefundProof::requireUnsent($result, $result->domain);
-        // Retained seals can support readback. A new payment return needs the original durable local refusal.
+        // An inline seal cannot establish a current purchase attempt or authorize a return.
         $restoreLedger = nativeRegistrarCheckpoint($clock);
         $legacy = [...$result->attempt, 'send_state' => 'possibly_sent'];
         restoreAcquisitionFixture([...$result->getRawOriginal(),
@@ -116,12 +116,11 @@ foreach(['success','unsent','timeout','cap','off'] as $mode){
             'started_at' => OperationAttempts::at($result->started_at), 'request_fingerprint' => $result->request_fingerprint]);
         $clock->instant = $clock->now()->modify('+1 second');
         $result->refresh();
-        FreshTransaction::run(static function () use ($result, $clock): void {
+        FreshTransaction::run(static function () use ($result): void {
             $locks = HoldingLocks::take($result->domain);
             $locked = $locks['operations']->firstWhere('id', $result->id);
             commerceReject(fn () => RefundProof::requireUnsent($locked, $locks['domain']));
-            $adopted = RetainedAcquisition::adopt($locked, new OperationWriter($clock), $clock->now());
-            expect($adopted !== null, 'The legacy local refusal adopts its original seal');
+            same(null,$locked->acquisitionAttemptFacts(),'The inline seal has no attempt authority');
         });
         commerceReject(fn () => RefundProof::requireUnsent($result->fresh(), $result->domain));
         $restoreLedger();

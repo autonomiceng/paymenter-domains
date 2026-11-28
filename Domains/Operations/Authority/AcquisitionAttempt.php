@@ -54,13 +54,22 @@ final readonly class AcquisitionAttempt
             }
         }
         $current = $rows[$facts->token->attemptId] ?? [];
-        $origin = $current['claim']['evidence'] ?? throw new \DomainException('Acquisition claim evidence unavailable.');
+        $origin = self::localClaim($current);
         if (isset($origin['origin_attempt_id'])) {
-            $original = $rows[$origin['origin_attempt_id']]['claim']['evidence'] ?? throw new \DomainException('Original acquisition claim unavailable.');
+            $original = self::localClaim($rows[$origin['origin_attempt_id']] ?? []);
             $origin = [...$original, 'origin_attempt_id' => $origin['origin_attempt_id']];
         }
         if (!is_string($origin['identity'] ?? null)) { throw new \DomainException('Original acquisition identity unavailable.'); }
         return new self($facts, $action, $current, $origin, $history);
+    }
+
+    private static function localClaim(array $rows): array
+    {
+        $claim = $rows['claim'] ?? null;
+        if (($claim['source'] ?? null) !== 'local' || ($claim['outcome'] ?? null) !== 'claimed') {
+            throw new \DomainException('Acquisition claim evidence unavailable.');
+        }
+        return $claim['evidence'];
     }
 
     public function originId(): int { return $this->origin['origin_attempt_id'] ?? $this->facts->token->attemptId; }
@@ -96,7 +105,6 @@ final readonly class AcquisitionAttempt
     public function funding(): array
     {
         if (!$this->hasOriginalClaim()) { return []; }
-        if (isset($this->origin['legacy_funding'])) { return $this->origin['legacy_funding']; }
         $funding = [];
         if (array_key_exists('funding', $this->origin)) { $funding['claim'] = $this->origin['funding']; }
         if ($this->sealed() && array_key_exists('funding', $this->rows['admission']['evidence'] ?? [])) {
@@ -109,7 +117,6 @@ final readonly class AcquisitionAttempt
     {
         if (!$this->hasOriginalClaim()) { return $this->history; }
         $settlement = array_intersect_key($this->rows['settlement']['evidence'] ?? [], ['reconciliation' => true]);
-        if (isset($this->origin['legacy_attempt'])) { return [...$this->origin['legacy_attempt'], ...$settlement]; }
         $attempt = ['claim_key' => $this->origin['identity'], 'seal' => $this->sealed() ? 'sealed' : 'absent',
             'send_state' => $this->sealed() ? $this->facts->sendState->value : 'definitely_unsent'];
         if (!$this->sealed()) { return [...$attempt, ...$this->history]; }

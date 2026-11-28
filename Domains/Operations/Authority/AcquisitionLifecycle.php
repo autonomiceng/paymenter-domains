@@ -24,7 +24,11 @@ final readonly class AcquisitionLifecycle
         $phase = AcquisitionPhase::Invalid;
         $badTimestamp = $facts->claimedAt === null || $facts->released && ($facts->current || $facts->releasedAt < $facts->claimedAt)
             || $facts->sealed() && $facts->sealedAt < $facts->claimedAt;
-        if ($badTimestamp || in_array(OperationAttempts::UNREADABLE, $rows, true)) { return new self($facts, $phase); }
+        $claim = $rows['claim'] ?? null;
+        if ($badTimestamp || in_array(OperationAttempts::UNREADABLE, $rows, true)
+            || (!$contact && $claim !== null && (($claim['source'] ?? null) !== 'local' || ($claim['outcome'] ?? null) !== 'claimed'))) {
+            return new self($facts, $phase);
+        }
         if (isset($rows['settlement']) || in_array($rows['decision']['outcome'] ?? null, ['succeeded', 'rejected'], true)) {
             return new self($facts, AcquisitionPhase::Terminal);
         }
@@ -110,21 +114,11 @@ final readonly class AcquisitionLifecycle
             || array_key_exists('dispatch_attempted_at', $op->operationPolicy())) { return $invalid; }
         $terminal = $rows[0]['terminal'] ?? null;
         $latest = new self(null, AcquisitionPhase::Virgin);
-        if ($history === null) {
-            $raw = $op->getAttributes();
-            $attempt = isset($raw['attempt']) ? OperationAttempts::decodeEvidence($raw['attempt']) : [];
-            $funding = $op->receiptFunding();
-            if (isset($raw['lease_expires_at']) || array_key_exists('seal', $funding)) { return $invalid; }
-            $unclaimed = !isset($raw['started_at']) && !isset($raw['request_fingerprint'])
-                && !array_key_exists('claim', $funding) && !array_key_exists('claim_key', $attempt);
-            if (!$unclaimed || ($attempt !== [] && $attempt !== ['seal' => 'absent', 'send_state' => 'definitely_unsent'])) {
-                return self::retainedClosure($op, $attempt, $funding, $unclaimed, $terminal, $invalid);
-            }
-        } elseif (!$history || AcquisitionAttempt::conflicts($op)
+        $raw = $op->getAttributes();
+        if (isset($raw['started_at']) || isset($raw['request_fingerprint']) || isset($raw['lease_expires_at'])
+            || (isset($raw['attempt']) && OperationAttempts::decodeEvidence($raw['attempt']) !== [])
             || array_intersect_key($op->receiptFunding(), ['claim' => true, 'seal' => true])
-            || self::conflictingRetainedFacts($op)) {
-            return $invalid;
-        }
+            || $history === []) { return $invalid; }
         $origins = [];
         foreach ($history ?? [] as $index => $facts) {
             $id = $facts->token->attemptId;
@@ -134,13 +128,11 @@ final readonly class AcquisitionLifecycle
             $originId = array_key_exists('origin_attempt_id', $claim) ? $claim['origin_attempt_id'] : $id;
             if (!is_int($originId)) { return $invalid; }
             $origin = $originId === $id ? $claim : ($origins[$originId] ?? []);
-            $retained = ($event['source'] ?? null) === 'retained';
             if ($facts->token->ordinal !== $index + 1 || $facts->token->operationId !== (int) $op->id
                 || (!$facts->current && !$facts->released)
                 || !preg_match('/^[a-f0-9]{32}$/D', $facts->token->claimKey)
                 || ($claim['identity'] ?? null) !== $facts->token->claimKey
-                || !is_string($origin['digest'] ?? null) || !preg_match('/^[a-f0-9]{64}$/D', $origin['digest'])
-                || (!$retained && (($event['source'] ?? null) !== 'local' || ($event['outcome'] ?? null) !== 'claimed'))) { return $invalid; }
+                || !is_string($origin['digest'] ?? null) || !preg_match('/^[a-f0-9]{64}$/D', $origin['digest'])) { return $invalid; }
             if ($originId === $id) { $origins[$id] = $origin; }
             $latest = self::reduce($facts, $evidence, $now);
             if ($latest->phase === AcquisitionPhase::ProvedUnsent && $facts->sealed()) {
@@ -158,7 +150,7 @@ final readonly class AcquisitionLifecycle
             if (!$kind || $op->state !== 'rejected' || ($terminal['source'] ?? null) !== 'local'
                 || ($details['operation_key'] ?? null) !== $bound['operation_key'] || ($details['generation'] ?? null) !== $bound['generation']
                 || !$latest->canCloseUnsent() || $latest->facts?->current
-                || (array_key_exists('attempt_id', $details) && $details['attempt_id'] !== $latest->facts?->token->attemptId)
+                || !array_key_exists('attempt_id', $details) || $details['attempt_id'] !== $latest->facts?->token->attemptId
                 || !self::closureDetails($op, $kind, $details, $latest)) { return $invalid; }
             return new self($latest->facts, AcquisitionPhase::Terminal, closure: $kind);
         }
@@ -166,14 +158,6 @@ final readonly class AcquisitionLifecycle
         return in_array($op->state, ['succeeded', 'rejected', 'disposed'], true) || $op->completed_at !== null
             ? new self($latest->facts, AcquisitionPhase::Terminal)
             : $latest;
-    }
-
-    private static function conflictingRetainedFacts(Operation $op): bool
-    {
-        $raw = $op->getAttributes()['attempt'] ?? null;
-        if ($raw === null) { return false; }
-        $stored = OperationAttempts::decodeEvidence($raw);
-        return $stored !== [] && $stored !== ['seal' => 'absent', 'send_state' => 'definitely_unsent'];
     }
 
     private static function closureDetails(Operation $op, AcquisitionClosureKind $kind, array $details, self $predecessor): bool
@@ -189,47 +173,6 @@ final readonly class AcquisitionLifecycle
         return $op->action === 'transfer' && $op->safe_code === 'transfer_code_timeout'
             && $op->term === 1 && $deadline !== null && $at >= $deadline && ($op->payload['epp'] ?? null) === null
             && $details === ['deadline' => $deadline->format(DATE_ATOM)];
-    }
-
-    /** Completed pre-ledger closures remain readable for late receipts. */
-    private static function retainedClosure(Operation $op, array $attempt, array $funding, bool $unclaimed, ?array $terminal, self $invalid): self
-    {
-        if ($op->state !== 'rejected' || !AcquisitionRetryProof::settledRefusalHistory($attempt)
-            || array_diff(array_keys($attempt),
-                ['claim_key', 'seal', 'send_state', 'disposition', 'rejection_basis', 'terminal', 'transfer_timeout', ...AcquisitionRetryProof::LOCAL_REFUSAL_HISTORY])
-            || ($attempt['seal'] ?? null) !== 'absent' || ($attempt['send_state'] ?? null) !== 'definitely_unsent') { return $invalid; }
-        if (!$unclaimed && !($op->started_at !== null && is_string($op->request_fingerprint)
-            && preg_match('/^[a-f0-9]{64}$/D', $op->request_fingerprint) && is_array($funding['claim'] ?? null)
-            && is_string($attempt['claim_key'] ?? null) && preg_match('/^[a-f0-9]{32}$/D', $attempt['claim_key']))) { return $invalid; }
-        if (array_key_exists('test_call_refusals', $attempt)
-            && (!$attempt['test_call_refusals'] || ($op->completed_at !== null && array_filter($attempt['test_call_refusals'],
-                static fn (array $event): bool => new \DateTimeImmutable($event['refused_at']) > $op->completed_at)))) {
-            return $invalid;
-        }
-        $bound = ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation];
-        if ($terminal !== null) {
-            return ($terminal['source'] ?? null) === 'local'
-                && ($terminal['outcome'] ?? null) === AcquisitionClosureKind::Unsent->value
-                && ($terminal['evidence'] ?? null) === $bound
-                && !array_intersect_key($attempt, ['terminal' => true, 'transfer_timeout' => true, 'disposition' => true, 'rejection_basis' => true])
-                ? new self(null, AcquisitionPhase::Terminal, closure: AcquisitionClosureKind::Unsent) : $invalid;
-        }
-        if (($attempt['disposition'] ?? null) !== 'rejected' || ($attempt['rejection_basis'] ?? null) !== 'definitely_unsent') { return $invalid; }
-        $closure = match (true) {
-            $unclaimed && $op->action === 'transfer' && $op->safe_code === 'transfer_code_timeout'
-                && array_intersect_key($attempt['transfer_timeout'] ?? [], $bound) === $bound
-                && self::closureDetails($op, AcquisitionClosureKind::TransferTimeout, $attempt['transfer_timeout'], new self(null, AcquisitionPhase::Virgin))
-                => AcquisitionClosureKind::TransferTimeout,
-            $unclaimed && ($attempt['terminal'] ?? null) === [...$bound, 'invoice_id' => $op->invoice_id, 'transactions' => [], 'unfunded' => true]
-                => AcquisitionClosureKind::Unpaid,
-            ($attempt['terminal'] ?? null) === $bound => AcquisitionClosureKind::Unsent,
-            // The oldest closed registrations recorded the rejection directly on the operation.
-            $op->action === 'register' && $unclaimed
-                && !array_diff(array_keys($attempt), ['seal', 'send_state', 'disposition', 'rejection_basis'])
-                => AcquisitionClosureKind::Unsent,
-            default => null,
-        };
-        return $closure ? new self(null, AcquisitionPhase::Terminal, closure: $closure) : $invalid;
     }
 
     public function canCloseUnsent(): bool
