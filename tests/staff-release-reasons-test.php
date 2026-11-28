@@ -80,7 +80,7 @@ same(count($codes)*6,$facts,'Every code was read natively for each kind and sett
 foreach (['register', 'transfer'] as $action) {
     foreach ([false, true] as $enabled) {
         $refusedPurchase = new ReleaseFacts('held', $action, 'pre_send_interrupted', 'enom', 'test',
-            deployment: $enabled, sealedUnsent: true);
+            deployment: $enabled, purchaseRefused: true);
         same($enabled ? ReleaseProof::Unsent : ReleaseRefusal::OriginalRecovery, ReleaseDecision::decide($refusedPurchase),
             'Enom needs the matching acquisition deployment even with proved no-send evidence');
     }

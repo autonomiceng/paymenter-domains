@@ -117,6 +117,6 @@ final class HeldRelease
         $refused = $purchase?->canCloseUnsent() && $purchase->reason !== 'test_capacity'
             && $purchase->facts?->sealed();
         return new ReleaseFacts(...$context,testCallRetry:OperationClaims::testCallRefusalRetryable($op),
-            accountGuardRetry:OperationClaims::accountGuardRetryable($op), sealedUnsent: $refused);
+            accountGuardRetry:OperationClaims::accountGuardRetryable($op), purchaseRefused: $refused);
     }
 }

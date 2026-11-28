@@ -27,7 +27,7 @@ final readonly class ReleaseFacts
         public ?string $contactBlocked=null,
         public bool $testCallRetry=false,
         public bool $accountGuardRetry=false,
-        public bool $sealedUnsent=false,
+        public bool $purchaseRefused=false,
         public bool $pausedRelease=false,
     ) {}
 }
