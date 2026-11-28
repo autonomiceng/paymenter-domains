@@ -137,6 +137,10 @@ foreach (['cutoff', 'day-two'] as $case) {
     $ticket = StaffOperationReview::ticket($staff->id, $held->domain_id, $held->id, 'release',
         StaffOperationReview::stamp($held->fresh(), $held->domain->fresh()), $clock);
     $before = $creditTotal();
+    $queuedJobs = static fn () => Queue::pushed(
+        RunOperation::class, static fn (RunOperation $job) => $job->operationId === $held->id,
+    )->count();
+    $pending = $queuedJobs();
     if ($case === 'cutoff') {
         $setWaitTime($cutoff);
         $state->funds = '100.00';
@@ -149,7 +153,7 @@ foreach (['cutoff', 'day-two'] as $case) {
     $after = $held->fresh();
     $afterRelease = AcquisitionResult::continuation($after);
     $priorAudit = $after->policy['staff_actions'] ?? [];
-    $queued = Queue::pushed(RunOperation::class, static fn (RunOperation $job) => $job->operationId === $held->id)->count();
+    $newDelivery = $queuedJobs() > $pending;
     $makeTransfer(1);
     $afterDelivery = $engine->execute($held->id);
     $afterDeliveryWait = AcquisitionResult::continuation($afterDelivery);
@@ -157,21 +161,34 @@ foreach (['cutoff', 'day-two'] as $case) {
     $account = Account::where('server_id', $held->server_id)->sole();
     FundsWaits::sweep($account, $clock->now());
     FundsWaits::sweep($account, $clock->now());
+    $terminal = $held->fresh();
     $observed[$case] = [
-        $offered, $refused, $after->state, $saved->window == $afterRelease->window,
-        $saved->shortfallAt == $afterRelease->shortfallAt,
-        $saved->shortfallAt == $afterDeliveryWait->shortfallAt,
-        count($priorAudit), $queued, count(array_filter($state->calls, static fn ($command) => $command === 'transferDomain')),
-        $held->fresh()->state, $creditTotal() - $before === PricingRule::minor($held->amount),
+        'offered' => $offered,
+        'refused' => $refused,
+        'after_release' => $after->state,
+        'window_retained' => $saved->window == $afterRelease->window,
+        'start_retained' => $saved->shortfallAt == $afterRelease->shortfallAt,
+        'delivery_kept_start' => $saved->shortfallAt == $afterDeliveryWait->shortfallAt,
+        'review_audits' => count($priorAudit),
+        'refusal_queued_delivery' => $refused && $newDelivery,
+        'registrar_sends' => count(array_filter($state->calls, static fn ($command) => $command === 'transferDomain')),
+        'terminal' => $terminal->state,
+        'exact_credit' => $creditTotal() - $before === PricingRule::minor($held->amount),
+        'terminal_cleared_start' => AcquisitionResult::continuation($terminal)->shortfallAt === null,
     ];
 }
 $restoreWait();
 $setWaitTime($now);
 $state->funds = '100.00';
-same([
-    'cutoff' => [false, true, 'held', true, true, true, 0, 0, 0, 'rejected', true],
-    'day-two' => [true, false, 'queued', false, true, true, 1, 1, 0, 'rejected', true],
-], $observed, 'Reviewed NameSilo Release keeps the original funds cutoff: '.json_encode($observed));
+$atCutoff = [
+    'offered' => false, 'refused' => true, 'after_release' => 'held', 'window_retained' => true,
+    'start_retained' => true, 'delivery_kept_start' => true, 'review_audits' => 0, 'refusal_queued_delivery' => false,
+    'registrar_sends' => 0, 'terminal' => 'rejected', 'exact_credit' => true, 'terminal_cleared_start' => true,
+];
+$dayTwo = [...$atCutoff, 'offered' => true, 'refused' => false, 'after_release' => 'queued',
+    'window_retained' => false, 'review_audits' => 1];
+same(['cutoff' => $atCutoff, 'day-two' => $dayTwo], $observed,
+    'Reviewed NameSilo Release keeps the original funds cutoff: '.json_encode($observed));
 
 $op = $newTransfer(placeholderComFixtureName('expired-registry-refusal-placeholder.com'));
 $makeTransfer();

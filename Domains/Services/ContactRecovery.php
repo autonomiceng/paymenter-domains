@@ -88,18 +88,23 @@ final class ContactRecovery
             $facts=$funding->initialFacts($domain)+['operations'=>$operations,'user'=>$owner];
             $now = $clock->now();
             $contacts=self::requireReplacement($op,$facts,$contact===null?ContactDetails::collect($owner):OrderContact::roles($contact),$now);
-            $payload=$op->payload??[];$policy=$op->policy??[];$history=$policy['contact_readmissions']??[];
+            $payload=$op->payload??[];
             $payload['contacts'] = $contacts; $payload['setup_required'] = false; $payload['setup_fields'] = []; $payload['registry_supported'] = true;
-            $history[] = ['actor_id' => $automatic ? null : (int) $actor->id, ...($automatic ? ['source'=>'account_automatic'] : []), 'owner_id' => (int) $ownerId, 'reason' => $reason,
-                'at' => now()->toIso8601String(), 'previous_code' => $op->safe_code,
-                ...($contact===null?[]:['source'=>'order_form','saved_account'=>$saveAccount])];
-            $policy['contact_readmissions'] = $history;
             // The first worker will validate the corrected details and start its acquisition clock.
-            ContactSetup::recoveryWrite(static fn () => AcquisitionResult::admit($op, AcquisitionAdmission::ContactCorrection,
-                AcquisitionResult::revision($op), null, $clock,
-                static fn () => $op->update(['payload' => $payload, 'policy' => $policy,
+            $correction = static function (\DateTimeImmutable $at) use ($op, $payload, $actor, $ownerId, $reason, $automatic, $contact, $saveAccount): bool {
+                $policy = $op->policy ?? [];
+                $policy['contact_readmissions'][] = [
+                    'actor_id' => $automatic ? null : (int) $actor->id,
+                    ...($automatic ? ['source' => 'account_automatic'] : []),
+                    'owner_id' => (int) $ownerId, 'reason' => $reason, 'at' => $at->format(DATE_ATOM), 'previous_code' => $op->safe_code,
+                    ...($contact === null ? [] : ['source' => 'order_form', 'saved_account' => $saveAccount]),
+                ];
+                return $op->update(['payload' => $payload, 'policy' => $policy,
                     'state' => $op->action === 'register' ? 'queued' : 'held',
-                    'safe_code' => $op->action === 'register' ? null : 'transfer_setup_review_required'])))->requireApplied();
+                    'safe_code' => $op->action === 'register' ? null : 'transfer_setup_review_required']);
+            };
+            ContactSetup::recoveryWrite(static fn () => AcquisitionResult::admit($op, AcquisitionAdmission::ContactCorrection,
+                AcquisitionResult::revision($op), null, $clock, $correction))->requireApplied();
             $review?->record($locked);
             if ($contact !== null && $saveAccount) { OrderContact::saveAccount($owner, $contacts['registrant']); }
             return $op;

@@ -130,7 +130,7 @@ final class AcquisitionResult
      * The cutoff, the transition and the new bounds share an instant sampled inside the writer.
      */
     public static function admit(Operation $operation, AcquisitionAdmission $admission, int $expectedRevision,
-        ?AttemptToken $expectedAttempt, Clock|\DateTimeImmutable $clock, \Closure $transition, ?\Closure $approve = null,
+        ?AttemptToken $expectedAttempt, Clock $clock, \Closure $transition, ?\Closure $approve = null,
         ?int $expectedContact = null): AcquisitionAdmissionOutcome
     {
         $key = AcquisitionAttempt::key($operation->action) ?? throw new \LogicException('Acquisition required.');
@@ -144,7 +144,7 @@ final class AcquisitionResult
             throw new \DomainException('Acquisition admission changed.');
         }
         $continuation = self::readContinuation($row);
-        $now = ($clock instanceof Clock ? $clock->now() : $clock)->setTimezone(new \DateTimeZone('UTC'));
+        $now = $clock->now()->setTimezone(new \DateTimeZone('UTC'));
         if (AcquisitionAuthority::fundsCutoff($operation, $continuation, $now, $latest) !== AcquisitionAuthority::FUNDS_PROCEED) {
             return AcquisitionAdmissionOutcome::RetireForCredit;
         }
