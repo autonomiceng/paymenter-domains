@@ -187,14 +187,19 @@ final class HoldingObservationWork
             if ($a->account_fingerprint!==$queue->account_fingerprint) { throw new \DomainException('Observation queue binding changed.'); }
             $q=DB::table('domains_observation_queues')->where('id',$queue->id); $current=(clone $q)->lockForUpdate()->firstOrFail();
             $rows=Domain::where('server_id',$a->server_id)->where('id','>',$current->cursor)->orderBy('id')->limit(25)->get();
-            foreach ($rows as $d) {
-                if ($d->account_fingerprint!==$a->account_fingerprint) { continue; }
-                if (!ObservationEligibility::allows($d)) {
-                    $obsolete=DB::table('domains_observation_work')->where('server_id',$d->server_id)->where('domain_id',$d->id)
-                        ->where('account_fingerprint',$d->account_fingerprint)->where('generation',$d->authority_generation);
-                    self::idle($obsolete,$this->clock->now()->getTimestamp())->delete();
-                    continue;
-                }
+            [$established, $ineligible] = $rows->where('account_fingerprint', $a->account_fingerprint)
+                ->partition(ObservationEligibility::allows(...));
+            if ($ineligible->isNotEmpty()) {
+                $obsolete=DB::table('domains_observation_work')->where('server_id',$a->server_id)
+                    ->where('account_fingerprint',$a->account_fingerprint);
+                // Keep other generations and live leases, including work claimed by a worker from before the upgrade.
+                self::idle($obsolete,$this->clock->now()->getTimestamp())->where(function ($q) use ($ineligible): void {
+                    foreach ($ineligible->groupBy('authority_generation') as $generation => $holdings) {
+                        $q->orWhere(fn ($q) => $q->where('generation',$generation)->whereIn('domain_id',$holdings->pluck('id')));
+                    }
+                })->delete();
+            }
+            foreach ($established as $d) {
                 DB::table('domains_observation_work')->insertOrIgnore(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,
                     'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>self::phase($d),'due_at'=>$this->clock->now()->getTimestamp()]);
                 $this->recover($d);
@@ -233,7 +238,7 @@ final class HoldingObservationWork
         return DB::transaction(function () use ($queue,$guard): ?object {
             $guard((int)$queue->server_id);
             $now=$this->clock->now()->getTimestamp(); $q=DB::table('domains_observation_work')->where('server_id',$queue->server_id)
-                ->where('account_fingerprint',$queue->account_fingerprint)->where('due_at','<=',$now)->where('tries','<',HoldingReadRetry::LIMIT)->where('lease_until','<=',$now)
+                ->where('account_fingerprint',$queue->account_fingerprint)->where('due_at','<=',$now)->where('lease_until','<=',$now)
                 ->where(function($q){$q->whereNull('safe_code')->orWhereNotIn('safe_code',HoldingReadRetry::STOPPED)
                     ->orWhere(fn($q)=>$q->whereIn('safe_code',HoldingReadRetry::TRANSIENT)->where('tries','<',HoldingReadRetry::LIMIT));});
             // Acquisition completion marks its initial read before discovery. Select those jobs before the bounded
