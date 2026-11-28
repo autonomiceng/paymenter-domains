@@ -23,6 +23,8 @@ class Operation extends Model
     private ?array $acquisitionRow = null;
     private AcquisitionAttempt|\Throwable|null $acquisitionAttempt = null;
     private bool $acquisitionLoaded = false;
+    /** Null when unbatched, false when the batch found no result. */
+    private object|false|null $acquisitionResultSnapshot = null;
     private ?array $terminalProof = null;
     private ?string $terminalCiphertext = null;
     private bool $noAcquisitionStep = false;
@@ -184,14 +186,24 @@ class Operation extends Model
         return $this->acquisitionAttempt;
     }
 
-    /** Batch the attempt rows for staff readers. Date-only readers need no encrypted evidence. */
+    public function acquisitionResultSnapshot(): object|false|null
+    { return $this->acquisitionResultSnapshot; }
+
+    public function clearAcquisitionResultSnapshot(): void
+    { $this->acquisitionResultSnapshot = null; }
+
+    /** Batch acquisition facts for list readers. Date-only readers need no encrypted evidence. */
     public static function loadAcquisitionAttempts(iterable $operations, bool $withEvidence = true, bool $lock = false): void
     {
-        $pending = $terminal = [];
+        $pending = $terminal = $results = [];
         foreach ($operations as $op) {
             if ($withEvidence && $op->terminalProof === null && $op->terminalCiphertext === null && $op->state === 'rejected' && $op->getRawOriginal('id') !== null
                 && AcquisitionAttempt::key((string) $op->getRawOriginal('action')) !== null) {
                 $terminal[(int) $op->id][] = $op;
+            }
+            if (!$lock && $withEvidence && $op->acquisitionResultSnapshot === null && $op->getRawOriginal('id') !== null
+                && AcquisitionAttempt::key((string) $op->getRawOriginal('action')) !== null) {
+                $results[(int) $op->id][] = $op;
             }
             if ($op->noAcquisitionStep) { continue; }
             if (!$op->acquisitionLoaded && $op->getRawOriginal('id') !== null
@@ -208,6 +220,12 @@ class Operation extends Model
                 $op->acquisitionLoaded = $withEvidence;
             }
         }
+        if ($results !== []) {
+            $rows = DB::table(AcquisitionResultSchema::TABLE)->whereIn('operation_id', array_keys($results))->get()->keyBy('operation_id');
+            foreach ($results as $id => $models) {
+                foreach ($models as $op) { $op->acquisitionResultSnapshot = $rows->get($id, false); }
+            }
+        }
         $proofs = OperationAttempts::evidenceMany(array_keys($terminal), ['terminal'], $lock);
         foreach ($terminal as $id => $models) {
             foreach ($models as $op) { $op->terminalProof = $proofs[$id][0]['terminal'] ?? []; }
@@ -220,6 +238,7 @@ class Operation extends Model
         $this->acquisitionRow = null;
         $this->acquisitionAttempt = null;
         $this->acquisitionLoaded = false;
+        $this->clearAcquisitionResultSnapshot();
         $this->terminalProof = null;
         $this->terminalCiphertext = null;
         $this->noAcquisitionStep = false;

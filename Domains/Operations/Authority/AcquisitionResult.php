@@ -62,6 +62,7 @@ final class AcquisitionResult
         self::query($operation)->whereNotNull('retry_lane')->increment('revision', 1, [
             'retry_lane' => null, 'retry_due_at' => null, 'confirmed_shortfall_at' => null,
         ]);
+        $operation->clearAcquisitionResultSnapshot();
     }
 
     public static function revision(Operation $operation, bool $lock = true): int
@@ -258,6 +259,7 @@ final class AcquisitionResult
         if (self::query($operation)->where('revision', $revision)->update(['revision' => $revision + 1, ...$changes]) !== 1) {
             throw new \DomainException('Acquisition admission revision changed.');
         }
+        $operation->clearAcquisitionResultSnapshot();
     }
 
     private static function readWindow(object $row): ?AcquisitionWindow
@@ -277,12 +279,16 @@ final class AcquisitionResult
 
     private static function row(Operation $operation, bool $lock): object
     {
-        if ($lock && DB::transactionLevel() < 1) {
+        $inTransaction = DB::transactionLevel() > 0;
+        if ($lock && !$inTransaction) {
             throw new \LogicException('Acquisition result writes require the operation lock.');
         }
-        $query = self::query($operation);
-        return ($lock ? $query->lockForUpdate() : $query)->first()
-            ?? throw new \DomainException('Acquisition result unavailable.');
+        $row = $inTransaction ? null : $operation->acquisitionResultSnapshot();
+        if ($row === null) {
+            $query = self::query($operation);
+            $row = ($lock ? $query->lockForUpdate() : $query)->first();
+        }
+        return $row ?: throw new \DomainException('Acquisition result unavailable.');
     }
 
     private static function query(Operation $operation): \Illuminate\Database\Query\Builder
