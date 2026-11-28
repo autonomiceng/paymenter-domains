@@ -7,7 +7,8 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver, Clo
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AdmittedOperation, Disposition, DriverResult, Money, RejectionBasis, ResultReason, SendState, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionResult, AcquisitionRetryProof, OperationAttempts};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAuthority, AcquisitionResult, AcquisitionRetryProof, OperationAttempts};
+use Paymenter\Extensions\Servers\Domains\Registration\Checkout\RegistrationPreflight;
 use Paymenter\Extensions\Servers\Domains\Transfer\Input\TransferPreflight;
 
 /** Dormant internal facade; no installed queue registration, completion or refund policy. */
@@ -123,8 +124,13 @@ final class DomainOperations
                 $this->writer->guardAccount($this->clock, $deadline);
             }
             $context = new RequestContext($binding, RequestOrigin::Background, $deadline, new RequestBudget($op->action === 'transfer' ? 12 : ExecuteOperation::REQUEST_LIMIT), $this->clock, Runtime::limiter());
-            $ready = $this->preflight->inspect($op, $domain, $context);
+            $purchasePreflight = $this->preflight instanceof RegistrationPreflight || $this->preflight instanceof TransferPreflight;
+            $ready = $purchasePreflight
+                ? $this->preflight->inspectFunds($op, $domain, $context)
+                : $this->preflight->inspect($op, $domain, $context);
             if (!$this->claims->confirmFunds($op, $ready)) { return $op->fresh(); }
+            // After verified funds end the wait, a later local refusal has its own outcome.
+            if ($purchasePreflight) { AcquisitionAuthority::requirePurchasePrice($op, $ready->cost); }
             if ($this->preflight instanceof TransferPreflight) {
                 $ready = $this->preflight->inspect($op, $domain, $context);
             }

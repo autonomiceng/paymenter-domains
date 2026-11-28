@@ -29,9 +29,9 @@ $setTime = static function (DateTimeImmutable $time) use ($clock): void {
     Carbon\Carbon::setTestNow($time);
     Carbon\CarbonImmutable::setTestNow($time);
 };
-$wire = static function (bool $funded = true) use ($reset, $setupReply): void {
+$wire = static function (bool $funded = true, string $registrationPrice = '10.0000') use ($reset, $setupReply): void {
     $reset();
-    $GLOBALS['enomWire']['reply'] = static function (array $form) use ($setupReply, $funded): string {
+    $GLOBALS['enomWire']['reply'] = static function (array $form) use ($setupReply, $funded, $registrationPrice): string {
         if ($form['Command'] === 'Purchase') {
             return '<interface-response><Command>Purchase</Command><ErrCount>0</ErrCount><Done>true</Done>'
                 .'<RRPCode>200</RRPCode><OrderID>1234</OrderID><ExpirationDate>2027-10-21</ExpirationDate></interface-response>';
@@ -40,6 +40,7 @@ $wire = static function (bool $funded = true) use ($reset, $setupReply): void {
         return match ($form['Command']) {
             'Check' => str_replace('<RRPCode>211</RRPCode>', '<RRPCode>210</RRPCode>', $reply),
             'GetBalance' => $funded ? $reply : str_replace('<AvailableBalance>100.00</AvailableBalance>', '<AvailableBalance>0.01</AvailableBalance>', $reply),
+            'PE_GetProductPrice' => str_replace('<Price>10.0000</Price>', '<Price>'.$registrationPrice.'</Price>', $reply),
             default => $reply,
         };
     };
@@ -118,7 +119,7 @@ $observed = [];
 $day = $clock->now()->modify('+2 days');
 foreach (['funded', 'shortfall', 'deferred-live', 'deferred-expired', 'orders-scheduler', 'orders-job', 'orders-expired',
     'balance-resume-funded', 'balance-resume-short', 'balance-deadline-paused',
-    'balance-response-at-cutoff', 'balance-timely-local-refusal', 'balance-real-wake'] as $index => $case) {
+    'balance-response-at-cutoff', 'balance-timely-local-refusal', 'balance-real-wake', 'balance-funded-price'] as $index => $case) {
     $setTime($day->modify('+'.(4 * $index).' days'));
     $wire();
     Auth::setUser($staff);
@@ -176,6 +177,25 @@ foreach (['funded', 'shortfall', 'deferred-live', 'deferred-expired', 'orders-sc
         expect(app(OperationClaims::class)->readmitBalance($order->id), 'The last automatic wait admits one replacement before day three');
         if ($queuedWake) {
             $observed[$case] = $resumeThroughQueue($order->fresh(), $clock->now()->modify('+245 seconds'));
+            continue;
+        }
+        if ($case === 'balance-funded-price') {
+            $before = $credit();
+            $wire(registrationPrice: '90.0000');
+            $run($order);
+            $held = $order->fresh();
+            $shortfall = AcquisitionResult::continuation($held)->shortfallAt;
+            $setTime($deadline);
+            FundsWaits::sweep($a->fresh(), $clock->now());
+            FundsWaits::sweep($a->fresh(), $clock->now());
+            $current = $order->fresh();
+            $observed[$case] = [
+                'preflight_hold' => [$held->state, $held->safe_code],
+                'start_cleared' => $shortfall === null,
+                'after_sweeps' => [$current->state, $current->safe_code],
+                'credit_unchanged' => $credit() === $before,
+                'registrar_sends' => $purchases(),
+            ];
             continue;
         }
         if ($lateResponse || $localRefusal) {
@@ -327,5 +347,12 @@ same([
     'balance-response-at-cutoff' => [0, 'rejected', 'registrar_balance_insufficient', true, true],
     'balance-timely-local-refusal' => [0, 'held', 'processing', true, true],
     'balance-real-wake' => [1, [0, 'held', 'processing', 0], 1, 1, true],
+    'balance-funded-price' => [
+        'preflight_hold' => ['held', 'registrar_price_increased'],
+        'start_cleared' => true,
+        'after_sweeps' => ['held', 'registrar_price_increased'],
+        'credit_unchanged' => true,
+        'registrar_sends' => 0,
+    ],
 ], $observed, 'Purchase admission and financial outcomes follow the retained authorization '.json_encode($observed, JSON_THROW_ON_ERROR));
 $nativeSuccessful = true;

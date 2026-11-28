@@ -115,7 +115,7 @@ $setWaitTime = static function (DateTimeImmutable $instant) use ($clock, $ports)
 $creditTotal = static fn () => App\Models\Credit::where('user_id', $user->id)->where('currency_code', 'USD')->get()
     ->sum(static fn ($credit) => PricingRule::minor((string) $credit->amount));
 $observed = [];
-foreach (['cutoff', 'day-two'] as $case) {
+foreach (['cutoff', 'day-two', 'day-two-funded-price'] as $case) {
     $restoreWait();
     $setWaitTime($now);
     Queue::fake([RunOperation::class]);
@@ -154,6 +154,10 @@ foreach (['cutoff', 'day-two'] as $case) {
     $afterRelease = AcquisitionResult::continuation($after);
     $priorAudit = $after->policy['staff_actions'] ?? [];
     $newDelivery = $queuedJobs() > $pending;
+    if ($case === 'day-two-funded-price') {
+        $state->funds = '100.00';
+        $state->quote = '90.00';
+    }
     $makeTransfer(1);
     $afterDelivery = $engine->execute($held->id);
     $afterDeliveryWait = AcquisitionResult::continuation($afterDelivery);
@@ -162,6 +166,17 @@ foreach (['cutoff', 'day-two'] as $case) {
     FundsWaits::sweep($account, $clock->now());
     FundsWaits::sweep($account, $clock->now());
     $terminal = $held->fresh();
+    if ($case === 'day-two-funded-price') {
+        $observed[$case] = [
+            'delivery_hold' => [$afterDelivery->state, $afterDelivery->safe_code],
+            'start_cleared' => $afterDeliveryWait->shortfallAt === null,
+            'after_sweeps' => [$terminal->state, $terminal->safe_code],
+            'credit_unchanged' => $creditTotal() === $before,
+            'registrar_sends' => count(array_filter($state->calls, static fn ($command) => $command === 'transferDomain')),
+        ];
+        unset($state->quote);
+        continue;
+    }
     $observed[$case] = [
         'offered' => $offered,
         'refused' => $refused,
@@ -187,7 +202,14 @@ $atCutoff = [
 ];
 $dayTwo = [...$atCutoff, 'offered' => true, 'refused' => false, 'after_release' => 'queued',
     'window_retained' => false, 'review_audits' => 1];
-same(['cutoff' => $atCutoff, 'day-two' => $dayTwo], $observed,
+$dayTwoPrice = [
+    'delivery_hold' => ['held', 'registrar_price_increased'],
+    'start_cleared' => true,
+    'after_sweeps' => ['held', 'registrar_price_increased'],
+    'credit_unchanged' => true,
+    'registrar_sends' => 0,
+];
+same(['cutoff' => $atCutoff, 'day-two' => $dayTwo, 'day-two-funded-price' => $dayTwoPrice], $observed,
     'Reviewed NameSilo Release keeps the original funds cutoff: '.json_encode($observed));
 
 $op = $newTransfer(placeholderComFixtureName('expired-registry-refusal-placeholder.com'));

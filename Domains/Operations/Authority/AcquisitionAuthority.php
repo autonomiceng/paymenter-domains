@@ -8,9 +8,9 @@ use App\Models\{Server, User};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, Environment, Query};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, Environment, Money, Query};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, FreshTransaction, FundsWaits, InvoiceFunding, TransferInputs};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, ComplimentaryCosts, FreshTransaction, FundsWaits, InvoiceFunding, TransferInputs, WriteHeld, WriteMoney};
 
 /** Ordered native and holding locks, followed by the current acquisition authority checks. */
 final readonly class AcquisitionAuthority
@@ -61,6 +61,27 @@ final readonly class AcquisitionAuthority
             && ($op->attempt['rejection_basis'] ?? null) === 'definitely_unsent'
             && ($op->attempt['send_state'] ?? null) === 'definitely_unsent' && AcquisitionRetryProof::unsealed($op)
             && ($op->attempt['charge'] ?? null) === null && ($op->attempt['order_candidates'] ?? []) === [];
+    }
+
+    /** A fresh quote cannot expand the order's frozen spending authority. */
+    public static function requirePurchasePrice(Operation $op, Money $cost): void
+    {
+        $saved = $op->cost ?? [];
+        try {
+            if ($op->currency !== 'USD' || ($saved['currency'] ?? null) !== 'USD' || ($saved['unit'] ?? null) !== 'term_total'
+                || !is_string($saved['estimated'] ?? null)) { throw new \InvalidArgumentException; }
+            $ceiling = new Money($saved['estimated'], 'USD');
+            $total = new Money((string) $op->amount, 'USD');
+        } catch (\InvalidArgumentException) {
+            throw new WriteHeld('registrar_price_missing');
+        }
+        if (isset($op->policy['account_complimentary'])) {
+            ComplimentaryCosts::require($op, $cost, $ceiling->amount);
+            return;
+        }
+        if (WriteMoney::compare($cost->amount, $ceiling->amount) > 0 || WriteMoney::compare($cost->amount, $total->amount) > 0) {
+            throw new WriteHeld('registrar_price_increased');
+        }
     }
 
     /** Internal ordered authority scope shared by read-only reconciliation. */
