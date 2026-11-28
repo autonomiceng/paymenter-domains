@@ -10,6 +10,7 @@ require_once __DIR__.'/operation-fixture.php';
 $paidRegistration ??= $new;
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, DateEvidence, Disposition, DriverResult, Environment, Evidence, ExpiryPrecision, HistoryAcceptance, RegistrationEvidence, RequestBudget, RequestContext, RequestOrigin, ResultReason, SendState};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationWriter, Transition};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ReadAdapter;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport, Environment as EnomEnvironment};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
@@ -88,7 +89,11 @@ $prepare = static function (string $name, string $mode = 'accepted', ?\Paymenter
     $ctx = new RequestContext($binding, RequestOrigin::Background, $clock->now()->modify('+300 seconds'), new RequestBudget(10), $clock);
     $sealed = $claims->seal($claimed, $preflight->inspect($claimed, $domain, $ctx), $clock->now()); expect($sealed !== null, 'Original attempt sealed');
     if ($mode === 'late') { $clock->instant = $clock->now()->modify('+361 seconds'); }
-    if (!in_array($mode, ['absent', 'preseal'], true)) {
+    if (in_array($mode, ['absent', 'preseal'], true)) {
+        // The missing reply follows a handoff. The preseal case dates the observed charge before that handoff.
+        $spent = $claims->locked((int) $sealed->id, static fn () => OperationWriter::at($clock->now())->consumeGrant($sealed->acquisitionWorker));
+        same(Transition::Applied, $spent, 'A lost reply follows the original purchase grant');
+    } else {
         $result = $mode === 'null' ? null : new DriverResult($binding, $mode === 'captured' ? Disposition::Unknown : Disposition::Accepted, SendState::Sent, $mode === 'captured' ? ResultReason::Unresolved : ResultReason::Acknowledged,
             new Evidence(registration: new RegistrationEvidence(OperationClaims::query($sealed, $domain), '9001', $mode === 'captured' ? null : new DateEvidence('2027-10-17', ExpiryPrecision::Date, 'synthetic_purchase'), null, $nameservers?->state === 'observed' ? [] : ['nameservers'], $nameservers)));
         $claims->finish($sealed, $result);
