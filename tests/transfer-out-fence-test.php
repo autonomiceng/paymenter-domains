@@ -7,7 +7,7 @@ use App\Helpers\ExtensionHelper;
 use App\Models\{BillingAgreement, Gateway, Invoice};
 use Illuminate\Support\Facades\{DB, Mail, Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, DomainBilling, DomainObservation, HoldingLocks, HolderPricing, NativeDomainGuard, ObligationAlerts, ObservationSchema, ReminderSchema, RenewalAutoPay};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, DomainBilling, DomainObservation, HoldingLocks, HolderPricing, NativeDomainGuard, ObligationAlerts, ObservationSchema, ReadDeferred, ReminderSchema, RenewalAutoPay};
 use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 
 class TransferFenceGateway
@@ -115,10 +115,16 @@ DB::transaction(function()use($schedule,$op,$issued,$auto):void{
 });
 $check('uncertain',$op->fresh()->funding['auto_pay']['status'],'A different generation negative proof does not block scheduling');
 
-// A pending acquisition is not expected in the account and keeps its original payment and request state.
+// Purchase reconciliation owns pending acquisitions. Holding observation must refuse before reaching the registrar.
 [$pending]=$prepare(placeholderComFixtureName('transfer-fence-pending-placeholder.com')); $pendingDomain=$pending->domain()->firstOrFail();
-$before=$pending->getAttributes(); $money=$nativeMoney(); $read($pendingDomain,'owner');
-$check($before,$pending->fresh()->getAttributes(),'Pending acquisition remains unchanged by not-in-account read');
+$before=$pending->getAttributes(); $money=$nativeMoney(); $savedHolding=$pendingDomain->getRawOriginal(); $calls=$observation->calls;
+try {
+    $read($pendingDomain,'owner');
+    $failures[]='Holding observation must defer a pending acquisition';
+} catch (ReadDeferred) {}
+$check($calls,$observation->calls,'Holding observation never reads a pending acquisition at the registrar');
+$check($savedHolding,$pendingDomain->fresh()->getRawOriginal(),'Holding observation leaves the pending holding unchanged');
+$check($before,$pending->fresh()->getAttributes(),'Holding observation leaves the pending acquisition unchanged');
 $check($money,$nativeMoney(),'Pending acquisition money remains unchanged');
 $check(0,$alerts($pendingDomain)->count(),'Pending acquisition does not raise a departure review');
 
