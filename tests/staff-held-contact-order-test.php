@@ -304,25 +304,33 @@ echo "A failed refund keeps the cancel and retries once.\n";
 $restoreShortfall=nativeRegistrarCheckpoint($clock,$registration,$sent);
 $shortfall=$nsNew(placeholderComFixtureName('paused-shortfall-placeholder.com'));
 $shortfall->update(['payload'=>$shortfall->payload+['nameservers'=>['ns1.provider.example','ns2.provider.example'],'privacy'=>false]]);
-$registration->balance='1.00';
+$viaGateway($shortfall,'receipt_paused_shortfall');
+$shortfall=$claims->holdUnclaimed($shortfall->id,'usd_balance_required');
+$due=static function(Operation $op)use($clock):void {
+    $at=AcquisitionResult::continuation($op)?->dueAt;
+    expect($at!==null,'The balance hold schedules another check');
+    $clock->instant=$clock->now()->setTimestamp($at);
+};
+$due($shortfall);
+$registration->balance='0.00';
 $before=[$sent->contactAdd,$sent->registerDomain,MoneyReceiptGateway::$sends];
 $shortfall=$execute($shortfall);
-same(['held','registrar_balance_insufficient'],[$shortfall->state,$shortfall->safe_code],'The real preflight observes the shortfall');
-$clock->instant=$clock->now()->modify('+16 minutes');
+$actual=[$shortfall->state,$shortfall->safe_code,ProfileContactOperation::where('operation_id',$shortfall->id)->exists()];
+same(['held','registrar_balance_insufficient',false],$actual,'The retry probe observes a shortfall before preparing contact: '.json_encode($actual));
+$due($shortfall);
 expect($claims->readmitBalance($shortfall->id),'The due shortfall retry is admitted before Orders turns off');
 $account=Account::where('server_id',$binding->serverId)->sole();
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
 $shortfall=$execute($shortfall);
 same(['held','processing',true,false],[$shortfall->state,$shortfall->safe_code,$shortfall->acquisitionAttemptFacts()!==null,
     ProfileContactOperation::where('operation_id',$shortfall->id)->exists()],'Paused retry retains its purchase ledger before any contact preparation');
-$viaGateway($shortfall,'receipt_paused_shortfall');
 $clock->instant=$clock->now()->modify('+3 days');
 $account=$account->fresh();
 FundsWaits::sweep($account,$clock);
 $shortfall=$shortfall->fresh();
 same(['rejected','cancelled','original_payment'],[$shortfall->state,$serviceStatus($shortfall),$shortfall->funding['refund']['to']??null],
     'The three-day sweep returns the recorded payment while Orders is off');
-same([ $before[0], $before[1], $before[2]+1 ],[$sent->contactAdd,$sent->registerDomain,MoneyReceiptGateway::$sends],
+same([$before[0],$before[1],$before[2]+1],[$sent->contactAdd,$sent->registerDomain,MoneyReceiptGateway::$sends],
     'The sweep returns one payment without sending contact or purchase traffic');
 FundsWaits::sweep($account,$clock);
 app(Refunds::class)->creditRejected($shortfall->id);
