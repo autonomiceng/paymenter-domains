@@ -78,8 +78,9 @@ final class OperationTerminalProof
         $proof = OperationAttempts::purchaseProof($op, $now ?? app(Clock::class)->now(), DB::transactionLevel() > 0);
         return match ($proof->closure) {
             AcquisitionClosureKind::Unpaid => UnpaidAcquisitionProof::terminal($op, $domain, $proof),
-            AcquisitionClosureKind::Unsent, AcquisitionClosureKind::TransferTimeout => true,
-            null => false,
+            AcquisitionClosureKind::Unsent => true,
+            // The missing-code closure authorizes a payment return while retaining the reservation.
+            AcquisitionClosureKind::TransferTimeout, null => false,
         };
     }
 }
