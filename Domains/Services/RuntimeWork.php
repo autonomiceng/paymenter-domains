@@ -47,6 +47,12 @@ final readonly class RuntimeWork
                 && $this->ports->accepted($account)) { $this->ports->operation($op); }
         } finally { $this->notice((int) $op->domain_id); }
     }
+    /** The deployment's registration switch, independent of the account's Orders pause. */
+    public static function paidRegistrationEnabled(Account $account): bool
+    {
+        try { return EnomTestRegistration::enabled(AccountBindings::binding($account)); }
+        catch (\Throwable) { return false; }
+    }
     private function notice(int $id): void {$this->attempt('notices',fn()=>app(Reminders::class)->remind($id),$id);}
     private function attempt(string $producer,\Closure $run,?int $row=null): void
     {(new RuntimeDiagnostics($this->clock))->attempt($producer,$run,$row);}

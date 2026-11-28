@@ -7,7 +7,6 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt,AcquisitionLane,AcquisitionResult,AcquisitionRetryProof};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Registrars\Dispatch\Offers;
 /** Durable poll backoff survives queue restarts; unique jobs bound worker backlog. */
 final readonly class RuntimeDispatch
 {
@@ -89,7 +88,7 @@ final readonly class RuntimeDispatch
         if (!$account->processing_enabled) {
             $paidTest = $op->action === 'register' && $op->state === 'awaiting_payment'
                 && \App\Models\Invoice::whereKey($op->invoice_id)->value('status') === 'paid'
-                && self::testRegistrationEnabled($account);
+                && RuntimeWork::paidRegistrationEnabled($account);
             if ($recovering || $paidTest || $op->state === 'queued'
                 && ($op->acquisitionAttemptFacts() || BalanceRetries::active($op))) {
                 app(OperationClaims::class)->holdUnclaimed($id, 'processing');
@@ -140,14 +139,5 @@ final readonly class RuntimeDispatch
     private static function statusWork(Operation $op): bool
     {
         return in_array($op->state, ['pending','uncertain','running'], true) || TransferPolling::applies($op);
-    }
-
-    private static function testRegistrationEnabled(Account $account): bool
-    {
-        try {
-            $binding = AccountBindings::binding($account);
-            return $binding->registrarKey === 'enom' && Offers::salesFeature($binding, 'register', setup: true);
-        }
-        catch (\Throwable) { return false; }
     }
 }
