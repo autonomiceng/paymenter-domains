@@ -5,6 +5,7 @@ require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-panel.php';
 require __DIR__.'/Support/staff-filter-lookalikes.php';
 require_once __DIR__.'/Support/renewal-attempts.php';
+require_once __DIR__.'/Support/acquisition-evidence-fixture.php';
 use Illuminate\Support\Facades\{Auth, DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
@@ -14,6 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Labels,OneLine,RefundCandidates,RequestFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainQueries;
 use Paymenter\Extensions\Servers\Domains\Policies\DomainPolicy;
+use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts, StaffOperationReview};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 staffPanel(); [$held,$active,$long]=staffData();
 function staffFilter($page, string $name, mixed $value) {
@@ -115,37 +117,51 @@ $copy=$active->fresh();$p=$copy->observation;$p['record_hold']['identity']['gene
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('Sync stopped');
 $p=$copy->fresh()->observation;unset($p['record_hold']);$copy->update(['observation'=>$p]);
 same(null,DomainFacts::recordHold($copy->fresh()),'An ordinary domain has no record alert');
-$work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$held->server_id,'account_fingerprint'=>$held->account_fingerprint,
-    'domain_id'=>$held->id,'generation'=>$held->authority_generation,'due_at'=>0]);
+$readReviewer=staffUser([Staff::VIEW,StaffOperationReview::permission('recheck'),StaffOperationReview::permission('resume_observation')]);
+DB::beginTransaction();
+try {
+    $pendingRequest=sealTransferForPolling($held->operations()->sole(),time()-3600);
+    DB::table('domains_observation_work')->insert(['server_id'=>$held->server_id,'account_fingerprint'=>$held->account_fingerprint,
+        'domain_id'=>$held->id,'generation'=>$held->authority_generation,'due_at'=>0,'safe_code'=>'read_unavailable']);
+    ObligationAlerts::record($held,'template_failed',time());
+    $pendingUrl=\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl('view',['record'=>$pendingRequest->id]);
+    Livewire::actingAs($readReviewer)->test(ViewDomain::class,['record'=>$held->id])
+        ->assertDontSee('Read stopped')->assertActionHidden('resume_observation')->assertSee(DomainFacts::alertCause('template_failed'))
+        ->assertSeeHtml('href="'.e($pendingUrl).'"');
+    Livewire::actingAs($readReviewer)->test(ViewOperation::class,['record'=>$pendingRequest->id])->assertActionVisible('recheck');
+} finally { DB::rollBack(); }
+$work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$active->server_id,'account_fingerprint'=>$active->account_fingerprint,
+    'domain_id'=>$active->id,'generation'=>$active->authority_generation,'due_at'=>0]);
 foreach (['read_unavailable','budget_exhausted','superseded']as$code) {
     DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code]);
     // The stopped-read row and notice name the failure; saved status retains attempts and the exact cause.
-    Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Read stopped')->assertSee('The registrar read stopped.')->assertDontSee('Cause: '.$code.'.');
-    foreach(['generation'=>$held->authority_generation+1,'server_id'=>$held->server_id+100,'account_fingerprint'=>str_repeat('a',64),'phase'=>'foreign']as$field=>$value){
+    Livewire::actingAs($readReviewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('Read stopped')
+        ->assertSee('The registrar read stopped.')->assertDontSee('Cause: '.$code.'.')->assertActionVisible('resume_observation');
+    foreach(['generation'=>$active->authority_generation+1,'server_id'=>$active->server_id+100,'account_fingerprint'=>str_repeat('a',64),'phase'=>'foreign']as$field=>$value){
         $old=DB::table('domains_observation_work')->where('id',$work)->value($field);DB::table('domains_observation_work')->where('id',$work)->update([$field=>$value]);
-        expect(!$recordService::stopped($held->fresh()),'Foreign scheduled work never stops this holding');DB::table('domains_observation_work')->where('id',$work)->update([$field=>$old]);
+        expect(!$recordService::stopped($active->fresh()),'Foreign scheduled work never stops this holding');DB::table('domains_observation_work')->where('id',$work)->update([$field=>$old]);
     }
 }
-$sync=static function()use($held): array { $f=DomainFacts::for($held->fresh()); return array_key_exists('Last sync',$f)?[$f['Last sync']['value'],$f['Last sync']['sub']]:['absent',null]; };
+$sync=static function()use($active): array { $f=DomainFacts::for($active->fresh()); return array_key_exists('Last sync',$f)?[$f['Last sync']['value'],$f['Last sync']['sub']]:['absent',null]; };
 foreach ([['read_unavailable',1],['budget_exhausted',5]] as [$code,$tries]) {
     DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code,'tries'=>$tries]);
     same(['Read stopped',null],$sync(),'Stopped read row does not repeat the notice or cause');
-    same($code,\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($held->fresh())['read_code'],'Stopped read retains its exact safe cause');
-    same($tries,\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($held->fresh())['read_attempts'],'Stopped read retains its attempt count');
+    same($code,\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($active->fresh())['read_code'],'Stopped read retains its exact safe cause');
+    same($tries,\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($active->fresh())['read_attempts'],'Stopped read retains its attempt count');
 }
 foreach ([null,'healthy_pending','refreshed','unresolved'] as $code) {
     DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code,'tries'=>2]);
     same([null,'Fills in by itself within a day'],$sync(),'Running sync without a saved read shows Missing with its cause, not a failure');
 }
-DB::table('domains_domains')->where('id',$held->id)->update(['last_synced_at'=>'2026-10-20 15:05:00']);
+DB::table('domains_domains')->where('id',$active->id)->update(['last_synced_at'=>'2026-10-20 15:05:00']);
 same(['Oct 20, 2026, 3:05 PM UTC',null],$sync(),'Last sync shows the saved read time');
 DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>null,'claim'=>str_repeat('a',32),'lease_until'=>time()+300,'tries'=>1]);
 same(['Oct 20, 2026, 3:05 PM UTC','Syncing now'],$sync(),'A claimed check is syncing now');
 DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>'unmapped_reason_code']);
-expect(!str_contains(json_encode(DomainFacts::for($held->fresh())),'unmapped_reason_code'),'Unknown saved work code never echoes');
-DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>'read_unavailable','generation'=>$held->authority_generation+1]);
+expect(!str_contains(json_encode(DomainFacts::for($active->fresh())),'unmapped_reason_code'),'Unknown saved work code never echoes');
+DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>'read_unavailable','generation'=>$active->authority_generation+1]);
 same(['Oct 20, 2026, 3:05 PM UTC',null],$sync(),'Foreign generation observation work is excluded');
-DB::table('domains_domains')->where('id',$held->id)->update(['last_synced_at'=>null]);
+DB::table('domains_domains')->where('id',$active->id)->update(['last_synced_at'=>null]);
 DB::table('domains_observation_work')->where('id',$work)->delete();
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('review.example')->assertCanSeeTableRecords([$held])->assertCanNotSeeTableRecords([$active,$long]);
 foreach ([['status',['under_review'],[$held,$long],[$active]],['server_id','2',[$active],[$held,$long]],

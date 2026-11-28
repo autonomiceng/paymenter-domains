@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\Vi
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainDecisions;
-use Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts;
+use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts, StaffOperationReview};
 (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 staffPanel();[$held,$active,$long]=staffData();
 // Register the account destination the read-problem notice links to, as the installed panel does.
@@ -45,17 +45,18 @@ foreach (['auto-renew','alerts','neither'] as $slot) {
 }
 $page->callAction('notice_review');
 same('reviewed',DB::table('domains_reminder_deliveries')->where('delivery_key',hash('sha256','fallback-review'))->value('state'),'Fallback review handles the retained handoff');
-// A read problem leads the head, but late money and refunded-debt payments keep their words and invoice link beside it.
+// An established holding's read problem and its invoice stay actionable together.
+$long->update(['status'=>'active']);
 $money=staffUser([Staff::VIEW,'admin.invoices.update']);
 $late=\App\Models\Invoice::withoutEvents(fn()=>\App\Models\Invoice::create(['user_id'=>$money->id,'currency_code'=>'USD','status'=>'paid','due_at'=>now()]));
-$order=$long->fresh()->latestAcquisition;DB::table('domains_operations')->where('id',$order->id)->update(['invoice_id'=>$late->id]);
-$observed=$long->fresh()->observation;$observed['record_failure']=['identity'=>\Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::identity($long->fresh()),'code'=>'domain_not_in_account','at'=>time()];
-$long->update(['observation'=>$observed]);
+$order=$long->fresh()->latestAcquisition;DB::table('domains_operations')->where('id',$order->id)->update(['invoice_id'=>$late->id,'state'=>'succeeded','safe_code'=>null]);
+$work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$long->server_id,'account_fingerprint'=>$long->account_fingerprint,
+    'domain_id'=>$long->id,'generation'=>$long->authority_generation,'due_at'=>0,'safe_code'=>'read_failed','tries'=>5]);
 $invoiceUrl=\App\Admin\Resources\InvoiceResource::getUrl('edit',['record'=>$late->id]);
 $accountUrl=RegistrarAccount::getUrl(['account'=>$long->server_id]);
 $head=static function(string $payment,string $label)use($money,$long,$invoiceUrl,$accountUrl):void {
     $html=Livewire::actingAs($money)->test(ViewDomain::class,['record'=>$long->id])->html();$text=html_entity_decode(strip_tags($html),ENT_QUOTES);
-    expect(str_contains($text,'Domain is not in the registrar account.'),$label.': the read problem still leads');
+    expect(str_contains($text,'Registrar reads keep failing.'),$label.': the read problem still leads');
     expect(str_contains($text,$payment),$label.': the payment notice stays beside the read problem');
     expect(str_contains($html,'href="'.e($invoiceUrl).'"'),$label.': the invoice link stays beside the read problem');
     // A notice keeps one link: the read problem keeps its own, and the invoice gets its own row with its link.
@@ -68,7 +69,7 @@ DB::table('domains_obligation_alerts')->where('domain_id',$long->id)->where('cod
 $replacement=$order->replicate();$replacement->fill(['operation_key'=>'notice-review-replacement','action'=>'renew','state'=>'rejected','safe_code'=>'refund_approved','invoice_id'=>$late->id,'policy'=>['renewal_replacement'=>['actor_id'=>null]]])->save();
 $head('Payment received after credit. Check the invoice.','Replacement invoice');
 // A stopped record read names its request beside the invoice link: staff need both.
-$observed=$long->fresh()->observation;unset($observed['record_failure']);$long->update(['observation'=>$observed]);
+DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>'records_incomplete','tries'=>1]);
 \Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords::hold($long->fresh(),'glue_unavailable',new DateTimeImmutable('@'.time()));
 Illuminate\Support\Facades\Auth::setUser($money);$stopped=DomainFacts::notice($long->fresh());
 expect(($stopped['resume']??false)===true&&str_contains((string)$stopped['body'],'Payment received after credit.'),'The stopped read leads and the payment stays beside it');
@@ -77,6 +78,8 @@ expect(str_starts_with((string)$stopped['body'],DomainDecisions::restart($long->
 $step=(string)DomainFacts::head($long->fresh(),DomainFacts::status($long->fresh()),DomainFacts::for($long->fresh()),(int)$order->id)['step'];
 expect(str_contains($step,'href="'.e($invoiceUrl).'"'),'The invoice link stays beside a stopped read that names a request');
 expect(str_contains($step,'>Check request #'.$order->id.'</a>'),'The stopped read still names its request');
+$resume=staffUser([Staff::VIEW,StaffOperationReview::permission('resume_observation')]);
+Livewire::actingAs($resume)->test(ViewDomain::class,['record'=>$long->id])->assertActionVisible('resume_observation');
 // One page render reads the payment notice once. The replacement history loads its invoice items per read.
 $items=0;DB::listen(function($q)use(&$items):void{if(preg_match('/from "invoice_items" where "invoice_id" in/',$q->sql)){$items++;}});
 $page=Livewire::actingAs($money)->test(ViewDomain::class,['record'=>$long->id]);

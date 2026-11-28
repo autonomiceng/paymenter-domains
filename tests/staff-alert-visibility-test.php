@@ -33,19 +33,24 @@ same('Sync stopped. Ask staff who can resume sync.',DomainFacts::alertCause('obs
 $hidden=[];
 foreach([...array_keys(DomainStatus::STATES),'unknown'] as $status){
     DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>$status,'provider_expires_at'=>null,'last_synced_at'=>null]);
-    $html=html_entity_decode(strip_tags(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertSuccessful()->html()),ENT_QUOTES);
+    $page=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertSuccessful();
+    $html=html_entity_decode(strip_tags($page->html()),ENT_QUOTES);
+    $holdingRead=in_array($status,['active','grace','expired'],true);
+    if(!$holdingRead){$page->assertDontSee('Read stopped')->assertActionHidden('resume_observation');}
     foreach(DomainFacts::ALERTS as $code=>[$row]){
         $cause=$pageCause($code);
-        // Nothing syncs on an ended or departed domain, so a stopped sync is no job there. Confirming a departure resolves it.
-        if($code==='observation_review'&&(DomainFacts::ended($domain->fresh())||$status==='departed')){
+        // The holding-stop alert remains relevant only while that holding can have stopped sync work.
+        if($code==='observation_review'&&(!$holdingRead||DomainFacts::ended($domain->fresh()))){
             if($status==='departed'){ObservationRecords::hold($domain->fresh(),'read_unavailable',new DateTimeImmutable);}
-            $alerts=StaffDomainInputs::for([$domain->fresh()])[$domain->id]['alerts'];
-            same(false,in_array('observation_review',array_column($alerts,'code'),true),'Stopped-sync alerts are ineligible for '.$status);
+            if(in_array($status,['registration_pending','transfer_pending','adoption_pending','departed'],true)||DomainFacts::ended($domain->fresh())){
+                $alerts=StaffDomainInputs::for([$domain->fresh()])[$domain->id]['alerts'];
+                same(false,in_array('observation_review',array_column($alerts,'code'),true),'Stopped-sync alerts are ineligible for '.$status);
+            }
             continue;
         }
         // A departure review applies only while this current holding is fenced, never to a pending acquisition or ended domain.
         if($code===RenewalOwnership::REVIEW&&!RenewalOwnership::blocked($domain->fresh())){continue;}
-        if(!str_contains($html,$cause)||$code==='observation_review'&&!str_contains($html,'Read stopped')){$hidden[]=$code.'/'.$status;}
+        if(!str_contains($html,$cause)||$code==='observation_review'&&$holdingRead&&!str_contains($html,'Read stopped')){$hidden[]=$code.'/'.$status;}
     }
 }
 same([],$hidden,'No open alert may be hidden on a domain page: '.implode(', ',$hidden));
@@ -73,11 +78,14 @@ Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->as
 // Every allowlisted kind, including late payments, has its cause, as the list's one clause, in the actual list cell.
 foreach([...array_keys(DomainFacts::ALERTS),'acquisition_late_money'] as $code){
     DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->update(['resolved_at'=>time()]);
-    $domain->update(['status'=>$code===RenewalOwnership::REVIEW?'active':'registration_pending']);
+    $domain->update(['status'=>in_array($code,[RenewalOwnership::REVIEW,'observation_review'],true)?'active':'registration_pending']);
     ObligationAlerts::record($domain,$code,time());
     Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($domain->domain)->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\ListNote::clause(DomainFacts::alertCause($code)));
 }
 // Unreadable renewal settings hide billing rows, but never their alert causes.
+$observation=$domain->fresh()->observation;
+unset($observation['renewal_ownership']);
+$domain->update(['status'=>'active','observation'=>$observation]);
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->update(['resolved_at'=>time()]);
 foreach(array_keys(DomainFacts::ALERTS) as $code){ObligationAlerts::record($domain,$code,time());}
 DB::table('domains_domains')->where('id',$domain->id)->update(['renewal_policy'=>'unreadable']);
