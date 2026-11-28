@@ -13,8 +13,6 @@ final class ObservationWork
     public static function stopped(Domain $d): bool { return HoldingObservationWork::stopped($d); }
     public static function stoppedIds(\Illuminate\Support\Collection $domains): array { return HoldingObservationWork::stoppedIds($domains); }
     public static function currentId(Domain $d): ?int { return HoldingObservationWork::currentId($d); }
-    public static function discardUnsent(Domain $d, \DateTimeImmutable $now, ?\Illuminate\Support\Collection $operations=null): bool
-    { return HoldingObservationWork::discardUnsent($d,$now,$operations); }
     public function __construct(private readonly DomainObservation $observer, private readonly Clock $clock,
         private readonly ReadLimiter $budget, private readonly ?CatalogueSync $catalogue=null) {}
     private function scheduler(): \Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler

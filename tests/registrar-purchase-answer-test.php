@@ -14,7 +14,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client,Driver};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport,TransportResponse};
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionLifecycle, AcquisitionReadPermit, OperationAttempts, OperationWriter, ReadToken, StepKey, Transition};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,HistoryAcceptances,OperationReconciliation,ReconciliationEvidence,Refunds,RegistrarCheck,RenewalAuthority,Runtime,StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountReadBudget,DomainObservation,EnomAnswers,HistoryAcceptances,OperationReconciliation,ReadDeferred,ReconciliationEvidence,Refunds,RegistrarCheck,RenewalAuthority,Runtime,StaffSettingsReview as Review,StaffSettingsWrites};
 app()->instance(Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);
 $staff=commerceUser();$role=App\Models\Role::create(['name'=>'Purchase answers','permissions'=>['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.enom_answer','admin.domains.manage','admin.invoices.update']]);$staff->update(['role_id'=>$role->id]);
 $settings=new StaffSettingsWrites($native,$sellers,$bindings);
@@ -204,6 +204,12 @@ foreach (['credited', 'incomplete', 'overlap', 'status-change', 'read-limit'] as
     $complete = in_array($scenario, ['overlap', 'status-change'], true);
     $wireState->orders = $complete || $scenario === 'read-limit' ? ['9001'] : ['9001','9002'];
     $wireState->fault = $scenario;
+    if ($scenario === 'credited') {
+        $observer = new DomainObservation($reads,$clock,new AccountReadBudget($clock));
+        $calls = $wireState->calls;
+        try { $observer->run($op->domain_id); } catch (ReadDeferred) {}
+        same($calls,$wireState->calls,'A holding turn cannot take the next purchase check or drop its charge');
+    }
     if ($scenario === 'overlap') {
         $wireState->during = static function () use ($op, $reconcile, &$failures): void {
             $policy = $op->fresh()->policy;

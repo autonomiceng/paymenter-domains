@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionWindow;
 /** Read scheduling only. The sealed transfer's seven-day window never authorizes another purchase or a refund. */
 final class TransferPolling
@@ -13,12 +13,6 @@ final class TransferPolling
         if ($op->action !== 'transfer' || !in_array($op->state, ['pending', 'uncertain', 'running'], true)
             && !($op->state === 'held' && $op->safe_code === 'transfer_needs_action')) { return false; }
         return $op->acquisitionLifecycle(app(Clock::class)->now())?->permitsRead() ?? (($op->attempt['seal'] ?? null) === 'sealed');
-    }
-    public static function ownsObservation(Domain $domain): bool
-    {
-        return $domain->status==='transfer_pending' && $domain->operations()->where('action','transfer')
-            ->where('authority_generation',$domain->authority_generation)->where('account_fingerprint',$domain->account_fingerprint)
-            ->get()->contains(fn($op)=>self::applies($op));
     }
     public static function expected(Operation $op): bool
     {

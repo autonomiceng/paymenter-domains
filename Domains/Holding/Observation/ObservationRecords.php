@@ -109,8 +109,7 @@ final class ObservationRecords
     private static function unscheduled(\Illuminate\Support\Collection $held): array
     {
         if ($held->isEmpty()) { return []; }
-        $readable=$held->filter(fn(Domain $d)=>in_array($d->status,array_diff(HoldingObservationWork::READ_STATUSES,['registration_pending','transfer_pending']),true)
-            &&!$d->adoptionPending());
+        $readable=$held->filter(ObservationEligibility::allows(...));
         $rows=collect();$stopped=collect();
         if ($readable->isNotEmpty()&&\Illuminate\Support\Facades\Schema::hasTable('domains_observation_work')) {
             $work=fn()=>\Illuminate\Support\Facades\DB::table('domains_observation_work')->whereIn('domain_id',$readable->pluck('id'));

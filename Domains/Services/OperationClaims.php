@@ -149,16 +149,13 @@ final class OperationClaims
             if ($first && $failure === null && $contactReady && !$transferExpired && !$entryExpired) {
                 $digest = self::digest($op, $domain);
                 $outcome = AcquisitionResult::admit($op, AcquisitionAdmission::FirstClaim, $revision, null, $this->clock,
-                    function (\DateTimeImmutable $at) use ($op, $domain, $all, $digest, $paid): AttemptToken {
-                        ObservationWork::discardUnsent($domain, $at, $all);
+                    function (\DateTimeImmutable $at) use ($op, $digest, $paid): AttemptToken {
                         return $this->startWorker($op, null, $digest, $paid, $at);
                     });
                 return $outcome === AcquisitionAdmissionOutcome::Applied ? [$op, $domain, $binding] : null;
             }
             // A hold or an existing-window claim does not pass through the admission writer.
             if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now) !== AcquisitionAuthority::FUNDS_PROCEED) { return null; }
-            // Discovery may not have visited this order before dispatch starts.
-            ObservationWork::discardUnsent($domain,$now,$all);
             if (!$compatible) {
                 $op->update(['state' => 'uncertain', 'safe_code' => 'prior_attempt', 'lease_expires_at' => null]);
                 AcquisitionResult::schedule($op, null, null);
