@@ -5,7 +5,7 @@ require __DIR__.'/acquisition-retirement.php';
 use App\Models\{Credit, Invoice, InvoiceItem, InvoiceTransaction, Service};
 use Illuminate\Support\Facades\{Cache, DB, Event, Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionResultSchema;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionClosureKind, AcquisitionResultSchema, OperationWriter, Transition};
 use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement, PricingRule, Refunds, RuntimeSchema};
 use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 RuntimeSchema::install(); Queue::fake();
@@ -34,11 +34,15 @@ $make=static function(int $owner,string $mode)use($rows,$seed,$seedDomain,$inser
  $paymentId=DB::table('invoice_transactions')->insertGetId(['invoice_id'=>$invoiceId,'amount'=>$seed->amount,'fee'=>'0.00','status'=>'succeeded']);
  $op=clone $seed;$op->setRawAttributes($rows['operations']);
  $op->forceFill(['operation_key'=>$key,'domain_id'=>$domainId,'service_id'=>$serviceId,'invoice_id'=>$invoiceId,'invoice_item_id'=>$itemId,'state'=>'rejected','safe_code'=>$closed?UnpaidAcquisitionProof::CODE:'refund_approved','completed_at'=>$clock->now(),'policy'=>[...$seed->policy,'checkout'=>$c]]);
- $attempt=['seal'=>'absent','send_state'=>'definitely_unsent','disposition'=>'rejected','rejection_basis'=>'definitely_unsent','terminal'=>['operation_key'=>$key,'generation'=>$op->authority_generation]];
- if($closed){$attempt['terminal']+=['invoice_id'=>$invoiceId,'transactions'=>[],'unfunded'=>true];}
- $op->forceFill(['attempt'=>$attempt,'funding'=>$mode==='closed_settled'?['late_credits'=>[['payments'=>[['id'=>$paymentId,'amount_minor'=>PricingRule::minor($op->amount)]],'amount'=>$op->amount,'currency'=>'USD','to'=>'account_credit','credit_id'=>null,'at'=>$clock->now()->format(DATE_ATOM)]]]:[]]);
+ $proof=['operation_key'=>$key,'generation'=>$op->authority_generation,'attempt_id'=>null];
+ if($closed){$proof+=['invoice_id'=>$invoiceId,'transactions'=>[],'unfunded'=>true];}
+ $op->forceFill(['attempt'=>null,'funding'=>$mode==='closed_settled'?['late_credits'=>[['payments'=>[['id'=>$paymentId,'amount_minor'=>PricingRule::minor($op->amount)]],'amount'=>$op->amount,'currency'=>'USD','to'=>'account_credit','credit_id'=>null,'at'=>$clock->now()->format(DATE_ATOM)]]]:[]]);
  $persisted=Operation::findOrFail($insert('domains_operations',$op->getAttributes()));
  AcquisitionResultSchema::insert((int) $persisted->id);
+ DB::transaction(static function () use ($clock, $closed, $persisted, $proof): void {
+     same(Transition::Applied, OperationWriter::at($clock->now())->recordTerminal((int) $persisted->id,
+         ($closed ? AcquisitionClosureKind::Unpaid : AcquisitionClosureKind::Unsent)->value, $proof), 'The measured request has a typed terminal');
+ });
  return $persisted;
 };
 
