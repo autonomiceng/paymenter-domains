@@ -16,6 +16,7 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Data\{CatalogueEntry,CatalogueRate};
 use Paymenter\Extensions\Servers\Domains\Mail\DomainNotice;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionClosureKind,AcquisitionResultSchema,OperationWriter,Transition};
 use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement, NativeServiceRefusal, OwnedDomains, PayCheck, PricingRule, Refunds, Reminders, RuntimePorts, RuntimeSchema, RuntimeWork, UnpaidHoldSetting, WriteHeld};
 
 require dirname(__DIR__).'/Domains/routes/web.php';app('router')->getRoutes()->refreshNameLookups();
@@ -149,7 +150,7 @@ foreach(['1.00',(string)bcsub((string)$small->amount,'1.00',2)]as$paying){
 same('cancelled',Invoice::whereKey($small->invoice_id)->value('status'),'Paying it off keeps it closed');
 
 // Funding is encrypted, so 100 settled orders cannot be skipped in SQL: the cursor still reaches an order behind them, then wraps for a new payment on an old one.
-// Each settled order is its own closed checkout: domain, service, invoice line and sealed record, with its late payment already credited.
+// Each settled order is a closed checkout with a typed unpaid terminal and a late payment already credited.
 $refunds=app(Refunds::class);$account=Account::where('server_id',$serverId)->sole();$tick();$seal=static fn(array $v):string=>Illuminate\Support\Facades\Crypt::encryptString(json_encode($v));
 $raw=static fn(string $table,$id):array=>(array)DB::table($table)->find($id);$lateOp=$late->fresh();$creditId=(int)Credit::where('user_id',$user->id)->where('currency_code','USD')->value('id');
 $copy=['domains_domains'=>$raw('domains_domains',$late->domain_id),'services'=>$raw('services',$late->service_id),'invoices'=>$raw('invoices',$late->invoice_id),'invoice_items'=>$raw('invoice_items',$late->invoice_item_id),'domains_operations'=>$raw('domains_operations',$late->id)];
@@ -167,10 +168,25 @@ for($i=1;$i<=110;$i++){
     $batch['invoice_transactions'][]=['id'=>$paidId,'invoice_id'=>$invoiceId,'amount'=>'1.00','fee'=>'0.00','status'=>'succeeded'];
     $key='invoice-item:'.$itemId;
     $batch['domains_operations'][]=[...$copy['domains_operations'],'id'=>$opId,'operation_key'=>$key,'domain_id'=>$domainId,'service_id'=>$serviceId,'invoice_id'=>$invoiceId,'invoice_item_id'=>$itemId,
-        'policy'=>$seal([...$lateOp->policy,'checkout'=>$checkout]),'attempt'=>$seal(array_replace_recursive($lateOp->attempt,['terminal'=>['operation_key'=>$key,'invoice_id'=>$invoiceId]])),
+        'policy'=>$seal([...$lateOp->policy,'checkout'=>$checkout]),'attempt'=>null,
         'funding'=>$seal(['late_credits'=>[['payments'=>[['id'=>$paidId,'amount_minor'=>100]],'amount'=>'1.00','currency'=>'USD','to'=>'account_credit','credit_id'=>$creditId,'at'=>'2026-10-21T10:00:00+00:00']]])];
 }
-foreach($batch as $table=>$rows){foreach(array_chunk($rows,50) as $chunk){DB::table($table)->insert($chunk);}}
+$writer = OperationWriter::at($clock->now());
+DB::transaction(static function () use ($batch, $writer): void {
+    foreach ($batch as $table => $rows) {
+        foreach (array_chunk($rows, 50) as $chunk) { DB::table($table)->insert($chunk); }
+    }
+    foreach ($batch['domains_operations'] as $row) {
+        AcquisitionResultSchema::insert($row['id']);
+        same(Transition::Applied, $writer->recordTerminal($row['id'], AcquisitionClosureKind::Unpaid->value, [
+            'operation_key' => $row['operation_key'],
+            'generation' => $row['authority_generation'],
+            'invoice_id' => $row['invoice_id'],
+            'transactions' => [],
+            'unfunded' => true,
+        ]), 'Each settled fixture has a current unpaid closure');
+    }
+});
 $repairs=static fn():int=>DB::table('domains_obligation_alerts')->where('code','refund_repair')->count();$repairsBefore=$repairs();
 // Inspecting settled history reads invoice payments and peer credits in batches, without moving money. Each domain still reads its own requests, in these two shapes only.
 $requests=['select * from domains_operations where domains_operations.domain_id = ? and domains_operations.domain_id is not null and action in (?, ?)',
