@@ -56,7 +56,7 @@ foreach([$user,$staff]as$actor){
     $jobsBefore=DB::table('jobs')->orderBy('id')->get()->toJson();
     $realQueue=Queue::getFacadeRoot();Queue::fake([RunOperation::class]);
     same(0,DB::transactionLevel(),'Late recovery fixture commits its own transaction');
-    $accept=in_array($case,['accept','explicit-unsent'],true);
+    $accept=$case==='accept';
     if($accept){
         $result=ContactRecovery::replace($actor,$row->id,'Reviewed late owner contact correction');
         same('held',$result->state,'Late contact recovery stays held: '.$case);

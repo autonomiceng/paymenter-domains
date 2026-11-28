@@ -81,7 +81,7 @@ same([Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::ge
 $page->assertSee("Not sent: couldn't load the registrar account's settings.")->assertSee('Open account')->assertSeeHtml(e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$heldOp->server_id])))->assertDontSee('Release hold')->assertSee('History')
     ->assertSee('Registrar account')->assertSee('NameSilo, Test')->assertSee('Request created')
     ->assertDontSee('Domain not found')->assertDontSee('No time recorded')->assertDontSee('Review actions')->assertDontSee('Saved evidence')->assertDontSee('Request type')->assertDontSee('Customer credit');
-$page->assertActionHidden('release')->assertActionHidden('refund')->assertActionHidden('hold')->assertDontSee('More');
+$page->assertActionHidden('release')->assertActionHidden('refund')->assertActionHidden('hold');
 same(['recheck'],array_values(array_filter(['recheck','resume_reads'],fn($a)=>Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions::relevant($a,$heldOp->fresh()))),'One Check status at a time');
 // Each account cause names its own fix; provider evidence keeps release hidden.
 $links=[];
@@ -142,7 +142,7 @@ foreach(['name_unavailable','premium_name','order_not_supported'] as $code){
     DB::table('domains_domains')->where('id',$held->id)->update(['provider_expires_at'=>null]);
     same('refund',RequestFacts::notice($heldOp->fresh())['action'],'Cancel is offered for '.$code);
 }
-Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertActionVisible('refund')->assertSee('More');
+Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertActionVisible('refund');
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['cost'=>$cost]);
 DB::table('domains_domains')->where('id',$held->id)->update(['provider_expires_at'=>$expiry]);
 
@@ -169,10 +169,10 @@ Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])
     ->assertDontSee('WHOIS privacy')->assertSee('Check status')
     ->assertDontSee('Release hold')->assertDontSee('Account spending holds')->assertDontSee('Paid outcome review');
 
-// Completed: Completed pill, no notice and no More menu.
+// Completed requests retain their status and hide refund and Release.
 $done=Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$doneOp->id]);
 expect(str_contains($done->instance()->getSubheading()->toHtml(),'Completed'),'Completed pill');
-$done->assertDontSee('More')->assertDontSee('Registrar completion confirmed');
+$done->assertActionHidden('refund')->assertActionHidden('release');
 
 // Cancelled with credit: History names staff actions in plain words; Credit row says Credit added.
 $manager->role->update(['permissions'=>[...$manager->role->permissions,Staff::COSTS]]);

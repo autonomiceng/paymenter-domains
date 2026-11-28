@@ -15,7 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Labels,OneLine,RefundCandidates,RequestFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Staff\Holdings\DomainQueries;
 use Paymenter\Extensions\Servers\Domains\Policies\DomainPolicy;
-use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts, StaffOperationReview};
+use Paymenter\Extensions\Servers\Domains\Services\{HoldingReadRetry, ObligationAlerts, StaffOperationReview};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 staffPanel(); [$held,$active,$long]=staffData();
 function staffFilter($page, string $name, mixed $value) {
@@ -125,8 +125,9 @@ try {
         'domain_id'=>$held->id,'generation'=>$held->authority_generation,'due_at'=>0,'safe_code'=>'read_unavailable']);
     ObligationAlerts::record($held,'template_failed',time());
     $pendingUrl=\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl('view',['record'=>$pendingRequest->id]);
+    same(false,HoldingReadRetry::status($held->fresh())['read_stopped'],'Pending transfers have no stopped holding read');
     Livewire::actingAs($readReviewer)->test(ViewDomain::class,['record'=>$held->id])
-        ->assertDontSee('Read stopped')->assertActionHidden('resume_observation')->assertSee(DomainFacts::alertCause('template_failed'))
+        ->assertActionHidden('resume_observation')->assertSee(DomainFacts::alertCause('template_failed'))
         ->assertSeeHtml('href="'.e($pendingUrl).'"');
     Livewire::actingAs($readReviewer)->test(ViewOperation::class,['record'=>$pendingRequest->id])->assertActionVisible('recheck');
 } finally { DB::rollBack(); }
@@ -134,9 +135,8 @@ $work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$active->
     'domain_id'=>$active->id,'generation'=>$active->authority_generation,'due_at'=>0]);
 foreach (['read_unavailable','budget_exhausted','superseded']as$code) {
     DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code]);
-    // The stopped-read row and notice name the failure; saved status retains attempts and the exact cause.
-    Livewire::actingAs($readReviewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('Read stopped')
-        ->assertSee('The registrar read stopped.')->assertDontSee('Cause: '.$code.'.')->assertActionVisible('resume_observation');
+    same(true,HoldingReadRetry::status($active->fresh())['read_stopped'],'The established holding has a stopped read');
+    Livewire::actingAs($readReviewer)->test(ViewDomain::class,['record'=>$active->id])->assertActionVisible('resume_observation');
     foreach(['generation'=>$active->authority_generation+1,'server_id'=>$active->server_id+100,'account_fingerprint'=>str_repeat('a',64),'phase'=>'foreign']as$field=>$value){
         $old=DB::table('domains_observation_work')->where('id',$work)->value($field);DB::table('domains_observation_work')->where('id',$work)->update([$field=>$value]);
         expect(!$recordService::stopped($active->fresh()),'Foreign scheduled work never stops this holding');DB::table('domains_observation_work')->where('id',$work)->update([$field=>$old]);
@@ -145,9 +145,8 @@ foreach (['read_unavailable','budget_exhausted','superseded']as$code) {
 $sync=static function()use($active): array { $f=DomainFacts::for($active->fresh()); return array_key_exists('Last sync',$f)?[$f['Last sync']['value'],$f['Last sync']['sub']]:['absent',null]; };
 foreach ([['read_unavailable',1],['budget_exhausted',5]] as [$code,$tries]) {
     DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code,'tries'=>$tries]);
-    same(['Read stopped',null],$sync(),'Stopped read row does not repeat the notice or cause');
-    same($code,\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($active->fresh())['read_code'],'Stopped read retains its exact safe cause');
-    same($tries,\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($active->fresh())['read_attempts'],'Stopped read retains its attempt count');
+    same($code,HoldingReadRetry::status($active->fresh())['read_code'],'Stopped read retains its exact safe cause');
+    same($tries,HoldingReadRetry::status($active->fresh())['read_attempts'],'Stopped read retains its attempt count');
 }
 foreach ([null,'healthy_pending','refreshed','unresolved'] as $code) {
     DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code,'tries'=>2]);

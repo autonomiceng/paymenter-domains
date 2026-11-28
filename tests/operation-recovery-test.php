@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver, Ope
 use Paymenter\Extensions\Servers\Domains\Data\{AdmittedOperation, Capabilities, Capability, DispatchReadiness, Disposition, DriverResult, Evidence, Money, RequestContext, ResultReason, SendState, Support};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\OperationAttempts;
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{OperationAttempts, OperationWriter, Transition};
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, DomainOperations, InvoiceBinding, OperationClaims};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
@@ -35,7 +35,13 @@ foreach ($recoveryCases as $phase) {
     $nativeBeforeDuplicate = nativeFinancialSnapshot($op);
     $assertNoSend($op, 'running');
     same($nativeBeforeDuplicate, nativeFinancialSnapshot($op), 'Active duplicate worker preserves native/financial state');
-    if ($seal) { $ready = $preflight->inspect($claimed, $domain, new RequestContext($binding, Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background, $now->modify('+300 seconds'), new Paymenter\Extensions\Servers\Domains\Data\RequestBudget(10), $clock)); $claims->seal($claimed, $ready, $clock->now()); }
+    if ($seal) {
+        $ready = $preflight->inspect($claimed, $domain, new RequestContext($binding, Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background,
+            $now->modify('+300 seconds'), new Paymenter\Extensions\Servers\Domains\Data\RequestBudget(10), $clock));
+        $sealed = $claims->seal($claimed, $ready, $clock->now());
+        same(Transition::Applied, $claims->locked($op->id, static fn () => OperationWriter::at($clock->now())->consumeGrant($sealed->acquisitionWorker)),
+            'The lost reply fixture spends its dispatch grant');
+    }
     $clock->instant = $clock->instant->modify('+361 seconds');
     if ($phase === 'legacy stale') { $op->update(['state' => 'uncertain', 'safe_code' => 'stale_claim']); }
     if ($seal) {

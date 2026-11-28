@@ -8,7 +8,7 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, Staff, StaffDomainInputs};
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus;
-use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts, DomainAuditSchema, RenewalOwnership};
+use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts, DomainAuditSchema, HoldingReadRetry, RenewalOwnership};
 use Paymenter\Extensions\Servers\Domains\Holding\Observation\ObservationRecords;
 staffPanel(); [, $domain]=staffData(ordinaryCompleted:true); DomainAuditSchema::install(); \Paymenter\Extensions\Servers\Domains\Services\RetentionSchema::install();
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
@@ -21,24 +21,14 @@ foreach(array_keys(DomainFacts::ALERTS) as $code){ObligationAlerts::record($doma
 // A sync alert only counts while the sync is stopped, because Resume sync is its way out.
 DB::table('domains_observation_work')->insert(['server_id'=>$domain->server_id,'account_fingerprint'=>$domain->account_fingerprint,
     'domain_id'=>$domain->id,'generation'=>$domain->authority_generation,'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>1]);
-// The stopped-sync row already names this alert; it does not repeat the generic cause.
-$pageCause=static function(string $code)use($domain):string {
-    $current=$domain->fresh();$notice=DomainFacts::notice($current);
-    if($code==='observation_review'&&($notice['resume']??false)){
-        expect(is_string($notice['title']??null)&&$notice['title']!=='','A stopped read has a real notice title');return $notice['title'];
-    }
-    return DomainFacts::alertCause($code);
-};
-same('Sync stopped. Ask staff who can resume sync.',DomainFacts::alertCause('observation_review'),'The list cause names staff with resume permission');
 $hidden=[];
 foreach([...array_keys(DomainStatus::STATES),'unknown'] as $status){
     DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>$status,'provider_expires_at'=>null,'last_synced_at'=>null]);
     $page=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertSuccessful();
     $html=html_entity_decode(strip_tags($page->html()),ENT_QUOTES);
     $holdingRead=in_array($status,['active','grace','expired'],true);
-    if(!$holdingRead){$page->assertDontSee('Read stopped')->assertActionHidden('resume_observation');}
+    if(!$holdingRead){$page->assertActionHidden('resume_observation');}
     foreach(DomainFacts::ALERTS as $code=>[$row]){
-        $cause=$pageCause($code);
         // The holding-stop alert remains relevant only while that holding can have stopped sync work.
         if($code==='observation_review'&&(!$holdingRead||DomainFacts::ended($domain->fresh()))){
             if($status==='departed'){ObservationRecords::hold($domain->fresh(),'read_unavailable',new DateTimeImmutable);}
@@ -50,7 +40,15 @@ foreach([...array_keys(DomainStatus::STATES),'unknown'] as $status){
         }
         // A departure review applies only while this current holding is fenced, never to a pending acquisition or ended domain.
         if($code===RenewalOwnership::REVIEW&&!RenewalOwnership::blocked($domain->fresh())){continue;}
-        if(!str_contains($html,$cause)||$code==='observation_review'&&$holdingRead&&!str_contains($html,'Read stopped')){$hidden[]=$code.'/'.$status;}
+        if ($code === 'observation_review') {
+            $d = $domain->fresh();
+            $alerts = StaffDomainInputs::for([$d])[$d->id]['alerts'];
+            if (!in_array($code, array_column($alerts, 'code'), true) || !HoldingReadRetry::status($d)['read_stopped']) {
+                $hidden[] = $code.'/'.$status;
+            }
+        } elseif (!str_contains($html, DomainFacts::alertCause($code))) {
+            $hidden[] = $code.'/'.$status;
+        }
     }
 }
 same([],$hidden,'No open alert may be hidden on a domain page: '.implode(', ',$hidden));

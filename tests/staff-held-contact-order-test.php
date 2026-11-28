@@ -87,6 +87,54 @@ $viaGateway=static function(Operation $op,string $receipt)use($gateway):void {
     DB::table('invoice_transactions')->where('invoice_id',$op->invoice_id)->update(['gateway_id'=>$gateway->id,'transaction_id'=>$receipt]);
 };
 
+// Orders can turn off immediately after the verified contact is saved, before a purchase can seal.
+$restoreVerifiedCase = nativeRegistrarCheckpoint($clock, $registration, $sent);
+$verifiedCase = $nsNew(placeholderComFixtureName('verified-contact-refund-placeholder.com'));
+$verifiedCase->update(['payload' => $verifiedCase->payload + ['nameservers' => ['ns1.provider.example', 'ns2.provider.example'], 'privacy' => false]]);
+$receipt = 'receipt_verified_contact_refund';
+$viaGateway($verifiedCase, $receipt);
+$pauseAfterVerification = (int) $verifiedCase->id;
+ProfileContactOperation::updated(static function (ProfileContactOperation $row) use (&$pauseAfterVerification): void {
+    if ($row->operation_id === $pauseAfterVerification && $row->wasChanged('state') && $row->state === 'verified') {
+        $pauseAfterVerification = null;
+        DB::afterCommit(static fn () => DB::table('domains_accounts')->where('server_id', $row->server_id)->update(['processing_enabled' => false]));
+    }
+});
+$beforeContact = [$sent->contactAdd, $sent->registerDomain];
+$paused = $execute($verifiedCase)->fresh();
+$contact = ProfileContactOperation::where('operation_id', $paused->id)->sole();
+same(['held', 'processing', 'verified', $beforeContact[0] + 1, $beforeContact[1]],
+    [$paused->state, $paused->safe_code, $contact->state, $sent->contactAdd, $sent->registerDomain],
+    'Actual contact readback completes and an Orders pause keeps the purchase unsent');
+$clock->instant = $clock->now()->modify('+60 seconds');
+$restorePaused = nativeRegistrarCheckpoint($clock, $registration, $sent);
+$gatewayBaseline = [MoneyReceiptGateway::$returns, MoneyReceiptGateway::$sends, MoneyReceiptGateway::$lost];
+foreach ([ViewOperation::class, Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class] as $entry) {
+    [$priorReturns, $priorSends, $priorLost] = $gatewayBaseline;
+    MoneyReceiptGateway::$lost = false;
+    $isRequest = $entry === ViewOperation::class;
+    $action = $isRequest ? 'refund' : Filament\Actions\Testing\TestAction::make('refund')->schemaComponent(true, 'content');
+    Auth::login($staff);
+    $stale = $ticket($paused, 'refund');
+    Livewire::actingAs($staff)->test($entry, ['record' => $isRequest ? $paused->id : $paused->domain_id])
+        ->assertActionVisible($action)->callAction($action, ['reason' => 'Customer asked for a refund'])->assertHasNoActionErrors();
+    $closed = $paused->fresh();
+    $refund = $closed->funding['refund'] ?? [];
+    $allocations = array_values($refund['allocations'] ?? []);
+    same(['rejected', 'cancelled', 'original_payment', 1, $receipt,
+        Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($paused->amount)],
+        [$closed->state, $serviceStatus($closed), $refund['to'] ?? null, count($allocations),
+            $allocations[0]['receipt'] ?? null, $allocations[0]['amount_minor'] ?? null],
+        'Each staff entry point cancels and returns the original payment exactly');
+    $refused(fn () => $run($closed, 'refund', $stale), 'The saved confirmation cannot pay twice', $changed);
+    same([$beforeContact[0] + 1, $beforeContact[1], $priorSends + 1], [$sent->contactAdd, $sent->registerDomain, MoneyReceiptGateway::$sends],
+        'The original contact is complete, the purchase never sent, and replay returns no additional money');
+    [MoneyReceiptGateway::$returns, MoneyReceiptGateway::$sends, MoneyReceiptGateway::$lost] = [$priorReturns, $priorSends, $priorLost];
+    $restorePaused();
+    $paused->refresh();
+}
+$restoreVerifiedCase();
+
 // Release sends the order once.
 $op=$heldOrder('held-contact-release-placeholder.com');
 expect(HeldRelease::offered($op,$clock->now()),'Release is offered for an unsent contact step hold');
