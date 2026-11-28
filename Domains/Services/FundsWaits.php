@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Enums\InvoiceTransactionStatus;
 use Illuminate\Support\Facades\{Cache,DB,Schema};
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionResult, AcquisitionResultSchema, OperationWriter, Transition};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
 use Paymenter\Extensions\Servers\Domains\Money\Returns\RefundPayment;
@@ -109,13 +110,14 @@ final class FundsWaits
             $decision=MoneyDecisions::run(new MoneyRequest($op->domain()->firstOrFail(),self::KIND,(int)$op->id),function(array $l)use($op,$now):?bool {
                 $current=$l['operations']->firstWhere('id',$op->id);
                 if (!$current) { return null; }
-                $state = \Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionLifecycle::settle($current, $l['domain'], $now);
-                if ($state->retired || $state->fenced) { return null; }
-                if (!self::due($current, $now, true)) { return null; }
                 if($current->action==='renew'){
+                    if (!self::due($current, $now, true)) { return null; }
                     self::closeRenewal($current,$l,$now);
                     return true;
                 }
+                $now = app(Clock::class)->now();
+                $state = \Paymenter\Extensions\Servers\Domains\Operations\Authority\AcquisitionLifecycle::settle($current, $l['domain'], $now);
+                if ($state->retired || $state->fenced || !self::due($current, $now, true)) { return null; }
                 // The recorded shortfall authorizes this closure reason even when Orders projects processing.
                 // The usual ownership, unsent attempt and contact checks still run on the locked evidence.
                 $proof = clone $current;

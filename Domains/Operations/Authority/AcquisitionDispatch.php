@@ -15,16 +15,15 @@ use Paymenter\Extensions\Servers\Domains\Services\{ContactProfileHold, ContactSe
 /** Final preflight and just-in-time authority for a reserved acquisition exchange. */
 final readonly class AcquisitionDispatch
 {
-    public function __construct(private AcquisitionAuthority $authority, private OperationWriter $attempts, private Clock $clock) {}
+    public function __construct(private AcquisitionAuthority $authority, private Clock $clock) {}
     public function seal(Operation $claimed, DispatchReadiness $ready, \DateTimeImmutable $entry, ?SealPreflight $preflight = null, ?WriteGate $writer = null, ?RequestContext $wire = null): ?Operation
     {
         return $this->authority->locked((int) $claimed->id, function ($op, $domain, $all, $funding, $server, $account) use ($claimed, $ready, $entry, $preflight, $writer, $wire): ?Operation {
-            $now = $this->clock->now();
-            AcquisitionLifecycle::settle($op, $domain, $now);
             $attempt = AcquisitionAttempt::lockedClaim($op, $claimed);
-            if ($attempt === null) { return null; }
-            if (!AcquisitionRetryProof::unsealed($op)) {
-                $this->authority->expire($op, $now);
+            if ($attempt === null || !AcquisitionRetryProof::unsealed($op)) {
+                $now = $this->clock->now();
+                $state = AcquisitionLifecycle::settle($op, $domain, $now);
+                if ($attempt !== null && !$state->retired && !$state->fenced) { $this->authority->expire($op, $now); }
                 return null;
             }
             $continuation = AcquisitionResult::continuation($op, true);
@@ -48,6 +47,7 @@ final readonly class AcquisitionDispatch
                 // Use the same cutoff before a local refusal can overwrite the funds wait.
             }
             $now = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'));
+            AcquisitionLifecycle::settle($op, $domain, $now);
             if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $attempt) !== AcquisitionAuthority::FUNDS_PROCEED
                 || $this->authority->expire($op, $now)) { return null; }
             $reason = null;
@@ -79,14 +79,14 @@ final readonly class AcquisitionDispatch
                 }
                 return null;
             }
-            $this->persistSeal($op, $claimed, $ready, min($dispatchUntil, $op->lease_expires_at), $paid, $window);
+            $this->persistSeal($op, $claimed, $ready, $now, min($dispatchUntil, $op->lease_expires_at), $paid, $window);
             // A status notification starts its own delivery backoff once the purchase is sealed.
             DB::table('domains_runtime_operations')->where('operation_id', $op->id)->update(['due_at' => 0, 'attempts' => 0]);
             return $op;
         });
     }
 
-    private function persistSeal(Operation $op, Operation $claimed, DispatchReadiness $ready, \DateTimeImmutable $until,
+    private function persistSeal(Operation $op, Operation $claimed, DispatchReadiness $ready, \DateTimeImmutable $now, \DateTimeImmutable $until,
         array $paid, AcquisitionWindow $window): void
     {
         $cost = ['amount' => $ready->cost->amount, 'currency' => $ready->cost->currency];
@@ -95,7 +95,7 @@ final readonly class AcquisitionDispatch
             : ['transfer_admission' => $ready->transfer];
         $token = $claimed->acquisitionWorker;
         $revision = $op->transition_revision + 1;
-        if ($this->attempts->seal($token, new SealTerms($revision, $op->request_fingerprint, $ready->cost, $op->action, $until),
+        if (OperationWriter::at($now)->seal($token, new SealTerms($revision, $op->request_fingerprint, $ready->cost, $op->action, $until),
             ['funding' => $paid, 'window' => $window->seal($op->action === 'transfer'), ...$admission]) !== Transition::Applied) {
             throw new \DomainException('Acquisition claim changed.');
         }
@@ -133,18 +133,24 @@ final readonly class AcquisitionDispatch
         DispatchReadiness $ready, ?SealPreflight $preflight, WriteAcceptance $acceptance): array
     {
         $result = $this->authority->locked((int) $sealed->id, function ($op, $domain, $all, $funding, $server, $account) use ($sealed, $admitted, $context, $ready, $preflight, $acceptance): array {
+            $failure = null;
+            try {
+                [$binding, $paid] = $this->authority->validate($op, $domain, $all, $funding, $server, $account);
+                $binding->requireMatch($admitted->binding); $binding->requireMatch($context->binding);
+                ContactSetup::requireReady($op); $preflight?->requireAtSeal($op, $domain, $ready);
+                $acceptance->requireCurrent($binding, AcquisitionAuthority::query($op, $domain), $op, true);
+            } catch (\Throwable $failure) {
+                // Settle local authority at the final decision time before returning the refusal.
+            }
             $now = $this->clock->now();
             $state = AcquisitionLifecycle::settle($op, $domain, $now);
-            if ($state->retired) { return []; }
-            [$binding, $paid] = $this->authority->validate($op, $domain, $all, $funding, $server, $account);
-            $binding->requireMatch($admitted->binding); $binding->requireMatch($context->binding);
-            ContactSetup::requireReady($op); $preflight?->requireAtSeal($op, $domain, $ready);
-            $acceptance->requireCurrent($binding, AcquisitionAuthority::query($op, $domain), $op, true);
-            $ready->requireCurrent($binding, AcquisitionAuthority::query($op, $domain), AcquisitionAuthority::payloadDigest($op), $this->clock->now());
+            if ($state->retired || $state->fenced) { return []; }
+            if ($failure) { throw $failure; }
+            $ready->requireCurrent($binding, AcquisitionAuthority::query($op, $domain), AcquisitionAuthority::payloadDigest($op), $now);
             self::requireSameEvidence($op, $sealed); self::requireNoSendEvidence($op);
             if (!AcquisitionAttempt::sameClaim($op, $sealed) || ($op->attempt['seal'] ?? null) !== 'sealed'
                 || ($op->attempt['send_state'] ?? null) !== 'possibly_sent' || array_key_exists('execution', $op->attempt)
-                || $op->lease_expires_at <= $this->clock->now() || $this->clock->now() >= $context->deadline
+                || $op->lease_expires_at <= $now || $now >= $context->deadline
                 || $op->request_fingerprint !== AcquisitionAuthority::digest($op, $domain) || $op->operation_key !== $admitted->operationKey
                 || $op->attempt['claim_key'] !== $admitted->claimKey || $op->authority_generation !== $admitted->authorityGeneration
                 || $admitted->fundingEvidenceKey !== 'operation:'.$op->id.':seal' || !AcquisitionAuthority::query($op, $domain)->matches($admitted->query)
@@ -155,7 +161,7 @@ final readonly class AcquisitionDispatch
             $token = $sealed->acquisitionWorker;
             $proof = $token ? OperationAttempts::attempt($token, true) : null;
             if (!$proof || $proof->operationRevision !== $op->transition_revision || $proof->requestDigest !== $op->request_fingerprint
-                || $this->attempts->consumeGrant($token) !== Transition::Applied) {
+                || OperationWriter::at($now)->consumeGrant($token) !== Transition::Applied) {
                 throw new \DomainException('Acquisition grant changed.');
             }
             return $op->payload;

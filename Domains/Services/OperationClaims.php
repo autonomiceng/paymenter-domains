@@ -25,7 +25,7 @@ final class OperationClaims
     {
         $this->attempts = new OperationWriter($clock);
         $this->authority = new AcquisitionAuthority($bindings, $clock, $offers);
-        $this->dispatch = new AcquisitionDispatch($this->authority, $this->attempts, $clock);
+        $this->dispatch = new AcquisitionDispatch($this->authority, $clock);
     }
 
     /** Balance readmission checks the due continuation and retained proof under the financial locks. */
