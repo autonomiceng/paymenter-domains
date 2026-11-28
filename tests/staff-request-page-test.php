@@ -131,6 +131,7 @@ foreach(['renewal_invoice_unpaid'=>'invoice','renewal_funding_or_authority'=>'do
     $notice=RequestFacts::notice($heldOp->fresh());same([$link,null],[$notice['link'],$notice['link_label']??null],'Own record for '.$code);
 }
 // A final preflight refusal only offers cancellation on a proven unsent holding.
+Paymenter\Extensions\Servers\Domains\Services\ProfileContactSchema::install();
 $cost = $heldOp->fresh()->getRawOriginal('cost');
 $expiry = $held->getRawOriginal('provider_expires_at');
 foreach(['name_unavailable','premium_name','order_not_supported'] as $code){
