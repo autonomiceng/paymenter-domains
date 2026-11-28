@@ -12,7 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AdmittedOperation
     Money, Query, RequestContext, SendFailure, SendState};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, ProfileContactOperation};
-use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission, AcquisitionAttempt, AcquisitionAuthority, AcquisitionDispatch, AcquisitionFundsCutoff, AcquisitionLane, AcquisitionResult,
+use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAdmission, AcquisitionAttempt, AcquisitionAuthority, AcquisitionDispatch, AcquisitionLane, AcquisitionResult,
     AcquisitionRetryProof, AcquisitionWindow, AttemptToken, OperationAttempts, OperationSchema, OperationWriter, Transition, WireOutcome};
 
 /** All financial checks run twice: claim and final seal. No provider callback runs under these locks. */
@@ -39,7 +39,7 @@ final class OperationClaims
             $reason=AcquisitionRetryProof::balanceAdmissionReason($op,$facts);
             if($reason===null){try{$this->authority->requireProcessingLocked($server,$account);}catch(\Throwable){$reason='balance_retry_authority_changed';}}
             $now = $this->clock->now();
-            if (!$continuation->due($now) || AcquisitionAuthority::fundsCutoff($op, $continuation, $now) !== AcquisitionFundsCutoff::Proceed) {
+            if (!$continuation->due($now) || AcquisitionAuthority::fundsCutoff($op, $continuation, $now) !== AcquisitionAuthority::FUNDS_PROCEED) {
                 return false;
             }
             if($reason!==null){
@@ -80,7 +80,7 @@ final class OperationClaims
             $continuation = AcquisitionResult::continuation($op, true);
             $contactBlocked = ContactStepRetries::candidate($op) && ContactProfileHold::releaseBlocked($op) !== null;
             $now = $this->clock->now();
-            if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now) !== AcquisitionFundsCutoff::Proceed) { return false; }
+            if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now) !== AcquisitionAuthority::FUNDS_PROCEED) { return false; }
             $window = $continuation->window;
             if ($window && !$window->fits($now)) {
                 $this->expireWindow($op, $window, $now);
@@ -143,7 +143,7 @@ final class OperationClaims
             }
             // First-claim bounds and the funds cutoff use the clock after the locked authority reads.
             $now = $this->clock->now();
-            if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now) !== AcquisitionFundsCutoff::Proceed
+            if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now) !== AcquisitionAuthority::FUNDS_PROCEED
                 || $continuation->lane !== null && !$continuation->due($now)) { return null; }
             // Discovery may not have visited this order before dispatch starts.
             ObservationWork::discardUnsent($domain,$now,$all);
@@ -218,7 +218,7 @@ final class OperationClaims
         } catch (\DomainException $failure) {}
         $now = $this->clock->now();
         if (!OperationAttempts::replaceable($prior->facts, $now, lock: true)
-            || AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $prior->facts) !== AcquisitionFundsCutoff::Proceed) {
+            || AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $prior->facts) !== AcquisitionAuthority::FUNDS_PROCEED) {
             return null;
         }
         if (ExecutionWindow::pastTransferCutoff($op, $now)) {
@@ -340,7 +340,7 @@ final class OperationClaims
             $continuation = $checkCutoff && !$sealed ? AcquisitionResult::continuation($op, true) : null;
             $facts = $sealed ? OperationAttempts::attempt($claimed->acquisitionWorker, true) : null;
             $now = $this->clock->now();
-            if ($continuation && AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $worker) !== AcquisitionFundsCutoff::Proceed) {
+            if ($continuation && AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $worker) !== AcquisitionAuthority::FUNDS_PROCEED) {
                 return $op;
             }
             if (!$sealed && AcquisitionRetryProof::expiredClaim($op, $now)) { return $op; }
@@ -456,7 +456,7 @@ final class OperationClaims
             } elseif(!AcquisitionRetryProof::unsealed($op)||($attempt['send_state']??null)!=='definitely_unsent') { return $op; }
             $continuation = AcquisitionResult::continuation($op, true);
             $now = $this->clock->now();
-            if (!$sealed && AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $worker) !== AcquisitionFundsCutoff::Proceed) { return $op; }
+            if (!$sealed && AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $worker) !== AcquisitionAuthority::FUNDS_PROCEED) { return $op; }
             return $this->refuseTestCapacity($op, $worker->token, $now, $continuation->lane === AcquisitionLane::BalancePurchase);
         });
     }
@@ -491,7 +491,7 @@ final class OperationClaims
             $now = $this->clock->now();
             $expired = AcquisitionRetryProof::expiredClaim($op, $now);
             if ($continuation && AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $expired ? $prior?->facts : null)
-                !== AcquisitionFundsCutoff::Proceed) { return $op; }
+                !== AcquisitionAuthority::FUNDS_PROCEED) { return $op; }
             if ($expired || AcquisitionRetryProof::interruptedHold($op)) {
                 $prior ??= AcquisitionAttempt::of((int) $op->id, $op->action, true);
                 if ($prior && !AcquisitionAttempt::conflicts($op)) {
@@ -535,7 +535,7 @@ final class OperationClaims
             $continuation = AcquisitionResult::continuation($op, true);
             $binding = AccountBindings::binding($account);
             $now = $this->clock->now();
-            if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $attempt) !== AcquisitionFundsCutoff::Proceed
+            if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $attempt) !== AcquisitionAuthority::FUNDS_PROCEED
                 || !$op->lease_expires_at || $op->lease_expires_at <= $now) { return false; }
             $ready->requireCurrent($binding, self::query($op, $domain), self::payloadDigest($op), $now);
             AcquisitionResult::clearShortfall($op, $continuation);

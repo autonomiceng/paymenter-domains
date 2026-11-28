@@ -15,6 +15,10 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, FreshTransac
 /** Ordered native and holding locks, followed by the current acquisition authority checks. */
 final readonly class AcquisitionAuthority
 {
+    public const FUNDS_PROCEED = 'proceed';
+    public const FUNDS_WAIT = 'wait';
+    public const FUNDS_RETIRED_FOR_CREDIT = 'retired_for_credit';
+
     public function __construct(private AccountBindings $bindings, private Clock $clock, private ?Capabilities $offers = null) {}
     public function requireProcessing(AccountBinding $binding): void { $this->bindings->requireProcessing($binding); }
 
@@ -91,20 +95,22 @@ final readonly class AcquisitionAuthority
         });
     }
 
-    /** Use the locked result and the exact worker, when the caller may retire it. */
+    /** Use the locked result and the exact worker, when the caller may retire it.
+     * @return self::FUNDS_PROCEED|self::FUNDS_WAIT|self::FUNDS_RETIRED_FOR_CREDIT
+     */
     public static function fundsCutoff(Operation $op, AcquisitionContinuation $continuation, \DateTimeImmutable $now,
-        ?AttemptFacts $worker = null): AcquisitionFundsCutoff
+        ?AttemptFacts $worker = null): string
     {
-        if (!FundsWaits::deadlinePassed($continuation->shortfallAt, $now)) { return AcquisitionFundsCutoff::Proceed; }
+        if (!FundsWaits::deadlinePassed($continuation->shortfallAt, $now)) { return self::FUNDS_PROCEED; }
         if ($worker === null || $worker->token->operationId !== (int) $op->id
             || !in_array($op->state, ['running', 'uncertain'], true) || $op->completed_at !== null
             || AcquisitionAttempt::conflicts($op) || !AcquisitionRetryProof::unsealed($op)
             || !OperationAttempts::unsealedUnsent($worker, true)
             || (!$worker->current && !OperationAttempts::releasedUnsent($worker, true))) {
-            return AcquisitionFundsCutoff::Wait;
+            return self::FUNDS_WAIT;
         }
         return self::retirePreSeal($op, $worker, 'registrar_balance_insufficient', $now)
-            ? AcquisitionFundsCutoff::RetiredForCredit : AcquisitionFundsCutoff::Wait;
+            ? self::FUNDS_RETIRED_FOR_CREDIT : self::FUNDS_WAIT;
     }
 
     /** Archive the unsealed attempt before a hold. The original clock remains available for the credit sweep. */

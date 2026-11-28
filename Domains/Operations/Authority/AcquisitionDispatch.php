@@ -46,7 +46,7 @@ final readonly class AcquisitionDispatch
                 // Use the same cutoff before a local refusal can overwrite the funds wait.
             }
             $now = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'));
-            if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $attempt) !== AcquisitionFundsCutoff::Proceed
+            if (AcquisitionAuthority::fundsCutoff($op, $continuation, $now, $attempt) !== AcquisitionAuthority::FUNDS_PROCEED
                 || $this->authority->expire($op, $now)) { return null; }
             try {
                 if ($failure) { throw $failure; }
