@@ -88,8 +88,12 @@ DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->update([
 foreach(array_keys(DomainFacts::ALERTS) as $code){ObligationAlerts::record($domain,$code,time());}
 DB::table('domains_domains')->where('id',$domain->id)->update(['renewal_policy'=>'unreadable']);
 $unreadable=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertSee('Open alerts');
-foreach(array_keys(DomainFacts::ALERTS) as $code){if($code!==RenewalOwnership::REVIEW||RenewalOwnership::blocked($domain->fresh())){$unreadable->assertSee($pageCause($code));}}
-$unreadable->assertSee('Read stopped');
+foreach(array_keys(DomainFacts::ALERTS) as $code){
+    if($code !== 'observation_review' && ($code !== RenewalOwnership::REVIEW || RenewalOwnership::blocked($domain->fresh()))){
+        $unreadable->assertSee(DomainFacts::alertCause($code));
+    }
+}
+same(true,HoldingReadRetry::status($domain->fresh())['read_stopped'],'Unreadable renewal policy leaves the stopped read visible');
 // Unknown kinds still surface safely, without printing stored codes.
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->update(['resolved_at'=>time()]);
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->where('code','unknown_expiry')->limit(1)->update(['resolved_at'=>null,'code'=>'PRIVATE-UNKNOWN-CODE']);
