@@ -9,7 +9,6 @@ use Illuminate\Support\Facades\{Cache, DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Operations\Authority\{AcquisitionAttempt, AcquisitionClosureKind};
-use Paymenter\Extensions\Servers\Domains\Registration\Checkout\UnpaidAcquisitionProof;
 use Paymenter\Extensions\Servers\Domains\Renewal\Execution\RenewalAttempt;
 use Paymenter\Extensions\Servers\Domains\Money\Returns\{CreditsRejectedRequests, ReceiptReturns, RefundCandidates, RefundPayment, RefundRepairs};
 /** Proved no-send returns. Commit credit or a receipt plan atomically, then let the gateway return its receipts. */

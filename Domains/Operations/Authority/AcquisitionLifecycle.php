@@ -47,6 +47,7 @@ final readonly class AcquisitionLifecycle
                 return new self($facts, $phase);
             }
             $reason = $reply['evidence']['reason'] ?? null;
+            if (!is_string($reason) || $reason === '') { return new self($facts, $phase); }
             if ($reason === 'test_capacity') {
                 $capacity = $rows['test_capacity'] ?? [];
                 $recorded = $capacity['recorded_at'] ?? null;
@@ -54,6 +55,7 @@ final readonly class AcquisitionLifecycle
                 if (!$facts->released || ($capacity['source'] ?? null) !== 'local'
                     || !in_array($capacity['outcome'] ?? null, ['fresh', 'balance'], true)
                     || ($capacity['evidence']['phase'] ?? null) !== 'purchase'
+                    || !AcquisitionRetryProof::testCallHistory([$capacity['evidence']])
                     || !$at || $at < $facts->claimedAt || $at > $facts->releasedAt) {
                     return new self($facts, $phase);
                 }
@@ -92,17 +94,6 @@ final readonly class AcquisitionLifecycle
             : $state;
     }
 
-    /** Every retained attempt must independently prove no handoff. An active or expired seal needs a locked retirement first. */
-    public static function unsentHistory(array $history, array $rows, \DateTimeImmutable $now): bool
-    {
-        foreach ($history as $facts) {
-            $attempt = self::reduce($facts, $rows[$facts->token->attemptId] ?? [], $now);
-            if ($attempt->phase !== AcquisitionPhase::ProvedUnsent || $attempt->retireSeal
-                || $facts->current && !$facts->sealed()) { return false; }
-        }
-        return true;
-    }
-
     /** Fold the purchase and its ordered attempts at the same decision time. */
     public static function purchase(Operation $op, array|false|null $history, array $rows, \DateTimeImmutable $now): self
     {
@@ -115,7 +106,8 @@ final readonly class AcquisitionLifecycle
         if ($history === null) {
             $latest = self::retained($op, $invalid);
         } elseif (!$history || AcquisitionAttempt::conflicts($op)
-            || array_intersect_key($op->receiptFunding(), ['claim' => true, 'seal' => true])) {
+            || array_intersect_key($op->receiptFunding(), ['claim' => true, 'seal' => true])
+            || self::conflictingRetainedFacts($op)) {
             return $invalid;
         }
         $origins = [];
@@ -160,6 +152,14 @@ final readonly class AcquisitionLifecycle
         return in_array($op->state, ['succeeded', 'rejected', 'disposed'], true) || $op->completed_at !== null
             ? new self($latest->facts, AcquisitionPhase::Terminal)
             : $latest;
+    }
+
+    private static function conflictingRetainedFacts(Operation $op): bool
+    {
+        $raw = $op->getAttributes()['attempt'] ?? null;
+        if ($raw === null) { return false; }
+        $stored = OperationAttempts::decodeEvidence($raw);
+        return $stored !== [] && $stored !== ['seal' => 'absent', 'send_state' => 'definitely_unsent'];
     }
 
     private static function closureDetails(Operation $op, AcquisitionClosureKind $kind, array $details, self $predecessor): bool
@@ -256,13 +256,9 @@ final readonly class AcquisitionLifecycle
         $state = self::read($facts, $now, true);
         $writer = OperationWriter::at($now);
         if ($state->retireSeal) {
-            $history = OperationAttempts::purchaseHistory((int) $op->id, $key, true);
-            $rows = OperationAttempts::evidenceMany([(int) $op->id], self::EVIDENCE, true)[(int) $op->id] ?? [];
-            if (!is_array($history) || !$history || array_pop($history)->token != $facts->token
-                || !self::unsentHistory($history, $rows, $now)
-                || $op->provider_order_id !== null || $op->confirmed_expires_at !== null
-                || $op->request_fingerprint !== $facts->requestDigest || array_intersect_key($op->cost ?? [], ['actual' => true, 'execution' => true])
-                || array_key_exists('dispatch_attempted_at', $op->operationPolicy()) || AcquisitionAttempt::conflicts($op)
+            $purchase = OperationAttempts::purchaseProof($op, $now, lock: true);
+            if (!$purchase->retireSeal || $purchase->facts?->token != $facts->token
+                || $op->request_fingerprint !== $facts->requestDigest
                 || $domain->provider_domain_id !== null || $domain->provider_order_id !== null || $domain->provider_expires_at !== null
                 || $domain->status !== ($op->action === 'transfer' ? 'transfer_pending' : 'registration_pending')
                 || $writer->retireUnusedPurchase($state) !== Transition::Applied) {

@@ -46,7 +46,7 @@ final class OperationAttempts
         $id = (int) $op->id;
         try {
             $history = !$op->exists || !$id || $op->acquisitionStepAbsent() ? null : self::purchaseHistory($id, $key, $lock);
-            $rows = $history ? self::evidenceMany([$id], [...AcquisitionLifecycle::EVIDENCE, 'terminal'], $lock)[$id] ?? [] : [];
+            $rows = $history ? self::evidenceMany([$id], [...AcquisitionLifecycle::EVIDENCE, 'capacity', 'terminal'], $lock)[$id] ?? [] : [];
             if ($history === null && $op->exists && $id && $op->state === 'rejected') {
                 $rows[0]['terminal'] = $op->purchaseTerminalEvidence();
             }
