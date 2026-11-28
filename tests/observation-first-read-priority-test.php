@@ -58,7 +58,7 @@ $reads=array_filter(DB::getQueryLog(),fn($q)=>str_contains($q['query'],'from "do
 DB::disableQueryLog();
 same(1,count($reads),'The claim batch-loads its bounded domain window once');
 // A busy account defers this same initial read without losing its place or spending a retry.
-(new ReflectionMethod(HoldingObservationWork::class,'finishCurrent'))->invoke($worker,$priority,'read_deferred',null);
+(new ReflectionMethod(HoldingObservationWork::class,'finish'))->invoke($worker,$priority,'read_deferred',static fn()=>null);
 same(0,(int)HoldingObservationWork::current($new)->value('tries'),'Local account deferral spends no registrar retry');
 same($routine[0],(int)($claim()->id??0),'A deferred first read respects its retry due time');
 $clock->at=$now->modify('+60 seconds');
