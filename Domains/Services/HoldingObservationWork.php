@@ -189,12 +189,13 @@ final class HoldingObservationWork
             $rows=Domain::where('server_id',$a->server_id)->where('id','>',$current->cursor)->orderBy('id')->limit(25)->get();
             [$established, $ineligible] = $rows->where('account_fingerprint', $a->account_fingerprint)
                 ->partition(ObservationEligibility::allows(...));
-            if ($ineligible->isNotEmpty()) {
+            $pendingPurchases = $ineligible->filter(ObservationEligibility::purchaseLinked(...));
+            if ($pendingPurchases->isNotEmpty()) {
                 $obsolete=DB::table('domains_observation_work')->where('server_id',$a->server_id)
                     ->where('account_fingerprint',$a->account_fingerprint);
                 // Keep other generations and live leases, including work claimed by a worker from before the upgrade.
-                self::idle($obsolete,$this->clock->now()->getTimestamp())->where(function ($q) use ($ineligible): void {
-                    foreach ($ineligible->groupBy('authority_generation') as $generation => $holdings) {
+                self::idle($obsolete,$this->clock->now()->getTimestamp())->where(function ($q) use ($pendingPurchases): void {
+                    foreach ($pendingPurchases->groupBy('authority_generation') as $generation => $holdings) {
                         $q->orWhere(fn ($q) => $q->where('generation',$generation)->whereIn('domain_id',$holdings->pluck('id')));
                     }
                 })->delete();
@@ -251,13 +252,17 @@ final class HoldingObservationWork
             $oldest=$due->first();
             $job=(int)$oldest->due_at<$starved?$oldest:($due->first(fn($row)=>self::firstRecordRead($domains->get($row->domain_id))) ?? $oldest);
             $d=$domains->get($job->domain_id);
-            if ($d && !ObservationEligibility::allows($d)) {
-                DB::table('domains_observation_work')->where('id',$job->id)->delete();
-                return null;
-            }
-            if ($d && !self::matches($d,$job)) {
-                DB::table('domains_observation_work')->where('id',$job->id)->update(['safe_code'=>'superseded']);
-                return null;
+            if ($d) {
+                $matches = self::matches($d, $job);
+                if (!$matches || !ObservationEligibility::allows($d)) {
+                    $work = DB::table('domains_observation_work')->where('id', $job->id);
+                    if ($matches && ObservationEligibility::purchaseLinked($d)) {
+                        $work->delete();
+                    } else {
+                        $work->update(['safe_code' => 'superseded']);
+                    }
+                    return null;
+                }
             }
             $job->claim=bin2hex(random_bytes(16));
             DB::table('domains_observation_work')->where('id',$job->id)->update(['claim'=>$job->claim,'lease_until'=>$now+300,'tries'=>$job->tries+1]);
