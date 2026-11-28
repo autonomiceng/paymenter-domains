@@ -254,6 +254,13 @@ final class OperationReconciliation
             $sameStamp = AcquisitionRead::stamp($op, $domain) === $read->stamp;
             $observed->retainOwnership($op, $domain, $account, $read, $writer);
             if ($sameStamp) { $observed->retainScan($op, $domain, $account, $read, $state, $now); }
+
+            $decisionAt = $this->clock->now();
+            if ($decisionAt != $now) {
+                $now = $decisionAt;
+                $state = AcquisitionLifecycle::settle($op, $domain, $now);
+                $writer = OperationWriter::at($now);
+            }
             $permit = AcquisitionReadPermit::issue($state, $read->token, $now);
             if (!$permit || !$sameStamp || !$this->eligible($op, $now)
                 || !$this->matchesReadScope($op, $domain, $all, $funding, $server, $account, $read)) {
